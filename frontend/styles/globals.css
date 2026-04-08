@@ -1,0 +1,18 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  font-family: 'Inter', 'Segoe UI', Arial, sans-serif;
+  background: linear-gradient(135deg, #eff6ff 0%, #ffffff 100%);
+  color: #1e293b;
+}
+
+::selection {
+  background: #2563eb;
+  color: #fff;
+}
+
+input, button, select, textarea {
+  font-family: inherit;
+}

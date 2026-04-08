@@ -1,6 +1,27 @@
-.env
+# Dependencias
+node_modules/
 venv/
-.claude/
-output/
 __pycache__/
 *.pyc
+
+# Entornos
+.env
+.env.local
+frontend/.env
+frontend/.env.local
+backend/.env
+
+# Build
+frontend/.next/
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
+
+# Docker volumes
+postgres_data/
+
+# Claude local settings (excepto agents que sí se versionan)
+.claude/*
+!.claude/agents/
