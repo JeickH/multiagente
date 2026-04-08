@@ -20,7 +20,7 @@ export default function Usuario() {
       return;
     }
 
-    fetch(`${process.env.NEXT_PUBLIC_API_URL}/usuario/me`, {
+    fetch('/api/usuario/me', {
       headers: { Authorization: `Bearer ${token}` },
     })
       .then((res) => res.ok ? res.json() : Promise.reject())
