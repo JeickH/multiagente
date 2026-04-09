@@ -1,13 +1,19 @@
 /** @type {import('next').NextConfig} */
+const BACKEND_URL =
+  process.env.NEXT_PUBLIC_BACKEND_URL ||
+  process.env.BACKEND_URL ||
+  'http://localhost:8000';
+
 const nextConfig = {
   reactStrictMode: true,
   async rewrites() {
     return [
       {
         source: '/api/:path*',
-        destination: 'http://multiagente-alb-1689721042.sa-east-1.elb.amazonaws.com/:path*',
+        destination: `${BACKEND_URL}/:path*`,
       },
     ];
   },
-}
+};
+
 module.exports = nextConfig;

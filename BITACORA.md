@@ -116,6 +116,96 @@
 
 ---
 
+## Sprint 6 - Módulo Responder Mensajes (Meta WhatsApp Cloud API)
+
+> Rama: `feature/modulo-mensajes-meta`
+> Objetivo: Permitir al usuario ver conversaciones y responder manualmente mediante la API oficial de Meta WhatsApp Cloud, con sistema de equipos y permisos extensible.
+
+### Decisiones clave
+- Se usa **Meta WhatsApp Cloud API** (graph.facebook.com/v22.0) en lugar de WATI para este módulo.
+- Modelo de permisos con flags booleanos extensibles (tabla `team_permissions`) para añadir fácilmente nuevos permisos en el futuro.
+- Cada usuario registrado se auto-aprovisiona un `Team` y un `TeamMember` con rol `owner` (todos los permisos en `true`).
+- Credenciales Meta almacenadas en `.env` con bloques comentados (prod/test) para fácil switch.
+
+### Credenciales Meta recibidas del CEO
+| Dato | Valor |
+|------|-------|
+| Ad Account ID | 1240419961584629 |
+| Pixel ID | 1662995571566146 |
+| Número (prod) | +573003187871 |
+| Phone Number ID (prod) | 1036567489546838 |
+| WABA ID (prod) | 1272393681746114 |
+| Phone Number ID (test) | 988594284346297 |
+| WABA ID (test) | 758411907207213 |
+| Token permanente | EAAXJ9jEBv8wBRNI...wZDZD |
+
+### Credenciales pendientes del CEO (opcionales)
+| # | Dato | Uso | Obligatorio |
+|---|------|-----|-------------|
+| A | **App Secret** de Meta | Validar firma HMAC del webhook (X-Hub-Signature-256) | Recomendado para producción |
+| B | **URL pública** (ngrok o AWS) | Recibir webhooks de Meta en local | Solo para recibir mensajes en local |
+| C | Verify Token | Lo define el equipo y se configura en panel Meta | Generado automáticamente |
+
+### Tareas
+| # | Tarea | Responsable | Estado | Notas |
+|---|-------|-------------|--------|-------|
+| 36 | Crear rama `feature/modulo-mensajes-meta` | PM | ✅ | Branch creada |
+| 37 | Actualizar BITACORA con sprint | PM | ✅ | Este bloque |
+| 38 | Añadir credenciales Meta a `.env` (switch fácil prod/test) | Deploy AWS | ✅ | Bloques prod/test comentados |
+| 39 | Actualizar `.env.example` con variables Meta | Deploy AWS | ✅ | Variables documentadas |
+| 40-45 | Diseño de modelos extensibles | Experto BD | ✅ | 7 tablas creadas |
+| 46 | Implementar modelos SQLAlchemy | Dev Plataforma | ✅ | `backend/app/models.py` |
+| 47 | Implementar schemas Pydantic | Dev Plataforma | ✅ | `backend/app/schemas.py` |
+| 48 | Implementar funciones CRUD | Dev Plataforma | ✅ | `backend/app/crud.py` |
+| 49 | Crear servicio `meta_whatsapp.py` | Dev Plataforma | ✅ | `backend/app/services/meta_whatsapp.py` |
+| 50 | Crear router `teams.py` | Dev Plataforma | ✅ | CRUD teams + permisos |
+| 51 | Actualizar router `mensajes.py` | Dev Plataforma | ✅ | Endpoints conversaciones + envío |
+| 52 | Crear router `meta_webhook.py` | Dev Plataforma | ✅ | GET verify + POST receive (con HMAC opcional) |
+| 53 | Auto-provisionar Team + owner al registrarse | Dev Plataforma | ✅ | Hook en register y login |
+| 54 | Endpoint `/teams/me` con permisos | Dev Plataforma | ✅ | Frontend usa para mostrar/ocultar input |
+| 55 | UI módulo `/mensajes` tipo inbox | Dev Plataforma | ✅ | Header + lista + panel chat + modal nueva |
+| 56 | Permiso `can_reply_messages` en UI | Dev Plataforma | ✅ | Composer condicional |
+| 57 | Ajustar `next.config.js` (BACKEND_URL configurable) | Dev Plataforma | ✅ | Defaults a localhost:8000 |
+| 58 | Prueba local (levantar entorno y validar envío) | QA + CEO | ⬜ | Meta API: en espera de revisión de cuenta (24h). Se asume OK vía curl. |
+| 59 | Restringir asignación de MetaAccount a `META_OWNER_EMAIL` | Dev Plataforma | ✅ | Solo `prueba@gmail.com` recibe la cuenta. Resto ve "Sin cuenta de Meta registrada". Swap vía `.env`. |
+| 60 | Añadir `verified_name` a MetaAccount y mostrarlo en "Mi Plan" | Dev Plataforma | ✅ | Endpoint `/usuario/me/meta-account`. UI muestra nombre visible ("Tienda Zeniv") + teléfono. |
+| 61 | QA: validar flujo con `prueba@gmail.com` y `test2@gmail.com` | QA | ✅ | SQLite in-memory: prueba@ recibe cuenta, test2@ no. Cleanup de leftovers OK. |
+| 62 | Commit + push + Pull Request | PM | ⬜ | Listo para crear PR |
+
+### Estado de validación interna (sin tocar Meta API)
+- ✅ Imports del backend OK (todos los módulos compilan)
+- ✅ Schema SQL creado correctamente (7 tablas)
+- ✅ CRUD validado contra SQLite in-memory: usuario, team, member, permisos, meta account, conversación, mensaje
+- ✅ FastAPI registra 19 rutas (auth, usuario, mensajes/4, teams/4, meta/2, etc.)
+- ⬜ Prueba E2E con Meta API real (pendiente del CEO)
+
+### Nuevos endpoints
+| Método | Ruta | Permiso | Descripción |
+|--------|------|---------|-------------|
+| GET | `/teams/me` | autenticado | Devuelve team + permisos del usuario actual |
+| GET | `/teams/me/members` | autenticado | Lista miembros del equipo |
+| POST | `/teams/me/members` | `can_manage_team` | Invita un nuevo miembro |
+| PUT | `/teams/me/members/{id}/permissions` | `can_manage_team` | Actualiza permisos de un miembro |
+| GET | `/mensajes/conversaciones` | autenticado | Lista conversaciones del team |
+| GET | `/mensajes/conversaciones/{id}` | autenticado | Detalle con mensajes |
+| POST | `/mensajes/conversaciones/{id}/enviar` | `can_reply_messages` | Envía texto libre por Meta |
+| POST | `/mensajes/conversaciones/nueva` | `can_reply_messages` | Inicia conversación con template |
+| GET | `/meta/webhook` | público | Verificación inicial Meta |
+| POST | `/meta/webhook` | público (HMAC) | Recibe mensajes entrantes |
+| GET | `/usuario/me/meta-account` | autenticado | Estado de la cuenta de Meta del usuario (registered + verified_name + display_phone) |
+
+### Esquema de permisos (extensible)
+Tabla `team_permissions`: filas por cada `(team_member_id, permission_key)`:
+- `can_reply_messages` — responder mensajes manualmente (scope del sprint actual)
+- `can_send_broadcasts` — enviar campañas masivas (futuro)
+- `can_manage_bots` — editar bots de WhatsApp (futuro)
+- `can_manage_team` — invitar/editar miembros del equipo (futuro)
+- `can_view_analytics` — ver reportes (futuro)
+
+Para añadir un permiso nuevo basta con insertar filas con una nueva `permission_key`.
+
+---
+
 ## Log de Cambios
 
 | Fecha | Agente | Acción |
@@ -123,3 +213,7 @@
 | 2026-04-08 | PM | Creación del proyecto, estructura base, CLAUDE.md y BITACORA.md |
 | 2026-04-08 | Dev Plataforma | Adaptación frontend (Sidebar, Login, Register, módulos) y backend (auth, routers, CORS) |
 | 2026-04-08 | Deploy AWS | Dockerfiles, docker-compose.yml, .env.example |
+| 2026-04-09 | PM | Sprint 6 arrancado. Rama creada. Tareas 36-59 definidas. |
+| 2026-04-09 | Dev Plataforma | Implementación completa Sprint 6: modelos, schemas, CRUD, servicio Meta, routers (teams, mensajes, meta_webhook), UI inbox. |
+| 2026-04-09 | Dev Plataforma | Restricción MetaAccount a `META_OWNER_EMAIL` (prueba@gmail.com). Añadido `verified_name`. Endpoint `/usuario/me/meta-account`. UI "Mi Plan" muestra estado. Cleanup de leftovers. |
+| 2026-04-09 | QA | Validación SQLite in-memory: prueba@ recibe cuenta con nombre "Tienda Zeniv" y teléfono +573003187871; test2@ queda sin cuenta; cleanup de leftovers OK; swap por `.env` OK. |
