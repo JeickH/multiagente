@@ -22,17 +22,32 @@ def get_db():
     finally:
         db.close()
 
+def _ensure_team_for_user(db: Session, user: models.User):
+    """Crea un team + membership owner si el usuario no tiene, y provisiona
+    la cuenta de Meta SOLO si el correo coincide con META_OWNER_EMAIL."""
+    member = crud.get_membership_for_user(db, user)
+    if member is None:
+        team = crud.create_team(db, nombre=f"Equipo de {user.nombre}", owner=user)
+    else:
+        team = member.team
+    crud.upsert_default_meta_account_for_team(db, team, owner_email=user.correo)
+
+
 @router.post('/register', response_model=schemas.UserOut)
 def register(user: schemas.UserCreate, db: Session = Depends(get_db)):
     if crud.get_user_by_email(db, user.correo) or crud.get_user_by_documento(db, user.documento):
         raise HTTPException(status_code=400, detail="Usuario ya registrado")
-    return crud.create_user(db, user)
+    new_user = crud.create_user(db, user)
+    _ensure_team_for_user(db, new_user)
+    return new_user
 
 @router.post('/login')
 def login(user: schemas.UserLogin, db: Session = Depends(get_db)):
     db_user = crud.authenticate_user(db, user.correo, user.password)
     if not db_user:
         raise HTTPException(status_code=401, detail="Credenciales incorrectas")
+    # Auto-aprovisionar equipo para usuarios viejos que no tengan
+    _ensure_team_for_user(db, db_user)
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(
         data={"sub": db_user.correo}, expires_delta=access_token_expires
