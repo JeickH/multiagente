@@ -370,3 +370,8 @@ CLAUDE.md > "Convenciones de operación"):
 | 2026-04-10 | Experto BD | Migración `migrate_sprint7_add_columns.py` creada (idempotente, `ADD COLUMN IF NOT EXISTS`). Aplicada en RDS vía `aws ecs run-task`. `users` ahora tiene `created_at`. |
 | 2026-04-10 | Deploy AWS | `aws ecs update-service --force-new-deployment` → `create_all()` recreó `meta_accounts` con el schema nuevo. Service estable en task-def rev 3. |
 | 2026-04-10 | QA | Validación E2E contra ALB: register + login + GET/POST/DELETE meta-account + teams/me. POST con token falso → 400 sanitizado. |
+| 2026-04-10 | QA | Smoke test local con docker-compose + venv dedicado. Migración aplicada al volumen local (regla paridad BD). Fix SQLAlchemy 1.4 en el script (engine.begin()). E2E: register, login, GET meta-account, POST con validación Pydantic, teams/me con permisos owner. |
+| 2026-04-10 | Deploy AWS | docker-compose.yml: APP_ENCRYPTION_KEY con fail-fast, APP_ENV y META_API_VERSION como defaults. |
+| 2026-04-10 | PM | PR #2 mergeado a main (squash) → commit `41b0a9a`. |
+| 2026-04-10 | Deploy AWS | Amplify: env vars BACKEND_URL + NEXT_PUBLIC_BACKEND_URL añadidas al app. Job 6 SUCCEED. Proxy Next.js /api/* → ALB validado (HTTPS Amplify → HTTP ALB sin mixed content). |
+| 2026-04-10 | PM | Documento `PRUEBAS_SPRINT_7.md` creado con instrucciones paso a paso para probar el módulo de mensajes en AWS y local. **Sprint 7 DONE**. |
