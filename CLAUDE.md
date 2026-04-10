@@ -142,3 +142,26 @@ Reglas permanentes que debe respetar todo el equipo. Violaciones de estas reglas
    de APIs externas, SQL) va únicamente a `logger.exception` server-side. El cliente recibe
    mensajes genéricos (`"credenciales inválidas"`, `"error temporal al conectar con el
    proveedor"`).
+
+---
+
+## Convenciones de operación
+
+1. **Paridad BD local ↔ AWS (regla permanente del CEO)**: la base de datos
+   local (`docker-compose` servicio `db`) y la base de producción (RDS
+   `multiagente-db` en sa-east-1) **deben tener siempre el mismo schema**.
+   Toda migración / `ALTER TABLE` / `DROP` / índice nuevo se aplica en ambos
+   entornos en el mismo PR. Esto garantiza que siempre exista una copia local
+   fiel a producción para desarrollo y debugging.
+   - Regla operativa: cada vez que se modifique `models.py`, el PR debe
+     incluir (a) el script de migración idempotente en `backend/scripts/`,
+     (b) evidencia de ejecución local (docker-compose), (c) evidencia de
+     ejecución en RDS (run-task ECS o equivalente).
+   - Follow-up permanente: adoptar Alembic para migraciones versionadas.
+     Mientras no exista Alembic, scripts manuales con `IF NOT EXISTS` /
+     `ADD COLUMN IF NOT EXISTS` son obligatorios para ser idempotentes.
+2. **Ambiente Python**: nunca instalar dependencias del backend en el
+   intérprete del sistema. Siempre `conda activate multiagente` o
+   `source backend/.venv/bin/activate` antes de `pip install` o `pytest`.
+3. **Región AWS = `sa-east-1`**. Cualquier comando `aws` debe incluir
+   explícitamente `--region sa-east-1`. Nunca us-east-1.

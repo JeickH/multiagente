@@ -294,6 +294,63 @@ S-23 pin de dependencias + pip-audit · S-24 CSP + security headers + X-Frame-Op
 
 **Veredicto**: **APROBADO CON CAMBIOS OBLIGATORIOS**. Implementar según fases del plan incorporando los fixes S-01 a S-11. Re-auditar post-implementación.
 
+### Deploy Sprint 7 — 2026-04-10
+
+**Estado al retomar**: branch `feature/seguridad-meta-credentials` @ `3e78b78`.
+Infra ya provisionada en sesiones previas: ECR `:sprint7`, SSM
+`/multiagente/prod/APP_ENCRYPTION_KEY`, policy `multiagente-ssm-read`,
+task-def `multiagente-backend:3`. Servicio ya migrado a rev 3.
+
+**Bug crítico encontrado en producción**: después del drop de `meta_accounts`
+el backend nunca fue reiniciado, por lo que `create_all()` no recreó la tabla
+→ GET `/usuario/me/meta-account` crasheaba con 500 / `relation "meta_accounts"
+does not exist`. Además, el modelo `User` del Sprint 7 agregó `created_at` a
+una tabla que ya existía en RDS desde antes del Sprint 6: `POST /login`
+crasheaba con 500 / `column users.created_at does not exist`. Causa raíz:
+`SQLAlchemy.Base.metadata.create_all()` **no aplica ALTER TABLE** a tablas
+preexistentes.
+
+**Regla permanente añadida** (por solicitud del CEO, documentada en
+CLAUDE.md > "Convenciones de operación"):
+
+> La base de datos local (`docker-compose db`) y la de producción (RDS
+> `multiagente-db`) deben tener siempre el mismo schema. Todo ALTER/DROP/
+> índice se aplica en ambos entornos en el mismo PR. Follow-up: adoptar
+> Alembic para migraciones versionadas.
+
+**Fixes aplicados**:
+- `backend/scripts/migrate_sprint7_add_columns.py` — migración idempotente
+  usando `ALTER TABLE ... ADD COLUMN IF NOT EXISTS`. Primera entrada:
+  `users.created_at TIMESTAMP NOT NULL DEFAULT NOW()`.
+- Ejecutado en RDS vía `aws ecs run-task` con command override del task-def
+  rev 3 (hereda VPC + secret APP_ENCRYPTION_KEY). Salida:
+  `users_columns=id,nombre,tipo_documento,documento,correo,hashed_password,created_at`.
+- `aws ecs update-service --force-new-deployment` forzó rearranque del
+  backend → `create_all()` recreó `meta_accounts` con el schema nuevo.
+
+**Validación E2E contra ALB**
+(`http://multiagente-alb-1689721042.sa-east-1.elb.amazonaws.com`):
+
+| Paso | Request | Resultado |
+|------|---------|-----------|
+| 1 | `POST /register` (smoke user) | 200 UserOut |
+| 2 | `POST /login` | 200 JWT |
+| 3 | `GET /usuario/me/meta-account` | 200 `{"registered":false,"can_manage_meta_account":true,…}` |
+| 4 | `POST /usuario/me/meta-account` con token falso | **400** con mensaje sanitizado — S-04/S-07 OK |
+| 5 | `GET /teams/me` | 200 con permisos owner |
+
+**Nota de auditoría**: la API sigue devolviendo errores genéricos al cliente
+(hallazgo S-04/S-11 se mantiene respetado en runtime).
+
+### Tareas de cierre pendientes
+
+| # | Tarea | Responsable | Estado |
+|---|-------|------------|--------|
+| 82 | Smoke test local con docker-compose + aplicar `migrate_sprint7_add_columns.py` al volumen local (regla paridad BD) | QA | ⬜ Pendiente |
+| 83 | Follow-ups abiertos: S-13 (rate limit POST register), S-14 (config.py en main.py fail-fast), S-26 (rotar SECRET_KEY en ECS), S-28 (reintentos + timeout en `get_phone_number_info`) — como TODOs en código, no resolver en este PR | Dev Plataforma | ⬜ Pendiente |
+| 84 | Adoptar Alembic (follow-up permanente derivado del bug de migración) | Dev Plataforma / Experto BD | ⬜ Pendiente |
+| 85 | Amplify: mergear PR #2 a `main` → auto-deploy del frontend (decisión del CEO 2026-04-10) | PM + Deploy AWS | ⬜ Pendiente |
+
 ---
 
 ## Log de Cambios
@@ -309,3 +366,7 @@ S-23 pin de dependencias + pip-audit · S-24 CSP + security headers + X-Frame-Op
 | 2026-04-09 | QA | Validación SQLite in-memory: prueba@ recibe cuenta con nombre "Tienda Zeniv" y teléfono +573003187871; test2@ queda sin cuenta; cleanup de leftovers OK; swap por `.env` OK. |
 | 2026-04-09 | PM | Sprint 7 arrancado. Rama `feature/seguridad-meta-credentials`. Agente `seguridad` creado y registrado en CLAUDE.md. |
 | 2026-04-09 | Seguridad | Auditoría del diseño Sprint 7. 3 críticos + 8 altos + 11 medios + 6 bajos. Veredicto: APROBADO CON CAMBIOS. |
+| 2026-04-10 | PM | Sprint 7 retomado. Regla permanente paridad BD local↔AWS añadida a CLAUDE.md. |
+| 2026-04-10 | Experto BD | Migración `migrate_sprint7_add_columns.py` creada (idempotente, `ADD COLUMN IF NOT EXISTS`). Aplicada en RDS vía `aws ecs run-task`. `users` ahora tiene `created_at`. |
+| 2026-04-10 | Deploy AWS | `aws ecs update-service --force-new-deployment` → `create_all()` recreó `meta_accounts` con el schema nuevo. Service estable en task-def rev 3. |
+| 2026-04-10 | QA | Validación E2E contra ALB: register + login + GET/POST/DELETE meta-account + teams/me. POST con token falso → 400 sanitizado. |
