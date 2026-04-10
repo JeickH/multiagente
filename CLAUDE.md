@@ -28,9 +28,22 @@ Los agentes están configurados como archivos `.md` en `.claude/agents/` para se
 | **Deploy AWS** | `.claude/agents/deploy-aws.md` | Infraestructura, Docker, CI/CD |
 | **Desarrollador de Plataforma** | `.claude/agents/dev-plataforma.md` | Desarrollo frontend/backend, WATI |
 | **Experto en Bases de Datos** | `.claude/agents/experto-bd.md` | Modelado, migraciones, PostgreSQL |
+| **Experto en Seguridad** | `.claude/agents/seguridad.md` | Auditoría de diseño/código, secretos, cifrado, autenticación/autorización |
 | **QA** | `.claude/agents/qa.md` | Testing, validación, revisión |
 
 Consultar cada archivo de agente para ver sus responsabilidades detalladas, herramientas y reglas.
+
+### Reglas de delegación del Project Manager
+
+El PM debe delegar según el tipo de tarea:
+
+- **Infraestructura, Docker, CI/CD, AWS** → `deploy-aws`
+- **Frontend/backend, endpoints, UI, integraciones externas** → `dev-plataforma`
+- **Schema, migraciones, queries, índices** → `experto-bd`
+- **Testing, validación, QA manual y automatizado** → `qa`
+- **Seguridad, auditoría, manejo de secretos, cifrado, revisión de diseño por riesgos** → `seguridad`
+
+> Cualquier feature nuevo que toque credenciales, autenticación, autorización o manejo de secretos **debe pasar por el agente `seguridad` antes del merge**.
 
 ---
 
@@ -77,6 +90,7 @@ multiagente/
 │       ├── deploy-aws.md
 │       ├── dev-plataforma.md
 │       ├── experto-bd.md
+│       ├── seguridad.md
 │       └── qa.md
 ├── frontend/              # Next.js app
 │   ├── components/        # Componentes reutilizables
@@ -97,3 +111,57 @@ multiagente/
 ├── Dockerfile.frontend    # Container del frontend
 └── .gitignore
 ```
+
+---
+
+## Seguridad
+
+Reglas permanentes que debe respetar todo el equipo. Violaciones de estas reglas son
+**bloqueantes para merge** y requieren intervención del agente `seguridad`:
+
+1. **Nunca loggear secretos descifrados**: prohibido `print`, `logger.info`, `logger.debug`
+   o `f"..."` sobre tokens, passwords, claves de cifrado, cookies de sesión o cualquier
+   credencial, aunque sea "solo para debug local". Si un modelo tiene un campo sensible,
+   define un `__repr__` que lo redacte.
+2. **Nunca incluir secretos en schemas Pydantic de respuesta**: `UserOut`, `MetaAccountOut`,
+   `TeamMemberOut`, etc. NO pueden contener `hashed_password`, `encrypted_access_token`,
+   `app_secret` ni equivalentes. Revisa cualquier nuevo `...Out` con esta lista en mente.
+3. **Secretos multi-tenant siempre en DB cifrados, nunca en `.env`**: credenciales que
+   pertenecen a un cliente específico (tokens de Meta, claves de API de terceros que paga
+   el cliente, etc.) van en la base de datos cifradas con Fernet (o equivalente AEAD).
+   La clave maestra de cifrado (`APP_ENCRYPTION_KEY`) sí va en env var, pero **nunca** un
+   secreto perteneciente a un tenant.
+4. **Todo feature que toque credenciales, auth, autorización o secretos pasa por el
+   agente `seguridad`**: el PM debe delegarle la revisión del diseño **antes** de que el
+   Dev Plataforma implemente, y una auditoría de código **después** del commit, antes del
+   merge. Hallazgos Críticos o Altos son bloqueantes.
+5. **Webhooks externos fail-closed en producción**: verificación HMAC obligatoria con
+   secreto compartido; si falta la firma o el secreto, rechazar con 403. Fail-open solo
+   se permite con warning explícito en logs y solo durante desarrollo local.
+6. **Errores al cliente siempre sanitizados**: el detalle completo (stack trace, respuesta
+   de APIs externas, SQL) va únicamente a `logger.exception` server-side. El cliente recibe
+   mensajes genéricos (`"credenciales inválidas"`, `"error temporal al conectar con el
+   proveedor"`).
+
+---
+
+## Convenciones de operación
+
+1. **Paridad BD local ↔ AWS (regla permanente del CEO)**: la base de datos
+   local (`docker-compose` servicio `db`) y la base de producción (RDS
+   `multiagente-db` en sa-east-1) **deben tener siempre el mismo schema**.
+   Toda migración / `ALTER TABLE` / `DROP` / índice nuevo se aplica en ambos
+   entornos en el mismo PR. Esto garantiza que siempre exista una copia local
+   fiel a producción para desarrollo y debugging.
+   - Regla operativa: cada vez que se modifique `models.py`, el PR debe
+     incluir (a) el script de migración idempotente en `backend/scripts/`,
+     (b) evidencia de ejecución local (docker-compose), (c) evidencia de
+     ejecución en RDS (run-task ECS o equivalente).
+   - Follow-up permanente: adoptar Alembic para migraciones versionadas.
+     Mientras no exista Alembic, scripts manuales con `IF NOT EXISTS` /
+     `ADD COLUMN IF NOT EXISTS` son obligatorios para ser idempotentes.
+2. **Ambiente Python**: nunca instalar dependencias del backend en el
+   intérprete del sistema. Siempre `conda activate multiagente` o
+   `source backend/.venv/bin/activate` antes de `pip install` o `pytest`.
+3. **Región AWS = `sa-east-1`**. Cualquier comando `aws` debe incluir
+   explícitamente `--region sa-east-1`. Nunca us-east-1.

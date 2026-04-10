@@ -29,6 +29,11 @@ services:
       SECRET_KEY: ${SECRET_KEY:-cambia-este-secreto-en-produccion}
       ALGORITHM: HS256
       ACCESS_TOKEN_EXPIRE_MINUTES: 30
+      # Sprint 7: clave Fernet para cifrar credenciales Meta per-tenant.
+      # Se lee del .env de la raíz. El backend falla al arranque si falta.
+      APP_ENCRYPTION_KEY: ${APP_ENCRYPTION_KEY:?APP_ENCRYPTION_KEY requerida. Genera con python backend/scripts/gen_encryption_key.py}
+      APP_ENV: ${APP_ENV:-development}
+      META_API_VERSION: ${META_API_VERSION:-v22.0}
       WATI_API_ENDPOINT: ${WATI_API_ENDPOINT:-}
       WATI_BEARER_TOKEN: ${WATI_BEARER_TOKEN:-}
     depends_on:
