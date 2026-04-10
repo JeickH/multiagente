@@ -59,12 +59,13 @@ def main() -> int:
     print(f"Conectando a host: {host or '(desconocido)'}")
 
     engine = create_engine(DATABASE_URL)
-    with engine.connect() as conn:
+    # engine.begin() abre transacción y hace commit automático al salir;
+    # compatible con SQLAlchemy 1.4 y 2.x (Connection.commit() no existe en 1.4).
+    with engine.begin() as conn:
         for table, column, col_type in MIGRATIONS:
             sql = f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {column} {col_type};"
             print(f"  -> {sql}")
             conn.execute(text(sql))
-        conn.commit()
 
     # Verificación: leer el nombre de las columnas de users
     with engine.connect() as conn:
