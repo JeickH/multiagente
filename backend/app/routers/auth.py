@@ -23,14 +23,15 @@ def get_db():
         db.close()
 
 def _ensure_team_for_user(db: Session, user: models.User):
-    """Crea un team + membership owner si el usuario no tiene, y provisiona
-    la cuenta de Meta SOLO si el correo coincide con META_OWNER_EMAIL."""
+    """Crea un team + membership owner si el usuario no tiene.
+
+    Nota: la provisión automática de cuenta de Meta fue eliminada en Sprint 7.
+    Ahora el owner debe conectar su cuenta manualmente desde /usuario
+    (POST /usuario/me/meta-account).
+    """
     member = crud.get_membership_for_user(db, user)
     if member is None:
-        team = crud.create_team(db, nombre=f"Equipo de {user.nombre}", owner=user)
-    else:
-        team = member.team
-    crud.upsert_default_meta_account_for_team(db, team, owner_email=user.correo)
+        crud.create_team(db, nombre=f"Equipo de {user.nombre}", owner=user)
 
 
 @router.post('/register', response_model=schemas.UserOut)

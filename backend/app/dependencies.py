@@ -1,3 +1,4 @@
+import logging
 import os
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -12,6 +13,8 @@ load_dotenv()
 
 SECRET_KEY = os.getenv("SECRET_KEY")
 ALGORITHM = os.getenv("ALGORITHM")
+
+logger = logging.getLogger(__name__)
 
 security = HTTPBearer()
 
@@ -67,3 +70,36 @@ def require_permission(permission_key: str):
         return member
 
     return _checker
+
+
+def get_current_owner_membership(
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+) -> models.TeamMember:
+    """Devuelve el TeamMember del usuario autenticado si es OWNER de su team.
+
+    Si el usuario no pertenece a ningún team, o si su rol no es 'owner', levanta
+    403 con mensaje GENÉRICO ("No autorizado") para no revelar detalles al cliente.
+    El detalle exacto se loggea server-side.
+
+    NOTA (MVP): asume 1 team por usuario. En el futuro, cuando se soporte
+    multi-team, este dependency debe recibir el team_id del path y validar
+    ownership sobre ESE team específico (actualmente solo valida ownership
+    sobre el primer team del usuario).
+    """
+    member = crud.get_membership_for_user(db, user)
+    if member is None:
+        logger.warning(
+            "Intento de operación owner-only sin team: user_id=%s",
+            user.id,
+        )
+        raise HTTPException(status_code=403, detail="No autorizado")
+    if member.role != "owner":
+        logger.warning(
+            "Intento de operación owner-only por no-owner: user_id=%s team_id=%s role=%s",
+            user.id,
+            member.team_id,
+            member.role,
+        )
+        raise HTTPException(status_code=403, detail="No autorizado")
+    return member

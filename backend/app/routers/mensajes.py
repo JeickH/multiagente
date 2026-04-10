@@ -59,10 +59,10 @@ def send_message_in_conversation(
         raise HTTPException(status_code=404, detail="Conversación no encontrada")
 
     account = crud.get_meta_account_for_team(db, member.team_id)
-    if not account or not account.is_active:
+    if not crud.is_meta_account_usable(account):
         raise HTTPException(
-            status_code=400,
-            detail="El equipo no tiene una cuenta de Meta WhatsApp configurada",
+            status_code=409,
+            detail="La cuenta de WhatsApp no está activa. El propietario debe conectarla desde Mi Plan.",
         )
 
     try:
@@ -105,10 +105,10 @@ def start_new_conversation(
     Necesario cuando no hay ventana de 24h abierta con el contacto.
     """
     account = crud.get_meta_account_for_team(db, member.team_id)
-    if not account or not account.is_active:
+    if not crud.is_meta_account_usable(account):
         raise HTTPException(
-            status_code=400,
-            detail="El equipo no tiene una cuenta de Meta WhatsApp configurada",
+            status_code=409,
+            detail="La cuenta de WhatsApp no está activa. El propietario debe conectarla desde Mi Plan.",
         )
 
     conv = crud.get_or_create_conversation(

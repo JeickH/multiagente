@@ -145,59 +145,110 @@ def get_meta_account_for_team(db: Session, team_id: int) -> Optional[models.Meta
     )
 
 
-def upsert_default_meta_account_for_team(
-    db: Session, team: models.Team, owner_email: Optional[str] = None
-) -> Optional[models.MetaAccount]:
-    """Crea (si no existe) la MetaAccount del team con los datos del .env.
+def register_meta_account(
+    db: Session,
+    team: models.Team,
+    registered_by: models.User,
+    phone_number_id: str,
+    waba_id: str,
+    access_token_plaintext: str,
+    display_phone: str,
+    verified_name: Optional[str] = None,
+    api_version: str = "v22.0",
+) -> models.MetaAccount:
+    """Cifra el access_token y persiste una nueva MetaAccount para el team.
 
-    Solo provisiona la cuenta si el correo del owner del team coincide con
-    META_OWNER_EMAIL. Esto garantiza que únicamente un usuario específico tenga
-    la cuenta de WhatsApp registrada; el resto queda sin cuenta.
+    IMPORTANTE: este helper NO valida el token contra Meta Graph API — esa validación
+    debe ocurrir ANTES, en el router, para que los errores del Graph API se traduzcan
+    a HTTPException sanitizadas antes de llegar aquí.
 
-    Adicionalmente, si el usuario NO es el propietario pero su team tiene una
-    MetaAccount residual (de pruebas viejas), la elimina para dejar el estado
-    consistente con la regla de negocio.
+    Si ya existe una MetaAccount para el team, actualiza sus campos y re-cifra el
+    token. Esto permite re-conectar con credenciales nuevas sin pasar por un DELETE.
+
+    SEGURIDAD:
+    - No loguees ni imprimas access_token_plaintext.
+    - El ciphertext se guarda en encrypted_access_token.
+    - status='active' porque la validación externa ya ocurrió antes de llamar esto.
     """
+    from .services.crypto import encrypt_secret
+
+    encrypted = encrypt_secret(access_token_plaintext)
+    now = datetime.utcnow()
+
     existing = get_meta_account_for_team(db, team.id)
-
-    meta_owner_email = (os.getenv("META_OWNER_EMAIL") or "").strip().lower()
-    team_owner_email = (owner_email or "").strip().lower()
-    is_meta_owner = bool(meta_owner_email) and team_owner_email == meta_owner_email
-
-    if not is_meta_owner:
-        # Este usuario no debe tener cuenta de Meta: limpiar leftovers
-        if existing:
-            db.delete(existing)
-            db.commit()
-        return None
-
-    if existing:
+    if existing is not None:
+        existing.phone_number_id = phone_number_id
+        existing.waba_id = waba_id
+        existing.encrypted_access_token = encrypted
+        existing.display_phone = display_phone
+        existing.verified_name = verified_name
+        existing.api_version = api_version
+        existing.is_active = True
+        existing.status = "active"
+        existing.last_validated_at = now
+        existing.validation_error = None
+        existing.registered_by_user_id = registered_by.id
+        db.commit()
+        db.refresh(existing)
         return existing
-
-    phone_number_id = os.getenv("META_PHONE_NUMBER_ID")
-    waba_id = os.getenv("META_WABA_ID")
-    access_token = os.getenv("META_ACCESS_TOKEN")
-    display_phone = os.getenv("META_DISPLAY_PHONE", "")
-    verified_name = os.getenv("META_VERIFIED_NAME", "") or None
-    api_version = os.getenv("META_API_VERSION", "v22.0")
-
-    if not (phone_number_id and waba_id and access_token):
-        return None  # No hay credenciales configuradas todavía
 
     account = models.MetaAccount(
         team_id=team.id,
         phone_number_id=phone_number_id,
         waba_id=waba_id,
+        encrypted_access_token=encrypted,
         display_phone=display_phone,
         verified_name=verified_name,
-        access_token=access_token,
         api_version=api_version,
         is_active=True,
+        status="active",
+        last_validated_at=now,
+        validation_error=None,
+        registered_by_user_id=registered_by.id,
     )
     db.add(account)
     db.commit()
     db.refresh(account)
     return account
+
+
+def disconnect_meta_account(db: Session, team: models.Team) -> bool:
+    """Elimina la MetaAccount del team si existe.
+
+    Retorna True si se eliminó una fila, False si no había nada que eliminar.
+    """
+    account = get_meta_account_for_team(db, team.id)
+    if account is None:
+        return False
+    db.delete(account)
+    db.commit()
+    return True
+
+
+def is_meta_account_usable(account: Optional[models.MetaAccount]) -> bool:
+    """True si la cuenta existe, está activa y su status permite enviar mensajes.
+
+    Se usa desde routers/mensajes.py para bloquear envíos con cuentas pending o
+    invalidas.
+    """
+    if account is None:
+        return False
+    if not account.is_active:
+        return False
+    if account.status != "active":
+        return False
+    return True
+
+
+def get_decrypted_access_token(account: models.MetaAccount) -> str:
+    """Descifra el access_token al vuelo.
+
+    IMPORTANTE: el plaintext devuelto solo debe usarse como argumento inmediato
+    a una llamada HTTP (ej: header Authorization). No lo guardes en variables de
+    larga vida ni lo loguees.
+    """
+    from .services.crypto import decrypt_secret
+    return decrypt_secret(account.encrypted_access_token)
 
 
 # ===================== Conversations & Messages =====================

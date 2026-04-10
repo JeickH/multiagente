@@ -1,6 +1,6 @@
 from datetime import datetime
 from typing import Optional, List, Dict
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
 
 # ===== Users =====
@@ -77,7 +77,12 @@ class PermissionUpdate(BaseModel):
 
 
 # ===== Meta Account =====
+# SEGURIDAD: este schema de salida NUNCA debe contener encrypted_access_token
+# ni ningún otro secreto. extra='forbid' previene que un dev añada accidentalmente
+# un campo sensible al modelo y se serialice al cliente.
 class MetaAccountOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True, extra="forbid")
+
     id: int
     phone_number_id: str
     waba_id: str
@@ -86,15 +91,21 @@ class MetaAccountOut(BaseModel):
     api_version: str
     is_active: bool
 
-    class Config:
-        from_attributes = True
-
 
 class MetaAccountStatusOut(BaseModel):
     """Estado de la cuenta de Meta para el módulo Mi Plan.
 
     - registered=False: el usuario no tiene cuenta de WhatsApp asignada.
     - registered=True:  devuelve display_phone y verified_name (nombre visible).
+
+    Campos adicionales para el flujo de conexión/validación (Sprint 7):
+    - status: estado del ciclo de vida de la cuenta
+      (pending/active/invalid/disconnected).
+    - last_validated_at: última vez que el backend validó el token contra
+      Meta Graph API.
+    - validation_error: mensaje del último error de validación (si aplica).
+    - can_manage_meta_account: true si el usuario actual es owner del team
+      y por tanto puede conectar/desconectar la cuenta desde la UI.
     """
     registered: bool
     display_phone: Optional[str] = None
@@ -102,6 +113,42 @@ class MetaAccountStatusOut(BaseModel):
     phone_number_id: Optional[str] = None
     waba_id: Optional[str] = None
     is_active: Optional[bool] = None
+    status: Optional[str] = None
+    last_validated_at: Optional[datetime] = None
+    validation_error: Optional[str] = None
+    can_manage_meta_account: bool = False
+
+
+class MetaAccountRegisterIn(BaseModel):
+    """Entrada del formulario de conexión de cuenta Meta.
+
+    El owner del team pega estos 3 datos desde la UI de Mi Plan. El backend:
+    1. Valida el formato (prefix, longitud, strip).
+    2. Valida el token contra Meta Graph API (GET /{phone_number_id}).
+    3. Cifra el access_token con Fernet antes de persistir.
+
+    SEGURIDAD: este schema solo se usa como INPUT. El token nunca se devuelve
+    al cliente en schemas de salida.
+    """
+    phone_number_id: str = Field(..., min_length=5, max_length=64)
+    waba_id: str = Field(..., min_length=5, max_length=64)
+    access_token: str = Field(..., min_length=20, max_length=4096)
+
+    @field_validator("phone_number_id", "waba_id")
+    @classmethod
+    def _strip_and_validate_id(cls, v: str) -> str:
+        v = (v or "").strip()
+        if not v.isdigit():
+            raise ValueError("debe ser numérico")
+        return v
+
+    @field_validator("access_token")
+    @classmethod
+    def _strip_and_validate_token(cls, v: str) -> str:
+        v = (v or "").strip()
+        if not v.startswith("EAA"):
+            raise ValueError("formato de token inválido")
+        return v
 
 
 # ===== Conversations & Messages =====

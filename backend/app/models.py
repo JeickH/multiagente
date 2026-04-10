@@ -112,12 +112,42 @@ class MetaAccount(Base):
     waba_id = Column(String, nullable=False)
     display_phone = Column(String, nullable=False)
     verified_name = Column(String, nullable=True)  # Nombre visible en WhatsApp Business
-    access_token = Column(Text, nullable=False)
+    # IMPORTANTE: este campo guarda el ciphertext Fernet del access token.
+    # Para descifrarlo usa backend.app.services.crypto.decrypt_secret.
+    # NUNCA lo incluyas en un schema Pydantic de salida.
+    encrypted_access_token = Column(Text, nullable=False)
     api_version = Column(String, nullable=False, default="v22.0")
     is_active = Column(Boolean, nullable=False, default=True)
+    status = Column(
+        String(32), nullable=False, default="pending", index=True
+    )  # pending | active | invalid | disconnected
+    last_validated_at = Column(DateTime, nullable=True)
+    validation_error = Column(String(512), nullable=True)
+    registered_by_user_id = Column(
+        Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(
+        DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+        nullable=False,
+    )
+
+    __table_args__ = (
+        UniqueConstraint("phone_number_id", name="uq_meta_accounts_phone_number_id"),
+    )
 
     team = relationship("Team", back_populates="meta_account")
+
+    def __repr__(self) -> str:
+        return (
+            f"<MetaAccount id={self.id} team_id={self.team_id} "
+            f"phone_number_id={self.phone_number_id} status={self.status!r} "
+            f"encrypted_access_token=<REDACTED>>"
+        )
+
+    __str__ = __repr__
 
 
 class Conversation(Base):

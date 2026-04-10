@@ -1,9 +1,11 @@
-fastapi
+fastapi>=0.135,<0.137
 uvicorn[standard]
-SQLAlchemy
+SQLAlchemy>=1.4,<1.6
 psycopg2-binary
 python-dotenv
-passlib[bcrypt]
-python-jose[cryptography]
-pydantic[email]
+passlib[bcrypt]>=1.7,<1.9
+python-jose[cryptography]>=3.5,<3.7
+pydantic[email]>=2.12,<2.14
+pydantic-settings>=2.0.0,<3.0.0
 httpx
+cryptography>=46.0.0,<48.0.0
