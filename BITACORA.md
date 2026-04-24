@@ -626,8 +626,11 @@ ECS Fargate backend (FastAPI) → RDS
 | 135 | `aws amplify create-domain-association` con apex + www | Deploy AWS | ✅ Completado | `--enable-auto-sub-domain` para que Amplify maneje los CNAMEs |
 | 136 | DNS records (ACM validation + apex A-alias + www CNAME) | Deploy AWS | ✅ Completado | Amplify creó los records automáticamente al detectar la zone |
 | 137 | Esperar validación ACM y status `AVAILABLE` de Amplify | Deploy AWS | ✅ Completado | Tomó ~2 min tras cambio de nameservers |
-| 138 | Smoke test HTTPS + API | QA | ✅ Completado | `https://glomabeauty.com` 200, `https://www.glomabeauty.com` 200, `/login` 200, `POST /api/login` 200 |
-| 139 | Commit + push Sprint 12 | PM | ⬜ En curso | |
+| 138 | Smoke test HTTPS inicial | QA | ✅ Completado | Primer round: `https://glomabeauty.com` y `www` servían TODO el sitio (incluida la plataforma), lo que NO era el requisito. Fix en tarea 140. |
+| 139 | Middleware Next.js: glomabeauty.com solo sirve landing | Dev Plataforma | ✅ Completado | `frontend/middleware.ts` con detección por `Host`. Rewrite `/` → `/gloma`. Otras rutas de plataforma → 404 brandeado vía rewrite a path inexistente. Whitelist: `/gloma/*`, `/api/landing/*`, `/_next/*`, `/favicon.ico` |
+| 140 | Página `pages/404.tsx` brandeada con identidad Gloma | Dev Plataforma | ✅ Completado | Syne + Inter, paleta Gloma, CTAs "Volver al inicio" y WhatsApp |
+| 141 | Build Amplify + validación online de la separación por dominio | QA | ✅ Completado | `glomabeauty.com/` 200 landing, `glomabeauty.com/login` 404, `/bots` 404. `main.d1cfl9ey07f61o.amplifyapp.com/login` sigue 200 (plataforma completa). Build job 10 SUCCEED |
+| 142 | Commit + push Sprint 12 | PM | ⬜ En curso | Último commit: `7a76e2f` + este cierre |
 
 ### Follow-ups abiertos (no bloqueantes)
 
@@ -681,3 +684,6 @@ ECS Fargate backend (FastAPI) → RDS
 | 2026-04-24 | Deploy AWS | Sprint 12: hosted zone `glomabeauty.com` en Route 53 (`Z0523904259PXITAV9OOV`). Domain association en Amplify con apex + www, ACM cert auto-validado. |
 | 2026-04-24 | CEO | Nameservers de `glomabeauty.com` cambiados en HostGator a los 4 de Route 53. |
 | 2026-04-24 | QA | Smoke test dominio propio: `https://glomabeauty.com`, `https://www.glomabeauty.com`, `/login` y `POST /api/login` todos 200. Landing Gloma ahora vive en la raíz del dominio. |
+| 2026-04-24 | CEO | Corrección de alcance: glomabeauty.com debe servir SOLO la landing; la plataforma se queda en la URL default de Amplify. |
+| 2026-04-24 | Dev Plataforma | `frontend/middleware.ts` con separación por host: `glomabeauty.com/` sirve la landing (rewrite interno a `/gloma`), otras rutas → 404 brandeado. Whitelist de assets y `/api/landing/*`. Página `/404.tsx` con identidad Gloma. |
+| 2026-04-24 | QA | Separación por dominio validada online: `glomabeauty.com/login` y `/bots` → 404; `main.d1cfl9ey07f61o.amplifyapp.com/login` → 200. Amplify build job 10 SUCCEED. |
