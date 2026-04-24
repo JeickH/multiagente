@@ -203,14 +203,15 @@ class NewConversationMessageIn(BaseModel):
     language_code: str = "es_CO"
 
 
-# ===== Sprint 8: Bots =====
+# ===== Sprint 8/9: Bots =====
 class BotListItem(BaseModel):
-    """Fila del listado `/bots` (cada fila de la tabla del mock)."""
+    """Fila del listado `/bots`."""
     id: int
     name: str
-    is_premium: bool
     status: str
     channels: List[str]                 # ["whatsapp", "instagram", ...]
+    trigger_type: str                   # 'default' | 'keyword' | 'manual'
+    trigger_config: Optional[dict] = None
     triggered_count: int
     completed_steps_count: int
     finished_count: int
@@ -239,9 +240,10 @@ class BotDetail(BaseModel):
     id: int
     name: str
     description: Optional[str] = None
-    is_premium: bool
     status: str
     channels: List[str]
+    trigger_type: str
+    trigger_config: Optional[dict] = None
     triggered_count: int
     completed_steps_count: int
     finished_count: int
@@ -251,3 +253,28 @@ class BotDetail(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class BotSimulateIn(BaseModel):
+    """Input para el endpoint de simulación del bot.
+
+    El estado lo mantiene el cliente (frontend): en el primer turno envía
+    `state=None` y `user_input=None`; en turnos siguientes envía el
+    `next_state` que recibió del turno anterior más el `user_input`
+    (si el paso previo pidió uno).
+    """
+    state: Optional[dict] = None        # {"current_step_id": int, "variables": {...}}
+    user_input: Optional[str] = None
+
+
+class BotAction(BaseModel):
+    """Acción individual que el motor pide al cliente (pintar en el chat)."""
+    type: str   # 'say' | 'say_media' | 'ask' | 'pause' | 'end'
+    payload: dict = {}
+
+
+class BotSimulateOut(BaseModel):
+    """Output del endpoint de simulación."""
+    actions: List[BotAction] = []
+    next_state: Optional[dict] = None
+    finished: bool = False

@@ -84,39 +84,43 @@ def main() -> int:
             print(f"ERROR: {DEMO_OWNER_EMAIL} no tiene team. Haz login una vez para auto-provisionarlo.")
             return 1
 
-        team = membership.team
-        print(f"Usuario: {owner.correo} | team_id={team.id} | team={team.nombre}")
+        print(f"Usuario: {owner.correo} (id={owner.id})")
 
         existing = (
             db.query(models.Bot)
-            .filter(models.Bot.team_id == team.id, models.Bot.name == DEMO_BOT_NAME)
+            .filter(models.Bot.user_id == owner.id, models.Bot.name == DEMO_BOT_NAME)
             .first()
         )
         if existing:
             print(f"Ya existe el bot {DEMO_BOT_NAME!r} (id={existing.id}). Nada por hacer.")
             return 0
 
+        # Bot 1: default (catch-all para mensajes nuevos)
         bot = crud.create_bot_with_steps(
             db,
-            team,
+            owner,
             name=DEMO_BOT_NAME,
             description="Bot demo de 5 pasos — catálogo Talulah.",
             channels=[models.BOT_CHANNEL_WHATSAPP],
-            is_premium=False,
+            trigger_type=models.BOT_TRIGGER_DEFAULT,
+            trigger_config=None,
             steps=DEMO_STEPS,
         )
-        print(f"Creado bot id={bot.id} con {len(bot.steps)} pasos.")
+        print(f"Creado bot id={bot.id} ({bot.trigger_type}) con {len(bot.steps)} pasos.")
 
-        # Segundo bot para que el listado luzca como la referencia
+        # Bot 2: activado por keyword
         second_exists = (
             db.query(models.Bot)
-            .filter(models.Bot.team_id == team.id, models.Bot.name == "Confirmación de pedido")
+            .filter(
+                models.Bot.user_id == owner.id,
+                models.Bot.name == "Confirmación de pedido",
+            )
             .first()
         )
         if not second_exists:
             bot2 = crud.create_bot_with_steps(
                 db,
-                team,
+                owner,
                 name="Confirmación de pedido",
                 description="Bot de confirmación post-compra (demo).",
                 channels=[
@@ -124,7 +128,8 @@ def main() -> int:
                     models.BOT_CHANNEL_INSTAGRAM,
                     models.BOT_CHANNEL_MESSENGER,
                 ],
-                is_premium=True,
+                trigger_type=models.BOT_TRIGGER_KEYWORD,
+                trigger_config={"keywords": ["pedido", "compra", "orden"]},
                 steps=[
                     {
                         "step_type": "send_text",
@@ -148,7 +153,7 @@ def main() -> int:
                     },
                 ],
             )
-            print(f"Creado bot premium id={bot2.id}.")
+            print(f"Creado bot id={bot2.id} ({bot2.trigger_type}).")
 
         return 0
     finally:

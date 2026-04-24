@@ -2,6 +2,22 @@
 
 > Última actualización: 2026-04-24
 
+## Índice
+
+| Sprint | Objetivo | Estado |
+|--------|----------|--------|
+| [Sprint 0](#sprint-0---setup-del-proyecto--cerrado) | Setup del monorepo, agentes, Docker local | CERRADO |
+| [Sprint 1](#sprint-1---tareas-del-ceo-bloqueantes--cerrado) | Cuenta AWS + dominio (tareas del CEO) | CERRADO |
+| [Sprint 2](#sprint-2---backend-funcional--cerrado) | Esquemas de BD y módulos backend iniciales | CERRADO |
+| [Sprint 3](#sprint-3---frontend-funcional--cerrado) | UIs iniciales de los módulos | CERRADO |
+| [Sprint 4](#sprint-4---infraestructura-aws--cerrado) | Provisionamiento AWS (ECS, RDS, Amplify, ALB) | CERRADO |
+| [Sprint 5](#sprint-5---qa--cerrado) | Validaciones QA del flujo base | CERRADO |
+| [Sprint Pendientes](#sprint-pendientes--tareas-consolidadas-de-sprints-05) | Backlog consolidado de tareas abiertas | ABIERTO |
+| [Sprint 6](#sprint-6---módulo-responder-mensajes-meta-whatsapp-cloud-api) | Módulo Mensajes con Meta WhatsApp Cloud API | DONE |
+| [Sprint 7](#sprint-7---seguridad-agente-experto-en-seguridad--credenciales-meta-cifradas) | Seguridad: credenciales Meta cifradas per-tenant | DONE |
+| [Sprint 8](#sprint-8---módulo-bots-inteligentes-visualización-read-only) | Módulo Bots (visualización read-only) | DONE |
+| [Sprint 9](#sprint-9---bots-due%C3%B1o-por-cuenta-triggers-export-y-simulador) | Bots: dueño por cuenta, triggers, export JSON, simulador | EN CURSO |
+
 ---
 
 ## Sprint 0 - Setup del Proyecto — CERRADO
@@ -112,6 +128,8 @@
 | 31 | Configurar Route 53 + dominio personalizado | Sprint 4 | Deploy AWS | ⬜ Pendiente | Depende de #15 |
 | 32 | Configurar GitHub Actions para CI/CD | Sprint 4 | Deploy AWS | ⬜ Pendiente | |
 | 35 | Test de carga (~10 usuarios concurrentes) | Sprint 5 | QA | ⬜ Pendiente | Infraestructura AWS ya disponible |
+| 101 | Aplicar migración Sprint 8 en RDS (regla paridad BD) | Sprint 8 | Deploy AWS | ⏸️ Diferido | Servicios AWS apagados por ahora. Cuando se reactiven: build imagen `:sprint8` → push ECR → update-service → `create_all()` crea tablas nuevas. |
+| 103 | Limpieza de ramas residuales y PR huérfano | Sprint 8 | Dev Plataforma | ✅ Completado 2026-04-24 | PR #1 cerrado (superseded por PR #2, commit `41b0a9a`). Ramas `feature/modulo-mensajes-meta` y `feature/seguridad-meta-credentials` borradas local + remoto. |
 
 ---
 
@@ -420,8 +438,66 @@ configuramos y el usuario los visualiza en su panel.
 | 98 | QA: E2E listado + detalle + seed aplicado contra docker-compose | QA | ✅ Completado | `prueba@gmail.com` ve 2 bots, detalle id=1 devuelve 5 pasos |
 | 99 | Seguridad: revisión multi-tenant (filtro por team, sin IDOR) | Seguridad | ✅ Completado | Usuario `otro@test.com` → lista vacía `[]`; GET `/bots/1` → 404 |
 | 100 | Fix infra: `BACKEND_URL` como build-arg en Dockerfile.frontend | Deploy AWS | ✅ Completado | Next.js bakea rewrites en build. Documentar para Amplify |
-| 101 | Follow-up: aplicar migración Sprint 8 en RDS (regla paridad BD) | Deploy AWS | ⬜ Pendiente | `aws ecs run-task` con command override, igual que Sprint 7 |
-| 102 | Commit + PR a `main` | PM | ⬜ Pendiente | Al final del sprint |
+| 101 | Follow-up: aplicar migración Sprint 8 en RDS (regla paridad BD) | Deploy AWS | ⏸️ Diferido | Movido a Sprint Pendientes. Servicios AWS apagados por decisión del CEO (2026-04-24) |
+| 102 | Commit + push a `main` | PM | ✅ Completado | Commit `cf77351` directo a `main` (no hubo rama feature en Sprint 8). Push a `origin/main` el 2026-04-24 |
+
+---
+
+## Sprint 9 - Bots: dueño por cuenta, triggers, export y simulador
+
+**Rama**: trabajo directo en `main` (continuidad con Sprint 8)
+
+**Contexto**: tras probar el Sprint 8 el CEO pidió ajustes de modelo y UX:
+el dueño del bot debe ser la cuenta (no el team), el listado se vuelve más
+limpio (sin acciones, sin premium, sin iconos de canales al lado del
+nombre), y se introduce la noción de **trigger** (cómo se activa un bot) y
+**bot default** (catch-all para mensajes nuevos). Además se arranca el
+motor de ejecución del flujo, reutilizable para "probar bot" en pop-up y,
+en el futuro, para responder a mensajes reales entrantes.
+
+### Decisiones clave
+
+- **Dueño = `user_id` + visibilidad por team**: cada bot tiene `user_id`
+  (dueño/creador) en vez de `team_id`. El listado de `/bots` resuelve la
+  visibilidad por el owner del team del usuario autenticado: cualquier
+  miembro del team ve los bots del owner. Así en el MVP (1 team por user)
+  no cambia nada práctico, y cuando entren agents reales el "dueño"
+  sigue siendo la cuenta owner — no hay bots duplicados por miembro.
+- **Triggers**: enum en `trigger_type` — `default` | `keyword` | `manual`.
+  `trigger_config` guarda parámetros (ej: `{"keywords": ["hola","menu"]}`).
+  Solo un bot por user puede tener `trigger_type='default'` (constraint
+  con UNIQUE parcial en Postgres).
+- **Todos los bots son activables por otro bot**: no se introduce un
+  booleano aparte. El caso de "este bot solo se invoca desde otro" queda
+  cubierto por `trigger_type='manual'`.
+- **Motor de ejecución en `services/bot_engine.py`**: lógica pura
+  (stateless) que recibe `(bot, state, user_input)` y retorna
+  `{actions, next_state}`. En simulación el estado vive en el frontend;
+  en ejecución real contra Meta vivirá en una tabla `bot_sessions`
+  (fuera de alcance de este sprint).
+
+### Fuera de alcance
+
+- Editor visual del flujo del bot (sigue solo lectura).
+- Tabla `bot_sessions` y ejecución contra mensajes entrantes reales
+  (vendrá cuando se integre con el webhook de Meta).
+- Migración de este sprint en RDS (servicios AWS apagados).
+
+### Tareas del Sprint 9
+
+| # | Tarea | Responsable | Estado | Notas |
+|---|-------|-------------|--------|-------|
+| 104 | Índice de sprints al inicio de BITACORA | PM | ✅ Completado | Enlaces a todas las secciones |
+| 105 | Schema: agregar `bots.user_id`, `trigger_type`, `trigger_config`; drop `is_premium` | Experto BD | ✅ Completado | UNIQUE parcial `uq_one_default_bot_per_user` WHERE trigger_type='default' |
+| 106 | Migración idempotente `migrate_sprint9_bots_ownership_triggers.py` | Experto BD | ✅ Completado | ADD/DROP IF EXISTS + backfill `user_id` desde `teams.owner_user_id`. Aplicada local |
+| 107 | Modelos + schemas + CRUD: `list_bots_visible_to_member`, `get_bot_visible_to_member`, `bot_to_export_dict` | Dev Plataforma | ✅ Completado | Visibilidad por owner del team (cualquier miembro ve los bots del owner). IDOR-safe |
+| 108 | Motor `services/bot_engine.py` — `advance(bot, state, user_input)` | Dev Plataforma | ✅ Completado | Puro y stateless. 7 tipos de paso. Tope `MAX_STEPS_PER_TURN=50` |
+| 109 | Endpoints: `GET /bots/export` (JSON) + `POST /bots/{id}/simulate` | Dev Plataforma | ✅ Completado | Export con `Content-Disposition attachment`; simulate retorna `{actions, next_state, finished}` |
+| 110 | Seed actualizado con triggers | Dev Plataforma | ✅ Completado | `catalogo_talulah` = default; `Confirmación de pedido` = keyword `["pedido","compra","orden"]` |
+| 111 | UI `/bots`: tabla minimalista + columna Activación + descarga JSON | Dev Plataforma | ✅ Completado | Sin Plantillas / Acciones / Pasos terminados / Terminada / iconos / premium / Agregar. Badges ⭐Default, 🔑Keyword, 🔗Manual |
+| 112 | UI `/bots/[id]`: solo botón "Probar" + pop-up modal tipo chat | Dev Plataforma | ✅ Completado | Modal 600px con burbujas WhatsApp-style. Estado en cliente. Reset. Auto-scroll |
+| 113 | E2E: migración + re-seed + listado + export + simulate 2-turnos + multi-tenant | QA | ✅ Completado | Simulate turno 1 → `say+ask` (2 acciones); turno 2 con `"catalogo"` → `say_media+say+end` (3 acciones, finished=true). `otro@test.com` → `[]` y 404 |
+| 114 | Commit + push a `main` | PM | ⬜ En curso | Trabajo directo sobre main (sin rama feature) |
 
 ---
 
@@ -455,3 +531,8 @@ configuramos y el usuario los visualiza en su panel.
 | 2026-04-24 | Dev Plataforma | UI `/bots`: tabla estilo mock con tabs "Tus bots" + badge verde, iconos de canales (W/I/M), diamante dorado premium, acciones deshabilitadas. Link azul con `target="_blank"`. |
 | 2026-04-24 | Dev Plataforma | UI `/bots/[id]`: pantalla completa sin sidebar, fondo grid, nodos con color-coded por tipo de paso, conexiones SVG bezier punteadas con flecha. Botones Guardar/Probar/Más deshabilitados (vista read-only). |
 | 2026-04-24 | QA + Seguridad | Validación E2E: `prueba@gmail.com` ve 2 bots, detalle OK con 5 pasos + next_step_id. Multi-tenant: `otro@test.com` → `[]` y 404 al acceder `/bots/1`. |
+| 2026-04-24 | PM | Sprint 9 arrancado: dueño = cuenta, triggers, export JSON, simulador pop-up. Índice de sprints añadido al inicio de BITACORA. |
+| 2026-04-24 | Experto BD | Migración Sprint 9: `bots.user_id` (FK users, backfill desde team.owner), `trigger_type`, `trigger_config`, drop `is_premium`, UNIQUE parcial `uq_one_default_bot_per_user`. Aplicada en local. |
+| 2026-04-24 | Dev Plataforma | Motor `services/bot_engine.py` puro/stateless (reutilizable simulación ↔ webhook real). Endpoints `GET /bots/export` (JSON con `Content-Disposition`) y `POST /bots/{id}/simulate` ({actions, next_state, finished}). Seed con triggers actualizados. |
+| 2026-04-24 | Dev Plataforma | UI `/bots` minimalista: sin Plantillas, sin iconos, sin Acciones, sin premium, sin "Agregar". Columna Activación con badges ⭐/🔑/🔗. Botón descargar JSON. UI `/bots/[id]`: solo "Probar Chatbot" + modal pop-up con chat WhatsApp-style. |
+| 2026-04-24 | QA | E2E post-Sprint 9 OK: login, listado (2 bots con triggers), export JSON (1827 bytes), simulate multi-turno (turno 1: say+ask; turno 2 input="catalogo": say_media+say+end finished=true), multi-tenant: `otro@test.com` ve [] y 404. |

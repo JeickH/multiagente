@@ -342,7 +342,7 @@ def last_message_preview(conv: models.Conversation) -> Optional[str]:
     return text[:80]
 
 
-# ===================== Sprint 8: Bots =====================
+# ===================== Sprint 8/9: Bots =====================
 import json as _json
 
 
@@ -362,22 +362,39 @@ def _parse_config(raw: Optional[str]) -> Optional[dict]:
     return data if isinstance(data, dict) else None
 
 
-def list_bots_by_team(db: Session, team_id: int) -> List[models.Bot]:
+def _resolve_owner_user_id(db: Session, member: models.TeamMember) -> int:
+    """Sprint 9: los bots son del owner del team. Cualquier miembro del
+    team los ve, pero administrativamente pertenecen al owner.
+
+    Para el MVP (1 team por user → que es owner de sí mismo) esto devuelve
+    simplemente `member.user_id`. Cuando entren agents, los bots seguirán
+    colgando del owner.
+    """
+    team = member.team
+    return team.owner_user_id if team else member.user_id
+
+
+def list_bots_visible_to_member(
+    db: Session, member: models.TeamMember
+) -> List[models.Bot]:
+    """Bots que puede ver un miembro del team: los del owner del team."""
+    owner_id = _resolve_owner_user_id(db, member)
     return (
         db.query(models.Bot)
-        .filter(models.Bot.team_id == team_id)
+        .filter(models.Bot.user_id == owner_id)
         .order_by(desc(models.Bot.updated_at))
         .all()
     )
 
 
-def get_bot_for_team(
-    db: Session, team_id: int, bot_id: int
+def get_bot_visible_to_member(
+    db: Session, member: models.TeamMember, bot_id: int
 ) -> Optional[models.Bot]:
-    """IDOR-safe: exige coincidencia team_id + bot_id."""
+    """IDOR-safe: el bot debe pertenecer al owner del team del miembro."""
+    owner_id = _resolve_owner_user_id(db, member)
     return (
         db.query(models.Bot)
-        .filter(models.Bot.id == bot_id, models.Bot.team_id == team_id)
+        .filter(models.Bot.id == bot_id, models.Bot.user_id == owner_id)
         .first()
     )
 
@@ -386,9 +403,10 @@ def bot_to_list_item(bot: models.Bot) -> dict:
     return {
         "id": bot.id,
         "name": bot.name,
-        "is_premium": bot.is_premium,
         "status": bot.status,
         "channels": _parse_channels(bot.channels),
+        "trigger_type": bot.trigger_type,
+        "trigger_config": _parse_config(bot.trigger_config),
         "triggered_count": bot.triggered_count,
         "completed_steps_count": bot.completed_steps_count,
         "finished_count": bot.finished_count,
@@ -402,9 +420,10 @@ def bot_to_detail(bot: models.Bot) -> dict:
         "id": bot.id,
         "name": bot.name,
         "description": bot.description,
-        "is_premium": bot.is_premium,
         "status": bot.status,
         "channels": _parse_channels(bot.channels),
+        "trigger_type": bot.trigger_type,
+        "trigger_config": _parse_config(bot.trigger_config),
         "triggered_count": bot.triggered_count,
         "completed_steps_count": bot.completed_steps_count,
         "finished_count": bot.finished_count,
@@ -424,30 +443,60 @@ def bot_to_detail(bot: models.Bot) -> dict:
     }
 
 
+def bot_to_export_dict(bot: models.Bot) -> dict:
+    """Representación portable para el export JSON — sin métricas ni IDs internos."""
+    return {
+        "name": bot.name,
+        "description": bot.description,
+        "status": bot.status,
+        "channels": _parse_channels(bot.channels),
+        "trigger_type": bot.trigger_type,
+        "trigger_config": _parse_config(bot.trigger_config),
+        "steps": [
+            {
+                "position": s.position,
+                "step_type": s.step_type,
+                "label": s.label,
+                "config": _parse_config(s.config) or {},
+            }
+            for s in bot.steps
+        ],
+    }
+
+
 def create_bot_with_steps(
     db: Session,
-    team: models.Team,
+    owner: models.User,
     *,
     name: str,
     description: Optional[str],
     channels: List[str],
-    is_premium: bool = False,
+    trigger_type: str = models.BOT_TRIGGER_MANUAL,
+    trigger_config: Optional[dict] = None,
     steps: Optional[List[dict]] = None,
 ) -> models.Bot:
-    """Helper idempotente usado por seed scripts y tests.
+    """Crea un bot + pasos lineales.
 
-    `steps` es una lista de dicts con keys: step_type, label, config (dict).
-    Se persisten en orden y se enlazan linealmente vía next_step_id.
+    Propietario = `owner` (la cuenta dueña, Sprint 9). El `team_id` se
+    completa con el team propio del owner para no romper compat.
     """
+    if trigger_type not in models.AVAILABLE_BOT_TRIGGERS:
+        raise ValueError(f"trigger_type inválido: {trigger_type!r}")
+
     channels_csv = ",".join(
         c for c in channels if c in models.AVAILABLE_BOT_CHANNELS
     ) or models.BOT_CHANNEL_WHATSAPP
+
+    own_team = get_team_by_owner(db, owner)
+
     bot = models.Bot(
-        team_id=team.id,
+        user_id=owner.id,
+        team_id=own_team.id if own_team else None,
         name=name,
         description=description,
-        is_premium=is_premium,
         channels=channels_csv,
+        trigger_type=trigger_type,
+        trigger_config=_json.dumps(trigger_config) if trigger_config else None,
     )
     db.add(bot)
     db.commit()
@@ -470,7 +519,6 @@ def create_bot_with_steps(
         db.refresh(step)
         created_steps.append(step)
 
-    # Enlazar linealmente: step[i].next_step_id = step[i+1].id
     for idx in range(len(created_steps) - 1):
         created_steps[idx].next_step_id = created_steps[idx + 1].id
     if created_steps:

@@ -213,20 +213,37 @@ BOT_STEP_TYPES = (
     "end",             # fin del flujo
 )
 
+BOT_TRIGGER_DEFAULT = "default"    # catch-all para mensajes nuevos (1 por user)
+BOT_TRIGGER_KEYWORD = "keyword"    # se activa si el mensaje matchea keywords
+BOT_TRIGGER_MANUAL = "manual"      # solo invocado por otro bot o manualmente
+AVAILABLE_BOT_TRIGGERS = (
+    BOT_TRIGGER_DEFAULT,
+    BOT_TRIGGER_KEYWORD,
+    BOT_TRIGGER_MANUAL,
+)
+
 
 class Bot(Base):
     __tablename__ = "bots"
     id = Column(Integer, primary_key=True, index=True)
+    # Sprint 9: dueño = cuenta. team_id se mantiene por compat pero no se usa
+    # como fuente de verdad para visibilidad.
+    user_id = Column(
+        Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
     team_id = Column(
-        Integer, ForeignKey("teams.id", ondelete="CASCADE"), nullable=False, index=True
+        Integer, ForeignKey("teams.id", ondelete="CASCADE"), nullable=True, index=True
     )
     name = Column(String(120), nullable=False)
     description = Column(String(512), nullable=True)
-    is_premium = Column(Boolean, nullable=False, default=False)
     status = Column(String(32), nullable=False, default="active")  # active | paused | draft
     # CSV de canales vinculados. Ej: "whatsapp,instagram,messenger".
-    # MVP solo-lectura; migrar a tabla bot_channels cuando se añada edición.
     channels = Column(String(255), nullable=False, default="whatsapp")
+    # Sprint 9: trigger de activación
+    trigger_type = Column(
+        String(32), nullable=False, default=BOT_TRIGGER_MANUAL
+    )
+    trigger_config = Column(Text, nullable=True)  # JSON serializado
     triggered_count = Column(Integer, nullable=False, default=0)
     completed_steps_count = Column(Integer, nullable=False, default=0)
     finished_count = Column(Integer, nullable=False, default=0)
@@ -236,9 +253,10 @@ class Bot(Base):
     )
 
     __table_args__ = (
-        Index("ix_bots_team_updated", "team_id", "updated_at"),
+        Index("ix_bots_user_updated", "user_id", "updated_at"),
     )
 
+    user = relationship("User")
     team = relationship("Team")
     steps = relationship(
         "BotStep",

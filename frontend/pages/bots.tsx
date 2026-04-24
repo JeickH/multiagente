@@ -5,9 +5,10 @@ import Layout from '../components/Layout';
 type BotListItem = {
   id: number;
   name: string;
-  is_premium: boolean;
   status: string;
   channels: string[];
+  trigger_type: 'default' | 'keyword' | 'manual';
+  trigger_config: Record<string, any> | null;
   triggered_count: number;
   completed_steps_count: number;
   finished_count: number;
@@ -32,50 +33,27 @@ function relativeTime(iso: string): string {
   return `${diffY} año${diffY === 1 ? '' : 's'} hace`;
 }
 
-function ChannelIcon({ channel }: { channel: string }) {
-  const base = 'inline-flex items-center justify-center w-4 h-4 rounded-full text-[10px] font-bold text-white';
-  if (channel === 'whatsapp') {
-    return <span className={`${base} bg-green-500`} title="WhatsApp">W</span>;
-  }
-  if (channel === 'instagram') {
+function TriggerBadge({ bot }: { bot: BotListItem }) {
+  if (bot.trigger_type === 'default') {
     return (
-      <span
-        className={`${base} bg-gradient-to-tr from-pink-500 via-red-500 to-yellow-400`}
-        title="Instagram"
-      >
-        I
+      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-50 text-green-700 border border-green-200">
+        <span>⭐</span> Default
       </span>
     );
   }
-  if (channel === 'messenger') {
-    return <span className={`${base} bg-blue-500`} title="Messenger">M</span>;
+  if (bot.trigger_type === 'keyword') {
+    const keywords: string[] = bot.trigger_config?.keywords || [];
+    return (
+      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200">
+        <span>🔑</span>
+        {keywords.length > 0 ? keywords.join(', ') : 'Keyword'}
+      </span>
+    );
   }
-  return null;
-}
-
-function PremiumBadge() {
   return (
-    <span className="inline-flex items-center text-yellow-500" title="Bot Premium">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
-        <path d="M12 2l3 7h7l-5.5 4.5L18 22l-6-4-6 4 1.5-8.5L2 9h7z" />
-      </svg>
+    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-gray-50 text-gray-600 border border-gray-200">
+      <span>🔗</span> Manual
     </span>
-  );
-}
-
-function ActionIcon({ label, children, danger }: { label: string; children: React.ReactNode; danger?: boolean }) {
-  return (
-    <button
-      type="button"
-      disabled
-      aria-label={label}
-      title={`${label} (solo lectura por ahora)`}
-      className={`inline-flex items-center justify-center w-8 h-8 rounded-md border border-gray-200 bg-white text-gray-500 hover:bg-gray-50 disabled:cursor-not-allowed ${
-        danger ? 'hover:text-red-500 hover:border-red-200' : ''
-      }`}
-    >
-      {children}
-    </button>
   );
 }
 
@@ -84,9 +62,13 @@ export default function BotsPage() {
   const [bots, setBots] = useState<BotListItem[] | null>(null);
   const [error, setError] = useState('');
   const [search, setSearch] = useState('');
+  const [downloading, setDownloading] = useState(false);
+
+  const getToken = () =>
+    typeof window !== 'undefined' ? localStorage.getItem('token') : null;
 
   useEffect(() => {
-    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+    const token = getToken();
     if (!token) {
       router.push('/login');
       return;
@@ -111,6 +93,34 @@ export default function BotsPage() {
     search.trim() === '' ? true : b.name.toLowerCase().includes(search.toLowerCase())
   );
 
+  const handleDownload = async () => {
+    const token = getToken();
+    if (!token) return;
+    setDownloading(true);
+    try {
+      const res = await fetch('/api/bots/export', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const blob = await res.blob();
+      const cd = res.headers.get('content-disposition') || '';
+      const match = cd.match(/filename="([^"]+)"/);
+      const filename = match ? match[1] : `bots-export-${Date.now()}.json`;
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (err: any) {
+      setError(err.message || 'Error descargando');
+    } finally {
+      setDownloading(false);
+    }
+  };
+
   return (
     <Layout variant="fullscreen">
       <div className="p-8 w-full">
@@ -118,27 +128,19 @@ export default function BotsPage() {
           <div>
             <h1 className="text-2xl font-bold text-gray-800">Chatbot</h1>
             <p className="text-gray-500 text-sm mt-1">
-              Selecciona un chatbot a continuación y hazlo tuyo personalizándolo.
+              Listado de los bots configurados para tu cuenta.
             </p>
           </div>
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              disabled
-              className="px-3 py-2 border border-gray-300 rounded-md text-gray-500 text-sm bg-white disabled:cursor-not-allowed"
-              title="Importar (próximamente)"
-            >
-              ⤓
-            </button>
-            <button
-              type="button"
-              disabled
-              className="px-4 py-2 bg-green-600 text-white rounded-md text-sm font-semibold opacity-60 cursor-not-allowed"
-              title="La creación de bots llegará en el próximo sprint"
-            >
-              + Agregar chatbot
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={handleDownload}
+            disabled={downloading || !bots || bots.length === 0}
+            className="px-3 py-2 border border-gray-300 rounded-md text-gray-700 text-sm bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+            title="Descargar todos los bots en formato JSON"
+          >
+            <span>⤓</span>
+            {downloading ? 'Descargando…' : 'Descargar JSON'}
+          </button>
         </div>
 
         <div className="flex items-center justify-between border-b border-gray-200 mb-4">
@@ -151,13 +153,6 @@ export default function BotsPage() {
               <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-green-500 text-white text-[10px] font-bold">
                 {bots?.length ?? 0}
               </span>
-            </button>
-            <button
-              type="button"
-              disabled
-              className="py-2 px-1 text-gray-400 font-medium text-sm cursor-not-allowed"
-            >
-              Plantillas
             </button>
           </div>
           <input
@@ -191,85 +186,41 @@ export default function BotsPage() {
               <thead className="bg-gray-50">
                 <tr className="text-sm text-gray-600">
                   <th className="text-left py-3 px-4 font-semibold">Nombre</th>
+                  <th className="text-left py-3 px-4 font-semibold">Activación</th>
                   <th className="text-center py-3 px-4 font-semibold">Disparado</th>
-                  <th className="text-center py-3 px-4 font-semibold">Pasos terminados</th>
-                  <th className="text-center py-3 px-4 font-semibold">Terminada</th>
                   <th className="text-left py-3 px-4 font-semibold">Modificado el</th>
-                  <th className="text-center py-3 px-4 font-semibold">Acciones</th>
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((bot) => {
-                  const isZero = (n: number) => (n === 0 ? 'text-gray-300' : 'text-gray-800');
-                  return (
-                    <tr
-                      key={bot.id}
-                      className="border-b border-gray-100 hover:bg-gray-50 transition-colors"
-                    >
-                      <td className="py-4 px-4">
-                        <div className="flex items-center gap-2">
-                          <a
-                            href={`/bots/${bot.id}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-blue-600 hover:text-blue-800 hover:underline font-medium"
-                          >
-                            {bot.name}
-                          </a>
-                          <div className="flex items-center gap-1">
-                            {bot.channels.map((c) => (
-                              <ChannelIcon key={c} channel={c} />
-                            ))}
-                            {bot.is_premium && <PremiumBadge />}
-                          </div>
-                        </div>
-                      </td>
-                      <td className={`text-center py-4 px-4 font-mono ${isZero(bot.triggered_count)}`}>
-                        {bot.triggered_count}
-                      </td>
-                      <td
-                        className={`text-center py-4 px-4 font-mono ${isZero(
-                          bot.completed_steps_count
-                        )}`}
+                {filtered.map((bot) => (
+                  <tr
+                    key={bot.id}
+                    className="border-b border-gray-100 hover:bg-gray-50 transition-colors"
+                  >
+                    <td className="py-4 px-4">
+                      <a
+                        href={`/bots/${bot.id}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-blue-600 hover:text-blue-800 hover:underline font-medium"
                       >
-                        {bot.completed_steps_count}
-                      </td>
-                      <td className={`text-center py-4 px-4 font-mono ${isZero(bot.finished_count)}`}>
-                        {bot.finished_count}
-                      </td>
-                      <td className="py-4 px-4 text-sm text-gray-600">
-                        <div>Creado {relativeTime(bot.created_at)}</div>
-                        <div className="text-xs text-gray-400">
-                          Actualizar {relativeTime(bot.updated_at)}
-                        </div>
-                      </td>
-                      <td className="py-4 px-4">
-                        <div className="flex items-center justify-center gap-2">
-                          <ActionIcon label="Duplicar">
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                              <rect x="9" y="9" width="13" height="13" rx="2" />
-                              <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" />
-                            </svg>
-                          </ActionIcon>
-                          <ActionIcon label="Editar">
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                              <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7" />
-                              <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z" />
-                            </svg>
-                          </ActionIcon>
-                          <ActionIcon label="Eliminar" danger>
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                              <polyline points="3 6 5 6 21 6" />
-                              <path d="M19 6l-2 14a2 2 0 01-2 2H9a2 2 0 01-2-2L5 6" />
-                              <path d="M10 11v6M14 11v6" />
-                              <path d="M9 6V4a2 2 0 012-2h2a2 2 0 012 2v2" />
-                            </svg>
-                          </ActionIcon>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
+                        {bot.name}
+                      </a>
+                    </td>
+                    <td className="py-4 px-4">
+                      <TriggerBadge bot={bot} />
+                    </td>
+                    <td className={`text-center py-4 px-4 font-mono ${bot.triggered_count === 0 ? 'text-gray-300' : 'text-gray-800'}`}>
+                      {bot.triggered_count}
+                    </td>
+                    <td className="py-4 px-4 text-sm text-gray-600">
+                      <div>Creado {relativeTime(bot.created_at)}</div>
+                      <div className="text-xs text-gray-400">
+                        Actualizado {relativeTime(bot.updated_at)}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>
