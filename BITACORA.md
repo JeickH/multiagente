@@ -16,7 +16,9 @@
 | [Sprint 6](#sprint-6---módulo-responder-mensajes-meta-whatsapp-cloud-api) | Módulo Mensajes con Meta WhatsApp Cloud API | DONE |
 | [Sprint 7](#sprint-7---seguridad-agente-experto-en-seguridad--credenciales-meta-cifradas) | Seguridad: credenciales Meta cifradas per-tenant | DONE |
 | [Sprint 8](#sprint-8---módulo-bots-inteligentes-visualización-read-only) | Módulo Bots (visualización read-only) | DONE |
-| [Sprint 9](#sprint-9---bots-due%C3%B1o-por-cuenta-triggers-export-y-simulador) | Bots: dueño por cuenta, triggers, export JSON, simulador | EN CURSO |
+| [Sprint 9](#sprint-9---bots-due%C3%B1o-por-cuenta-triggers-export-y-simulador) | Bots: dueño por cuenta, triggers, export JSON, simulador | DONE |
+| [Sprint 10](#sprint-10---motor-de-bots-real-ruta-a) | Motor de bots contra WhatsApp (Ruta A: síncrono + scheduler) | EN CURSO |
+| [Sprint 11](#sprint-11---landing-page-gloma--reactivaci%C3%B3n-aws) | Landing page Gloma + reactivación de servicios AWS | EN CURSO |
 
 ---
 
@@ -498,6 +500,83 @@ en el futuro, para responder a mensajes reales entrantes.
 | 112 | UI `/bots/[id]`: solo botón "Probar" + pop-up modal tipo chat | Dev Plataforma | ✅ Completado | Modal 600px con burbujas WhatsApp-style. Estado en cliente. Reset. Auto-scroll |
 | 113 | E2E: migración + re-seed + listado + export + simulate 2-turnos + multi-tenant | QA | ✅ Completado | Simulate turno 1 → `say+ask` (2 acciones); turno 2 con `"catalogo"` → `say_media+say+end` (3 acciones, finished=true). `otro@test.com` → `[]` y 404 |
 | 114 | Commit + push a `main` | PM | ⬜ En curso | Trabajo directo sobre main (sin rama feature) |
+
+---
+
+## Sprint 10 - Motor de bots real (Ruta A)
+
+**Rama**: trabajo directo en `main`.
+
+**Contexto**: el motor `bot_engine.advance` existe (Sprint 9) pero solo
+se usa en el pop-up de simulación. Sprint 10 lo conecta al webhook real
+de Meta para que cuando un cliente escriba al WhatsApp de una cuenta
+registrada, el backend responda con el flujo del bot correspondiente.
+
+**Arquitectura elegida (Ruta A — síncrono):**
+```
+Meta webhook → meta_webhook.py (HMAC + dedupe) →
+    resolve_bot_for_message() →
+        bot_engine.advance(bot, session.state, user_input) →
+            persist session + send actions to Meta
+```
+
+Para pasos `delay` largos se introduce tabla `bot_pending_actions` y
+un tick (`POST /internal/bot-scheduler/tick`) que se puede disparar con
+cron externo cada 60s (en local, CronCreate; en AWS, EventBridge Rule).
+
+### Tareas del Sprint 10
+
+| # | Tarea | Agente | Estado | Notas |
+|---|-------|--------|--------|-------|
+| 115 | Modelo `BotSession` + `BotPendingAction` + migración idempotente | Experto BD | ⬜ Pendiente | FK a conversation + bot. state JSON. UNIQUE (conversation_id, status='active') |
+| 116 | `resolve_bot_for_incoming_message()` en `services/bot_router.py` | Dev Plataforma | ⬜ Pendiente | Prioridad: sesión activa > keyword match > default; fallback = ningún bot |
+| 117 | Conectar `meta_webhook.py` POST: invocar bot_engine, persistir sesión, enviar acciones | Dev Plataforma | ⬜ Pendiente | Reutiliza `meta_whatsapp.send_text_message`. Idempotencia por `meta_message_id` |
+| 118 | Endpoint interno `POST /internal/bot-scheduler/tick` (procesa pending_actions vencidos) | Dev Plataforma | ⬜ Pendiente | Protegido con shared secret. Un tick procesa hasta N acciones |
+| 119 | Seguridad: auditoría del webhook (rate-limit, HMAC, logs sanitizados) | Seguridad | ⬜ Pendiente | Revisa S-04/S-05/S-18 del Sprint 7 aplicados al nuevo código |
+| 120 | QA: simulación E2E local (enviar payload Meta fake, ver respuestas en DB) | QA | ⬜ Pendiente | Usar conversación de prueba; validar 3 flujos: default nuevo, keyword match, sesión continua |
+| 121 | Commit + push Sprint 10 | PM | ⬜ Pendiente | |
+
+---
+
+## Sprint 11 - Landing page Gloma + reactivación AWS
+
+**Rama**: trabajo directo en `main`.
+
+**Contexto**: nace la marca **Gloma** (glow al mayor) — plataforma de
+automatización de ventas por WhatsApp para distribuidores mayoristas de
+moda y belleza. El CEO quiere una landing pública en la ruta `/gloma` del
+dominio AWS actual, servida desde Amplify. Se aprovecha para reactivar
+todos los servicios de AWS (apagados desde Sprint 8) y validar los
+sprints 8, 9 y 10 en producción.
+
+**Identidad Gloma** (ver `identidad_gloma/branding_gloma_v2.html`):
+- Paleta: Rosa Empolvado `#F7D1CD`, Marrón Tierra `#5E503F`, Crema `#FDFBF7`.
+- Tipografía: `Syne` (títulos, Extra Bold) + `Inter` (cuerpo).
+- Tono: sofisticado, cercano, profesional. Concepto "Soft Cyber".
+
+**Estructura de la landing:**
+1. Header con banner de fondo + frase "tecnología que resalta tu catálogo".
+2. Preview con 3 tarjetas (texto + imagen) de propuesta de valor.
+3. Funcionalidades clave (6 items con espacio para icono).
+4. Estadísticas (3 métricas con espacio para icono).
+5. Contacto: link WhatsApp + form (email + teléfono).
+6. Footer: email + teléfono + dirección de prueba + logo.
+
+### Tareas del Sprint 11
+
+| # | Tarea | Agente | Estado | Notas |
+|---|-------|--------|--------|-------|
+| 122 | Copiar assets de `identidad_gloma/` a `frontend/public/gloma/` | Dev Plataforma | ⬜ Pendiente | Los assets quedan servidos por Amplify bajo `/gloma/assets/...` |
+| 123 | Crear página `pages/gloma.tsx` con secciones header, previews, features, stats, contacto, footer | Dev Plataforma | ⬜ Pendiente | Sin Layout (no queremos sidebar). Responsive mobile-first |
+| 124 | Agregar Syne + Inter vía Google Fonts en `_document.tsx` o página | Dev Plataforma | ⬜ Pendiente | `<link>` en `<Head>` solo para la página Gloma |
+| 125 | Backend: tabla `leads` + endpoint `POST /landing/leads` | Experto BD + Dev Plataforma | ⬜ Pendiente | Captura email + telefono del form de contacto. Rate-limit básico |
+| 126 | Conectar form del landing al endpoint de leads | Dev Plataforma | ⬜ Pendiente | Estado enviado/error + mensaje de confirmación |
+| 127 | AWS: encender RDS + aplicar migraciones Sprint 8 + 9 + 10 | Deploy AWS | ⬜ Pendiente | `aws rds start-db-instance` + `ecs run-task` override para cada migración |
+| 128 | AWS: build + push imagen backend :sprint11 a ECR | Deploy AWS | ⬜ Pendiente | `sa-east-1`, incluye Sprint 8-11 |
+| 129 | AWS: actualizar task-def + subir service (desired=1) | Deploy AWS | ⬜ Pendiente | Esperar health check del ALB |
+| 130 | AWS: trigger de build de Amplify (push a main) + validar landing en URL pública | Deploy AWS | ⬜ Pendiente | `https://main.<amplify_id>.amplifyapp.com/gloma` |
+| 131 | QA: validar online (plataforma + simulador de bots + landing + form) | QA | ⬜ Pendiente | Desde un dispositivo móvil real para probar responsive |
+| 132 | Commit + push Sprint 11 | PM | ⬜ Pendiente | |
 
 ---
 
