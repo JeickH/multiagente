@@ -17,8 +17,8 @@
 | [Sprint 7](#sprint-7---seguridad-agente-experto-en-seguridad--credenciales-meta-cifradas) | Seguridad: credenciales Meta cifradas per-tenant | DONE |
 | [Sprint 8](#sprint-8---módulo-bots-inteligentes-visualización-read-only) | Módulo Bots (visualización read-only) | DONE |
 | [Sprint 9](#sprint-9---bots-due%C3%B1o-por-cuenta-triggers-export-y-simulador) | Bots: dueño por cuenta, triggers, export JSON, simulador | DONE |
-| [Sprint 10](#sprint-10---motor-de-bots-real-ruta-a) | Motor de bots contra WhatsApp (Ruta A: síncrono + scheduler) | EN CURSO |
-| [Sprint 11](#sprint-11---landing-page-gloma--reactivaci%C3%B3n-aws) | Landing page Gloma + reactivación de servicios AWS | EN CURSO |
+| [Sprint 10](#sprint-10---motor-de-bots-real-ruta-a) | Motor de bots contra WhatsApp (Ruta A: síncrono + scheduler) | DONE |
+| [Sprint 11](#sprint-11---landing-page-gloma--reactivaci%C3%B3n-aws) | Landing page Gloma + reactivación de servicios AWS | DONE |
 
 ---
 
@@ -575,8 +575,8 @@ sprints 8, 9 y 10 en producción.
 | 128 | AWS: build + push imagen backend `:sprint10` y `:sprint11` a ECR | Deploy AWS | ✅ Completado | Imágenes `linux/amd64`, push OK |
 | 129 | AWS: crear ALB + TG + Listener (se había borrado) + task-def rev 5 + service desired=1 | Deploy AWS | ✅ Completado | Nuevo ALB DNS: `multiagente-alb-673139873.sa-east-1.elb.amazonaws.com`. TG healthy. Rollout COMPLETED |
 | 130 | AWS: actualizar Amplify env var `BACKEND_URL` al nuevo ALB + trigger build | Deploy AWS | ✅ Completado | Job 8 lanzado |
-| 131 | QA: validar online (login, listado, detalle, simulador, landing, form leads) | QA | ⬜ En curso | Pendiente validar Amplify job=8 al terminar |
-| 132 | Commit + push Sprint 10 + Sprint 11 | PM | ⬜ En curso | |
+| 131 | QA: validar online (login, listado, detalle, landing, form leads) | QA | ✅ Completado | Amplify job 9 SUCCEED. `/gloma` 200, `/login` 200, `POST /api/login` 200, `POST /api/landing/leads` 200, `GET /api/bots` devuelve los 2 bots seed (`catalogo_talulah` + `Confirmación de pedido`) |
+| 132 | Commit + push Sprint 10 + Sprint 11 | PM | ✅ Completado | Commit `fc397a6` en `main` |
 
 ---
 
@@ -615,3 +615,9 @@ sprints 8, 9 y 10 en producción.
 | 2026-04-24 | Dev Plataforma | Motor `services/bot_engine.py` puro/stateless (reutilizable simulación ↔ webhook real). Endpoints `GET /bots/export` (JSON con `Content-Disposition`) y `POST /bots/{id}/simulate` ({actions, next_state, finished}). Seed con triggers actualizados. |
 | 2026-04-24 | Dev Plataforma | UI `/bots` minimalista: sin Plantillas, sin iconos, sin Acciones, sin premium, sin "Agregar". Columna Activación con badges ⭐/🔑/🔗. Botón descargar JSON. UI `/bots/[id]`: solo "Probar Chatbot" + modal pop-up con chat WhatsApp-style. |
 | 2026-04-24 | QA | E2E post-Sprint 9 OK: login, listado (2 bots con triggers), export JSON (1827 bytes), simulate multi-turno (turno 1: say+ask; turno 2 input="catalogo": say_media+say+end finished=true), multi-tenant: `otro@test.com` ve [] y 404. |
+| 2026-04-24 | PM | Sprint 10 + Sprint 11 planeados con agentes asignados (tareas 115–132). |
+| 2026-04-24 | Experto BD + Dev Plataforma | Sprint 10 código completo: tablas `bot_sessions`/`bot_pending_actions`, `services/bot_router.py` y `services/bot_runner.py`, dedupe por `meta_message_id` en webhook, endpoint `/internal/bot-scheduler/tick`. |
+| 2026-04-24 | Dev Plataforma | Sprint 11: landing `/gloma` con identidad completa (Syne/Inter, paleta rosa empolvado + marrón tierra, 7 assets en `public/gloma/`). Endpoint `/landing/leads` con rate-limit 5/IP/h. |
+| 2026-04-24 | Deploy AWS | Reactivación total de servicios AWS: RDS arrancado, imagen `:sprint11` en ECR, ALB nuevo (`multiagente-alb-673139873`), task-def rev 5, service desired=1 healthy. Migraciones 8+9+10+11 aplicadas en RDS, seed para `ceo@gloma.co`. |
+| 2026-04-24 | Deploy AWS | Amplify env vars actualizadas al nuevo ALB DNS. Job 9 SUCCEED. |
+| 2026-04-24 | QA | Validación E2E online: `https://main.d1cfl9ey07f61o.amplifyapp.com/gloma` OK, `/login` OK, `/bots` devuelve 2 bots. Plataforma y landing online. |
