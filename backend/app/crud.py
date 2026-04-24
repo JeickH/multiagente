@@ -340,3 +340,140 @@ def last_message_preview(conv: models.Conversation) -> Optional[str]:
     last = conv.messages[-1]
     text = last.content or ""
     return text[:80]
+
+
+# ===================== Sprint 8: Bots =====================
+import json as _json
+
+
+def _parse_channels(csv_value: Optional[str]) -> List[str]:
+    if not csv_value:
+        return []
+    return [c.strip() for c in csv_value.split(",") if c.strip()]
+
+
+def _parse_config(raw: Optional[str]) -> Optional[dict]:
+    if not raw:
+        return None
+    try:
+        data = _json.loads(raw)
+    except (ValueError, TypeError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def list_bots_by_team(db: Session, team_id: int) -> List[models.Bot]:
+    return (
+        db.query(models.Bot)
+        .filter(models.Bot.team_id == team_id)
+        .order_by(desc(models.Bot.updated_at))
+        .all()
+    )
+
+
+def get_bot_for_team(
+    db: Session, team_id: int, bot_id: int
+) -> Optional[models.Bot]:
+    """IDOR-safe: exige coincidencia team_id + bot_id."""
+    return (
+        db.query(models.Bot)
+        .filter(models.Bot.id == bot_id, models.Bot.team_id == team_id)
+        .first()
+    )
+
+
+def bot_to_list_item(bot: models.Bot) -> dict:
+    return {
+        "id": bot.id,
+        "name": bot.name,
+        "is_premium": bot.is_premium,
+        "status": bot.status,
+        "channels": _parse_channels(bot.channels),
+        "triggered_count": bot.triggered_count,
+        "completed_steps_count": bot.completed_steps_count,
+        "finished_count": bot.finished_count,
+        "created_at": bot.created_at,
+        "updated_at": bot.updated_at,
+    }
+
+
+def bot_to_detail(bot: models.Bot) -> dict:
+    return {
+        "id": bot.id,
+        "name": bot.name,
+        "description": bot.description,
+        "is_premium": bot.is_premium,
+        "status": bot.status,
+        "channels": _parse_channels(bot.channels),
+        "triggered_count": bot.triggered_count,
+        "completed_steps_count": bot.completed_steps_count,
+        "finished_count": bot.finished_count,
+        "created_at": bot.created_at,
+        "updated_at": bot.updated_at,
+        "steps": [
+            {
+                "id": s.id,
+                "position": s.position,
+                "step_type": s.step_type,
+                "label": s.label,
+                "config": _parse_config(s.config),
+                "next_step_id": s.next_step_id,
+            }
+            for s in bot.steps
+        ],
+    }
+
+
+def create_bot_with_steps(
+    db: Session,
+    team: models.Team,
+    *,
+    name: str,
+    description: Optional[str],
+    channels: List[str],
+    is_premium: bool = False,
+    steps: Optional[List[dict]] = None,
+) -> models.Bot:
+    """Helper idempotente usado por seed scripts y tests.
+
+    `steps` es una lista de dicts con keys: step_type, label, config (dict).
+    Se persisten en orden y se enlazan linealmente vía next_step_id.
+    """
+    channels_csv = ",".join(
+        c for c in channels if c in models.AVAILABLE_BOT_CHANNELS
+    ) or models.BOT_CHANNEL_WHATSAPP
+    bot = models.Bot(
+        team_id=team.id,
+        name=name,
+        description=description,
+        is_premium=is_premium,
+        channels=channels_csv,
+    )
+    db.add(bot)
+    db.commit()
+    db.refresh(bot)
+
+    created_steps: List[models.BotStep] = []
+    for i, raw in enumerate(steps or [], start=1):
+        step_type = raw.get("step_type")
+        if step_type not in models.BOT_STEP_TYPES:
+            raise ValueError(f"step_type inválido: {step_type!r}")
+        step = models.BotStep(
+            bot_id=bot.id,
+            position=i,
+            step_type=step_type,
+            label=raw.get("label", ""),
+            config=_json.dumps(raw.get("config") or {}),
+        )
+        db.add(step)
+        db.commit()
+        db.refresh(step)
+        created_steps.append(step)
+
+    # Enlazar linealmente: step[i].next_step_id = step[i+1].id
+    for idx in range(len(created_steps) - 1):
+        created_steps[idx].next_step_id = created_steps[idx + 1].id
+    if created_steps:
+        db.commit()
+    db.refresh(bot)
+    return bot

@@ -43,11 +43,15 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.frontend
+      args:
+        # Next.js bakea el rewrite destination en build; el host debe ser el
+        # service name del compose (backend), no localhost.
+        BACKEND_URL: http://backend:8000
     restart: always
     ports:
       - "3000:3000"
     environment:
-      NEXT_PUBLIC_API_URL: http://localhost:8000
+      BACKEND_URL: http://backend:8000
     depends_on:
       - backend
 

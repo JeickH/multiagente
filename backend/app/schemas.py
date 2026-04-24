@@ -201,3 +201,53 @@ class NewConversationMessageIn(BaseModel):
     contact_name: Optional[str] = None
     template_name: str           # ej: "plantilla_prueba_1"
     language_code: str = "es_CO"
+
+
+# ===== Sprint 8: Bots =====
+class BotListItem(BaseModel):
+    """Fila del listado `/bots` (cada fila de la tabla del mock)."""
+    id: int
+    name: str
+    is_premium: bool
+    status: str
+    channels: List[str]                 # ["whatsapp", "instagram", ...]
+    triggered_count: int
+    completed_steps_count: int
+    finished_count: int
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class BotStepOut(BaseModel):
+    """Paso individual del diagrama de flujo (nodo)."""
+    id: int
+    position: int
+    step_type: str
+    label: str
+    config: Optional[dict] = None
+    next_step_id: Optional[int] = None
+
+    class Config:
+        from_attributes = True
+
+
+class BotDetail(BaseModel):
+    """Detalle de un bot con sus pasos ordenados para el diagrama."""
+    id: int
+    name: str
+    description: Optional[str] = None
+    is_premium: bool
+    status: str
+    channels: List[str]
+    triggered_count: int
+    completed_steps_count: int
+    finished_count: int
+    created_at: datetime
+    updated_at: datetime
+    steps: List[BotStepOut] = []
+
+    class Config:
+        from_attributes = True

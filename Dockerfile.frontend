@@ -7,6 +7,10 @@ RUN npm ci
 
 COPY frontend/ .
 
+# BACKEND_URL inyectado en tiempo de build para el rewrite proxy de Next.js.
+# En Docker Compose debe apuntar al service name (http://backend:8000), no a localhost.
+ARG BACKEND_URL=http://localhost:8000
+ENV BACKEND_URL=$BACKEND_URL
 RUN npm run build
 
 EXPOSE 3000

@@ -1,10 +1,10 @@
 # BITACORA - Multiagente (Plataforma WhatsApp Business)
 
-> Última actualización: 2026-04-08
+> Última actualización: 2026-04-24
 
 ---
 
-## Sprint 0 - Setup del Proyecto
+## Sprint 0 - Setup del Proyecto — CERRADO
 
 | # | Tarea | Responsable | Estado | Notas |
 |---|-------|------------|--------|-------|
@@ -20,86 +20,64 @@
 | 10 | Crear Dockerfiles (frontend + backend) | Deploy AWS | ✅ Completado | Dockerfile.frontend, Dockerfile.backend |
 | 11 | Crear docker-compose para desarrollo local | Deploy AWS | ✅ Completado | 3 servicios: db, backend, frontend |
 | 12 | Crear .env.example y .gitignore | Deploy AWS | ✅ Completado | Variables documentadas |
-| 13 | Inicializar repo Git y push a GitHub | Dev Plataforma | ⬜ Pendiente | |
+| 13 | Inicializar repo Git y push a GitHub | Dev Plataforma | ✅ Completado | PR #2 mergeado a main (2026-04-10) |
 
 ---
 
-## Sprint 1 - Tareas del CEO (Bloqueantes)
-
-| # | Tarea | Responsable | Estado | Datos necesarios para continuar |
-|---|-------|------------|--------|-------------------------------|
-| 14 | **Crear cuenta AWS** | CEO | ⬜ Pendiente | Entregar: `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_DEFAULT_REGION` (recomendado: us-east-1). Configurar con `aws configure` en terminal. |
-| 15 | **Registrar/elegir dominio personalizado** | CEO | ⬜ Pendiente | Entregar: nombre del dominio elegido (ej: multiagente.com). Se puede registrar directamente en Route 53 (~$12/año para .com) o transferir uno existente. |
-
-### Instrucciones para el CEO - Tarea #14: Crear cuenta AWS
-
-1. Ir a [aws.amazon.com](https://aws.amazon.com) y crear cuenta
-2. En la consola AWS, ir a **IAM** → **Usuarios** → Crear usuario con acceso programático
-3. Asignar permisos: `AdministratorAccess` (para inicio; luego se restringirá)
-4. Guardar las credenciales:
-   - `AWS_ACCESS_KEY_ID` (ej: AKIA...)
-   - `AWS_SECRET_ACCESS_KEY` (ej: wJalr...)
-5. Instalar AWS CLI: `brew install awscli`
-6. Configurar: `aws configure`
-   - Region: `us-east-1`
-   - Output: `json`
-7. Crear archivo `.env` en la raíz del proyecto con las variables (ver .env.example)
-
-### Instrucciones para el CEO - Tarea #15: Dominio
-
-1. Decidir nombre de dominio
-2. Opciones:
-   - **Registrar en Route 53**: Consola AWS → Route 53 → Registrar dominio (~$12/año .com)
-   - **Transferir dominio existente**: Obtener código de autorización del registrador actual
-3. Entregar: nombre del dominio al equipo de desarrollo
-
----
-
-## Sprint 2 - Backend Funcional
+## Sprint 1 - Tareas del CEO (Bloqueantes) — CERRADO
 
 | # | Tarea | Responsable | Estado | Notas |
 |---|-------|------------|--------|-------|
-| 16 | Diseñar esquema de BD para mensajes y conversaciones | Experto BD | ⬜ Pendiente | Tablas: conversations, messages, contacts |
-| 17 | Diseñar esquema de BD para campañas masivas | Experto BD | ⬜ Pendiente | Tablas: campaigns, campaign_messages, templates |
-| 18 | Diseñar esquema de BD para bots | Experto BD | ⬜ Pendiente | Tablas: bots, bot_flows, bot_responses |
-| 19 | Configurar integración API WATI | Dev Plataforma | ⬜ Pendiente | Requiere cuenta WATI activa |
-| 20 | Implementar módulo de atención a mensajes (backend) | Dev Plataforma | ⬜ Pendiente | Depende de #16 y #19 |
-| 21 | Implementar módulo de campañas masivas (backend) | Dev Plataforma | ⬜ Pendiente | Depende de #17 y #19 |
-| 22 | Implementar módulo de bots (backend) | Dev Plataforma | ⬜ Pendiente | Depende de #18 y #19 |
+| 14 | **Crear cuenta AWS** | CEO | ✅ Completado | Cuenta 747456040509, usuario `multiagente-admin`, región `sa-east-1` |
+| 15 | **Registrar/elegir dominio personalizado** | CEO | ⬜ Pendiente | Trasladado a Sprint Pendientes |
 
 ---
 
-## Sprint 3 - Frontend Funcional
+## Sprint 2 - Backend Funcional — CERRADO
 
 | # | Tarea | Responsable | Estado | Notas |
 |---|-------|------------|--------|-------|
-| 23 | UI módulo de mensajes (bandeja de entrada tipo chat) | Dev Plataforma | ⬜ Pendiente | Depende de #20 |
-| 24 | UI módulo de campañas (crear, enviar, historial) | Dev Plataforma | ⬜ Pendiente | Depende de #21 |
-| 25 | UI módulo de bots (editor de flujos) | Dev Plataforma | ⬜ Pendiente | Depende de #22 |
+| 16 | Diseñar esquema de BD para mensajes y conversaciones | Experto BD | ✅ Completado | Completado en Sprint 6 (7 tablas: teams, members, permisos, meta_accounts, conversaciones, mensajes, contacts) |
+| 17 | Diseñar esquema de BD para campañas masivas | Experto BD | ⬜ Pendiente | Trasladado a Sprint Pendientes |
+| 18 | Diseñar esquema de BD para bots | Experto BD | ⬜ Pendiente | Trasladado a Sprint Pendientes |
+| 19 | Configurar integración API WATI | Dev Plataforma | ❌ Cancelado | Pivote a Meta WhatsApp Cloud API (Sprint 6) |
+| 20 | Implementar módulo de atención a mensajes (backend) | Dev Plataforma | ✅ Completado | Completado en Sprint 6 (routers mensajes + meta_webhook) |
+| 21 | Implementar módulo de campañas masivas (backend) | Dev Plataforma | ⬜ Pendiente | Trasladado a Sprint Pendientes |
+| 22 | Implementar módulo de bots (backend) | Dev Plataforma | ⬜ Pendiente | Trasladado a Sprint Pendientes |
 
 ---
 
-## Sprint 4 - Infraestructura AWS
-
-| # | Tarea | Responsable | Estado | Bloqueo |
-|---|-------|------------|--------|---------|
-| 26 | Crear ECR repository y subir imagen backend | Deploy AWS | ⬜ Pendiente | Requiere #14 |
-| 27 | Configurar ECS Fargate (cluster, task definition, service) | Deploy AWS | ⬜ Pendiente | Requiere #14 |
-| 28 | Configurar Amplify para frontend | Deploy AWS | ⬜ Pendiente | Requiere #14 |
-| 29 | Crear RDS PostgreSQL (db.t3.micro) | Deploy AWS | ⬜ Pendiente | Requiere #14 |
-| 30 | Configurar ALB (Application Load Balancer) | Deploy AWS | ⬜ Pendiente | Requiere #14 |
-| 31 | Configurar Route 53 + dominio personalizado | Deploy AWS | ⬜ Pendiente | Requiere #14 y #15 |
-| 32 | Configurar GitHub Actions para CI/CD | Deploy AWS | ⬜ Pendiente | Requiere #14 |
-
----
-
-## Sprint 5 - QA
+## Sprint 3 - Frontend Funcional — CERRADO
 
 | # | Tarea | Responsable | Estado | Notas |
 |---|-------|------------|--------|-------|
-| 33 | Validar flujo login → dashboard → módulos (local) | QA | ⬜ Pendiente | |
-| 34 | Validar deploy en AWS funcional | QA | ⬜ Pendiente | Requiere Sprint 4 |
-| 35 | Test de carga (~10 usuarios concurrentes) | QA | ⬜ Pendiente | Requiere Sprint 4 |
+| 23 | UI módulo de mensajes (bandeja de entrada tipo chat) | Dev Plataforma | ✅ Completado | Completado en Sprint 6 (inbox con header, lista, panel chat y modal nueva conversación) |
+| 24 | UI módulo de campañas (crear, enviar, historial) | Dev Plataforma | ⬜ Pendiente | Trasladado a Sprint Pendientes |
+| 25 | UI módulo de bots (editor de flujos) | Dev Plataforma | ⬜ Pendiente | Trasladado a Sprint Pendientes |
+
+---
+
+## Sprint 4 - Infraestructura AWS — CERRADO
+
+| # | Tarea | Responsable | Estado | Notas |
+|---|-------|------------|--------|-------|
+| 26 | Crear ECR repository y subir imagen backend | Deploy AWS | ✅ Completado | Completado en Sprint 7 — `747456040509.dkr.ecr.sa-east-1.amazonaws.com/multiagente-backend` |
+| 27 | Configurar ECS Fargate (cluster, task definition, service) | Deploy AWS | ✅ Completado | Completado en Sprint 7 — cluster `multiagente-cluster`, task-def rev 3 |
+| 28 | Configurar Amplify para frontend | Deploy AWS | ✅ Completado | Completado en Sprint 7 — app id `d1cfl9ey07f61o`, job 6 SUCCEED |
+| 29 | Crear RDS PostgreSQL (db.t3.micro) | Deploy AWS | ✅ Completado | Completado en Sprint 7 — `multiagente-db.cvosucssebn3.sa-east-1.rds.amazonaws.com` |
+| 30 | Configurar ALB (Application Load Balancer) | Deploy AWS | ✅ Completado | Completado en Sprint 7 — `multiagente-alb-1689721042.sa-east-1.elb.amazonaws.com` |
+| 31 | Configurar Route 53 + dominio personalizado | Deploy AWS | ⬜ Pendiente | Trasladado a Sprint Pendientes. Depende de tarea #15 |
+| 32 | Configurar GitHub Actions para CI/CD | Deploy AWS | ⬜ Pendiente | Trasladado a Sprint Pendientes |
+
+---
+
+## Sprint 5 - QA — CERRADO
+
+| # | Tarea | Responsable | Estado | Notas |
+|---|-------|------------|--------|-------|
+| 33 | Validar flujo login → dashboard → módulos (local) | QA | ✅ Completado | Completado en Sprint 7 — smoke test local con docker-compose + venv dedicado |
+| 34 | Validar deploy en AWS funcional | QA | ✅ Completado | Completado en Sprint 7 — validación E2E contra ALB (register + login + meta-account + teams) |
+| 35 | Test de carga (~10 usuarios concurrentes) | QA | ⬜ Pendiente | Trasladado a Sprint Pendientes |
 
 ---
 
@@ -113,6 +91,27 @@
 | RDS PostgreSQL | db.t3.micro | ~$15/mes |
 | ALB | Application Load Balancer | ~$16/mes |
 | Route 53 | 1 hosted zone | ~$0.50/mes |
+
+---
+
+## Sprint Pendientes — Tareas consolidadas de Sprints 0–5
+
+> Creado el 2026-04-23. Concentra todas las tareas no completadas de los Sprints 0 al 5
+> al momento de su cierre. Las tareas completadas implícitamente durante Sprints 6-7
+> fueron marcadas como ✅ en sus sprints de origen.
+
+| # | Tarea | Sprint origen | Responsable | Estado | Notas |
+|---|-------|---------------|------------|--------|-------|
+| 15 | Registrar/elegir dominio personalizado | Sprint 1 | CEO | ⬜ Pendiente | Bloqueante para tarea #31 (Route 53) |
+| 17 | Diseñar esquema de BD para campañas masivas | Sprint 2 | Experto BD | ⬜ Pendiente | Tablas: campaigns, campaign_messages, templates |
+| 18 | Diseñar esquema de BD para bots | Sprint 2 | Experto BD | ⬜ Pendiente | Tablas: bots, bot_flows, bot_responses |
+| 21 | Implementar módulo de campañas masivas (backend) | Sprint 2 | Dev Plataforma | ⬜ Pendiente | Depende de #17 |
+| 22 | Implementar módulo de bots (backend) | Sprint 2 | Dev Plataforma | ⬜ Pendiente | Depende de #18 |
+| 24 | UI módulo de campañas (crear, enviar, historial) | Sprint 3 | Dev Plataforma | ⬜ Pendiente | Depende de #21 |
+| 25 | UI módulo de bots (editor de flujos) | Sprint 3 | Dev Plataforma | ⬜ Pendiente | Depende de #22 |
+| 31 | Configurar Route 53 + dominio personalizado | Sprint 4 | Deploy AWS | ⬜ Pendiente | Depende de #15 |
+| 32 | Configurar GitHub Actions para CI/CD | Sprint 4 | Deploy AWS | ⬜ Pendiente | |
+| 35 | Test de carga (~10 usuarios concurrentes) | Sprint 5 | QA | ⬜ Pendiente | Infraestructura AWS ya disponible |
 
 ---
 
@@ -353,6 +352,79 @@ CLAUDE.md > "Convenciones de operación"):
 
 ---
 
+## Sprint 8 - Módulo Bots Inteligentes (visualización read-only)
+
+**Rama**: `feature/modulo-bots-readonly` (desde `main`)
+
+**Contexto**: la plataforma ya resuelve respuestas manuales (Sprint 6) y seguridad
+de credenciales (Sprint 7). El siguiente incremento es el módulo de Bots
+inteligentes. Por ahora el cliente final NO edita bots: nosotros los
+configuramos y el usuario los visualiza en su panel.
+
+### Alcance del Sprint 8
+
+1. Listado de bots por cuenta (`/bots`) replicando el mock
+   `referencia/chatbot_dash.png`: tabs ("Tus bots" con badge verde), tabla con
+   columnas Nombre, Disparado, Pasos terminados, Terminada, Modificado el,
+   Acciones; iconos de canales (WhatsApp, Instagram, Messenger) e icono de
+   diamante dorado para bots premium.
+2. Vista de detalle de un bot (`/bots/[id]`): se abre en **pestaña nueva**
+   (`target="_blank"`) y renderiza **sin sidebar** (canvas pantalla completa).
+   Muestra un canvas con fondo cuadriculado y los bloques del flujo conectados
+   con flechas punteadas, según la referencia `referencia/ver_bot.png` — pero
+   **sin** la columna izquierda de componentes arrastrables (ese panel es
+   para edición, no para el modo visualización). Solo lectura.
+3. Schema de BD que permita: varios bots por team, varios pasos por bot,
+   tipos básicos de paso (enviar texto, enviar template, enviar media,
+   esperar input, delay, condición, fin).
+4. Seed: un bot de ejemplo con 5 pasos asignado al team de
+   `prueba@gmail.com` para validar visualmente.
+
+### Fuera de alcance
+- Editor visual de flujos, drag&drop, creación desde la UI.
+- Ejecución del bot (motor de flujos) contra mensajes entrantes.
+- Analítica real: los contadores "Disparado/Pasos terminados/Terminada" se
+  almacenan como columnas pero en este sprint quedan en 0 (o los valores
+  seed). El incremento en tiempo real vendrá en sprints posteriores.
+
+### Decisiones de diseño
+- **Multi-tenant**: cada bot pertenece a un `team_id`. Las queries SIEMPRE
+  filtran por el team del usuario autenticado.
+- **Canales vinculados**: se modelan como columna CSV (`whatsapp,instagram,messenger`).
+  Es suficiente para el MVP de solo visualización y evita una tabla extra.
+  Follow-up: migrar a tabla `bot_channels` cuando se agregue edición.
+- **Pasos**: cada `bot_step` guarda `step_type`, `label`, `position`
+  (orden horizontal) y `config` (JSON serializado) con el payload específico
+  del bloque. El `next_step_id` apunta al siguiente paso (flujo lineal MVP;
+  para ramificación se añadirá en el futuro un `branches` JSON).
+- **Permiso**: se reutiliza `can_manage_bots` de `AVAILABLE_PERMISSIONS`
+  para futuros endpoints de edición. Para este sprint (solo lectura), todo
+  usuario autenticado del team puede listar y ver sus bots.
+
+### Tareas del Sprint 8
+
+| # | Tarea | Responsable | Estado | Notas |
+|---|-------|-------------|--------|-------|
+| 86 | Fix: login falla vía proxy Next.js (`BACKEND_URL` bakeado en build) | Dev Plataforma | ✅ Completado | `Dockerfile.frontend`: `ARG BACKEND_URL`; `docker-compose.yml`: `build.args.BACKEND_URL: http://backend:8000` |
+| 87 | Abrir BITACORA con Sprint 8 y diseño | PM | ✅ Completado | Este bloque |
+| 88 | Diseñar schema `bots` + `bot_steps` | Experto BD | ✅ Completado | FK al team con cascade, CSV de canales, JSON config, índice `(team_id, updated_at)`, UNIQUE `(bot_id, position)` |
+| 89 | Migración idempotente `migrate_sprint8_add_bots.py` | Experto BD | ✅ Completado | Aplicada en local vía docker-compose. Queda aplicar en RDS (follow-up) |
+| 90 | Modelos SQLAlchemy `Bot` y `BotStep` en `models.py` | Dev Plataforma | ✅ Completado | Relaciones + `order_by=position` + cascade |
+| 91 | Schemas Pydantic `BotListItem`, `BotDetail`, `BotStepOut` | Dev Plataforma | ✅ Completado | Solo lectura; canales como `List[str]` |
+| 92 | CRUD: `list_bots_by_team`, `get_bot_for_team` (verifica `team_id`) | Dev Plataforma | ✅ Completado | Filtro obligatorio por team. Helpers `bot_to_list_item` y `bot_to_detail` parsean CSV/JSON |
+| 93 | Router `/bots`: GET `/bots` + GET `/bots/{id}` | Dev Plataforma | ✅ Completado | Usa `get_current_membership`. 404 en IDOR cross-team |
+| 94 | Seed: crear bot de ejemplo con 5 pasos para `prueba@gmail.com` | Dev Plataforma | ✅ Completado | `seed_bot_demo.py` idempotente. Crea `catalogo_talulah` (5 pasos) + `Confirmación de pedido` (premium, 4 pasos, 3 canales) |
+| 95 | UI `/bots`: tabla con tabs, iconos de canales, badge premium, acciones | Dev Plataforma | ✅ Completado | Link azul a `/bots/{id}` con `target="_blank"`. Acciones en botones deshabilitados |
+| 96 | UI `/bots/[id]`: canvas sin sidebar (pestaña nueva) con bloques + flechas punteadas | Dev Plataforma | ✅ Completado | SVG con bezier punteado + marker flecha; nodos con color por tipo; fondo grid; sin layout global |
+| 97 | Actualizar sidebar: link `/bots` activo | Dev Plataforma | ✅ Completado | Ya existía; no requiere cambios |
+| 98 | QA: E2E listado + detalle + seed aplicado contra docker-compose | QA | ✅ Completado | `prueba@gmail.com` ve 2 bots, detalle id=1 devuelve 5 pasos |
+| 99 | Seguridad: revisión multi-tenant (filtro por team, sin IDOR) | Seguridad | ✅ Completado | Usuario `otro@test.com` → lista vacía `[]`; GET `/bots/1` → 404 |
+| 100 | Fix infra: `BACKEND_URL` como build-arg en Dockerfile.frontend | Deploy AWS | ✅ Completado | Next.js bakea rewrites en build. Documentar para Amplify |
+| 101 | Follow-up: aplicar migración Sprint 8 en RDS (regla paridad BD) | Deploy AWS | ⬜ Pendiente | `aws ecs run-task` con command override, igual que Sprint 7 |
+| 102 | Commit + PR a `main` | PM | ⬜ Pendiente | Al final del sprint |
+
+---
+
 ## Log de Cambios
 
 | Fecha | Agente | Acción |
@@ -375,3 +447,11 @@ CLAUDE.md > "Convenciones de operación"):
 | 2026-04-10 | PM | PR #2 mergeado a main (squash) → commit `41b0a9a`. |
 | 2026-04-10 | Deploy AWS | Amplify: env vars BACKEND_URL + NEXT_PUBLIC_BACKEND_URL añadidas al app. Job 6 SUCCEED. Proxy Next.js /api/* → ALB validado (HTTPS Amplify → HTTP ALB sin mixed content). |
 | 2026-04-10 | PM | Documento `PRUEBAS_SPRINT_7.md` creado con instrucciones paso a paso para probar el módulo de mensajes en AWS y local. **Sprint 7 DONE**. |
+| 2026-04-23 | PM | Sprints 0-5 cerrados. Tareas pendientes consolidadas en Sprint Pendientes. Tareas completadas implícitamente en Sprints 6-7 marcadas como ✅ en sus sprints de origen. |
+| 2026-04-24 | Dev Plataforma | Fix login local: `BACKEND_URL` como `ARG` en `Dockerfile.frontend` (Next.js bakea rewrite destino en build); `docker-compose.yml` pasa `build.args.BACKEND_URL=http://backend:8000`. Rebuild frontend. |
+| 2026-04-24 | PM | Sprint 8 arrancado. Rama planificada `feature/modulo-bots-readonly`. 17 tareas (86-102). |
+| 2026-04-24 | Experto BD | Modelos `Bot`/`BotStep` + migración idempotente `migrate_sprint8_add_bots.py` (`CREATE TABLE IF NOT EXISTS` + índices). Aplicada local. |
+| 2026-04-24 | Dev Plataforma | Schemas Pydantic + CRUD con parseo CSV→`List[str]` y JSON→`dict`. Router `/bots` con 2 GET. Seed: 2 bots para `prueba@gmail.com` (`catalogo_talulah` 5 pasos + `Confirmación de pedido` premium). |
+| 2026-04-24 | Dev Plataforma | UI `/bots`: tabla estilo mock con tabs "Tus bots" + badge verde, iconos de canales (W/I/M), diamante dorado premium, acciones deshabilitadas. Link azul con `target="_blank"`. |
+| 2026-04-24 | Dev Plataforma | UI `/bots/[id]`: pantalla completa sin sidebar, fondo grid, nodos con color-coded por tipo de paso, conexiones SVG bezier punteadas con flecha. Botones Guardar/Probar/Más deshabilitados (vista read-only). |
+| 2026-04-24 | QA + Seguridad | Validación E2E: `prueba@gmail.com` ve 2 bots, detalle OK con 5 pasos + next_step_id. Multi-tenant: `otro@test.com` → `[]` y 404 al acceder `/bots/1`. |

@@ -25,3 +25,6 @@ postgres_data/
 # Claude local settings (excepto agents que sí se versionan)
 .claude/*
 !.claude/agents/
+
+backend/.venv
+referencia/

@@ -191,3 +191,85 @@ class Message(Base):
 
     conversation = relationship("Conversation", back_populates="messages")
     sent_by_user = relationship("User")
+
+
+# ===== Sprint 8: Bots =====
+BOT_CHANNEL_WHATSAPP = "whatsapp"
+BOT_CHANNEL_INSTAGRAM = "instagram"
+BOT_CHANNEL_MESSENGER = "messenger"
+AVAILABLE_BOT_CHANNELS = (
+    BOT_CHANNEL_WHATSAPP,
+    BOT_CHANNEL_INSTAGRAM,
+    BOT_CHANNEL_MESSENGER,
+)
+
+BOT_STEP_TYPES = (
+    "send_text",       # enviar mensaje de texto plano
+    "send_template",   # enviar template aprobado (iniciar conversación)
+    "send_media",      # enviar imagen/video/documento
+    "wait_input",      # esperar respuesta del contacto
+    "delay",           # pausa en segundos
+    "condition",       # ramificación por variable / keyword
+    "end",             # fin del flujo
+)
+
+
+class Bot(Base):
+    __tablename__ = "bots"
+    id = Column(Integer, primary_key=True, index=True)
+    team_id = Column(
+        Integer, ForeignKey("teams.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    name = Column(String(120), nullable=False)
+    description = Column(String(512), nullable=True)
+    is_premium = Column(Boolean, nullable=False, default=False)
+    status = Column(String(32), nullable=False, default="active")  # active | paused | draft
+    # CSV de canales vinculados. Ej: "whatsapp,instagram,messenger".
+    # MVP solo-lectura; migrar a tabla bot_channels cuando se añada edición.
+    channels = Column(String(255), nullable=False, default="whatsapp")
+    triggered_count = Column(Integer, nullable=False, default=0)
+    completed_steps_count = Column(Integer, nullable=False, default=0)
+    finished_count = Column(Integer, nullable=False, default=0)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+    )
+
+    __table_args__ = (
+        Index("ix_bots_team_updated", "team_id", "updated_at"),
+    )
+
+    team = relationship("Team")
+    steps = relationship(
+        "BotStep",
+        back_populates="bot",
+        cascade="all, delete-orphan",
+        order_by="BotStep.position",
+    )
+
+
+class BotStep(Base):
+    __tablename__ = "bot_steps"
+    id = Column(Integer, primary_key=True, index=True)
+    bot_id = Column(
+        Integer, ForeignKey("bots.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    position = Column(Integer, nullable=False)
+    step_type = Column(String(32), nullable=False)
+    label = Column(String(255), nullable=False)
+    # JSON serializado (string) con el payload específico del bloque.
+    # Ej: {"text": "Hola"} | {"template_name": "x", "lang": "es_CO"} | {"seconds": 30}
+    config = Column(Text, nullable=True)
+    next_step_id = Column(
+        Integer, ForeignKey("bot_steps.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+    )
+
+    __table_args__ = (
+        UniqueConstraint("bot_id", "position", name="uq_bot_step_position"),
+    )
+
+    bot = relationship("Bot", back_populates="steps")
