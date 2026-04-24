@@ -291,3 +291,103 @@ class BotStep(Base):
     )
 
     bot = relationship("Bot", back_populates="steps")
+
+
+# ===== Sprint 10: ejecución real del bot contra Meta =====
+BOT_SESSION_RUNNING = "running"
+BOT_SESSION_WAITING = "waiting"
+BOT_SESSION_FINISHED = "finished"
+BOT_SESSION_CANCELLED = "cancelled"
+
+BOT_PENDING_STATUS_PENDING = "pending"
+BOT_PENDING_STATUS_DONE = "done"
+BOT_PENDING_STATUS_FAILED = "failed"
+
+
+class BotSession(Base):
+    """Conversación activa entre un bot y un contacto.
+
+    Máximo una BotSession en estado `running`/`waiting` por conversación
+    (se garantiza en código, no en DB, para permitir historial).
+    """
+
+    __tablename__ = "bot_sessions"
+    id = Column(Integer, primary_key=True, index=True)
+    bot_id = Column(
+        Integer, ForeignKey("bots.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    conversation_id = Column(
+        Integer,
+        ForeignKey("conversations.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    # JSON con {"current_step_id": int, "variables": {...}} — mismo formato
+    # que consume bot_engine.advance().
+    state = Column(Text, nullable=True)
+    status = Column(String(32), nullable=False, default=BOT_SESSION_RUNNING)
+    started_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+    )
+    finished_at = Column(DateTime, nullable=True)
+
+    __table_args__ = (
+        Index("ix_bot_sessions_conv_status", "conversation_id", "status"),
+    )
+
+    bot = relationship("Bot")
+    conversation = relationship("Conversation")
+
+
+class BotPendingAction(Base):
+    """Acción del bot diferida para pasos `delay` de minutos/horas.
+
+    Al encontrar un `delay`, en vez de bloquear el request guardamos aquí
+    {scheduled_at, session_id} y seguimos. El scheduler tick retoma la
+    sesión cuando llegue el tiempo.
+    """
+
+    __tablename__ = "bot_pending_actions"
+    id = Column(Integer, primary_key=True, index=True)
+    session_id = Column(
+        Integer,
+        ForeignKey("bot_sessions.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    scheduled_at = Column(DateTime, nullable=False, index=True)
+    action_type = Column(String(32), nullable=False, default="resume_session")
+    payload = Column(Text, nullable=True)
+    status = Column(
+        String(16), nullable=False, default=BOT_PENDING_STATUS_PENDING
+    )
+    attempts = Column(Integer, nullable=False, default=0)
+    last_error = Column(String(512), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    processed_at = Column(DateTime, nullable=True)
+
+    __table_args__ = (
+        Index("ix_pending_actions_due", "status", "scheduled_at"),
+    )
+
+    session = relationship("BotSession")
+
+
+# ===== Sprint 11: Landing Gloma - leads del form de contacto =====
+class Lead(Base):
+    """Contactos que llenan el form de la landing /gloma.
+
+    No tiene FK a users porque son prospects, no clientes aún.
+    `source` permite distinguir orígenes cuando haya más de una landing.
+    """
+
+    __tablename__ = "leads"
+    id = Column(Integer, primary_key=True, index=True)
+    email = Column(String(255), nullable=False, index=True)
+    telefono = Column(String(32), nullable=False)
+    source = Column(String(64), nullable=False, default="gloma_landing", index=True)
+    user_agent = Column(String(512), nullable=True)
+    ip_address = Column(String(64), nullable=True)
+    contacted = Column(Boolean, nullable=False, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)

@@ -18,6 +18,8 @@ from dotenv import load_dotenv
 
 from .. import models, crud
 from ..dependencies import get_db
+from ..services import bot_router as bot_router_svc
+from ..services import bot_runner
 
 load_dotenv()
 logger = logging.getLogger("meta_webhook")
@@ -108,6 +110,17 @@ async def receive_webhook(request: Request, db: Session = Depends(get_db)):
                         contact_wa_id=wa_id,
                         contact_name=contact_name,
                     )
+
+                    # Dedupe por meta_message_id: si ya procesamos este mensaje
+                    # (Meta reintenta), saltar.
+                    if msg_id and (
+                        db.query(models.Message)
+                        .filter(models.Message.meta_message_id == msg_id)
+                        .first()
+                    ):
+                        logger.info("Webhook dedupe: msg %s ya procesado", msg_id)
+                        continue
+
                     crud.add_message(
                         db,
                         conv,
@@ -117,6 +130,33 @@ async def receive_webhook(request: Request, db: Session = Depends(get_db)):
                         meta_message_id=msg_id,
                         status="received",
                     )
+
+                    # Sprint 10: resolver bot y ejecutar un turno.
+                    team = account.team
+                    if team is None:
+                        continue
+
+                    bot, session = bot_router_svc.resolve_bot_for_incoming_message(
+                        db,
+                        team=team,
+                        conversation_id=conv.id,
+                        message_text=content,
+                    )
+                    if bot is None:
+                        # Sin bot que responder: queda para el agente humano
+                        continue
+
+                    try:
+                        bot_runner.run_turn(
+                            db,
+                            bot=bot,
+                            conversation=conv,
+                            session=session,
+                            user_input=content if session is not None else None,
+                            meta_account=account,
+                        )
+                    except Exception:
+                        logger.exception("bot_runner falló para bot=%s conv=%s", bot.id, conv.id)
 
                 # Status updates (delivered/read/failed) — opcional para tracking
                 for status_evt in value.get("statuses", []) or []:

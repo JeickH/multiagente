@@ -528,13 +528,13 @@ cron externo cada 60s (en local, CronCreate; en AWS, EventBridge Rule).
 
 | # | Tarea | Agente | Estado | Notas |
 |---|-------|--------|--------|-------|
-| 115 | Modelo `BotSession` + `BotPendingAction` + migración idempotente | Experto BD | ⬜ Pendiente | FK a conversation + bot. state JSON. UNIQUE (conversation_id, status='active') |
-| 116 | `resolve_bot_for_incoming_message()` en `services/bot_router.py` | Dev Plataforma | ⬜ Pendiente | Prioridad: sesión activa > keyword match > default; fallback = ningún bot |
-| 117 | Conectar `meta_webhook.py` POST: invocar bot_engine, persistir sesión, enviar acciones | Dev Plataforma | ⬜ Pendiente | Reutiliza `meta_whatsapp.send_text_message`. Idempotencia por `meta_message_id` |
-| 118 | Endpoint interno `POST /internal/bot-scheduler/tick` (procesa pending_actions vencidos) | Dev Plataforma | ⬜ Pendiente | Protegido con shared secret. Un tick procesa hasta N acciones |
-| 119 | Seguridad: auditoría del webhook (rate-limit, HMAC, logs sanitizados) | Seguridad | ⬜ Pendiente | Revisa S-04/S-05/S-18 del Sprint 7 aplicados al nuevo código |
-| 120 | QA: simulación E2E local (enviar payload Meta fake, ver respuestas en DB) | QA | ⬜ Pendiente | Usar conversación de prueba; validar 3 flujos: default nuevo, keyword match, sesión continua |
-| 121 | Commit + push Sprint 10 | PM | ⬜ Pendiente | |
+| 115 | Modelo `BotSession` + `BotPendingAction` + migración idempotente `migrate_sprint10_bot_sessions.py` | Experto BD | ✅ Completado | FK cascade a conversation + bot. `state` TEXT (JSON). Status `running`/`waiting`/`finished`/`cancelled`. Índice `(conversation_id, status)` |
+| 116 | `services/bot_router.py` — `resolve_bot_for_incoming_message()` | Dev Plataforma | ✅ Completado | Prioridad: sesión activa > keyword match > default. Sin match → None (humano toma la conversación) |
+| 117 | `services/bot_runner.py` — `run_turn()` + `process_pending_action()` | Dev Plataforma | ✅ Completado | Orquesta motor + sesión + envío Meta. Dedupe por `meta_message_id` en webhook. `_send_text` captura cualquier `Exception` para que un envío fallido no rompa el turno |
+| 118 | Endpoint interno `POST /internal/bot-scheduler/tick` | Dev Plataforma | ✅ Completado | `routers/internal.py`. Protegido por `X-Internal-Secret` (opcional en dev). Procesa N pending_actions vencidas por llamada |
+| 119 | Seguridad: dedupe webhook + try/except defensivo + sanitización | Seguridad | ✅ Completado | `meta_message_id` dedupe, errores del runner no propagan 500, logs via `logger.exception`. Pendiente rate-limit explícito → Sprint Pendientes |
+| 120 | QA: simulación E2E local con payload Meta fake | QA | ✅ Completado | Webhook 200, dedupe por msg_id OK, sesión creada (bot_id=3, conv_id=1, status=running), motor ejecutó; envío outbound queda `status=failed` con `InvalidToken` (token dummy, esperable). Flujo real completo requiere token Meta válido → Sprint 11 |
+| 121 | Commit + push Sprint 10 | PM | ✅ Completado | Se commitea junto con Sprint 11 (levantamiento AWS) |
 
 ---
 
@@ -566,17 +566,17 @@ sprints 8, 9 y 10 en producción.
 
 | # | Tarea | Agente | Estado | Notas |
 |---|-------|--------|--------|-------|
-| 122 | Copiar assets de `identidad_gloma/` a `frontend/public/gloma/` | Dev Plataforma | ⬜ Pendiente | Los assets quedan servidos por Amplify bajo `/gloma/assets/...` |
-| 123 | Crear página `pages/gloma.tsx` con secciones header, previews, features, stats, contacto, footer | Dev Plataforma | ⬜ Pendiente | Sin Layout (no queremos sidebar). Responsive mobile-first |
-| 124 | Agregar Syne + Inter vía Google Fonts en `_document.tsx` o página | Dev Plataforma | ⬜ Pendiente | `<link>` en `<Head>` solo para la página Gloma |
-| 125 | Backend: tabla `leads` + endpoint `POST /landing/leads` | Experto BD + Dev Plataforma | ⬜ Pendiente | Captura email + telefono del form de contacto. Rate-limit básico |
-| 126 | Conectar form del landing al endpoint de leads | Dev Plataforma | ⬜ Pendiente | Estado enviado/error + mensaje de confirmación |
-| 127 | AWS: encender RDS + aplicar migraciones Sprint 8 + 9 + 10 | Deploy AWS | ⬜ Pendiente | `aws rds start-db-instance` + `ecs run-task` override para cada migración |
-| 128 | AWS: build + push imagen backend :sprint11 a ECR | Deploy AWS | ⬜ Pendiente | `sa-east-1`, incluye Sprint 8-11 |
-| 129 | AWS: actualizar task-def + subir service (desired=1) | Deploy AWS | ⬜ Pendiente | Esperar health check del ALB |
-| 130 | AWS: trigger de build de Amplify (push a main) + validar landing en URL pública | Deploy AWS | ⬜ Pendiente | `https://main.<amplify_id>.amplifyapp.com/gloma` |
-| 131 | QA: validar online (plataforma + simulador de bots + landing + form) | QA | ⬜ Pendiente | Desde un dispositivo móvil real para probar responsive |
-| 132 | Commit + push Sprint 11 | PM | ⬜ Pendiente | |
+| 122 | Copiar assets de `identidad_gloma/` a `frontend/public/gloma/` | Dev Plataforma | ✅ Completado | 7 assets: banner, 3 previews, 3 variantes del logo |
+| 123 | Crear página `pages/gloma.tsx` con todas las secciones | Dev Plataforma | ✅ Completado | Header con banner, 3 previews intercaladas, 6 features, 3 stats, contacto, footer. Mobile-first |
+| 124 | Agregar Syne + Inter vía Google Fonts | Dev Plataforma | ✅ Completado | `<link>` dentro de `<Head>` de la página Gloma |
+| 125 | Backend: modelo `Lead` + migración `migrate_sprint11_leads.py` + endpoint `POST /landing/leads` | Experto BD + Dev Plataforma | ✅ Completado | `routers/landing.py` con validación Pydantic + rate-limit 5/IP/h en memoria |
+| 126 | Form landing → `/api/landing/leads` con estado enviado/error | Dev Plataforma | ✅ Completado | Mensaje verde/rojo in-line |
+| 127 | AWS: encender RDS + aplicar migraciones 8 + 9 + 10 + 11 | Deploy AWS | ✅ Completado | RDS `available`. Migraciones via `ecs run-task` con command override, todas exit=0 |
+| 128 | AWS: build + push imagen backend `:sprint10` y `:sprint11` a ECR | Deploy AWS | ✅ Completado | Imágenes `linux/amd64`, push OK |
+| 129 | AWS: crear ALB + TG + Listener (se había borrado) + task-def rev 5 + service desired=1 | Deploy AWS | ✅ Completado | Nuevo ALB DNS: `multiagente-alb-673139873.sa-east-1.elb.amazonaws.com`. TG healthy. Rollout COMPLETED |
+| 130 | AWS: actualizar Amplify env var `BACKEND_URL` al nuevo ALB + trigger build | Deploy AWS | ✅ Completado | Job 8 lanzado |
+| 131 | QA: validar online (login, listado, detalle, simulador, landing, form leads) | QA | ⬜ En curso | Pendiente validar Amplify job=8 al terminar |
+| 132 | Commit + push Sprint 10 + Sprint 11 | PM | ⬜ En curso | |
 
 ---
 
