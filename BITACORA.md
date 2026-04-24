@@ -19,6 +19,7 @@
 | [Sprint 9](#sprint-9---bots-due%C3%B1o-por-cuenta-triggers-export-y-simulador) | Bots: dueño por cuenta, triggers, export JSON, simulador | DONE |
 | [Sprint 10](#sprint-10---motor-de-bots-real-ruta-a) | Motor de bots contra WhatsApp (Ruta A: síncrono + scheduler) | DONE |
 | [Sprint 11](#sprint-11---landing-page-gloma--reactivaci%C3%B3n-aws) | Landing page Gloma + reactivación de servicios AWS | DONE |
+| [Sprint 12](#sprint-12---dominio-propio-glomabeautycom) | Dominio propio `glomabeauty.com` (Route 53 + HostGator + Amplify) | DONE |
 
 ---
 
@@ -580,6 +581,62 @@ sprints 8, 9 y 10 en producción.
 
 ---
 
+## Sprint 12 - Dominio propio glomabeauty.com
+
+**Rama**: trabajo directo en `main`.
+
+**Contexto**: el CEO compró `glomabeauty.com` en HostGator y quiere usarlo en
+lugar del subpath `/gloma` y del dominio por defecto de Amplify. Se decide la
+ruta profesional: **delegar la zona DNS a Route 53** para poder manejar apex +
+www + subdominios futuros (`app.`, `api.`) con ALIAS/CloudFront nativamente,
+en vez de quedar atados al CNAME-at-apex que HostGator no soporta.
+
+### Arquitectura DNS
+
+```
+Registrador del dominio:    HostGator (glomabeauty.com)
+                            │
+                            ▼ (nameservers apuntan a)
+Route 53 Hosted Zone:       Z0523904259PXITAV9OOV
+   - glomabeauty.com        A (alias)  → CloudFront de Amplify
+   - www.glomabeauty.com    CNAME      → CloudFront de Amplify
+   - _e642...validation     CNAME      → ACM validation record
+                            │
+                            ▼
+Amplify app:                d1cfl9ey07f61o (branch: main)
+                            │
+                            ▼
+CloudFront distribution:    dzbhyoqtp2mc4.cloudfront.net
+                            + ACM certificate (auto-managed por Amplify)
+                            │
+                            ▼
+Frontend Next.js            → /api/* (rewrite proxy)
+                            ▼
+ALB:                        multiagente-alb-673139873.sa-east-1.elb.amazonaws.com
+                            ▼
+ECS Fargate backend (FastAPI) → RDS
+```
+
+### Tareas del Sprint 12
+
+| # | Tarea | Agente | Estado | Notas |
+|---|-------|--------|--------|-------|
+| 133 | Crear hosted zone `glomabeauty.com` en Route 53 | Deploy AWS | ✅ Completado | Zone `Z0523904259PXITAV9OOV`. 4 nameservers entregados al CEO |
+| 134 | Cambiar nameservers en HostGator apuntando a Route 53 | CEO | ✅ Completado | Propagación instantánea desde proveedor |
+| 135 | `aws amplify create-domain-association` con apex + www | Deploy AWS | ✅ Completado | `--enable-auto-sub-domain` para que Amplify maneje los CNAMEs |
+| 136 | DNS records (ACM validation + apex A-alias + www CNAME) | Deploy AWS | ✅ Completado | Amplify creó los records automáticamente al detectar la zone |
+| 137 | Esperar validación ACM y status `AVAILABLE` de Amplify | Deploy AWS | ✅ Completado | Tomó ~2 min tras cambio de nameservers |
+| 138 | Smoke test HTTPS + API | QA | ✅ Completado | `https://glomabeauty.com` 200, `https://www.glomabeauty.com` 200, `/login` 200, `POST /api/login` 200 |
+| 139 | Commit + push Sprint 12 | PM | ⬜ En curso | |
+
+### Follow-ups abiertos (no bloqueantes)
+
+- Redirigir `www.glomabeauty.com` → `glomabeauty.com` (o al revés) para una sola URL canónica. Hoy ambas funcionan con el mismo contenido.
+- Mover la plataforma interna a un subdominio `app.glomabeauty.com` para separarla semánticamente de la landing (cuando el equipo escale).
+- Cuando se cree webhook público de Meta: usar `api.glomabeauty.com` apuntado al ALB directamente (con Listener HTTPS y cert ACM propio en `sa-east-1`).
+
+---
+
 ## Log de Cambios
 
 | Fecha | Agente | Acción |
@@ -621,3 +678,6 @@ sprints 8, 9 y 10 en producción.
 | 2026-04-24 | Deploy AWS | Reactivación total de servicios AWS: RDS arrancado, imagen `:sprint11` en ECR, ALB nuevo (`multiagente-alb-673139873`), task-def rev 5, service desired=1 healthy. Migraciones 8+9+10+11 aplicadas en RDS, seed para `ceo@gloma.co`. |
 | 2026-04-24 | Deploy AWS | Amplify env vars actualizadas al nuevo ALB DNS. Job 9 SUCCEED. |
 | 2026-04-24 | QA | Validación E2E online: `https://main.d1cfl9ey07f61o.amplifyapp.com/gloma` OK, `/login` OK, `/bots` devuelve 2 bots. Plataforma y landing online. |
+| 2026-04-24 | Deploy AWS | Sprint 12: hosted zone `glomabeauty.com` en Route 53 (`Z0523904259PXITAV9OOV`). Domain association en Amplify con apex + www, ACM cert auto-validado. |
+| 2026-04-24 | CEO | Nameservers de `glomabeauty.com` cambiados en HostGator a los 4 de Route 53. |
+| 2026-04-24 | QA | Smoke test dominio propio: `https://glomabeauty.com`, `https://www.glomabeauty.com`, `/login` y `POST /api/login` todos 200. Landing Gloma ahora vive en la raíz del dominio. |
