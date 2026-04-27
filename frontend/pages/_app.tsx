@@ -4,9 +4,11 @@ import { useRouter } from 'next/router';
 import { useEffect, useState } from 'react';
 
 // Rutas públicas de la plataforma que no requieren token
-const PUBLIC_PAGES = ['/login', '/register', '/gloma', '/404'];
+const PUBLIC_PAGES = ['/login', '/register', '/gloma', '/automatas', '/404'];
 
-// Hosts donde vive SOLO la landing pública — no hay plataforma que proteger
+// Hosts donde vive SOLO la landing pública — no hay plataforma que proteger.
+// app.glomabeauty.com NO va aquí: es la URL bonita de la plataforma y debe
+// pasar por el guard de autenticación normal.
 const PUBLIC_HOSTS = ['glomabeauty.com', 'www.glomabeauty.com'];
 
 function hostIsPublicLanding(): boolean {

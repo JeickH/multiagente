@@ -10,10 +10,11 @@ import type { NextRequest } from 'next/server';
  *   /api/landing/*   → passthrough (form de contacto)
  *   /favicon.ico     → passthrough
  *   /_next/*         → internals de Next
- *   cualquier otra   → 404 brandeado (la plataforma vive SOLO bajo el dominio de Amplify)
+ *   cualquier otra   → 404 brandeado (la plataforma NO vive bajo el apex/www)
  *
- * main.<amplify>.amplifyapp.com  → comportamiento normal (sin intervención del middleware).
- * localhost y otros hosts         → sin cambio.
+ * app.glomabeauty.com            → plataforma completa (login, /bots, etc.)
+ * main.<amplify>.amplifyapp.com  → idem (URL técnica de respaldo)
+ * localhost y otros hosts         → sin intervención.
  */
 
 const GLOMA_HOSTS = new Set(['glomabeauty.com', 'www.glomabeauty.com']);
