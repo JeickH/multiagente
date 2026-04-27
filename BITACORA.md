@@ -630,13 +630,40 @@ ECS Fargate backend (FastAPI) → RDS
 | 139 | Middleware Next.js: glomabeauty.com solo sirve landing | Dev Plataforma | ✅ Completado | `frontend/middleware.ts` con detección por `Host`. Rewrite `/` → `/gloma`. Otras rutas de plataforma → 404 brandeado vía rewrite a path inexistente. Whitelist: `/gloma/*`, `/api/landing/*`, `/_next/*`, `/favicon.ico` |
 | 140 | Página `pages/404.tsx` brandeada con identidad Gloma | Dev Plataforma | ✅ Completado | Syne + Inter, paleta Gloma, CTAs "Volver al inicio" y WhatsApp |
 | 141 | Build Amplify + validación online de la separación por dominio | QA | ✅ Completado | `glomabeauty.com/` 200 landing, `glomabeauty.com/login` 404, `/bots` 404. `main.d1cfl9ey07f61o.amplifyapp.com/login` sigue 200 (plataforma completa). Build job 10 SUCCEED |
-| 142 | Commit + push Sprint 12 | PM | ⬜ En curso | Último commit: `7a76e2f` + este cierre |
+| 142 | Fix `_app.tsx`: no redirigir a /login cuando host es glomabeauty.com | Dev Plataforma | ✅ Completado | El guard client-side hacía `router.replace('/login')` después del rewrite del middleware, sobrescribiendo la landing en el navegador. Ahora detecta `PUBLIC_HOSTS` y no se activa allí. |
+| 143 | Iconos brandeados en features y métricas (9 archivos `ld_*.png`) | Dev Plataforma | ✅ Completado | Reemplazan los placeholders genéricos. Servidos desde `public/gloma/`. |
+| 144 | Pulir copy de la landing | Dev Plataforma | ✅ Completado | Eliminados eyebrows `01·valor`/`02·valor`/`03·valor`/`Funcionalidades clave`/`Conversemos`. Hero subtítulo → "La forma elegante de automatizar ventas sin perder el trato humano". CTA contacto → "¿Listo para escalar tus ventas sin ampliar tu equipo?". Botón → "Hablar con un especialista". Footer simplificado. |
+| 145 | Microinteracciones modernas en la landing | Dev Plataforma | ✅ Completado | (a) Contadores animados de 0→valor en stats al entrar al viewport (IntersectionObserver + RAF + easeOutCubic, formato es-CO). (b) `Reveal` fade+translate al scroll. (c) Header con orbes pastel y SVG con líneas/nodos del logo siguiendo el cursor (parallax). |
+| 146 | Logo del header → `logo_blancotrans.png` grande (h-28/h-40) | Dev Plataforma | ✅ Completado | Iteración rápida: logo_transparente → logo_gloma_original_trans → logo_blancotrans (definitivo). Mismo logo reusado en el footer al mismo tamaño. |
+| 147 | Smooth scroll de "Agenda una demo" y "Que te contactemos" → `#contacto` | Dev Plataforma | ✅ Completado | Helper `smoothScrollToContacto` con RAF + easeInOutCubic 1s + offset 40px. Reemplaza el jump nativo. |
+| 148 | Footer: contacto@glomabeauty.com + tel +57 300 318 7871 + dirección Cali | Dev Plataforma | ✅ Completado | Calle 36, Vía Jamundí #128-321. Logo header reutilizado. |
+| 149 | Microinteracción del form de contacto | Dev Plataforma | ✅ Completado | Componente `ContactForm`: en `sending` el recuadro pulsa con aro rosa empolvado + scale 0.985; en `ok` el contenido fade-out y aparece overlay con check SVG dibujándose (stroke-dashoffset) + título "Mensaje recibido" + texto en marrón (sin verdes). Animaciones declaradas en `<style jsx global>` (`glomaRing`, `glomaCheckDraw`, `glomaThanksFloat`). |
+| 150 | AWS WorkMail: organización `gloma` + dominio `glomabeauty.com` + usuario `contacto@` | Deploy AWS | ✅ Completado | Org `m-2d1c023cd995430382aa94c3cb0ca789` en `us-east-1`. Dominio VERIFIED automáticamente (Amplify ya tenía la zone). 8 DNS records: MX → `inbound-smtp.us-east-1.amazonaws.com`, 3 CNAMEs DKIM, autodiscover, TXT amazonses, SPF (`include:amazonses.com`), DMARC quarantine. Usuario ENABLED. Webmail: `https://gloma.awsapps.com/mail`. Costo: $4 USD/mes. |
+| 151 | Subdominio `app.glomabeauty.com` para la plataforma | Deploy AWS | ✅ Completado | `update-domain-association` añadiendo prefix `app`. Cert wildcard `*.glomabeauty.com` ya cubría el subdominio → HTTPS 200 al instante. Comentario del middleware actualizado para reflejar la nueva URL canónica. |
+| 152 | Commit + push final Sprint 12 | PM | ⬜ En curso | |
+
+### URLs finales del Sprint 12
+
+| URL | Sirve | Tecnología |
+|-----|-------|-----------|
+| `https://glomabeauty.com` | Landing Gloma | Amplify + middleware Next.js |
+| `https://www.glomabeauty.com` | Landing Gloma | Amplify (cert wildcard) |
+| `https://app.glomabeauty.com` | Plataforma (login, bots, …) | Amplify (cert wildcard) |
+| `https://main.d1cfl9ey07f61o.amplifyapp.com` | Plataforma (URL técnica de respaldo) | Amplify default |
+| `https://gloma.awsapps.com/mail` | Webmail `contacto@glomabeauty.com` | AWS WorkMail us-east-1 |
+
+### Credenciales WorkMail
+
+- Webmail: `https://gloma.awsapps.com/mail`
+- Usuario: `contacto`
+- Email: `contacto@glomabeauty.com`
+- Password inicial: `Gloma2026!` (cambiar al primer login)
 
 ### Follow-ups abiertos (no bloqueantes)
 
-- Redirigir `www.glomabeauty.com` → `glomabeauty.com` (o al revés) para una sola URL canónica. Hoy ambas funcionan con el mismo contenido.
-- Mover la plataforma interna a un subdominio `app.glomabeauty.com` para separarla semánticamente de la landing (cuando el equipo escale).
-- Cuando se cree webhook público de Meta: usar `api.glomabeauty.com` apuntado al ALB directamente (con Listener HTTPS y cert ACM propio en `sa-east-1`).
+- Redirigir `www.glomabeauty.com` → `glomabeauty.com` para una sola URL canónica.
+- Cuando se cree webhook público de Meta: usar `api.glomabeauty.com` apuntado al ALB directamente (Listener HTTPS y cert ACM propio en `sa-east-1`).
+- Cambiar la password inicial de `contacto@glomabeauty.com` desde el webmail al primer login.
 
 ---
 
@@ -687,3 +714,11 @@ ECS Fargate backend (FastAPI) → RDS
 | 2026-04-24 | CEO | Corrección de alcance: glomabeauty.com debe servir SOLO la landing; la plataforma se queda en la URL default de Amplify. |
 | 2026-04-24 | Dev Plataforma | `frontend/middleware.ts` con separación por host: `glomabeauty.com/` sirve la landing (rewrite interno a `/gloma`), otras rutas → 404 brandeado. Whitelist de assets y `/api/landing/*`. Página `/404.tsx` con identidad Gloma. |
 | 2026-04-24 | QA | Separación por dominio validada online: `glomabeauty.com/login` y `/bots` → 404; `main.d1cfl9ey07f61o.amplifyapp.com/login` → 200. Amplify build job 10 SUCCEED. |
+| 2026-04-24 | Dev Plataforma | Fix `_app.tsx`: el guard de auth client-side hacía `router.replace('/login')` después del rewrite del middleware. Ahora detecta `PUBLIC_HOSTS` y no se activa en glomabeauty.com. |
+| 2026-04-26 | Dev Plataforma | Iconos brandeados (9 PNG `ld_*`) reemplazan placeholders en features y stats. Copy refinado: hero subtítulo, CTA contacto, botón del form, footer simplificado. Eyebrows eliminados. |
+| 2026-04-26 | Dev Plataforma | Microinteracciones modernas: contadores animados (RAF + easeOutCubic, formato es-CO), `Reveal` fade+translate al scroll, header con orbes pastel + SVG de líneas y nodos siguiendo el cursor (parallax). |
+| 2026-04-26 | Dev Plataforma | Logo header → `logo_blancotrans.png` grande (h-28 móvil / h-40 desktop), reusado en el footer. Smooth scroll RAF+easeInOutCubic 1s para "Agenda una demo" y "Que te contactemos". |
+| 2026-04-26 | Dev Plataforma | Footer actualizado: `contacto@glomabeauty.com`, +57 300 318 7871, Calle 36, Vía Jamundí #128-321, Cali. |
+| 2026-04-26 | Dev Plataforma | `ContactForm` con microinteracción brandeada: aro pulsante en `sending`, fade-out + check SVG dibujándose en `ok`. Sin verdes — solo paleta Gloma (rosa + marrón tierra). |
+| 2026-04-27 | Deploy AWS | AWS WorkMail org `gloma` (us-east-1) + dominio `glomabeauty.com` registrado. 8 DNS records en Route 53 (MX, 3×DKIM, autodiscover, _amazonses TXT, SPF, DMARC). Usuario `contacto@glomabeauty.com` ENABLED. Webmail en `https://gloma.awsapps.com/mail`. Costo +$4 USD/mes. |
+| 2026-04-27 | Deploy AWS | `app.glomabeauty.com` añadido al domain association de Amplify (cert wildcard ya lo cubre). Plataforma ahora servida en URL bonita. Build job 12 SUCCEED. |
