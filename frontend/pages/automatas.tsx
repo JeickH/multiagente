@@ -35,7 +35,7 @@ const FONT_HEAD = 'Urbanist, system-ui, sans-serif';
 const FONT_BODY = 'Inter, system-ui, sans-serif';
 
 const WHATSAPP_URL =
-  'https://wa.me/573003187871?text=Hola%20Gorvek%2C%20quiero%20agendar%20un%20diagn%C3%B3stico%20estrat%C3%A9gico';
+  'https://wa.me/573003187871?text=Hola%20Gorvek%2C%20me%20gustar%C3%ADa%20hablar%20con%20un%20experto';
 
 // --- Datos -----------------------------------------------------------------
 
@@ -51,39 +51,6 @@ const VALUE_PROPS = [
   {
     title: 'Escale operaciones sin perder control',
     text: 'Mantenga trazabilidad, gobernanza y precisión incluso en procesos críticos.',
-  },
-];
-
-const FEATURES = [
-  {
-    n: '01',
-    title: 'Agentes Autónomos Multi-Step',
-    text: 'Diseñados para ejecutar procesos completos con lógica de negocio avanzada.',
-  },
-  {
-    n: '02',
-    title: 'Integración con Ecosistema Empresarial',
-    text: 'Conecte ERPs, CRMs, bases de datos, APIs y sistemas internos.',
-  },
-  {
-    n: '03',
-    title: 'Motor de Decisión Configurable',
-    text: 'Defina reglas, aprobaciones, thresholds y políticas de ejecución.',
-  },
-  {
-    n: '04',
-    title: 'Supervisión y Trazabilidad Total',
-    text: 'Cada acción ejecutada queda registrada y auditable.',
-  },
-  {
-    n: '05',
-    title: 'Escalamiento Humano Inteligente',
-    text: 'Los agentes derivan excepciones cuando el contexto lo requiere.',
-  },
-  {
-    n: '06',
-    title: 'Optimización Continua',
-    text: 'Aprendizaje operativo basado en performance y feedback.',
   },
 ];
 
@@ -107,6 +74,11 @@ const STEPS = [
     n: '04',
     title: 'Despliegue y Optimización',
     text: 'Activación progresiva con monitoreo continuo.',
+  },
+  {
+    n: '05',
+    title: 'Soporte y Acompañamiento',
+    text: 'Acompañamos su operación después del despliegue, ajustando agentes según resultados y nuevos requerimientos.',
   },
 ];
 
@@ -375,279 +347,92 @@ function Hero() {
       {/* Nav */}
       <nav className="relative z-10 flex items-center justify-between max-w-6xl mx-auto px-6 md:px-10 pt-7">
         <Wordmark size="md" />
-        <div className="hidden md:flex items-center gap-8 text-sm" style={{ fontFamily: FONT_BODY }}>
-          <a href="#plataforma" onClick={smoothScrollTo('plataforma')} className="hover:text-white transition-colors" style={{ color: BRAND.textMuted }}>
-            Plataforma
-          </a>
-          <a href="#proceso" onClick={smoothScrollTo('proceso')} className="hover:text-white transition-colors" style={{ color: BRAND.textMuted }}>
-            Proceso
-          </a>
-          <a href="#casos" onClick={smoothScrollTo('casos')} className="hover:text-white transition-colors" style={{ color: BRAND.textMuted }}>
-            Casos de Uso
-          </a>
-          <a
-            href="#contacto"
-            onClick={smoothScrollTo('contacto')}
-            className="px-4 py-2 text-sm font-medium transition-all"
-            style={{
-              fontFamily: FONT_BODY,
-              borderRadius: 6,
-              border: `1px solid ${BRAND.mint}`,
-              color: BRAND.mint,
-            }}
-          >
-            Agendar Diagnóstico
-          </a>
-        </div>
+        <a
+          href="#contacto"
+          onClick={smoothScrollTo('contacto')}
+          className="gorvek-cta-primary inline-flex items-center px-5 py-2.5 text-sm font-semibold transition-all"
+          style={{
+            fontFamily: FONT_BODY,
+            borderRadius: 6,
+            backgroundColor: BRAND.mint,
+            color: BRAND.bgBase,
+          }}
+        >
+          Hablar con un experto
+        </a>
       </nav>
 
       {/* Contenido */}
       <div
         ref={contentRef}
-        className="relative z-10 max-w-6xl mx-auto px-6 md:px-10 py-24 md:py-32 grid grid-cols-1 lg:grid-cols-12 gap-12 items-center"
+        className="relative z-10 max-w-4xl mx-auto px-6 md:px-10 py-32 md:py-44 text-center"
       >
-        <div className="lg:col-span-7">
-          <div
-            className="inline-flex items-center gap-2 px-3 py-1 mb-8 text-xs uppercase tracking-widest"
-            style={{
-              fontFamily: FONT_BODY,
-              border: `1px solid ${BRAND.cardBorder}`,
-              color: BRAND.mint,
-              borderRadius: 4,
-              backgroundColor: BRAND.cardBg,
-              opacity: inView ? 1 : 0,
-              transform: inView ? 'translateY(0)' : 'translateY(20px)',
-              transition: 'opacity 800ms ease, transform 800ms cubic-bezier(.22,.61,.36,1)',
-            }}
-          >
-            <span style={{ width: 6, height: 6, borderRadius: 999, backgroundColor: BRAND.mint, boxShadow: `0 0 8px ${BRAND.mint}` }} />
-            Infraestructura de IA Empresarial
-          </div>
+        <h1
+          className="text-4xl md:text-6xl lg:text-7xl leading-[1.05] mb-8"
+          style={{
+            fontFamily: FONT_HEAD,
+            fontWeight: 700,
+            color: BRAND.text,
+            letterSpacing: '-0.02em',
+            opacity: inView ? 1 : 0,
+            transform: inView ? 'translateY(0)' : 'translateY(20px)',
+            transition: 'opacity 900ms ease 100ms, transform 900ms cubic-bezier(.22,.61,.36,1) 100ms',
+          }}
+        >
+          Inteligencia autónoma para{' '}
+          <span style={{ color: BRAND.mint }}>operaciones empresariales</span> complejas.
+        </h1>
 
-          <h1
-            className="text-4xl md:text-6xl lg:text-7xl leading-[1.05] mb-7"
-            style={{
-              fontFamily: FONT_HEAD,
-              fontWeight: 700,
-              color: BRAND.text,
-              letterSpacing: '-0.02em',
-              opacity: inView ? 1 : 0,
-              transform: inView ? 'translateY(0)' : 'translateY(20px)',
-              transition: 'opacity 900ms ease 100ms, transform 900ms cubic-bezier(.22,.61,.36,1) 100ms',
-            }}
-          >
-            Inteligencia autónoma para{' '}
-            <span style={{ color: BRAND.mint }}>operaciones empresariales</span> complejas.
-          </h1>
+        <p
+          className="text-base md:text-lg max-w-2xl mx-auto mb-12"
+          style={{
+            fontFamily: FONT_BODY,
+            color: BRAND.textMuted,
+            lineHeight: 1.7,
+            opacity: inView ? 1 : 0,
+            transform: inView ? 'translateY(0)' : 'translateY(20px)',
+            transition: 'opacity 900ms ease 200ms, transform 900ms cubic-bezier(.22,.61,.36,1) 200ms',
+          }}
+        >
+          Delegue procesos críticos a agentes de IA diseñados para ejecutar, coordinar y optimizar operaciones con precisión empresarial.
+        </p>
 
-          <p
-            className="text-base md:text-lg max-w-2xl mb-10"
-            style={{
-              fontFamily: FONT_BODY,
-              color: BRAND.textMuted,
-              lineHeight: 1.7,
-              opacity: inView ? 1 : 0,
-              transform: inView ? 'translateY(0)' : 'translateY(20px)',
-              transition: 'opacity 900ms ease 200ms, transform 900ms cubic-bezier(.22,.61,.36,1) 200ms',
-            }}
-          >
-            Delegue procesos críticos a agentes de IA diseñados para ejecutar, coordinar y optimizar operaciones con precisión empresarial.
-          </p>
-
-          <ul
-            className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-10 text-sm"
-            style={{
-              fontFamily: FONT_BODY,
-              opacity: inView ? 1 : 0,
-              transform: inView ? 'translateY(0)' : 'translateY(20px)',
-              transition: 'opacity 900ms ease 300ms, transform 900ms cubic-bezier(.22,.61,.36,1) 300ms',
-            }}
-          >
-            {[
-              'Automatización con control empresarial',
-              'Integración con sus sistemas actuales',
-              'Infraestructura enterprise-grade',
-            ].map((b) => (
-              <li key={b} className="flex items-start gap-2" style={{ color: BRAND.textMuted }}>
-                <svg width="14" height="14" viewBox="0 0 14 14" className="mt-1 flex-shrink-0">
-                  <path d="M2 7 L6 11 L12 3" stroke={BRAND.mint} strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
-                <span>{b}</span>
-              </li>
-            ))}
-          </ul>
-
-          <div
-            className="flex flex-col sm:flex-row gap-3"
-            style={{
-              opacity: inView ? 1 : 0,
-              transform: inView ? 'translateY(0)' : 'translateY(20px)',
-              transition: 'opacity 900ms ease 400ms, transform 900ms cubic-bezier(.22,.61,.36,1) 400ms',
-            }}
-          >
-            <a
-              href="#contacto"
-              onClick={smoothScrollTo('contacto')}
-              className="gorvek-cta-primary inline-flex items-center justify-center px-6 py-3 text-sm font-semibold transition-all"
-              style={{
-                fontFamily: FONT_BODY,
-                backgroundColor: BRAND.mint,
-                color: BRAND.bgBase,
-                borderRadius: 6,
-              }}
-            >
-              Agendar Diagnóstico Estratégico
-            </a>
-            <a
-              href="#plataforma"
-              onClick={smoothScrollTo('plataforma')}
-              className="inline-flex items-center justify-center px-6 py-3 text-sm font-semibold transition-all hover:bg-white/5"
-              style={{
-                fontFamily: FONT_BODY,
-                color: BRAND.text,
-                border: `1px solid ${BRAND.cardBorder}`,
-                borderRadius: 6,
-              }}
-            >
-              Ver Capacidades de la Plataforma
-            </a>
-          </div>
-        </div>
-
-        {/* Mockup abstracto plataforma */}
         <div
-          className="lg:col-span-5"
+          className="flex justify-center"
           style={{
             opacity: inView ? 1 : 0,
             transform: inView ? 'translateY(0)' : 'translateY(20px)',
-            transition: 'opacity 1000ms ease 500ms, transform 1000ms cubic-bezier(.22,.61,.36,1) 500ms',
+            transition: 'opacity 900ms ease 300ms, transform 900ms cubic-bezier(.22,.61,.36,1) 300ms',
           }}
         >
-          <PlatformMock />
+          <a
+            href="#contacto"
+            onClick={smoothScrollTo('contacto')}
+            className="gorvek-cta-primary inline-flex items-center justify-center px-7 py-3.5 text-sm font-semibold transition-all"
+            style={{
+              fontFamily: FONT_BODY,
+              backgroundColor: BRAND.mint,
+              color: BRAND.bgBase,
+              borderRadius: 6,
+            }}
+          >
+            Hablar con un experto
+          </a>
         </div>
       </div>
     </header>
   );
 }
 
-/** Mockup abstracto de un panel de control / dashboard premium. */
-function PlatformMock() {
-  return (
-    <div
-      className="relative w-full"
-      style={{
-        backgroundColor: BRAND.cardBg,
-        border: `1px solid ${BRAND.cardBorder}`,
-        borderRadius: 8,
-        backdropFilter: 'blur(8px)',
-        boxShadow: '0 30px 80px -20px rgba(0,0,0,0.6), 0 0 60px -20px rgba(77,182,172,0.25)',
-      }}
-    >
-      <div
-        className="flex items-center gap-2 px-4 py-3 border-b"
-        style={{ borderColor: BRAND.cardBorder }}
-      >
-        <span style={{ width: 8, height: 8, borderRadius: 999, background: 'rgba(255,255,255,0.18)' }} />
-        <span style={{ width: 8, height: 8, borderRadius: 999, background: 'rgba(255,255,255,0.18)' }} />
-        <span style={{ width: 8, height: 8, borderRadius: 999, background: 'rgba(255,255,255,0.18)' }} />
-        <span className="ml-auto text-[10px] uppercase tracking-widest" style={{ color: BRAND.textDim, fontFamily: FONT_BODY }}>
-          gorvek · control plane
-        </span>
-      </div>
-
-      <div className="p-5 grid grid-cols-2 gap-3">
-        {[
-          { label: 'Agentes activos', value: '128' },
-          { label: 'Procesos / hora', value: '4.2k' },
-          { label: 'SLA cumplimiento', value: '99.97%' },
-          { label: 'Excepciones humanas', value: '0.3%' },
-        ].map((s) => (
-          <div
-            key={s.label}
-            className="px-3 py-3"
-            style={{
-              backgroundColor: 'rgba(255,255,255,0.025)',
-              border: `1px solid ${BRAND.cardBorder}`,
-              borderRadius: 6,
-            }}
-          >
-            <div
-              className="text-[10px] uppercase tracking-widest mb-1"
-              style={{ color: BRAND.textDim, fontFamily: FONT_BODY }}
-            >
-              {s.label}
-            </div>
-            <div
-              className="text-xl"
-              style={{ color: BRAND.text, fontFamily: FONT_HEAD, fontWeight: 700 }}
-            >
-              {s.value}
-            </div>
-          </div>
-        ))}
-      </div>
-
-      <div className="px-5 pb-5">
-        <div
-          className="text-[10px] uppercase tracking-widest mb-2"
-          style={{ color: BRAND.textDim, fontFamily: FONT_BODY }}
-        >
-          Workflow en ejecución
-        </div>
-        <svg viewBox="0 0 320 90" className="w-full h-20">
-          <defs>
-            <linearGradient id="gorvekFlow" x1="0" y1="0" x2="1" y2="0">
-              <stop offset="0%" stopColor={BRAND.mint} stopOpacity="0" />
-              <stop offset="50%" stopColor={BRAND.mint} stopOpacity="0.9" />
-              <stop offset="100%" stopColor={BRAND.mint} stopOpacity="0" />
-            </linearGradient>
-          </defs>
-          <line x1="20" y1="45" x2="300" y2="45" stroke={BRAND.cardBorder} strokeWidth="1" />
-          <line
-            x1="20"
-            y1="45"
-            x2="300"
-            y2="45"
-            stroke="url(#gorvekFlow)"
-            strokeWidth="2"
-            style={{ animation: 'gorvekFlow 3s linear infinite' }}
-          />
-          {[20, 90, 160, 230, 300].map((x, i) => (
-            <g key={x}>
-              <circle cx={x} cy="45" r="6" fill={BRAND.bgBase} stroke={BRAND.mint} strokeWidth="1.5" />
-              <text
-                x={x}
-                y="78"
-                textAnchor="middle"
-                fontSize="9"
-                fill={BRAND.textDim}
-                fontFamily="Inter, system-ui, sans-serif"
-              >
-                {['Trigger', 'Analizar', 'Decidir', 'Ejecutar', 'Verificar'][i]}
-              </text>
-            </g>
-          ))}
-        </svg>
-      </div>
-    </div>
-  );
-}
-
 function SectionHeading({
-  eyebrow,
   title,
+  subtitle,
 }: {
-  eyebrow: string;
   title: string;
+  subtitle?: string;
 }) {
   return (
     <Reveal className="max-w-3xl mx-auto text-center mb-16 md:mb-20">
-      <div
-        className="text-xs uppercase tracking-widest mb-4"
-        style={{ color: BRAND.mint, fontFamily: FONT_BODY }}
-      >
-        {eyebrow}
-      </div>
       <h2
         className="text-3xl md:text-5xl leading-[1.1]"
         style={{
@@ -659,6 +444,14 @@ function SectionHeading({
       >
         {title}
       </h2>
+      {subtitle && (
+        <p
+          className="text-base md:text-lg mt-6"
+          style={{ fontFamily: FONT_BODY, color: BRAND.textMuted, lineHeight: 1.7 }}
+        >
+          {subtitle}
+        </p>
+      )}
     </Reveal>
   );
 }
@@ -670,10 +463,7 @@ function ValuePropSection() {
       style={{ backgroundColor: BRAND.bgBase }}
     >
       <div className="max-w-6xl mx-auto px-6 md:px-10">
-        <SectionHeading
-          eyebrow="Propuesta de valor"
-          title="Infraestructura autónoma diseñada para negocio real"
-        />
+        <SectionHeading title="Infraestructura autónoma diseñada para negocio real" />
         <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
           {VALUE_PROPS.map((v, i) => (
             <Reveal key={v.title} delay={i * 100}>
@@ -735,67 +525,6 @@ function ValuePropSection() {
   );
 }
 
-function FeaturesSection() {
-  return (
-    <section
-      id="plataforma"
-      className="py-24 md:py-32"
-      style={{ backgroundColor: BRAND.bgAlt }}
-    >
-      <div className="max-w-6xl mx-auto px-6 md:px-10">
-        <SectionHeading
-          eyebrow="Plataforma"
-          title="Una plataforma construida para automatización empresarial avanzada"
-        />
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-          {FEATURES.map((f, i) => (
-            <Reveal key={f.title} delay={i * 70}>
-              <div
-                className="gorvek-card p-7 h-full"
-                style={{
-                  backgroundColor: BRAND.cardBg,
-                  border: `1px solid ${BRAND.cardBorder}`,
-                  borderRadius: 8,
-                  transition: 'border-color 300ms ease, box-shadow 300ms ease, transform 300ms ease',
-                }}
-              >
-                <div
-                  className="text-xs mb-4"
-                  style={{
-                    fontFamily: FONT_HEAD,
-                    fontWeight: 700,
-                    color: BRAND.mint,
-                    letterSpacing: '0.15em',
-                  }}
-                >
-                  {f.n}
-                </div>
-                <h3
-                  className="text-lg md:text-xl mb-3"
-                  style={{
-                    fontFamily: FONT_HEAD,
-                    fontWeight: 600,
-                    color: BRAND.text,
-                    letterSpacing: '-0.01em',
-                  }}
-                >
-                  {f.title}
-                </h3>
-                <p
-                  className="text-sm leading-relaxed"
-                  style={{ fontFamily: FONT_BODY, color: BRAND.textMuted }}
-                >
-                  {f.text}
-                </p>
-              </div>
-            </Reveal>
-          ))}
-        </div>
-      </div>
-    </section>
-  );
-}
-
 function HowItWorksSection() {
   return (
     <section
@@ -804,26 +533,23 @@ function HowItWorksSection() {
       style={{ backgroundColor: BRAND.bgBase }}
     >
       <div className="max-w-6xl mx-auto px-6 md:px-10">
-        <SectionHeading
-          eyebrow="Cómo funciona"
-          title="Implementación estructurada para operaciones críticas"
-        />
+        <SectionHeading title="Implementación estructurada para operaciones críticas" />
         <div className="relative">
-          {/* Línea horizontal en desktop */}
+          {/* Línea horizontal en desktop (solo cuando los 5 pasos van en una sola fila) */}
           <div
-            className="hidden md:block absolute left-0 right-0"
+            className="hidden lg:block absolute left-0 right-0"
             style={{
               top: 24,
               height: 1,
               background: `linear-gradient(to right, transparent 0%, ${BRAND.cardBorderHover} 15%, ${BRAND.cardBorderHover} 85%, transparent 100%)`,
             }}
           />
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-8">
             {STEPS.map((s, i) => (
               <Reveal key={s.n} delay={i * 120}>
                 <div className="relative">
                   <div
-                    className="relative mx-auto md:mx-0 flex items-center justify-center mb-5"
+                    className="relative mx-auto lg:mx-0 flex items-center justify-center mb-5"
                     style={{
                       width: 48,
                       height: 48,
@@ -840,7 +566,7 @@ function HowItWorksSection() {
                     {s.n}
                   </div>
                   <h3
-                    className="text-lg md:text-xl mb-2 text-center md:text-left"
+                    className="text-lg md:text-xl mb-2 text-center lg:text-left"
                     style={{
                       fontFamily: FONT_HEAD,
                       fontWeight: 600,
@@ -851,7 +577,7 @@ function HowItWorksSection() {
                     {s.title}
                   </h3>
                   <p
-                    className="text-sm leading-relaxed text-center md:text-left"
+                    className="text-sm leading-relaxed text-center lg:text-left"
                     style={{ fontFamily: FONT_BODY, color: BRAND.textMuted }}
                   >
                     {s.text}
@@ -882,10 +608,7 @@ function MetricsSection() {
         }}
       />
       <div className="relative max-w-6xl mx-auto px-6 md:px-10">
-        <SectionHeading
-          eyebrow="Impacto"
-          title="Resultados medibles en operaciones empresariales"
-        />
+        <SectionHeading title="Resultados medibles en operaciones empresariales" />
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
           {METRICS.map((m, i) => (
             <Reveal key={m.label} delay={i * 100}>
@@ -933,10 +656,7 @@ function UseCasesSection() {
       style={{ backgroundColor: BRAND.bgAlt }}
     >
       <div className="max-w-6xl mx-auto px-6 md:px-10">
-        <SectionHeading
-          eyebrow="Casos de uso"
-          title="Aplicaciones para operaciones de alta complejidad"
-        />
+        <SectionHeading title="Aplicaciones para operaciones de alta complejidad" />
         <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
           {USE_CASES.map((u, i) => (
             <Reveal key={u.title} delay={i * 100}>
@@ -1063,12 +783,6 @@ function FinalCTASection({
       />
       <div className="relative max-w-5xl mx-auto px-6 md:px-10 grid grid-cols-1 lg:grid-cols-2 gap-12 lg:gap-16 items-center">
         <Reveal>
-          <div
-            className="text-xs uppercase tracking-widest mb-4"
-            style={{ color: BRAND.mint, fontFamily: FONT_BODY }}
-          >
-            Diagnóstico estratégico
-          </div>
           <h2
             className="text-3xl md:text-5xl mb-6 leading-[1.1]"
             style={{
@@ -1078,13 +792,13 @@ function FinalCTASection({
               letterSpacing: '-0.02em',
             }}
           >
-            Descubra qué procesos de su operación puede delegar a inteligencia autónoma.
+            Conversemos sobre los procesos que puede delegar a un agente.
           </h2>
           <p
             className="text-base md:text-lg mb-8"
             style={{ fontFamily: FONT_BODY, color: BRAND.textMuted, lineHeight: 1.7 }}
           >
-            Agende una sesión estratégica con nuestro equipo para identificar oportunidades de automatización de alto impacto.
+            Cuéntenos brevemente cómo opera su empresa y le mostramos qué tareas pueden ejecutarse de forma autónoma — sin reemplazar las herramientas que ya usa.
           </p>
           <a
             href={WHATSAPP_URL}
@@ -1159,7 +873,7 @@ function FinalCTASection({
                   borderRadius: 6,
                 }}
               >
-                {isSending ? 'Enviando…' : 'Solicitar Diagnóstico Estratégico'}
+                {isSending ? 'Enviando…' : 'Hablar con un experto'}
               </button>
               {isError && message && (
                 <p
@@ -1211,13 +925,13 @@ function FinalCTASection({
                   className="text-xl md:text-2xl mb-2"
                   style={{ fontFamily: FONT_HEAD, fontWeight: 700, color: BRAND.text }}
                 >
-                  Solicitud recibida
+                  Mensaje recibido
                 </h3>
                 <p
                   className="text-sm md:text-base"
                   style={{ fontFamily: FONT_BODY, color: BRAND.textMuted }}
                 >
-                  {message || 'Nuestro equipo lo contactará para coordinar el diagnóstico.'}
+                  {message || 'Lo contactaremos para coordinar la conversación.'}
                 </p>
               </div>
             )}
@@ -1292,11 +1006,6 @@ function Footer() {
             Soluciones
           </h4>
           <ul className="space-y-2 text-sm" style={{ fontFamily: FONT_BODY, color: BRAND.textMuted }}>
-            <li>
-              <a href="#plataforma" onClick={smoothScrollTo('plataforma')} className="hover:text-white transition-colors">
-                Plataforma
-              </a>
-            </li>
             <li>
               <a href="#casos" onClick={smoothScrollTo('casos')} className="hover:text-white transition-colors">
                 Casos de Uso
@@ -1373,7 +1082,7 @@ export default function GorvekLanding() {
         throw new Error(data.detail || `HTTP ${res.status}`);
       }
       setStatus('ok');
-      setMessage('Su equipo será contactado para coordinar el diagnóstico estratégico.');
+      setMessage('Lo contactaremos pronto para coordinar la conversación.');
       setForm({ email: '', telefono: '', empresa: '' });
     } catch (err: any) {
       setStatus('error');
@@ -1425,10 +1134,6 @@ export default function GorvekLanding() {
           0%, 100% { transform: scale(1); opacity: 0.95; }
           50%      { transform: scale(1.6); opacity: 0.55; }
         }
-        @keyframes gorvekFlow {
-          0%   { transform: translateX(-260px); }
-          100% { transform: translateX(260px); }
-        }
         @keyframes gorvekDraw {
           to { stroke-dashoffset: 0; }
         }
@@ -1437,7 +1142,6 @@ export default function GorvekLanding() {
       <div className="gorvek-root min-h-screen">
         <Hero />
         <ValuePropSection />
-        <FeaturesSection />
         <HowItWorksSection />
         <MetricsSection />
         <UseCasesSection />
