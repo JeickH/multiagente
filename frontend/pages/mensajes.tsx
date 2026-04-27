@@ -216,7 +216,7 @@ export default function Mensajes() {
   return (
     <Layout variant="fullscreen">
       {/* Header del módulo */}
-      <header className="bg-white border-b border-green-200 px-8 py-4 flex items-center justify-between shadow-sm">
+      <header className="bg-white border-b border-gloma-rose-soft px-8 py-4 flex items-center justify-between shadow-sm">
         <div className="flex items-center gap-3">
           <span className="text-2xl">💬</span>
           <h1 className="text-xl font-semibold text-gray-800">Bandeja de entrada</h1>
@@ -225,10 +225,10 @@ export default function Mensajes() {
           {me && (
             <div className="text-right">
               <div className="text-xs text-gray-500">Conectado como</div>
-              <div className="text-sm font-medium text-green-700">{me.member.nombre || me.member.correo}</div>
+              <div className="text-sm font-medium text-gloma-brown">{me.member.nombre || me.member.correo}</div>
             </div>
           )}
-          <div className="w-10 h-10 rounded-full bg-green-600 text-white flex items-center justify-center font-semibold">
+          <div className="w-10 h-10 rounded-full bg-gloma-brown text-white flex items-center justify-center font-semibold">
             {initials(me?.member.nombre || null, me?.member.correo || 'U')}
           </div>
         </div>
@@ -237,13 +237,13 @@ export default function Mensajes() {
       {/* Body: lista + panel */}
       <div className="flex-1 flex overflow-hidden">
         {/* Lista de conversaciones */}
-        <aside className="w-96 bg-white border-r border-green-100 flex flex-col">
-          <div className="px-4 py-3 border-b border-green-100">
+        <aside className="w-96 bg-white border-r border-gloma-rose-soft flex flex-col">
+          <div className="px-4 py-3 border-b border-gloma-rose-soft">
             <div className="flex items-center justify-between mb-3">
               <h2 className="font-semibold text-gray-800">Chats activos</h2>
               <button
                 onClick={() => setShowNew(true)}
-                className="w-8 h-8 rounded-full bg-green-600 text-white flex items-center justify-center hover:bg-green-700 transition-colors"
+                className="w-8 h-8 rounded-full bg-gloma-brown text-white flex items-center justify-center hover:bg-gloma-brown-dark transition-colors"
                 title="Nueva conversación"
               >
                 +
@@ -257,7 +257,7 @@ export default function Mensajes() {
               placeholder="Buscar..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:border-green-500"
+              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:border-gloma-rose"
             />
             <div className="flex gap-2 mt-3 flex-wrap">
               {FILTERS.map((f) => (
@@ -266,8 +266,8 @@ export default function Mensajes() {
                   onClick={() => setFilter(f.key)}
                   className={`px-3 py-1 text-xs rounded-full border transition-colors ${
                     filter === f.key
-                      ? 'bg-green-600 text-white border-green-600'
-                      : 'text-gray-600 border-gray-200 hover:border-green-400'
+                      ? 'bg-gloma-brown text-white border-gloma-brown'
+                      : 'text-gray-600 border-gray-200 hover:border-gloma-rose'
                   }`}
                 >
                   {f.label}
@@ -294,10 +294,10 @@ export default function Mensajes() {
                     key={c.id}
                     onClick={() => setSelectedId(c.id)}
                     className={`w-full text-left px-4 py-3 flex gap-3 border-b border-gray-50 transition-colors ${
-                      selected ? 'bg-green-50' : 'hover:bg-gray-50'
+                      selected ? 'bg-gloma-rose-soft/30' : 'hover:bg-gray-50'
                     }`}
                   >
-                    <div className="w-10 h-10 rounded-full bg-green-100 text-green-700 flex items-center justify-center font-semibold flex-shrink-0">
+                    <div className="w-10 h-10 rounded-full bg-gloma-rose-soft text-gloma-brown flex items-center justify-center font-semibold flex-shrink-0">
                       {initials(c.contact_name, c.contact_wa_id)}
                     </div>
                     <div className="flex-1 min-w-0">
@@ -315,7 +315,7 @@ export default function Mensajes() {
                       <span
                         className={`inline-block mt-1 px-2 py-0.5 text-[10px] rounded-full ${
                           c.status === 'open'
-                            ? 'bg-green-100 text-green-700'
+                            ? 'bg-gloma-rose-soft text-gloma-brown'
                             : c.status === 'pending'
                             ? 'bg-yellow-100 text-yellow-700'
                             : 'bg-gray-100 text-gray-600'
@@ -332,11 +332,11 @@ export default function Mensajes() {
         </aside>
 
         {/* Panel de chat */}
-        <section className="flex-1 flex flex-col bg-green-50">
+        <section className="flex-1 flex flex-col bg-gloma-rose-soft/30">
           {detail ? (
             <>
-              <div className="bg-white border-b border-green-100 px-6 py-3 flex items-center gap-3 shadow-sm">
-                <div className="w-10 h-10 rounded-full bg-green-100 text-green-700 flex items-center justify-center font-semibold">
+              <div className="bg-white border-b border-gloma-rose-soft px-6 py-3 flex items-center gap-3 shadow-sm">
+                <div className="w-10 h-10 rounded-full bg-gloma-rose-soft text-gloma-brown flex items-center justify-center font-semibold">
                   {initials(detail.contact_name, detail.contact_wa_id)}
                 </div>
                 <div>
@@ -361,14 +361,14 @@ export default function Mensajes() {
                       <div
                         className={`max-w-md px-4 py-2 rounded-2xl shadow-sm ${
                           m.direction === 'outbound'
-                            ? 'bg-green-600 text-white rounded-br-sm'
+                            ? 'bg-gloma-brown text-white rounded-br-sm'
                             : 'bg-white text-gray-800 rounded-bl-sm border border-gray-100'
                         }`}
                       >
                         <div className="text-sm whitespace-pre-wrap break-words">{m.content}</div>
                         <div
                           className={`text-[10px] mt-1 ${
-                            m.direction === 'outbound' ? 'text-green-100' : 'text-gray-400'
+                            m.direction === 'outbound' ? 'text-gloma-rose-soft' : 'text-gray-400'
                           }`}
                         >
                           {formatTime(m.created_at)}
@@ -382,7 +382,7 @@ export default function Mensajes() {
               </div>
 
               {/* Composer */}
-              <div className="bg-white border-t border-green-100 p-4">
+              <div className="bg-white border-t border-gloma-rose-soft p-4">
                 {errorMsg && (
                   <div className="mb-2 text-sm text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2">
                     {errorMsg}
@@ -401,12 +401,12 @@ export default function Mensajes() {
                         }
                       }}
                       placeholder="Escribe un mensaje (Enter para enviar)..."
-                      className="flex-1 px-3 py-2 border border-gray-200 rounded-lg resize-none focus:outline-none focus:border-green-500 text-sm"
+                      className="flex-1 px-3 py-2 border border-gray-200 rounded-lg resize-none focus:outline-none focus:border-gloma-rose text-sm"
                     />
                     <button
                       onClick={sendMessage}
                       disabled={sending || !draft.trim()}
-                      className="px-5 bg-green-600 text-white font-medium rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="px-5 bg-gloma-brown text-white font-medium rounded-lg hover:bg-gloma-brown-dark disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       {sending ? '...' : 'Enviar'}
                     </button>
@@ -446,7 +446,7 @@ export default function Mensajes() {
                   value={newPhone}
                   onChange={(e) => setNewPhone(e.target.value)}
                   placeholder="573150764000"
-                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-green-500"
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-gloma-rose"
                 />
               </div>
               <div>
@@ -455,7 +455,7 @@ export default function Mensajes() {
                   type="text"
                   value={newName}
                   onChange={(e) => setNewName(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-green-500"
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-gloma-rose"
                 />
               </div>
               <div>
@@ -464,7 +464,7 @@ export default function Mensajes() {
                   type="text"
                   value={newTemplate}
                   onChange={(e) => setNewTemplate(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-green-500"
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-gloma-rose"
                 />
               </div>
               <div>
@@ -473,7 +473,7 @@ export default function Mensajes() {
                   type="text"
                   value={newLang}
                   onChange={(e) => setNewLang(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-green-500"
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-gloma-rose"
                 />
               </div>
             </div>
@@ -495,7 +495,7 @@ export default function Mensajes() {
               <button
                 onClick={startNewConversation}
                 disabled={sending || !newPhone || !newTemplate}
-                className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50"
+                className="flex-1 px-4 py-2 bg-gloma-brown text-white rounded-lg hover:bg-gloma-brown-dark disabled:opacity-50"
               >
                 {sending ? 'Enviando...' : 'Enviar template'}
               </button>

@@ -30,3 +30,6 @@ backend/.venv
 referencia/
 identidad_gloma/
 gemini_secrets
+
+# Credenciales locales — nunca a git
+CREDENCIALES.txt

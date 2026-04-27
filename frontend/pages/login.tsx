@@ -37,7 +37,7 @@ export default function Login() {
   };
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen bg-gradient-to-br from-green-100 to-green-50">
+    <div className="flex flex-col items-center justify-center min-h-screen bg-gloma-cream">
       <div className="flex flex-col items-center mb-6">
         <Image
           src="/gloma/logo_gloma_original_trans.png"
@@ -48,8 +48,8 @@ export default function Login() {
           className="object-contain h-32 w-auto"
         />
       </div>
-      <div className="bg-green-600 rounded-3xl shadow-2xl px-10 py-10 flex flex-col items-center w-full max-w-md">
-        <h1 className="text-white text-3xl font-bold mb-8 text-center drop-shadow">Iniciar Sesión</h1>
+      <div className="bg-gloma-brown rounded-3xl shadow-2xl px-10 py-10 flex flex-col items-center w-full max-w-md">
+        <h1 className="font-heading text-white text-3xl font-bold mb-8 text-center drop-shadow">Iniciar Sesión</h1>
         <form className="flex flex-col gap-6 w-full" onSubmit={handleSubmit}>
           <input
             type="email"
@@ -57,7 +57,7 @@ export default function Login() {
             value={correo}
             onChange={(e) => setCorreo(e.target.value)}
             required
-            className="w-full rounded-full px-6 py-3 bg-white text-green-700 font-semibold placeholder-green-300 focus:outline-none focus:ring-2 focus:ring-green-300 text-center shadow"
+            className="w-full rounded-full px-6 py-3 bg-white text-gloma-brown font-semibold placeholder-gloma-brown-light focus:outline-none focus:ring-2 focus:ring-gloma-rose text-center shadow"
           />
           <input
             type="password"
@@ -65,7 +65,7 @@ export default function Login() {
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             required
-            className="w-full rounded-full px-6 py-3 bg-white text-green-700 font-semibold placeholder-green-300 focus:outline-none focus:ring-2 focus:ring-green-300 text-center shadow"
+            className="w-full rounded-full px-6 py-3 bg-white text-gloma-brown font-semibold placeholder-gloma-brown-light focus:outline-none focus:ring-2 focus:ring-gloma-rose text-center shadow"
           />
           {error && (
             <p className="text-red-200 text-sm text-center">{error}</p>
@@ -73,12 +73,12 @@ export default function Login() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full rounded-full bg-white text-green-600 font-bold text-lg py-3 mt-2 shadow hover:bg-green-50 transition-colors disabled:opacity-50"
+            className="w-full rounded-full bg-gloma-rose text-gloma-brown font-bold text-lg py-3 mt-2 shadow hover:bg-white transition-colors disabled:opacity-50"
           >
             {loading ? 'Entrando...' : 'Entrar'}
           </button>
         </form>
-        <a href="/register" className="text-green-200 text-sm mt-4 hover:text-white transition-colors">
+        <a href="/register" className="text-gloma-rose-soft text-sm mt-4 hover:text-white transition-colors">
           ¿No tienes cuenta? Regístrate
         </a>
       </div>

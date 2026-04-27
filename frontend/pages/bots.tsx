@@ -36,7 +36,7 @@ function relativeTime(iso: string): string {
 function TriggerBadge({ bot }: { bot: BotListItem }) {
   if (bot.trigger_type === 'default') {
     return (
-      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-50 text-green-700 border border-green-200">
+      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-gloma-rose-soft/30 text-gloma-brown border border-gloma-rose-soft">
         <span>⭐</span> Default
       </span>
     );
@@ -147,10 +147,10 @@ export default function BotsPage() {
           <div className="flex gap-6">
             <button
               type="button"
-              className="py-2 px-1 border-b-[3px] border-green-500 text-gray-800 font-semibold text-sm flex items-center gap-2"
+              className="py-2 px-1 border-b-[3px] border-gloma-rose text-gray-800 font-semibold text-sm flex items-center gap-2"
             >
               Tus bots
-              <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-green-500 text-white text-[10px] font-bold">
+              <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-gloma-rose-soft/300 text-white text-[10px] font-bold">
                 {bots?.length ?? 0}
               </span>
             </button>
@@ -160,7 +160,7 @@ export default function BotsPage() {
             placeholder="Buscar tus bots..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="text-sm px-3 py-1.5 border border-gray-200 rounded-md focus:outline-none focus:border-green-500 w-56"
+            className="text-sm px-3 py-1.5 border border-gray-200 rounded-md focus:outline-none focus:border-gloma-rose w-56"
           />
         </div>
 

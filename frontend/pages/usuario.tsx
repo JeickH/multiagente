@@ -155,8 +155,8 @@ export default function Usuario() {
           <p className="text-gray-400">Cargando...</p>
         ) : user ? (
           <div className="text-left max-w-md mx-auto space-y-4">
-            <div className="bg-green-50 rounded-lg p-4 border border-green-200">
-              <h2 className="text-sm font-medium text-green-600 mb-1">Plan Actual</h2>
+            <div className="bg-gloma-rose-soft/30 rounded-lg p-4 border border-gloma-rose-soft">
+              <h2 className="text-sm font-medium text-gloma-brown mb-1">Plan Actual</h2>
               <p className="text-lg font-semibold text-gray-800">Plan Básico</p>
               <p className="text-sm text-gray-500">WhatsApp Business API - 10 usuarios</p>
             </div>
@@ -165,7 +165,7 @@ export default function Usuario() {
             <div
               className={`rounded-lg p-4 border ${
                 meta?.registered
-                  ? 'bg-emerald-50 border-emerald-200'
+                  ? 'bg-gloma-rose-soft/40 border-gloma-rose-soft'
                   : 'bg-gray-50 border-gray-200'
               }`}
             >
@@ -174,7 +174,7 @@ export default function Usuario() {
                   Cuenta de WhatsApp Business
                 </h2>
                 {meta?.registered ? (
-                  <span className="text-xs font-semibold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full">
+                  <span className="text-xs font-semibold text-gloma-brown bg-gloma-rose-soft px-2 py-0.5 rounded-full">
                     Conectada
                   </span>
                 ) : (
@@ -203,7 +203,7 @@ export default function Usuario() {
               )}
 
               {meta?.registered && meta?.can_manage_meta_account && (
-                <div className="mt-3 pt-3 border-t border-emerald-200">
+                <div className="mt-3 pt-3 border-t border-gloma-rose-soft">
                   <button
                     onClick={handleDisconnect}
                     disabled={disconnecting}
@@ -219,7 +219,7 @@ export default function Usuario() {
                   {meta?.can_manage_meta_account ? (
                     <button
                       onClick={openConnectModal}
-                      className="w-full bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium py-2 px-3 rounded-lg transition-colors"
+                      className="w-full bg-gloma-brown hover:bg-gloma-brown-dark text-white text-sm font-medium py-2 px-3 rounded-lg transition-colors"
                     >
                       Conectar WhatsApp
                     </button>
@@ -274,7 +274,7 @@ export default function Usuario() {
                   type="text"
                   value={form.phone_number_id}
                   onChange={(e) => setForm({ ...form, phone_number_id: e.target.value })}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gloma-rose"
                   placeholder="1057839004082880"
                   required
                   autoComplete="off"
@@ -290,7 +290,7 @@ export default function Usuario() {
                   type="text"
                   value={form.waba_id}
                   onChange={(e) => setForm({ ...form, waba_id: e.target.value })}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gloma-rose"
                   placeholder="1272393681746114"
                   required
                   autoComplete="off"
@@ -306,7 +306,7 @@ export default function Usuario() {
                   type="password"
                   value={form.access_token}
                   onChange={(e) => setForm({ ...form, access_token: e.target.value })}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gloma-rose"
                   placeholder="EAA..."
                   required
                   autoComplete="off"
@@ -340,7 +340,7 @@ export default function Usuario() {
                 <button
                   type="submit"
                   disabled={submitting}
-                  className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium py-2 px-3 rounded-lg transition-colors disabled:opacity-50"
+                  className="flex-1 bg-gloma-brown hover:bg-gloma-brown-dark text-white text-sm font-medium py-2 px-3 rounded-lg transition-colors disabled:opacity-50"
                 >
                   {submitting ? 'Validando...' : 'Conectar'}
                 </button>

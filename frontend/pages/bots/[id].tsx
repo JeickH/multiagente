@@ -268,19 +268,19 @@ function SimulatorModal({
         className="bg-white rounded-xl shadow-2xl w-full max-w-md h-[600px] flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="border-b border-gray-200 px-4 py-3 flex items-center justify-between bg-green-600 text-white rounded-t-xl">
+        <div className="border-b border-gray-200 px-4 py-3 flex items-center justify-between bg-gloma-brown text-white rounded-t-xl">
           <div className="flex items-center gap-2">
             <span className="text-lg">🤖</span>
             <div>
               <div className="font-semibold text-sm">{botName}</div>
-              <div className="text-[11px] text-green-100">Simulación — no se envían mensajes reales</div>
+              <div className="text-[11px] text-gloma-rose-soft">Simulación — no se envían mensajes reales</div>
             </div>
           </div>
           <div className="flex items-center gap-2">
             <button
               type="button"
               onClick={handleReset}
-              className="text-white/80 hover:text-white text-xs px-2 py-1 rounded hover:bg-green-700"
+              className="text-white/80 hover:text-white text-xs px-2 py-1 rounded hover:bg-gloma-brown-dark"
               title="Reiniciar conversación"
             >
               ↻
@@ -309,7 +309,7 @@ function SimulatorModal({
             if (b.role === 'user') {
               return (
                 <div key={i} className="flex justify-end">
-                  <div className="bg-green-500 text-white rounded-2xl rounded-br-sm px-3 py-2 max-w-[75%] text-sm shadow-sm">
+                  <div className="bg-gloma-rose-soft/300 text-white rounded-2xl rounded-br-sm px-3 py-2 max-w-[75%] text-sm shadow-sm">
                     {b.text}
                   </div>
                 </div>
@@ -387,7 +387,7 @@ function SimulatorModal({
               <button
                 type="button"
                 onClick={handleReset}
-                className="text-xs text-green-700 hover:text-green-800 underline"
+                className="text-xs text-gloma-brown hover:text-gloma-brown-dark underline"
               >
                 Reiniciar simulación
               </button>
@@ -412,13 +412,13 @@ function SimulatorModal({
                   ? 'Conversación terminada. Reinicia para probar de nuevo.'
                   : 'Esperando al bot…'
               }
-              className="flex-1 text-sm px-3 py-2 border border-gray-200 rounded-full focus:outline-none focus:border-green-500 disabled:bg-gray-50 disabled:text-gray-400"
+              className="flex-1 text-sm px-3 py-2 border border-gray-200 rounded-full focus:outline-none focus:border-gloma-rose disabled:bg-gray-50 disabled:text-gray-400"
             />
             <button
               type="button"
               onClick={handleSend}
               disabled={!waitingInput || sending || input.trim() === ''}
-              className="bg-green-500 text-white rounded-full w-10 h-10 flex items-center justify-center hover:bg-green-600 disabled:bg-gray-300 disabled:cursor-not-allowed"
+              className="bg-gloma-rose-soft/300 text-white rounded-full w-10 h-10 flex items-center justify-center hover:bg-gloma-brown disabled:bg-gray-300 disabled:cursor-not-allowed"
             >
               ➤
             </button>
@@ -512,7 +512,7 @@ export default function BotDetailPage() {
               type="button"
               onClick={() => setSimulatorOpen(true)}
               disabled={!bot || bot.steps.length === 0}
-              className="px-4 py-1.5 text-sm bg-green-600 text-white rounded-md font-semibold hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+              className="px-4 py-1.5 text-sm bg-gloma-brown text-white rounded-md font-semibold hover:bg-gloma-brown-dark disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
             >
               ▶ Probar Chatbot
             </button>

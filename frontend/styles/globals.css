@@ -2,15 +2,17 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Branding Gloma por defecto en toda la app de mensajería.
+   La landing /automatas (Gorvek) override con sus propios estilos. */
 body {
   font-family: 'Inter', 'Segoe UI', Arial, sans-serif;
-  background: linear-gradient(135deg, #f0fdf4 0%, #ffffff 100%);
-  color: #1e293b;
+  background: #FDFBF7; /* gloma cream */
+  color: #5E503F;       /* gloma brown */
 }
 
 ::selection {
-  background: #16a34a;
-  color: #fff;
+  background: #F7D1CD; /* gloma rose */
+  color: #5E503F;
 }
 
 input, button, select, textarea {
