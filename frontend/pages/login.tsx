@@ -1,3 +1,4 @@
+import Image from 'next/image';
 import { useState } from 'react';
 import { useRouter } from 'next/router';
 
@@ -38,8 +39,14 @@ export default function Login() {
   return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-gradient-to-br from-green-100 to-green-50">
       <div className="flex flex-col items-center mb-6">
-        <span className="text-6xl mb-2">💬</span>
-        <h2 className="text-2xl font-bold text-green-700">Multiagente</h2>
+        <Image
+          src="/gloma/logo_gloma_original_trans.png"
+          alt="Gloma"
+          width={320}
+          height={400}
+          priority
+          className="object-contain h-32 w-auto"
+        />
       </div>
       <div className="bg-green-600 rounded-3xl shadow-2xl px-10 py-10 flex flex-col items-center w-full max-w-md">
         <h1 className="text-white text-3xl font-bold mb-8 text-center drop-shadow">Iniciar Sesión</h1>

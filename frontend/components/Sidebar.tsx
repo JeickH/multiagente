@@ -1,3 +1,4 @@
+import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
 
@@ -13,12 +14,16 @@ export default function Sidebar() {
 
   return (
     <aside className="bg-green-600 text-white w-24 flex flex-col justify-between items-center py-6 min-h-screen font-sans">
-      {/* Logo y nombre */}
-      <div className="flex flex-col items-center gap-2 mb-8">
-        <div className="w-12 h-12 bg-white rounded-full flex items-center justify-center mb-2 shadow-md">
-          <span className="text-3xl text-green-600">💬</span>
-        </div>
-        <span className="font-bold text-xs tracking-wide">Multiagente</span>
+      {/* Logo Gloma — mismo que la landing, sin texto acompañante */}
+      <div className="flex flex-col items-center mb-8">
+        <Image
+          src="/gloma/logo_blancotrans.png"
+          alt="Gloma"
+          width={160}
+          height={96}
+          priority
+          className="object-contain h-16 w-auto"
+        />
       </div>
       {/* Menú */}
       <nav className="flex flex-col gap-8 flex-1">
