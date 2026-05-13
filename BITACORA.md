@@ -21,7 +21,7 @@
 | [Sprint 11](#sprint-11---landing-page-gloma--reactivaci%C3%B3n-aws) | Landing page Gloma + reactivación de servicios AWS | DONE |
 | [Sprint 12](#sprint-12---dominio-propio-glomabeautycom) | Dominio propio `glomabeauty.com` (Route 53 + HostGator + Amplify) | DONE |
 | [Sprint 13](#sprint-13---módulo-campañas--plantillas-whatsapp) | Módulo Campañas (envío masivo) + Plantillas WhatsApp + Contactos/Grupos | DONE |
-| Sprint Pendientes (post-13) | Validación final del CEO del módulo Campañas + ajustes post-revisión | ABIERTO |
+| [Sprint 14](#sprint-14---validación-ceo--ajustes-post-sprint-13) | Validación CEO del módulo Campañas + ajustes post-Sprint 13 | PRÓXIMO |
 
 ---
 
@@ -673,7 +673,7 @@ ECS Fargate backend (FastAPI) → RDS
 
 **Rama**: `feature/modulo-campanas` (por crear)
 
-**Estado**: **DONE** (cerrado el 2026-05-12). Plan registrado el 2026-05-11, ejecutado entre 2026-05-11 y 2026-05-12. Backend + frontend desplegado a producción en `https://app.glomabeauty.com` corriendo image `:sprint13` (task-def `multiagente-backend:7`); seed demo aplicado en RDS; commit `f2d4661` mergeado a `main` (`3f20503`). Tareas #172 y #178 (validación del CEO) consolidadas y movidas al **Sprint Pendientes (post-13)** como tarea #179 para revisión futura.
+**Estado**: **DONE** (cerrado el 2026-05-12). Plan registrado el 2026-05-11, ejecutado entre 2026-05-11 y 2026-05-12. Backend + frontend desplegado a producción en `https://app.glomabeauty.com` corriendo image `:sprint13` (task-def `multiagente-backend:7`); seed demo aplicado en RDS; commit `f2d4661` mergeado a `main` (`3f20503`). Tareas #172 y #178 (validación del CEO) consolidadas y movidas al **Sprint 14** como tarea #179 para revisión futura.
 
 ### Contexto
 
@@ -739,13 +739,13 @@ Además añade un renglón en `## Log de Cambios` con fecha + agente + acción.
 | 169 | Seed local: 50 contactos demo + 3 grupos + 2 plantillas mock `APPROVED` + 1 campaña pasada con métricas para `demo@gmail.com`. Script `backend/scripts/seed_sprint13_campanas.py` | Dev Plataforma | ‖ 170 | ✅ | **DONE**. Scripts entregados: (NUEVO) `backend/scripts/reset_demo_password.py` (idempotente, fija `demo@gmail.com` → `Demo2026!`); (NUEVO) `backend/scripts/seed_sprint13_campanas.py` (~480 líneas, idempotente y convergente al spec). **Ejecución dentro de `wati-backend-1`** (los scripts se copian al container porque `backend/scripts/` no está bind-mount): `docker cp` + `docker compose exec -T backend python scripts/...`. **Resultados de la 1ª corrida**: reset password OK (`verify=True`); seed creó 50 contactos (40 opt_in=True, 10 opt_in=False), 3 grupos, 2 plantillas mock APPROVED, 3 campañas (A "Promoción Mayo" completed, B "Recordatorio carrito" completed, C "Lanzamiento producto" scheduled). **Counts verificados con SQL directo** (`team_id=5` de demo@): `seed contacts` (filtrando `phone_e164 LIKE '+57301%'`) = **50** (40 opt_in=True / 10 opt_in=False — matchea el spec); `contact_groups WHERE team_id=5` = **3** (Clientes Premium=12, Recurrentes Bogotá=15, Nuevos Trial=8 — los 3 con su `member_count` exacto); `whatsapp_templates seed` (filtrando por nombres `promo_mayo` / `recordatorio_pedido`) = **2** (ambas APPROVED, lenguajes es_MX/es); `campaigns WHERE team_id=5` = **3** (`Promoción Mayo` completed con started_at hace 3d; `Recordatorio carrito` completed hace 1d; `Lanzamiento producto` scheduled en +2d). **Distribución de `campaign_recipients` por campaña** (verificado): Promoción Mayo → 10 read + 1 delivered + 1 failed (error_code='80007'); Recordatorio carrito → 5 read + 2 delivered + 1 skipped (error_code='opt_out_at_enqueue'); Lanzamiento producto → 8 queued. **`campaign_events` coherentes**: Promoción Mayo emite 1 queued + 12 sent + 11 delivered + 10 read + 1 failed; Recordatorio carrito emite 1 queued + 7 sent + 7 delivered + 5 read; Lanzamiento emite 1 queued (futuro). Cada recipient enviado tiene `wamid.seed-<idx>-<short_uuid>`. **Decisión técnica clave**: la asignación de `city` se ajustó para garantizar ≥15 contactos `city=Bogotá AND opt_in=True` (los primeros 15 índices van a Bogotá; el resto rota Medellín/Cali/Bogotá), porque la rotación `i%3` natural solo dejaba 14. La selección de membresías reconcilia (añade faltantes + elimina obsoletas) para que segundas ejecuciones converjan al spec aun si el spec cambió. **Idempotencia validada** (2ª corrida inmediatamente después): `contactos creados=0 actualizados=0`; `grupos creados=0 membresías nuevas=0`; `plantillas creadas=0`; las 3 campañas reportan `skip` (no se duplican filas hijas). **CREDENCIALES.txt**: actualizado solo el bloque local de `demo@gmail.com` (password `Demo2026!`, nota apuntando al script de reset y a los seeds Sprint 13); los otros bloques (`prueba@`, `test2@`, `otro@`, prod `ceo@gloma.co` y prod `demo@`) NO se tocaron. **Login E2E verificado**: `POST http://localhost:8000/login` con `{correo:"demo@gmail.com", password:"Demo2026!"}` → HTTP 200 + JWT bearer. NO se tocó RDS (queda para #173), ni código del backend (modelos/routers/etc.). |
 | 170 | QA local: E2E docker-compose. Login `demo@`, CRUD contactos+grupos, sync plantillas (mock Meta), crear campaña a un grupo, envío inmediato (sandbox), envío agendado, validar KPIs en dashboard, aislamiento multi-tenant con `otro@test.com` | QA | ‖ 169 | ✅ | **PASS** (bloqueante S13-QA-001 ya fue corregido por PM y verificado online en #175). **PASS con 1 bloqueante Medio + 3 observaciones (originalmente).** Reporte completo: `backend/docs/sprint13_qa_report.md`. **Pasos PASS (A–M)**: smoke setup OK, login JWT OK, CRUD contactos+cross-tenant 404, import CSV (`{total:3,created:1,updated:1,skipped:1}` sin teléfono crudo en errores → S13-004 OK), CRUD grupos+miembros+cross-tenant 404, sync plantillas (4 nuevas APPROVED desde sandbox), crear campaña a grupo (12 recipients, 0 skipped), tick procesó campaña (sent=12), idempotencia OK, webhook `delivered` → status actualizado, cancel + 409 segundo cancel, 5 rutas frontend en 200, aislamiento multi-tenant verificado. **Bloqueante S13-QA-001 (Medio)**: campañas con `scheduled_at=NULL` nunca son procesadas por el tick (`scheduled_at <= now` no matchea NULL). Si el wizard del frontend siempre setea `scheduled_at`, no hay impacto; si no, son campañas fantasma. Tarea sugerida: revisar #161 (crud) o #162 (sender). Opción A: en `create_campaign` setear `scheduled_at=utcnow()` si viene NULL. Opción B: cambiar filtro a `(scheduled_at IS NULL OR scheduled_at<=now)`. **Observaciones**: (1) `POST /login` espera JSON `{correo,password}`, no form-urlencoded como decía el plan QA (consistente con BITACORA #169 y CREDENCIALES.txt). (2) CSV exige header `phone_e164` (no `phone`). (3) Sync sandbox marcó como `DELETED` las 2 plantillas mock del seed (`promo_mayo`, `recordatorio_pedido`) porque el sandbox provider no las devuelve; las 3 campañas históricas del seed apuntan a `template_id=4 (promo_mayo)` ahora DELETED — seed Dev considere agregar esas 2 al sandbox provider o usar nombres existentes. (4) `otro@test.com` con su password documentada `LiIKWUpy2M4zog` no logueó (401); se creó `qa_cross_1778609563@test.com` para validar aislamiento — recomendar reset script para `otro@`. Estado post-QA: id=12 campaña QA completed con 1 delivered+11 sent; campaña 11 cancelled. No se tocó código backend/frontend. |
 | 171 | Seguridad: auditoría post-código (autorización por team en cada endpoint, schemas `...Out` sin PII innecesaria/secretos, sanitización de errores Meta hacia el cliente) | Seguridad | — | ✅ | **APROBADO** (ejecutado inline por PM tras corte del subagente). Documento: `backend/docs/sprint13_security_post_audit.md`. Las 15 mitigaciones del diseño (S13-001 a S13-015) verificadas mitigadas en código con cita archivo:línea. Hallazgo NUEVO **S13-016 (Alto)** detectado y **corregido inline**: `routers/internal.py _require_internal_key` permitía acceso anónimo a `/internal/campaigns/tick` cuando `INTERNAL_API_KEY` estaba vacía en producción. Fix: ahora prod+vacío → 403 fail-closed; dev+vacío → pasa libre. Imagen backend rebuildeada y endpoint verificado (dev → 200, esperado). Schemas `...Out` clean: ninguno del Sprint 13 expone `encrypted_access_token`/`hashed_password`/`app_secret` directa ni vía relaciones. **Condición operativa para #174**: la task-def de prod debe incluir `INTERNAL_API_KEY` como secret (SSM/KMS) en la sección `secrets` del container. Follow-ups no bloqueantes documentados (rate-limit a Redis si >1 réplica, prueba de throttle de sync templates en smoke online, etc.). Deploy autorizado. |
-| 172 | **CEO valida en local** (bloqueante para deploy) | CEO | — | ⏭ | Diferida y **consolidada con #178** como una sola tarea en el Sprint Pendientes (post-13). Deploy ya ejecutado en #173/#174 con autorización del CEO ("ve haciendo el deploy y dejamos la validación al final"). |
+| 172 | **CEO valida en local** (bloqueante para deploy) | CEO | — | ⏭ | Diferida y **consolidada con #178** como una sola tarea en el **Sprint 14 #179**. Deploy ya ejecutado en #173/#174 con autorización del CEO ("ve haciendo el deploy y dejamos la validación al final"). |
 | 173 | Deploy AWS: migración Sprint 13 en RDS vía `aws ecs run-task` con command override | Deploy AWS | ‖ 174 | ✅ | **DONE 2026-05-12**. Migración `scripts/migrate_sprint13_campanas.py` ejecutada en RDS `multiagente-db` vía `aws ecs run-task --cluster multiagente-cluster --task-definition multiagente-backend:7 --launch-type FARGATE` (subnets `subnet-07829afbd13c5bb8f`/`subnet-00f56d6ce74d72a2e`, sg `sg-0499ec72831ef7da9`, container `multiagente-backend`). `taskArn=a45753133c234883b5a2dacd79016680`, exitCode=0, stoppedReason="Essential container in task exited". Log CloudWatch verifica 7 CREATE TABLE + 17 índices + "Verificación OK: 7/7 tablas presentes". Migración también re-corrida idempotente en local (docker-compose) → "ya existía → skip" en las 7 tablas, paridad BD local↔RDS mantenida. Seed demo aplicado en RDS: `reset_demo_password.py` (exit 0, password `Demo2026!`) y `seed_sprint13_campanas.py` (exit 0): MetaAccount id=2 sandbox-placeholder, 50 contactos, 3 grupos (Premium=12, Recurrentes Bogotá=15, Nuevos Trial=8 → 35 membresías), 2 plantillas APPROVED (`promo_mayo`, `recordatorio_pedido`), 3 campañas (`Promoción Mayo` completed, `Recordatorio carrito` completed, `Lanzamiento producto` scheduled). Fix de seed: `_ensure_meta_account` ahora cifra placeholder con `encrypt_secret("sandbox-placeholder")` porque la columna `meta_accounts.encrypted_access_token` es NOT NULL (consistente con regla de seguridad #1); el sandbox real lo activa `META_SANDBOX=1`, no el valor del token. |
 | 174 | Deploy AWS: build + push imagen backend `:sprint13` a ECR + update task-def + service ECS | Deploy AWS | ‖ 173 | ✅ | **DONE 2026-05-12**. (1) **SSM secret**: `aws ssm put-parameter --name /multiagente/prod/INTERNAL_API_KEY --type SecureString` (token_urlsafe(48), Version 1). ARN: `arn:aws:ssm:sa-east-1:747456040509:parameter/multiagente/prod/INTERNAL_API_KEY`. Cumple condición operativa S13-016 de auditoría #171. (2) **Build+push**: `docker buildx build --platform linux/amd64 -t 747456040509.dkr.ecr.sa-east-1.amazonaws.com/multiagente-backend:sprint13 -f Dockerfile.backend --push .` → 89.5 MB pusheados a ECR (verificado con `ecr describe-images imageTag=sprint13`). Rebuild adicional tras fix de `seed_sprint13_campanas.py` (placeholder Fernet). (3) **Task-def nueva rev**: clonada `multiagente-backend:5`, removidos campos read-only, `image` → `:sprint13`, secrets ahora incluye `APP_ENCRYPTION_KEY` + `INTERNAL_API_KEY`, environment incluye `META_SANDBOX=1`. Registrada como **`multiagente-backend:7`** (rev 6 fue una task one-off de #169 según memoria). (4) **Service update**: `ecs update-service --task-definition multiagente-backend:7 --force-new-deployment`, polled hasta `rolloutState=COMPLETED` en ~2 min (transición healthy 1→2→1). (5) **Health checks**: `GET http://multiagente-alb-673139873.sa-east-1.elb.amazonaws.com/docs` → 200; `POST https://app.glomabeauty.com/api/login` con `demo@gmail.com / Demo2026!` → 200 + JWT (Amplify rewrite `/api/*` → ALB validado, sin mixed content). |
 | 175 | QA online: smoke test `https://app.glomabeauty.com/campanas` (login demo, listar contactos seedeados en RDS, crear campaña sandbox, validar KPIs) | QA | — | ✅ | **DONE 2026-05-12** (fix S13-DEPLOY-001 aplicado por PM y redeploy validado). Smoke desde Amplify proxy con JWT de `demo@gmail.com`: `GET /api/campaigns` → 200 **count=3**; `GET /api/contacts?limit=50` → 200 **count=50**; `GET /api/contact-groups` → 200 **3 grupos**; `GET /api/templates` → 200 **count=6** (antes del fix daba 500). **Fix S13-DEPLOY-001**: `schemas.py WhatsappTemplateOut.components_json: dict → Any` (`from typing import Any` añadido). Local rebuild verificado (7 templates OK). Imagen `:sprint13` re-pushed a ECR; `ecs update-service --force-new-deployment` rolló a `rolloutState=COMPLETED`. Validación funcional del wizard frontend queda para la revisión del CEO al cierre del sprint. |
 | 176 | PM: diagramas PUML en `backend/docs/sprint13_diagramas.puml` (clases + servicios + secuencia de envío) | PM | — | ✅ | Archivo `backend/docs/sprint13_diagramas.puml` con 3 diagramas: (a) **clases** — 10 entidades (User, Team, MetaAccount + 7 nuevas Sprint 13), 3 paquetes coloreados (Contactos, Plantillas, Campañas), todas las FKs/UNIQUE/CHECKs documentadas, nota sobre modo sandbox; (b) **servicios** — routers HTTP, servicios de lógica (`meta_templates`, `campaign_sender`, `crypto`), CRUD/models, dependencias hacia Meta/DB, actores (Usuario, Scheduler, Meta webhook), notas sobre S13-016/S13-004/S13-005; (c) **secuencia de envío** — 3 fases (crear campaña → tick → callbacks Meta), con validaciones S13-001 (chain template↔meta↔team), S13-002 (MAX_RECIPIENTS + token-bucket), S13-003 (opt-in doble barrera), S13-015 (dedupe webhook), idempotencia transición `WHERE status='queued'`, ramificación sandbox vs real, nota explicando que en modo demo el callback de Meta no ocurre. Renderable con cualquier renderer PlantUML estándar. |
 | 177 | PM: commit + push final a `main` con changelog del Sprint 13 | PM | — | ✅ | Commit `f2d4661` en rama `feature/modulo-campanas` con mensaje detallado (backend + frontend + seguridad + modo demo + deploy AWS + docs + fixes). 35 archivos cambiados (24 nuevos + 11 modificados, +2555 líneas / -39). Push de feature branch → `origin/feature/modulo-campanas`. Merge `--no-ff` a `main` con mensaje `Merge Sprint 13: módulo Campañas + Plantillas WhatsApp + Contactos/Grupos` → commit `3f20503`. Push de `main` a `origin/main` (`d0a7ff5..3f20503`). El backend de prod (`https://app.glomabeauty.com`) ya servía la imagen `:sprint13` desde la Fase 10; este commit alinea el source en `main` con lo que corre en ECS. |
-| 178 | **Validación final del CEO** (local + online) y, si hay cambios, aplicar ajustes en post-cierre del sprint | CEO + PM | — | ⏭ | **Movida al Sprint Pendientes (post-13)** — ver tarea 179 abajo. Consolida #172 y #178 en una sola unidad de trabajo futura. |
+| 178 | **Validación final del CEO** (local + online) y, si hay cambios, aplicar ajustes en post-cierre del sprint | CEO + PM | — | ⏭ | **Movida al Sprint 14 (#179)**. Consolida #172 y #178 en una sola unidad de trabajo futura. |
 
 ### Cambios de BD del Sprint 13 (descripción detallada)
 
@@ -896,13 +896,111 @@ PM publica al cierre:
 
 ---
 
-## Sprint Pendientes (post-13) — Trabajo abierto
+## Sprint 14 - Validación CEO + ajustes post-Sprint 13
 
-Tareas que no entraron en un sprint cerrado y siguen abiertas para iteración futura.
+**Rama**: trabajo directo sobre `main` (cambios incrementales pequeños).
+
+**Estado**: PRÓXIMO. Abierto el 2026-05-12 al cerrar el Sprint 13.
+
+**Contexto**: el Sprint 13 cerró en código y deploy con el módulo Campañas + Plantillas WhatsApp + Contactos/Grupos funcional en modo sandbox (sin cuenta Meta real). El CEO pidió validar todo de una sola pasada tras el deploy. Este sprint agrupa esa validación y los ajustes que de ahí salgan, para no reabrir el Sprint 13.
+
+### Entornos de validación
+
+| Entorno | URL | Credenciales |
+|---------|-----|--------------|
+| Local (docker-compose) | `http://localhost:3000/login` | `demo@gmail.com` / `Demo2026!` |
+| Producción (Amplify + ECS + RDS sa-east-1) | `https://app.glomabeauty.com/login` | `demo@gmail.com` / `Demo2026!` |
+
+> Las credenciales corresponden a la cuenta demo sandbox: `MetaAccount` con `encrypted_access_token = encrypt("sandbox-placeholder")`, el backend opera en modo sandbox (`META_SANDBOX=1` en prod, NULL/sandbox en local) — NO toca Meta real. Si en algún momento se conecta una cuenta Meta real, esa cuenta seguirá funcionando para envíos reales pero las plantillas mock dejarán de aparecer; documentar esta transición en su momento.
+
+### Tareas
 
 | # | Tarea | Responsable | Estado | Notas |
 |---|-------|------------|--------|-------|
-| 179 | **Validación final del CEO del Sprint 13** (módulo Campañas + Plantillas + Contactos): recorrido local (`http://localhost:3000/campanas`) y online (`https://app.glomabeauty.com/campanas`) con `demo@gmail.com / Demo2026!`. Si hay ajustes (copy, UX, comportamiento), aplicarlos como follow-ups sobre `main` y volver a desplegar | CEO + PM | ⬜ | Consolida las antiguas #172 (validación local previa a deploy) y #178 (validación final tras deploy). Diferida por decisión del CEO 2026-05-12 para hacerse de una sola pasada después del deploy a AWS. El Sprint 13 está cerrado en código y desplegado en producción; los ajustes que surjan de esta revisión se atienden como cambios incrementales, no como reapertura del sprint. |
+| 179 | **Validación CEO del módulo Campañas** (local + online). Checklist abajo. Marcar OK por sección o registrar el cambio pedido | CEO | ⬜ | Consolida las antiguas #172 (validación local pre-deploy) y #178 (validación post-deploy). Sólo aplica al módulo Sprint 13 — no incluye regresión global. |
+| 180 | **Ajustes post-revisión**: aplicar los cambios que pida el CEO en #179 (copy, UX, comportamiento). Cada cambio = un commit chico en `main` con su mensaje + rebuild/redeploy si aplica | Dev Plataforma + PM | ⬜ | Sin reabrir el Sprint 13. Cambios incrementales sobre `main`. Si un cambio toca BD, el Experto BD aplica migración idempotente en local y en RDS (regla de paridad). |
+| 181 | **Cierre del Sprint 14**: marcar #179 ✅, #180 ✅, índice del sprint a DONE, log de cambios. Confirmar al CEO que el módulo Campañas queda 100% cerrado | PM | ⬜ | Si #179 no requiere ajustes, #180 queda vacía/`N/A`. |
+
+### Checklist de validación (tarea #179)
+
+El CEO recorre las 6 rutas en **ambos entornos** (local y producción) con `demo@gmail.com / Demo2026!`:
+
+#### 1. `/campanas` (dashboard)
+
+- [ ] Header "Transmisiones masivas" + botón "Nueva campaña" arriba a la derecha.
+- [ ] Tabs internos: Resumen / Mensajes de plantilla / Campañas programadas.
+- [ ] 4 cards "Visión general" (estáticos por ahora).
+- [ ] 8 KPI cards (Enviado destacado en marrón Gloma, los otros en blanco) con conteos del seed.
+- [ ] Tabla "Todas las campañas" con 3 filas seedeadas (Promoción Mayo, Recordatorio carrito, Lanzamiento producto).
+- [ ] Búsqueda por nombre, dropdown ordenar, paginación cliente 10/pág.
+- [ ] Badge de estado coloreado y acción "Cancelar" sólo para `scheduled`.
+- [ ] Identidad Gloma respetada (paleta, Syne/Inter).
+
+#### 2. `/campanas/nueva` (wizard 4 pasos)
+
+- [ ] Paso 1 — bloquea avance si no hay `MetaAccount` (en demo SÍ hay, así que debería dejar avanzar).
+- [ ] Paso 2 — muestra plantillas APPROVED del sandbox + preview del cuerpo. Variables `{{1}}/{{2}}` editables.
+- [ ] Paso 3 — toggle "Lista" / "Grupo". Lista: tabla paginada con checkboxes. Grupo: dropdown con los 3 grupos del seed (Clientes Premium 12, Recurrentes Bogotá 15, Nuevos Trial 8).
+- [ ] Aviso visible: "Los contactos con opt-in en false se marcarán como omitidos automáticamente".
+- [ ] Paso 4 — radio Enviar ahora / Programar + resumen con conteo y estimación.
+- [ ] Confirmar → 201 + redirect a `/campanas/<id>`.
+
+#### 3. `/campanas/<id>` (detalle)
+
+- [ ] Cabecera con nombre + badge + fechas + acciones (Cancelar visible sólo si scheduled).
+- [ ] 6 KPI cards (Total destacado en marrón).
+- [ ] Tabla de destinatarios paginada 50/pág con filtro por estado.
+- [ ] Teléfono enmascarado parcialmente.
+- [ ] Polling 5s si la campaña está corriendo (puedes simularlo creando una campaña nueva).
+
+#### 4. `/campanas/plantillas` (lista de plantillas)
+
+- [ ] Tabla con plantillas del seed + las mock del sandbox.
+- [ ] Botón "Refrescar desde Meta" con throttle 60s visible (countdown).
+- [ ] Badges de estado coloreados (APPROVED verde, PENDING ámbar, etc.).
+- [ ] Acciones por fila: Enviar campaña (sólo APPROVED), Eliminar.
+
+#### 5. `/campanas/plantillas/nueva` (editor con preview)
+
+- [ ] Form izquierda (Nombre regex `^[a-z][a-z0-9_]{0,511}$`, Categoría, Lenguaje, Tipo).
+- [ ] Preview tipo WhatsApp a la derecha (fondo verde WA, burbuja blanca).
+- [ ] Variables `{{1}}/{{2}}` resaltadas en el preview.
+- [ ] Banner: "Esta plantilla se enviará a WhatsApp para aprobación".
+- [ ] Submit → 201 + plantilla nueva aparece con estado PENDING en la lista.
+
+#### 6. `/campanas/contactos` (contactos + grupos)
+
+- [ ] Tab Contactos: 50 sembrados, buscador con debounce, filtro grupo, toggle opt-in, paginación 50/pág.
+- [ ] Acciones: crear, editar, asignar a grupo, eliminar.
+- [ ] **Import CSV**: probar con un CSV pequeño (3 filas: válida + duplicada + malformada) → modal con counts `total/created/updated/skipped` + lista de errores sin teléfono crudo.
+- [ ] Tab Grupos: 3 cards con `member_count` 12/15/8.
+- [ ] Drawer detalle del grupo: lista de miembros, añadir/quitar.
+
+#### 7. Validaciones cruzadas
+
+- [ ] Crear campaña QA al grupo "Clientes Premium" (12 recipients).
+- [ ] El backend (en sandbox) marca los recipients con opt_in=false como `skipped/opt_out_at_enqueue`.
+- [ ] Cancelar "Lanzamiento producto" → 200, status = cancelled. Segundo cancel → 409.
+
+#### 8. Identidad y estética
+
+- [ ] Paleta Gloma consistente en todas las rutas (sin verdes legacy fuera de `/automatas` que es Gorvek).
+- [ ] Tipografías Syne (headings) + Inter (body).
+- [ ] Estados loading / error / vacío cubiertos en cada ruta.
+
+### Criterio de cierre del Sprint 14
+
+- Si el CEO marca todo OK en local + online → #179 ✅, #180 N/A, #181 ✅, sprint cerrado.
+- Si pide cambios → cada uno se aplica como commit chico bajo #180 (con su propio renglón en Log de Cambios), y cuando el CEO valide nuevamente → #181 cierra el sprint.
+
+### Follow-ups técnicos heredados del Sprint 13 (no bloqueantes)
+
+Documentados en `backend/docs/sprint13_security_post_audit.md` para atender en sprints futuros:
+
+- Migrar rate-limit en memoria (token-bucket por `meta_account_id`) a Redis cuando se escale a >1 réplica ECS.
+- Añadir prueba automatizada del throttle de `POST /templates/sync` (60s) al smoke online.
+- Adoptar Alembic para migraciones versionadas (follow-up permanente que sigue abierto desde Sprint 7).
+- Cuando se conecte una cuenta Meta real: revisar logs de `services/meta_templates.py` para confirmar que no se filtre el token descifrado en errores.
 
 ---
 
@@ -998,3 +1096,4 @@ Tareas que no entraron en un sprint cerrado y siguen abiertas para iteración fu
 | 2026-05-12 | PM | Sprint 13 fix S13-DEPLOY-001 aplicado y desplegado: `WhatsappTemplateOut.components_json: dict → Any`, `from typing import Any` añadido en `schemas.py`. Rebuild local OK (7 templates). Build linux/amd64 + push a `multiagente-backend:sprint13`. `ecs update-service --force-new-deployment` → `rolloutState=COMPLETED`. Smoke online post-fix: `/api/templates` → 200 count=6 (antes 500). #175 marcado ✅. |
 | 2026-05-12 | PM | Sprint 13 #177: commit `f2d4661` con changelog del módulo (35 archivos, +2555/-39). Push de `feature/modulo-campanas` a origin. Merge `--no-ff` a `main` → `3f20503`. Push de `main` a origin. Sprint 13 cerrado salvo #178 (validación CEO final), que el CEO solicitó dejar como follow-up para hacerse al final y aplicar ajustes en post-cierre. |
 | 2026-05-12 | PM | **Sprint 13 cerrado**. Por decisión del CEO: (1) #170 actualizada a ✅ (el bloqueante S13-QA-001 fue parcheado por PM y validado online en #175). (2) #172 y #178 (ambas validación del CEO) **consolidadas en una sola tarea futura** #179 dentro del nuevo **Sprint Pendientes (post-13)**; ambas filas del Sprint 13 marcadas con ⏭ apuntando a #179. (3) Índice del sprint actualizado a **DONE** sin caveats; índice general añade fila "Sprint Pendientes (post-13)" como ABIERTO. (4) Encabezado del Sprint 13 actualizado a DONE. Si la validación de #179 trae ajustes, se atienden como cambios incrementales sobre `main`, no como reapertura del sprint. |
+| 2026-05-12 | PM | **Sprint 14 abierto** como sprint futuro nombrado (antes "Sprint Pendientes (post-13)"). 3 tareas: #179 validación CEO (checklist detallado por las 6 rutas + validaciones cruzadas + identidad), #180 ajustes post-revisión (commits chicos sobre `main` si el CEO pide cambios), #181 cierre. Sección incluye tabla de entornos con credenciales para revisión: local `http://localhost:3000/login` y prod `https://app.glomabeauty.com/login`, ambos con `demo@gmail.com / Demo2026!` (cuenta demo sandbox con MetaAccount placeholder cifrado — no toca Meta real). También quedan listados los follow-ups técnicos heredados del Sprint 13 (Redis para rate-limit, Alembic, etc.). |
