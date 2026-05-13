@@ -9,3 +9,5 @@ pydantic[email]>=2.12,<2.14
 pydantic-settings>=2.0.0,<3.0.0
 httpx
 cryptography>=46.0.0,<48.0.0
+python-multipart>=0.0.20,<0.1
+tenacity>=8.5,<9

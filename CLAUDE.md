@@ -29,6 +29,7 @@ Los agentes están configurados como archivos `.md` en `.claude/agents/` para se
 | **Desarrollador de Plataforma** | `.claude/agents/dev-plataforma.md` | Desarrollo frontend/backend, WATI |
 | **Experto en Bases de Datos** | `.claude/agents/experto-bd.md` | Modelado, migraciones, PostgreSQL |
 | **Experto en Seguridad** | `.claude/agents/seguridad.md` | Auditoría de diseño/código, secretos, cifrado, autenticación/autorización |
+| **Experto en UI/UX** | `.claude/agents/ui-ux.md` | Wireframes HTML/Tailwind de cada módulo nuevo antes de codear |
 | **QA** | `.claude/agents/qa.md` | Testing, validación, revisión |
 
 Consultar cada archivo de agente para ver sus responsabilidades detalladas, herramientas y reglas.
@@ -40,6 +41,7 @@ El PM debe delegar según el tipo de tarea:
 - **Infraestructura, Docker, CI/CD, AWS** → `deploy-aws`
 - **Frontend/backend, endpoints, UI, integraciones externas** → `dev-plataforma`
 - **Schema, migraciones, queries, índices** → `experto-bd`
+- **Wireframes / diseño visual antes de codear UI** → `ui-ux`
 - **Testing, validación, QA manual y automatizado** → `qa`
 - **Seguridad, auditoría, manejo de secretos, cifrado, revisión de diseño por riesgos** → `seguridad`
 

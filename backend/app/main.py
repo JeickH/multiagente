@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from .database import Base, engine
-from .routers import auth, usuario, mensajes, campanas, bots, teams, meta_webhook, internal, landing
+from .routers import auth, usuario, mensajes, campanas, bots, teams, meta_webhook, internal, landing, contacts, templates, campaigns
 
 Base.metadata.create_all(bind=engine)
 
@@ -24,3 +24,6 @@ app.include_router(teams.router)
 app.include_router(meta_webhook.router)
 app.include_router(internal.router)
 app.include_router(landing.router)
+app.include_router(contacts.router)
+app.include_router(templates.router)
+app.include_router(campaigns.router)

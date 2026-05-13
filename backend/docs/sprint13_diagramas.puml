@@ -1,0 +1,318 @@
+@startuml sprint13_clases
+' ─────────────────────────────────────────────────────────────────────────
+' Sprint 13 — Diagrama de Clases (modelos SQLAlchemy)
+' ─────────────────────────────────────────────────────────────────────────
+title Sprint 13 — Modelo de datos: Campañas + Plantillas + Contactos
+
+skinparam classFontSize 12
+skinparam classAttributeFontSize 11
+skinparam linetype ortho
+
+package "Sprint previos" as previos #DDDDDD {
+  class User {
+    +id : int
+    +email : str
+    +hashed_password : str (redacted)
+    +created_at : datetime
+  }
+  class Team {
+    +id : int
+    +name : str
+    +owner_id : int
+  }
+  class MetaAccount {
+    +id : int
+    +team_id : int (FK)
+    +phone_number_id : str
+    +waba_id : str
+    +display_phone_number : str
+    +verified_name : str
+    +encrypted_access_token : str (Fernet, NULLable → modo sandbox)
+  }
+}
+
+package "Sprint 13 — Contactos" as pkg_contacts #E8F5E9 {
+  class Contact {
+    +id : int
+    +team_id : int (FK CASCADE)
+    +phone_e164 : str
+    +name : str?
+    +email : str?
+    +attributes : JSONB
+    +opt_in : bool
+    +opt_in_source : str?
+    +created_at / updated_at
+    --
+    UNIQUE (team_id, phone_e164)
+    CHECK regex E.164
+  }
+  class ContactGroup {
+    +id : int
+    +team_id : int (FK CASCADE)
+    +name : str
+    +description : str?
+    +created_at
+    --
+    UNIQUE (team_id, name)
+  }
+  class ContactGroupMember {
+    +group_id : int (FK CASCADE)
+    +contact_id : int (FK CASCADE)
+    +added_at : datetime
+    --
+    PK (group_id, contact_id)
+  }
+}
+
+package "Sprint 13 — Plantillas" as pkg_tpl #FFF3E0 {
+  class WhatsappTemplate {
+    +id : int
+    +meta_account_id : int (FK CASCADE)
+    +meta_template_id : str?
+    +name : str
+    +category : MARKETING|UTILITY|AUTHENTICATION
+    +language : str
+    +status : PENDING|APPROVED|REJECTED|DISABLED|PAUSED|DELETED
+    +components_json : Any
+    +rejection_reason : str? (sanitized)
+    +last_synced_at : datetime?
+    --
+    UNIQUE (meta_account_id, name, language)
+    Cache local — fuente de verdad = Meta
+  }
+}
+
+package "Sprint 13 — Campañas" as pkg_camp #FCE4EC {
+  class Campaign {
+    +id : int
+    +team_id : int (FK CASCADE)
+    +meta_account_id : int (FK RESTRICT)
+    +template_id : int (FK RESTRICT)
+    +created_by_user_id : int (FK SET NULL)
+    +name : str
+    +status : draft|scheduled|running|completed|failed|cancelled
+    +scheduled_at : datetime?
+    +started_at / completed_at
+    +template_variables_json : JSONB
+    +created_at
+    --
+    Solo template.status=APPROVED puede usarse
+  }
+  class CampaignRecipient {
+    +id : int
+    +campaign_id : int (FK CASCADE)
+    +contact_id : int (FK RESTRICT)
+    +phone_e164 : str (snapshot)
+    +meta_message_id : str? (UNIQUE)
+    +status : queued|sending|sent|delivered|read|failed|skipped
+    +error_code : str?
+    +sent_at / delivered_at / read_at / failed_at
+    --
+    Snapshot del teléfono al momento del envío
+    UNIQUE (campaign_id, contact_id)
+  }
+  class CampaignEvent {
+    +id : int
+    +campaign_id : int (FK CASCADE)
+    +recipient_id : int? (FK CASCADE)
+    +event_type : queued|sent|delivered|read|failed|skipped|sync_warning
+    +payload_json : JSONB (crudo, sólo BD)
+    +meta_message_id : str?
+    +created_at
+    --
+    UNIQUE parcial (meta_message_id, event_type)
+    WHERE meta_message_id IS NOT NULL
+    — dedupe webhook
+  }
+}
+
+' Relaciones
+User "1" --> "*" Team : owns
+User "1" --> "*" Campaign : created_by
+Team "1" --> "*" MetaAccount
+Team "1" --> "*" Contact
+Team "1" --> "*" ContactGroup
+Team "1" --> "*" Campaign
+Contact "*" --> "*" ContactGroup : via ContactGroupMember
+ContactGroupMember "*" --> "1" ContactGroup
+ContactGroupMember "*" --> "1" Contact
+MetaAccount "1" --> "*" WhatsappTemplate
+WhatsappTemplate "1" --> "*" Campaign : template_id
+MetaAccount "1" --> "*" Campaign : meta_account_id
+Campaign "1" --> "*" CampaignRecipient
+Campaign "1" --> "*" CampaignEvent
+CampaignRecipient "1" --> "*" CampaignEvent
+Contact "1" --> "*" CampaignRecipient
+
+note right of MetaAccount
+  Modo demo / sandbox:
+  encrypted_access_token = NULL
+  OR env META_SANDBOX=1
+  → backend no llama a Meta,
+  genera wamid.local-<uuid>
+end note
+
+@enduml
+
+
+@startuml sprint13_servicios
+' ─────────────────────────────────────────────────────────────────────────
+' Sprint 13 — Diagrama de Servicios
+' ─────────────────────────────────────────────────────────────────────────
+title Sprint 13 — Servicios y dependencias
+
+skinparam componentStyle rectangle
+skinparam linetype ortho
+
+package "Routers (HTTP)" as routers #E3F2FD {
+  component "routers/contacts.py" as r_contacts
+  component "routers/templates.py" as r_templates
+  component "routers/campaigns.py" as r_campaigns
+  component "routers/meta_webhook.py\n(extendido)" as r_webhook
+  component "routers/internal.py\n/internal/campaigns/tick" as r_internal
+}
+
+package "Servicios (lógica)" as services #F3E5F5 {
+  component "services/meta_templates.py\nsync · create · delete\n(sandbox si token NULL)" as s_templates
+  component "services/campaign_sender.py\ntoken-bucket · backoff · idempotente\nopt-in fail-closed (re-lookup)" as s_sender
+  component "services/crypto.py\nFernet encrypt / decrypt" as s_crypto
+}
+
+package "CRUD + Models" as crud {
+  component "crud.py · models.py\nschemas.py" as crud_mod
+}
+
+cloud "Meta WhatsApp\nGraph API" as meta
+database "PostgreSQL\nRDS / docker" as db
+
+actor "Usuario\n(frontend)" as user
+actor "Scheduler\n(cron externo)" as cron
+actor "Meta webhook\n(callbacks)" as meta_cb
+
+user --> r_contacts : Bearer JWT
+user --> r_templates : Bearer JWT
+user --> r_campaigns : Bearer JWT
+cron --> r_internal : X-Internal-Key
+meta_cb --> r_webhook : POST + HMAC
+
+r_templates --> s_templates
+r_campaigns --> crud_mod
+r_internal --> s_sender
+r_webhook --> crud_mod
+s_templates --> crud_mod
+s_sender --> crud_mod
+s_sender --> s_crypto : decrypt token
+s_templates --> s_crypto : decrypt token
+
+s_templates ..> meta : POST/GET/DELETE\n(omitido si sandbox)
+s_sender ..> meta : POST /messages\n(omitido si sandbox)
+
+crud_mod --> db
+s_crypto -[hidden]-> crud_mod
+
+note right of s_sender
+  Sandbox:
+  - account.encrypted_access_token NULL
+  - OR env META_SANDBOX=1
+  - genera wamid.local-<uuid>
+  - status=sent inmediato
+end note
+
+note right of r_internal
+  S13-016 (Alto, fixed):
+  - prod + INTERNAL_API_KEY vacío → 403
+  - dev + vacío → pasa libre
+end note
+
+note right of r_webhook
+  S13-004: _sanitize_payload_for_log
+  enmascara teléfonos antes de loggear.
+  S13-005: HMAC fail-closed en prod
+  (rechaza 403 si falta firma/secreto).
+end note
+
+@enduml
+
+
+@startuml sprint13_secuencia_envio
+' ─────────────────────────────────────────────────────────────────────────
+' Sprint 13 — Secuencia: Usuario crea campaña → envío → callbacks Meta
+' ─────────────────────────────────────────────────────────────────────────
+title Sprint 13 — Secuencia: crear campaña → envío → callbacks
+
+skinparam sequenceArrowThickness 1.5
+skinparam responseMessageBelowArrow true
+
+actor "Usuario\n(wizard)" as U
+participant "POST /campaigns" as RC
+participant "crud.create_campaign" as CC
+participant "Tabla\ncampaigns/recipients" as DBC
+participant "POST /internal/campaigns/tick" as RT
+participant "campaign_sender.send_campaign_tick" as SS
+participant "Meta API\n(o sandbox)" as M
+participant "POST /meta/webhook" as RW
+participant "process_status_event" as PSE
+participant "Tabla\ncampaign_events" as DBE
+
+== 1) Crear ==
+U -> RC : nombre, template_id, recipients
+RC -> CC : payload + team_id del JWT
+CC -> CC : valida cadena\ntemplate ↔ meta_account ↔ team\n(S13-001)
+CC -> CC : valida template.status=APPROVED
+CC -> CC : valida len(recipients)\n<= MAX_RECIPIENTS_PER_CAMPAIGN (S13-002)
+CC -> DBC : INSERT Campaign(status=scheduled)
+CC -> DBC : INSERT recipients\nopt_in=False → status=skipped,\nerror_code=opt_out_at_enqueue\n(S13-003)
+CC --> RC : CampaignDetailOut
+RC --> U : 201 + detalle
+
+== 2) Tick (cron cada N segundos) ==
+RT -> SS : send_campaign_tick(db)
+SS -> DBC : SELECT campaigns\nstatus IN (scheduled, running)\nAND (scheduled_at IS NULL\nOR scheduled_at <= now)
+SS -> DBC : UPDATE status=running, started_at
+loop por cada recipient queued
+  SS -> DBC : re-lookup contact.opt_in
+  alt opt_in cambió a False
+    SS -> DBC : status=skipped,\nerror_code=opt_out_at_send\n(S13-003 fail-closed)
+  else opt_in=True
+    SS -> DBC : UPDATE status=sending\nWHERE status=queued\n(idempotencia)
+    SS -> SS : token-bucket por meta_account_id\n(S13-002, 10 rps default)
+    alt sandbox (token NULL o META_SANDBOX=1)
+      SS -> SS : wamid = wamid.local-<uuid>
+    else real
+      SS -> M : POST /{phone_id}/messages\n(con retry tenacity 3x)
+      M --> SS : 200 + wamid
+    end
+    SS -> DBC : UPDATE status=sent,\nmeta_message_id=wamid, sent_at
+    SS -> DBE : INSERT event_type=sent
+  end
+end
+SS -> DBC : si recipients terminales 100%\n→ campaign.status=completed
+SS --> RT : {processed, sent, failed, skipped}
+
+== 3) Callback de Meta (real, no sandbox) ==
+M -> RW : POST /meta/webhook\nstatuses[]
+RW -> RW : _verify_signature\n(S13-005 fail-closed prod)
+RW -> RW : _sanitize_payload_for_log\n(S13-004 PII redactada)
+loop por cada status
+  RW -> PSE : process_status_event(db, status)
+  PSE -> DBC : SELECT recipient WHERE\nmeta_message_id = wamid
+  alt encontrado
+    PSE -> PSE : _status_rank check\n(sólo avanza si nuevo > actual)
+    PSE -> DBC : UPDATE status + timestamp
+    PSE -> DBE : INSERT event_type=<status>\nON CONFLICT (wamid, event_type)\nDO NOTHING (S13-015 dedupe)
+    alt todos terminales
+      PSE -> DBC : campaign.status=completed
+    end
+  else no encontrado
+    PSE --> RW : False (no es de campaña)
+  end
+end
+RW --> M : 200
+
+note over U, DBE
+  En modo demo (sandbox), el paso 3 no ocurre porque
+  Meta no envía callbacks reales — los recipients
+  quedan en status=sent (final para la demo).
+end note
+
+@enduml

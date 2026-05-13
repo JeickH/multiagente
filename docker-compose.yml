@@ -34,6 +34,11 @@ services:
       APP_ENCRYPTION_KEY: ${APP_ENCRYPTION_KEY:?APP_ENCRYPTION_KEY requerida. Genera con python backend/scripts/gen_encryption_key.py}
       APP_ENV: ${APP_ENV:-development}
       META_API_VERSION: ${META_API_VERSION:-v22.0}
+      # Sprint 13 #162: envío de campañas (sandbox por default en local).
+      META_SANDBOX: ${META_SANDBOX:-1}
+      META_RATE_LIMIT_RPS: ${META_RATE_LIMIT_RPS:-10}
+      CAMPAIGN_SENDER_BATCH: ${CAMPAIGN_SENDER_BATCH:-200}
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY:-}
       WATI_API_ENDPOINT: ${WATI_API_ENDPOINT:-}
       WATI_BEARER_TOKEN: ${WATI_BEARER_TOKEN:-}
     depends_on:
