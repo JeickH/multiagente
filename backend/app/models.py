@@ -25,6 +25,10 @@ class User(Base):
     correo = Column(String, unique=True, index=True, nullable=False)
     hashed_password = Column(String, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    # Sprint 15: estado de tutoriales interactivos por módulo.
+    # Llaves esperadas: mi_plan, mensajes, bots, campanas
+    # Valor: {"done": bool, "skipped": bool, "completed_at": iso8601 | null}
+    tutorials_completed = Column(JSONB, nullable=False, default=dict, server_default="{}")
 
     memberships = relationship(
         "TeamMember", back_populates="user", cascade="all, delete-orphan"

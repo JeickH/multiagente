@@ -28,6 +28,33 @@ class UserOut(BaseModel):
         from_attributes = True
 
 
+# ===== Tutoriales interactivos (Sprint 15) =====
+ALLOWED_TUTORIAL_MODULES = {"mi_plan", "mensajes", "bots", "campanas"}
+
+
+class TutorialStateOut(BaseModel):
+    done: bool = False
+    skipped: bool = False
+    completed_at: Optional[str] = None
+
+
+class TutorialsOut(BaseModel):
+    """Estado de los tutoriales del usuario autenticado por módulo.
+
+    Llaves: mi_plan, mensajes, bots, campanas (whitelist).
+    Si una llave no está presente significa que el usuario NUNCA hizo
+    ese tutorial → el frontend debe mostrarlo.
+    """
+    tutorials: Dict[str, TutorialStateOut]
+
+
+class TutorialUpdateIn(BaseModel):
+    done: bool = True
+    skipped: bool = False
+
+    model_config = ConfigDict(extra="forbid")
+
+
 # ===== Teams & Permissions =====
 class TeamPermissionOut(BaseModel):
     permission_key: str

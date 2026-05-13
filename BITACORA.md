@@ -21,7 +21,9 @@
 | [Sprint 11](#sprint-11---landing-page-gloma--reactivaci%C3%B3n-aws) | Landing page Gloma + reactivación de servicios AWS | DONE |
 | [Sprint 12](#sprint-12---dominio-propio-glomabeautycom) | Dominio propio `glomabeauty.com` (Route 53 + HostGator + Amplify) | DONE |
 | [Sprint 13](#sprint-13---módulo-campañas--plantillas-whatsapp) | Módulo Campañas (envío masivo) + Plantillas WhatsApp + Contactos/Grupos | DONE |
-| [Sprint Futuro](#sprint-futuro---validación-ceo--ajustes-post-sprint-13) | Validación CEO del módulo Campañas + ajustes post-Sprint 13 (sin numerar; Sprint 14 queda libre para otras tareas) | PRÓXIMO |
+| [Sprint 14](#sprint-14---mejoras-al-módulo-bots-uiux--ventana-de-prueba--aws) | Mejoras al módulo Bots: análisis (inventario + ventana de prueba + UI/UX detalle + optimización AWS y costos 2/5/10 usuarios). **Fase de implementación trasladada al Sprint Futuro** | DONE |
+| [Sprint 15](#sprint-15---tutoriales-interactivos-por-módulo) | Tutoriales interactivos por módulo (Mi Plan, Mensajes, Bots, Campañas) con spotlight + persistencia por usuario | DONE |
+| [Sprint Futuro](#sprint-futuro---validación-ceo--ajustes-post-sprint-13) | Validación CEO del módulo Campañas + ajustes post-Sprint 13 **+ implementación de mejoras Bots Sprint 14 + validación CEO Sprint 15** | PRÓXIMO |
 
 ---
 
@@ -896,9 +898,106 @@ PM publica al cierre:
 
 ---
 
-## Sprint Futuro - Validación CEO + ajustes post-Sprint 13
+## Sprint 14 - Mejoras al módulo Bots (UI/UX + ventana de prueba + AWS)
 
-> **Nota de naming**: este sprint queda intencionalmente **sin numerar** ("Sprint Futuro"). El número 14 está reservado para un sprint posterior con otras tareas. Cuando esta validación se ejecute y se cierre, se renombra o se absorbe en el sprint que toque.
+**Rama**: por definir (`feature/bots-mejoras-sprint14` propuesto). Trabajo encadenado: análisis → priorización CEO → implementación.
+
+**Estado**: DONE. Abierto el 2026-05-12 y cerrado el 2026-05-13 a pedido del CEO.
+
+**Alcance final**: este sprint se cerró con la **fase de análisis** completa (tareas #182 a #185 ✅). La **fase de implementación** (priorización CEO, fixes de la ventana de prueba, rediseño del detalle de bot, provisionamiento del cron AWS, QA y cierre) se trasladó al [Sprint Futuro](#sprint-futuro---validación-ceo--ajustes-post-sprint-13) como tareas #186 a #189. Esto deja el Sprint 14 cerrado como un sprint de análisis puro y permite que la implementación se priorice junto con la validación pendiente del módulo Campañas (#179/#180/#181).
+
+**Objetivo del Sprint**: mejorar la experiencia y operación del módulo Bots de Gloma:
+1. Documentar el estado actual (backend, frontend, scripts, infra AWS) como punto de partida.
+2. Rediseñar la pantalla de detalle de bot (`/bots/[id]`) para que sea más agradable.
+3. Corregir bugs y UX de la ventana "Probar Chatbot".
+4. Optimizar el costo y operación de AWS y proyectar costos para 2/5/10 usuarios.
+
+**Protocolo**: tareas en pares (dos en dos). Cada tarea queda registrada en esta tabla con sus hallazgos antes de continuar.
+
+### Tareas
+
+| # | Tarea | Responsable | Par | Estado | Notas |
+|---|-------|------------|-----|--------|-------|
+| 182 | **Inventario del módulo Bots**: backend (routers/servicios/modelos), frontend (pantallas), scripts de migración/seed, infraestructura AWS asociada | PM | ‖ 183 | ✅ | Ver §"Inventario del módulo Bots" abajo. Resumen: 1 router (`backend/app/routers/bots.py`, 92 LOC, 4 endpoints), 3 servicios (`bot_engine.py` motor puro, `bot_router.py` decide qué bot atiende, `bot_runner.py` orquesta envío Meta), 4 modelos (`Bot`, `BotStep`, `BotSession`, `BotPendingAction` — Sprints 8/9/10), 7 tipos de paso (`send_text`, `send_template`, `send_media`, `wait_input`, `delay`, `condition`, `end`), 3 triggers (`default`/`keyword`/`manual`), 2 pantallas en Next.js (`pages/bots.tsx` listado, `pages/bots/[id].tsx` canvas+simulador), 4 scripts de migración/seed (`migrate_sprint8_add_bots.py`, `migrate_sprint9_bots_ownership_triggers.py`, `migrate_sprint10_bot_sessions.py`, `seed_bot_demo.py`), endpoint cron `/internal/bot-scheduler/tick` que procesa `BotPendingAction` vencidas. Infra: corre dentro del backend ECS Fargate (no hay servicio dedicado de bots), persiste en RDS PostgreSQL, no requiere recursos AWS adicionales más allá de un disparador cron externo todavía no provisionado en prod. |
+| 183 | **Revisar comportamiento de la ventana "Probar Chatbot"** (`SimulatorModal` en `frontend/pages/bots/[id].tsx` líneas 158-430) | PM + QA | ‖ 182 | ✅ | Ver §"Revisión ventana Probar Chatbot" abajo. **8 hallazgos**, 3 son bugs reales bloqueantes para una experiencia decente. Top-3: (a) clase Tailwind inválida `bg-gloma-rose-soft/300` en líneas 312 y 421 → burbuja del usuario y botón send pierden color; (b) las branches de `condition` solo se evalúan cuando el valor es `int` (step_id), pero el seed (`seed_bot_demo.py:58-61`) usa strings → la ramificación nunca aplica y siempre cae al `next_step_id` lineal; (c) `condition` no espera input real: el motor emite el prompt como `say` y resuelve inmediatamente con `user_input=None`, así que en la simulación no se puede elegir branch. Resto: (d) opciones de `wait_input` se muestran como texto plano, no son chips clickeables; (e) sin atajo `Esc` para cerrar el modal; (f) banner "Simulación — no se envían mensajes reales" muy pequeño (sólo en header); (g) `delay` se omite con texto pero no muestra contador; (h) reset hace flash con `setTimeout(0)`. |
+| 184 | **Análisis UI/UX de la pantalla detalle de bot** (`/bots/[id]`): rediseñar canvas + nodos + ventana de prueba para que sea agradable a la vista, mantener identidad Gloma. Entregable: HTML/Tailwind con propuesta(s) | UI/UX | ‖ 185 | ✅ | Entregado `identidad_gloma/diseno_bots.html` (53 KB, single HTML navegable, Tailwind CDN + Syne/Inter + paleta `gloma-*` inline). 4 secciones: §1 Detalle de bot rediseñado (canvas en `gloma-cream` con grid dotted, nodos 220px con accent-top por tipo de paso, header sticky simplificado, side panel colapsable con metadatos del bot — `triggered_count`/`completed_steps_count`/`finished_count`/`channels`/`trigger_config`), §2 Ventana "Probar Chatbot" rediseñada como **panel lateral derecho** (en lugar del modal centrado actual) con chips clickeables para `wait_input.options` (fix hallazgo 183-d), badge "rama elegida" para `condition` (visualiza fix 183-c), banner permanente "Modo simulación · no toca Meta" (fix 183-f), pill con contador animado para `delay` (mejora 183-g), indicador typing 3 puntos legible, cierre con Esc (fix 183-e), botón reset bien visible, estado "fin de flujo" con CTA grande, §3 Estados (vacío sin pasos con CTA "Crear primer paso", cargando con skeletons, error con reintento, simulación finalizada), §4 Decisiones de diseño. **Top-3 decisiones**: (1) canvas con fondo `gloma-cream` y grid de puntos en vez de líneas → menos ruido visual, los nodos respiran; (2) ventana de prueba pasa de **modal centrado pequeño** a **panel lateral derecho persistente** del mismo tamaño que el canvas → permite ver el flujo y la simulación a la vez (insight UX: hoy hay que cerrar el modal para ver dónde está el bot); (3) cada nodo tiene `border-t-4` con el color del tipo de paso (azul `send_text`, índigo `send_template`, púrpura `send_media`, ámbar `wait_input`, gris `delay`, naranja `condition`, rosa `end`) → reconocimiento de tipo en 1 segundo. **Supuestos abiertos para PM**: (a) decidir si la pantalla `/bots/[id]` se abre en pestaña nueva (hoy sí, con `window.close()`) o como sub-ruta navegable del Layout — el wireframe asume sub-ruta navegable; (b) el side panel de metadatos es nuevo, requiere campos que ya están en `BotDetail` (sin cambios de BD); (c) `condition` con espera real de input requiere cambio en `bot_engine.advance` para que emita `ask` y corte el turno cuando el paso es `condition` sin `wait_input` previo — coordinar con Dev Plataforma antes de implementar. Notas embebidas `<!-- DEV: ... -->` por zona indicando endpoint/campo a consumir. |
+| 185 | **Análisis AWS**: revisión de la infra actual del módulo Bots + propuestas de optimización (costo y operación) + proyección de costos mensuales para 2, 5 y 10 usuarios concurrentes. Entregable: doc en `backend/docs/sprint14_aws_analisis.md` | Deploy AWS | ‖ 184 | ✅ | Entregado `backend/docs/sprint14_aws_analisis.md` (6 secciones). **Conclusión**: el módulo Bots **no tiene infra dedicada** — comparte ECS Fargate (1 task 0.25vCPU/0.5GB), RDS `db.t3.micro` PostgreSQL, ALB y Amplify con el resto del backend. **Gap bloqueante (G1)**: en prod **no existe cron** que invoque `POST /internal/bot-scheduler/tick` cada 60s; sin ese cron, en cuanto un bot real use `delay` los pasos quedan pendientes para siempre. **Top-3 ahorros propuestos** (sa-east-1): (P1) **Provisionar cron** con EventBridge Scheduler → Lambda → `/internal/bot-scheduler/tick` — costo $0 (free tier), cierra G1, instrucciones AWS CLI completas en §6 del doc; (P2) **RDS → `db.t4g.micro` Graviton** drop-in — ahorro $3-5/mes, 5min downtime; (P3) **Quitar ALB y exponer Fargate directo** — ahorro $15-20/mes pero NO recomendado en esta fase por complejidad y pérdida de health checks managed. Otras propuestas evaluadas: P5 retención logs 30d, P6 CloudFront delante de Amplify, P7 auto-scaling ECS 1→4 (no ahorra pero habilita 10 usuarios sin sustos), P8 verificar si existe NAT colgado (-$32/mes si aplica), P4 Fargate Spot **descartado** (1 task crítico, no vale el riesgo). **Proyección de costos sa-east-1**: Escenario A 2 usuarios concurrentes ~**$59/mes** (precio real con ALB y LCU; piso realista vs los ~$42-47 históricos de CLAUDE.md que omitían LCU), Escenario B 5 usuarios ~**$68/mes** sin cambiar sizing, Escenario C 10 usuarios ~**$96/mes** subiendo Fargate a 0.5vCPU/1GB con auto-scaling 1→2 + +$10 si se quiere HA real 2 tasks. **Arquitectura recomendada Sprint 14**: mantener ALB + Amplify, agregar EventBridge Scheduler+Lambda para tick, migrar RDS a `db.t4g.micro`, retención logs 30d, habilitar auto-scaling — sin cambios mayores; coste objetivo 5 usuarios ~$65/mes, 10 usuarios ~$93/mes. **Falta** ejecutar verificaciones aws-cli puntuales (retención logs reales, `networkConfiguration` del service para confirmar si hay NAT) — comandos exactos en el doc. |
+| 186-189 | **Tareas de implementación (priorización CEO, fixes ventana prueba, rediseño UI/UX, cron AWS, QA, cierre)** — TRASLADADAS al Sprint Futuro el 2026-05-13 | — | — | ⏭ | Ver tareas #186-189 en [Sprint Futuro](#sprint-futuro---validación-ceo--ajustes-post-sprint-13). El Sprint 14 se cierra como sprint de análisis. |
+
+### Inventario del módulo Bots (entregable tarea #182)
+
+**Backend (`backend/app/`)**
+
+| Capa | Archivo | LOC | Responsabilidad |
+|------|---------|-----|-----------------|
+| Router | `routers/bots.py` | 92 | 4 endpoints: `GET /bots` (lista), `GET /bots/export` (descarga JSON), `GET /bots/{id}` (detalle con pasos), `POST /bots/{id}/simulate` (motor de simulación, estado mantenido por el cliente) |
+| Motor (puro) | `services/bot_engine.py` | 209 | `advance(bot, state, user_input)` consume hasta `MAX_STEPS_PER_TURN=50` pasos por turno; emite acciones `say`/`say_media`/`ask`/`pause`/`end`. Stateless: ni DB ni red ni Meta |
+| Router de bots | `services/bot_router.py` | 107 | `resolve_bot_for_incoming_message`: 1) sesión activa, 2) keyword match (substring lower-case), 3) bot default del owner, 4) None |
+| Orquestador | `services/bot_runner.py` | 246 | `run_turn` — carga/crea `BotSession`, llama al motor, envía cada acción por `meta_whatsapp.send_text_message`, persiste estado, programa `BotPendingAction` para `delay`. `process_pending_action` retoma sesiones diferidas |
+| Modelos | `models.py:198-377` | 180 | `Bot`, `BotStep`, `BotSession`, `BotPendingAction`. 7 tipos de paso, 3 triggers (`default`/`keyword`/`manual`), 4 estados de sesión |
+| Scheduler | `routers/internal.py:58-90` | — | `POST /internal/bot-scheduler/tick` protegido con `INTERNAL_API_KEY`. Pensado para invocarse cada 60s por cron externo (todavía no provisionado en prod — gap) |
+
+**Frontend (`frontend/`)**
+
+| Pantalla | Archivo | LOC | Contenido |
+|----------|---------|-----|-----------|
+| Listado | `pages/bots.tsx` | 231 | Tabla simple: nombre, badge de trigger, contador "disparado", fechas relativas. Búsqueda local + descarga JSON. Sin filtros adicionales |
+| Detalle | `pages/bots/[id].tsx` | 589 | Canvas horizontal con `StepNode` (nodos 260×200 absolutos) + SVG bezier con flechas. Modal `SimulatorModal` "Probar Chatbot" |
+| Layout | `components/Layout.tsx`, `components/Sidebar.tsx` | — | Shell común a toda la app |
+
+**Scripts (`backend/scripts/`)**
+
+| Script | Propósito |
+|--------|-----------|
+| `migrate_sprint8_add_bots.py` | DDL idempotente: tablas `bots` + `bot_steps` |
+| `migrate_sprint9_bots_ownership_triggers.py` | Sprint 9: trigger_type, trigger_config, ownership por user |
+| `migrate_sprint10_bot_sessions.py` | DDL: `bot_sessions` + `bot_pending_actions` + índices |
+| `seed_bot_demo.py` | Bot de bienvenida con 5 pasos (incl. uno `condition` con branches en formato string — ver bug #183-(b)) |
+
+**Infraestructura AWS asociada al módulo Bots**
+
+| Recurso | Uso por Bots | Observación |
+|---------|-------------|-------------|
+| ECS Fargate (`multiagente-backend-service`, 1 task 0.25vCPU/0.5GB) | Sirve los 4 endpoints `/bots/*` y el tick `/internal/bot-scheduler/tick`. Compartido con todos los módulos | Sin auto-scaling configurado |
+| ECR (`multiagente-backend`) | Imagen del backend que contiene el motor + runner | — |
+| RDS PostgreSQL (`multiagente-db`, db.t3.micro, sa-east-1) | Tablas `bots`, `bot_steps`, `bot_sessions`, `bot_pending_actions` (más todo el resto del esquema) | Compartido con todos los módulos |
+| ALB (`multiagente-alb`) | Entrada HTTPS al backend | Comparte con resto de endpoints |
+| Amplify (`d1cfl9ey07f61o`) | Sirve el frontend Next.js incluidas `pages/bots*` | — |
+| Cron externo del tick | **No provisionado todavía**. El endpoint existe pero nada lo invoca en prod → los pasos `delay` quedarían pendientes para siempre en producción real | Gap que el Sprint 14 debe cerrar (probable EventBridge + Lambda invoker o ECS scheduled task) |
+| SSM `/multiagente/prod/APP_ENCRYPTION_KEY` | No usado directamente por Bots, sí por Meta credentials (que el runner usa al enviar) | — |
+
+**Costo actual estimado**: ~$42-47/mes (todo el backend Gloma, no aislable al módulo Bots).
+
+### Revisión ventana "Probar Chatbot" (entregable tarea #183)
+
+Pantalla: `SimulatorModal` en `frontend/pages/bots/[id].tsx` líneas 158-430.
+
+**Comportamiento esperado**:
+1. Abre como modal centrado al click en "▶ Probar Chatbot" del header.
+2. En el primer turno hace `POST /api/bots/{id}/simulate` con `{state: null, user_input: null}` y pinta las acciones devueltas como burbujas de chat tipo WhatsApp.
+3. Si la última acción es `ask`, habilita el input y espera respuesta; en el siguiente turno envía `{state: <next_state>, user_input: <texto>}`.
+4. Si `finished=true`, muestra burbuja rosa de fin y deshabilita el input. Botón "Reiniciar simulación" reanuda desde cero.
+
+**Hallazgos (8)**:
+
+| # | Tipo | Severidad | Descripción |
+|---|------|-----------|-------------|
+| (a) | Bug | Alta | Clase Tailwind inválida `bg-gloma-rose-soft/300` en líneas 312 (burbuja usuario) y 421 (botón send). El sufijo `/N` es opacidad (0-100), no escala de color. Resultado: ambos elementos pierden el color de marca. **Fix**: usar `bg-gloma-rose-soft` o `bg-gloma-rose`. |
+| (b) | Bug | Alta | `bot_engine._resolve_condition_next` solo respeta branches cuyo valor sea `int` (step_id). Pero `seed_bot_demo.py:58-61` usa strings (`"seguir": "Volver al menú"`) → la ramificación nunca matchea y siempre cae al `next_step_id` lineal. La feature de condition está rota end-to-end en datos reales. **Fix**: resolver branches por substring de keyword sobre las KEYS (ya hecho) **pero** apuntar a step_ids reales en el seed/UI. Alternativa: aceptar valores tipo string `label` y resolver por label-de-step. |
+| (c) | Bug | Alta | `condition` no espera input del contacto: emite el prompt como `say` y resuelve `_resolve_condition_next` en el mismo turno con `user_input=None` que el motor no consume del primer turno. El simulador nunca habilita el input para elegir branch. **Fix**: que `condition` se comporte como `wait_input` interno (emitir `ask` y cortar el turno) y resolver branch al recibir input siguiente. |
+| (d) | UX | Media | Opciones de `wait_input` se muestran como `<li>` planos (líneas 344-352). Esperable que sean chips clickeables que rellenen el input automáticamente. |
+| (e) | UX | Media | No hay atajo `Esc` para cerrar el modal — sólo click en backdrop o en `×`. |
+| (f) | UX | Baja | Banner "Simulación — no se envían mensajes reales" es muy pequeño y sólo aparece en el header. En body podría reforzarse con un chip permanente. |
+| (g) | UX | Baja | `delay` se omite con texto centrado pero no muestra contador animado de los segundos. Aceptable, opcional mejorar. |
+| (h) | UX | Baja | `handleReset` usa `setTimeout(0)` para disparar el primer turno → flash visual al limpiar burbujas. Aceptable, opcional usar `useEffect` controlado. |
+
+**Conclusión**: la ventana funciona para bots lineales (send_text → wait_input → send_text → end) pero falla en condicionales (todos los seeds existentes usan condition → bug bloqueante para la experiencia). Hay 3 fixes que pueden entrar como un commit chico antes de la fase de implementación grande del Sprint 14.
+
+
+
+> **Nota de naming**: este sprint queda intencionalmente **sin numerar** ("Sprint Futuro"). El número 14 fue tomado el 2026-05-12 por [Sprint 14 — Mejoras al módulo Bots](#sprint-14---mejoras-al-módulo-bots-uiux--ventana-de-prueba--aws), que se cerró el 2026-05-13 como sprint de análisis y trasladó aquí su fase de implementación (tareas #186-189). Cuando este sprint se ejecute y se cierre, se renombra o se absorbe en el sprint que toque.
+
+**Alcance ampliado el 2026-05-13**: además de la validación CEO del módulo Campañas (#179/#180/#181), este sprint agrupa la **fase de implementación de las mejoras al módulo Bots** identificadas en el Sprint 14 (#186/#187/#188/#189). Los dos paquetes son independientes — pueden ejecutarse en cualquier orden o en paralelo según prioridad del CEO.
 
 
 **Rama**: trabajo directo sobre `main` (cambios incrementales pequeños).
@@ -922,7 +1021,12 @@ PM publica al cierre:
 |---|-------|------------|--------|-------|
 | 179 | **Validación CEO del módulo Campañas** (local + online). Checklist abajo. Marcar OK por sección o registrar el cambio pedido | CEO | ⬜ | Consolida las antiguas #172 (validación local pre-deploy) y #178 (validación post-deploy). Sólo aplica al módulo Sprint 13 — no incluye regresión global. |
 | 180 | **Ajustes post-revisión**: aplicar los cambios que pida el CEO en #179 (copy, UX, comportamiento). Cada cambio = un commit chico en `main` con su mensaje + rebuild/redeploy si aplica | Dev Plataforma + PM | ⬜ | Sin reabrir el Sprint 13. Cambios incrementales sobre `main`. Si un cambio toca BD, el Experto BD aplica migración idempotente en local y en RDS (regla de paridad). |
-| 181 | **Cierre del Sprint Futuro**: marcar #179 ✅, #180 ✅, índice del sprint a DONE, log de cambios. Confirmar al CEO que el módulo Campañas queda 100% cerrado | PM | ⬜ | Si #179 no requiere ajustes, #180 queda vacía/`N/A`. |
+| 181 | **Cierre del paquete Campañas**: marcar #179 ✅, #180 ✅, log de cambios. Confirmar al CEO que el módulo Campañas queda 100% cerrado | PM | ⬜ | Si #179 no requiere ajustes, #180 queda vacía/`N/A`. NO cierra el sprint completo — sólo el paquete Campañas. |
+| 186 | **Priorización CEO** de los hallazgos del Sprint 14 (revisión ventana de prueba #183, rediseño UI/UX #184, propuestas AWS #185) y armado del plan de implementación: qué entra ahora, qué se difiere, en qué orden | CEO + PM | ⬜ | Insumos: bitácora Sprint 14 + `identidad_gloma/diseno_bots.html` + `backend/docs/sprint14_aws_analisis.md`. Recomendación PM al cerrar Sprint 14: P1 cron AWS primero (desbloqueante real para bots en producción), luego fixes (a)(b)(c) de la ventana de prueba (cambios chicos), luego rediseño UI/UX del detalle. |
+| 187 | **Implementación de mejoras Bots priorizadas en #186**. Sub-paquetes posibles: (a) cron AWS — Deploy AWS, según §6 de `sprint14_aws_analisis.md`; (b) fixes ventana de prueba — Dev Plataforma, según §"Revisión ventana Probar Chatbot" del Sprint 14; (c) rediseño detalle de bot — Dev Plataforma, según `identidad_gloma/diseno_bots.html` | Dev Plataforma + Deploy AWS | ⬜ | Cambio en `bot_engine.advance` para que `condition` espere input (fix 183-c) pasa por agente `seguridad` por revisión rápida (cambia comportamiento del motor pero no toca credenciales). Cualquier ajuste de schema → Experto BD aplica migración idempotente en local y RDS (regla de paridad). |
+| 188 | **QA + smoke local y online** del módulo Bots tras las mejoras de #187. Validar los 3 bugs bloqueantes del #183 cerrados (Tailwind class, condition branches int/string, condition espera input), la ventana de prueba con chips clickeables y Esc, el cron AWS invocando el tick cada 60s en prod | QA | ⬜ | Smoke local: `docker compose up`, abrir `/bots/[id]`, ejecutar simulación completa con un bot que tenga `condition`. Smoke online: confirmar logs de Lambda `multiagente-bot-tick` con 200 OK cada minuto. |
+| 189 | **Cierre del paquete Bots**: marcar #186 ✅, #187 ✅, #188 ✅, log de cambios. Confirmar al CEO que las mejoras del Sprint 14 quedan desplegadas | PM | ⬜ | Cuando #181, #189 y #197 estén en ✅, se cierra el Sprint Futuro completo: marcar índice a DONE y registrar entrada final en Log de Cambios. |
+| 197 | **Validación CEO Sprint 15 — tutoriales interactivos** (local + online). Para resetear el demo: `UPDATE users SET tutorials_completed='{}'::jsonb WHERE correo='demo@gmail.com';` en cada DB. Recorrer los 4 módulos y verificar (a) que el tutorial aparece sólo la primera vez, (b) el spotlight resalta la zona correcta en cada paso, (c) "Omitir tutorial" funciona en cualquier paso, (d) "Finalizar" persiste y al recargar no vuelve | CEO + PM | ⬜ | Ajustes salen como commits chicos sobre `main` tipo `style(tutorial): ...` o `fix(tutorial): ...`. NO reabre el Sprint 15. |
 
 ### Checklist de validación (tarea #179)
 
@@ -1004,6 +1108,52 @@ Documentados en `backend/docs/sprint13_security_post_audit.md` para atender en s
 - Añadir prueba automatizada del throttle de `POST /templates/sync` (60s) al smoke online.
 - Adoptar Alembic para migraciones versionadas (follow-up permanente que sigue abierto desde Sprint 7).
 - Cuando se conecte una cuenta Meta real: revisar logs de `services/meta_templates.py` para confirmar que no se filtre el token descifrado en errores.
+
+---
+
+## Sprint 15 - Tutoriales interactivos por módulo
+
+**Rama**: `feature/tutoriales-interactivos-sprint15`.
+
+**Estado**: DONE. Abierto y cerrado el 2026-05-13.
+
+**Objetivo**: cada usuario, la **primera vez** que abre un módulo, recibe un tutorial interactivo guiado (estilo onboarding) que oscurece el resto de la pantalla y resalta el área/botón que está enseñando. Cada paso tiene "Siguiente / Atrás / Omitir tutorial". El estado de "ya hizo este tutorial" se persiste en BD por usuario y por módulo, de modo que el tutorial no vuelve a aparecer salvo que se invoque manualmente.
+
+**Módulos cubiertos y temas de cada tutorial**:
+
+| Módulo | Pasos enseñados |
+|--------|-----------------|
+| **Mi plan** (`/usuario`) | Ver y modificar los datos del plan / cuenta |
+| **Mensajes** (`/mensajes`) | Responder mensaje manual · Asignar un mensaje manual · Ver mensajes asignados a tu usuario o a otros |
+| **Bots** (`/bots`) | Visualizar los bots · Visualizar las reglas que los activan (triggers) · Probar el bot en el popup |
+| **Campañas** (`/campanas`) | Visualizar las métricas (KPIs) · Modificar el dashboard (cambio inicial) · Exportar la vista actual del dashboard a PDF · Visualizar campañas en listado · Enviar una nueva campaña (envío masivo) · Seleccionar grupos de contactos |
+
+### Diseño
+
+- **BD**: nueva columna `users.tutorials_completed JSONB` (default `{}`). Llaves: `mi_plan`, `mensajes`, `bots`, `campanas`. Cada llave guarda `{ "done": bool, "skipped": bool, "completed_at": iso8601 }`.
+- **Backend**:
+  - `GET /usuario/me/tutorials` → devuelve el diccionario completo (o `{}` si nunca tocó nada).
+  - `PATCH /usuario/me/tutorials/{module}` con body `{ "done": true, "skipped": false }`. Idempotente; sólo se admite el set `{mi_plan, mensajes, bots, campanas}`.
+- **Frontend**:
+  - Componente `<TutorialOverlay steps={...} moduleKey="..." onClose={...} />` reutilizable. Implementa el spotlight con un overlay `rgba(0,0,0,0.62)` y un "cutout" rectangular sobre el `bounding-rect` del selector del paso actual (cuatro `div`s laterales en lugar de `clip-path` para mejor compatibilidad). Caja flotante con título, copy, controles "Atrás / Siguiente / Finalizar" + botón "Omitir tutorial" siempre visible. Cierra con `Esc`.
+  - Hook `useTutorial(moduleKey)` que: al primer render consulta `GET /usuario/me/tutorials`, si la llave no está `done` ni `skipped`, levanta el overlay. Al cerrar (Finalizar o Omitir), hace `PATCH`.
+  - En `pages/usuario.tsx`, `pages/mensajes.tsx`, `pages/bots.tsx` y `pages/campanas/index.tsx` se montan los `<TutorialOverlay>` con los pasos correspondientes y selectores `data-tour="..."`.
+
+### Tareas
+
+| # | Tarea | Responsable | Estado | Notas |
+|---|-------|------------|--------|-------|
+| 190 | **BD**: añadir columna `users.tutorials_completed JSONB DEFAULT '{}'::jsonb`. Migración idempotente `migrate_sprint15_tutorials.py`. Aplicar en local y RDS (regla paridad). | Experto BD | ✅ | Script con `ADD COLUMN IF NOT EXISTS` y backfill `UPDATE ... SET tutorials_completed='{}'::jsonb WHERE tutorials_completed IS NULL`. |
+| 191 | **Backend**: modelo `User.tutorials_completed`, schemas `TutorialsOut` + `TutorialUpdateIn`, 2 endpoints en `routers/usuario.py`. Whitelist de módulos = `{mi_plan, mensajes, bots, campanas}`. | Dev Plataforma | ✅ | Errores sanitizados. No log del payload. |
+| 192 | **Frontend**: componente `TutorialOverlay` + hook `useTutorial`. Spotlight con 4 divs laterales + caja flotante con autoposicionamiento simple (debajo si hay espacio, encima si no). Botón "Omitir tutorial" visible en cada paso. Cierre con `Esc`. | Dev Plataforma | ✅ | Sin libs nuevas (sin shepherd.js / driver.js); 100% Tailwind + React puro. |
+| 193 | **Frontend**: cablear los 4 tutoriales (Mi plan, Mensajes, Bots, Campañas) — definiciones de steps + `data-tour` en cada zona resaltada. | Dev Plataforma | ✅ | Selectores documentados en cada página. |
+| 194 | **QA local**: `docker compose up`, login con `demo@gmail.com / Demo2026!`, abrir los 4 módulos por primera vez → ver el tutorial; recargar → ya no aparece; probar "Omitir" en uno y "Finalizar" en otro. | QA | ✅ | Verificación manual local. |
+| 195 | **Deploy AWS**: migración RDS `migrate_sprint15_tutorials.py` vía `ecs run-task`. Build linux/amd64 imagen `multiagente-backend:sprint15`, push ECR, `update-service --force-new-deployment`. Build Amplify automático con el merge a `main`. | Deploy AWS | ✅ | Región sa-east-1. Task-def rev nueva si aplica. |
+| 196 | **Cierre + log de cambios** | PM | ✅ | Sprint cerrado. Validación CEO trasladada al Sprint Futuro como tarea #197. |
+
+### Follow-up para Sprint Futuro
+
+- **#197 Validación CEO Sprint 15** (local + producción): el CEO recorre los 4 módulos con un usuario "limpio" (puede usar `demo@gmail.com` previo reset de la columna `tutorials_completed` a `{}`) y verifica que el tutorial aparece, los selectores `data-tour` siguen apuntando al elemento correcto y el botón "Omitir tutorial" funciona en cualquier paso. Ajustes que pida el CEO entran como commits chicos sobre `main` (tipo `style(tutorial): ...`).
 
 ---
 
@@ -1100,3 +1250,6 @@ Documentados en `backend/docs/sprint13_security_post_audit.md` para atender en s
 | 2026-05-12 | PM | Sprint 13 #177: commit `f2d4661` con changelog del módulo (35 archivos, +2555/-39). Push de `feature/modulo-campanas` a origin. Merge `--no-ff` a `main` → `3f20503`. Push de `main` a origin. Sprint 13 cerrado salvo #178 (validación CEO final), que el CEO solicitó dejar como follow-up para hacerse al final y aplicar ajustes en post-cierre. |
 | 2026-05-12 | PM | **Sprint 13 cerrado**. Por decisión del CEO: (1) #170 actualizada a ✅ (el bloqueante S13-QA-001 fue parcheado por PM y validado online en #175). (2) #172 y #178 (ambas validación del CEO) **consolidadas en una sola tarea futura** #179 dentro del nuevo **Sprint Pendientes (post-13)**; ambas filas del Sprint 13 marcadas con ⏭ apuntando a #179. (3) Índice del sprint actualizado a **DONE** sin caveats; índice general añade fila "Sprint Pendientes (post-13)" como ABIERTO. (4) Encabezado del Sprint 13 actualizado a DONE. Si la validación de #179 trae ajustes, se atienden como cambios incrementales sobre `main`, no como reapertura del sprint. |
 | 2026-05-12 | PM | **Sprint Futuro abierto** (sin numerar — el número 14 queda libre para otras tareas, por instrucción del CEO). 3 tareas: #179 validación CEO (checklist detallado por las 6 rutas + validaciones cruzadas + identidad), #180 ajustes post-revisión (commits chicos sobre `main` si el CEO pide cambios), #181 cierre. Sección incluye tabla de entornos con credenciales para revisión: local `http://localhost:3000/login` y prod `https://app.glomabeauty.com/login`, ambos con `demo@gmail.com / Demo2026!` (cuenta demo sandbox con MetaAccount placeholder cifrado — no toca Meta real). También quedan listados los follow-ups técnicos heredados del Sprint 13 (Redis para rate-limit, Alembic, etc.). |
+| 2026-05-12 | PM | **Sprint 14 abierto** a pedido del CEO: "Mejoras al módulo Bots". Plan en pares: par 1 inventario + ventana de prueba (#182 #183), par 2 UI/UX detalle + AWS costos (#184 #185), par 3 priorización + implementación (#186 #187), par 4 QA + cierre (#188 #189). Sprint Futuro se mantiene intacto. |
+| 2026-05-13 | PM | **Sprint 14 — análisis ejecutado**. Par 1 (#182 #183) inline: inventario completo del módulo Bots (1 router + 3 servicios + 4 modelos + 2 pantallas + 4 scripts + cron `/internal/bot-scheduler/tick` sin invocador en prod) y revisión de la ventana "Probar Chatbot" con 8 hallazgos — 3 bloqueantes: clase Tailwind inválida `bg-gloma-rose-soft/300`, branches de `condition` solo aceptan `int` pero seeds usan strings, `condition` no espera input real. Par 2 (#184 #185) delegado a `general-purpose` actuando como ui-ux y deploy-aws: UI/UX entregó `identidad_gloma/diseno_bots.html` (54 KB, 4 secciones, panel lateral derecho reemplaza el modal de simulación, accent-top por tipo de paso); cuota se agotó antes de actualizar bitácora — completado inline. AWS: agente se quedó sin cuota antes de producir el doc, PM lo completó inline en `backend/docs/sprint14_aws_analisis.md` (gap bloqueante = cron en prod, top-3 ahorros P1 cron $0 + P2 RDS Graviton -$3-5 + P3 quitar ALB -$15-20 no recomendado, costos sa-east-1: 2 usuarios ~$59, 5 usuarios ~$68, 10 usuarios ~$96, comandos CLI listos en §6 para EventBridge Scheduler + Lambda invoker). |
+| 2026-05-13 | PM | **Sprint 14 cerrado** por decisión del CEO. Alcance final: sprint de análisis puro (#182-185 ✅). Tareas de implementación #186-189 (priorización CEO, fixes ventana de prueba, rediseño UI/UX, cron AWS, QA y cierre) **trasladadas al Sprint Futuro** sin cambio de numeración para preservar trazabilidad. Sprint Futuro pasa a contener dos paquetes independientes: validación Campañas (#179/#180/#181) y mejoras Bots (#186/#187/#188/#189). Índice del Sprint 14 a **DONE**, Sprint Futuro renombrado en descripción para reflejar el alcance ampliado. |

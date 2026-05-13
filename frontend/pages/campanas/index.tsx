@@ -13,8 +13,42 @@ import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 
 import Layout from '../../components/Layout';
+import TutorialOverlay from '../../components/TutorialOverlay';
 import { ApiError, authedFetch } from '../../lib/api';
 import type { CampaignSummary, GlobalKPIs } from '../../types/campaigns';
+
+const CAMPANAS_TUTORIAL = [
+  {
+    selector: '[data-tour="kpi-grid"]',
+    title: 'Visualiza las métricas',
+    body: 'Esta cuadrícula de 8 indicadores resume cómo van tus campañas: enviados, entregados, leídos, fallidos y los que aún están en cola. Se actualiza automáticamente con cada envío.',
+  },
+  {
+    selector: '[data-tour="customize-btn"]',
+    title: 'Modificar el dashboard',
+    body: 'Pulsa "Personalizar" para alternar entre la vista detallada y una vista compacta del dashboard (oculta los cuadros de "Visión general"). Tu preferencia queda guardada localmente.',
+  },
+  {
+    selector: '[data-tour="export-pdf-btn"]',
+    title: 'Exportar a PDF',
+    body: 'Con "Exportar a PDF" se imprime el dashboard actual a un PDF descargable. Útil para compartir reportes semanales sin enviar el acceso al sistema.',
+  },
+  {
+    selector: '[data-tour="campaigns-table"]',
+    title: 'Listado de campañas',
+    body: 'Aquí ves todas las campañas en orden cronológico. Usa el buscador, ordena por "más leídas" o "más exitosas", y paginas si tienes muchas.',
+  },
+  {
+    selector: '[data-tour="new-campaign-btn"]',
+    title: 'Nueva campaña (envío masivo)',
+    body: 'Con este botón arrancas el wizard de 4 pasos para crear un envío masivo: cuenta de Meta, plantilla aprobada, destinatarios y programación.',
+  },
+  {
+    selector: '[data-tour="contacts-link"]',
+    title: 'Grupos de contactos',
+    body: 'En "Contactos" puedes crear grupos (Clientes Premium, Recurrentes, etc.) y, al crear una nueva campaña, elegir el grupo completo como destinatario en lugar de seleccionar contactos uno a uno.',
+  },
+];
 
 type Tab = 'resumen' | 'plantillas' | 'programadas';
 type SortMode = 'recent' | 'most_successful' | 'most_read';
@@ -163,6 +197,30 @@ export default function CampanasDashboard() {
   const [page, setPage] = useState(1);
   const [cancelingId, setCancelingId] = useState<number | null>(null);
   const [reloadTick, setReloadTick] = useState(0);
+  // Sprint 15: preferencia "vista compacta" del dashboard, persistida en localStorage.
+  const [compactView, setCompactView] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    setCompactView(window.localStorage.getItem('campanas_compact_view') === '1');
+  }, []);
+
+  const toggleCompact = () => {
+    setCompactView((prev) => {
+      const next = !prev;
+      try {
+        window.localStorage.setItem('campanas_compact_view', next ? '1' : '0');
+      } catch {
+        /* no-op */
+      }
+      return next;
+    });
+  };
+
+  const handleExportPdf = () => {
+    if (typeof window === 'undefined') return;
+    window.print();
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -260,11 +318,42 @@ export default function CampanasDashboard() {
               Envíos masivos por WhatsApp Business — campañas y plantillas.
             </p>
           </div>
-          <Link href="/campanas/nueva" legacyBehavior>
-            <a className="inline-flex items-center justify-center px-4 py-2 rounded-lg bg-gloma-brown text-gloma-cream font-semibold text-sm hover:bg-gloma-brown-dark transition-colors">
-              + Nueva campaña
-            </a>
-          </Link>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              data-tour="customize-btn"
+              onClick={toggleCompact}
+              className="inline-flex items-center justify-center px-3 py-2 rounded-lg border border-gloma-brown-light/40 bg-white text-gloma-brown-dark font-medium text-sm hover:bg-gloma-rose-soft/30 transition-colors"
+              title="Alternar vista compacta del dashboard"
+            >
+              {compactView ? 'Vista detallada' : 'Personalizar'}
+            </button>
+            <button
+              type="button"
+              data-tour="export-pdf-btn"
+              onClick={handleExportPdf}
+              className="inline-flex items-center justify-center px-3 py-2 rounded-lg border border-gloma-brown-light/40 bg-white text-gloma-brown-dark font-medium text-sm hover:bg-gloma-rose-soft/30 transition-colors"
+              title="Exportar la vista actual del dashboard a PDF"
+            >
+              Exportar a PDF
+            </button>
+            <Link href="/campanas/contactos" legacyBehavior>
+              <a
+                data-tour="contacts-link"
+                className="inline-flex items-center justify-center px-3 py-2 rounded-lg border border-gloma-brown-light/40 bg-white text-gloma-brown-dark font-medium text-sm hover:bg-gloma-rose-soft/30 transition-colors"
+              >
+                Contactos
+              </a>
+            </Link>
+            <Link href="/campanas/nueva" legacyBehavior>
+              <a
+                data-tour="new-campaign-btn"
+                className="inline-flex items-center justify-center px-4 py-2 rounded-lg bg-gloma-brown text-gloma-cream font-semibold text-sm hover:bg-gloma-brown-dark transition-colors"
+              >
+                + Nueva campaña
+              </a>
+            </Link>
+          </div>
         </div>
 
         {/* Tabs */}
@@ -314,21 +403,23 @@ export default function CampanasDashboard() {
           </div>
         )}
 
-        {/* Visión general (4 cards estáticos) */}
-        <section className="mb-6">
-          <h2 className="font-heading text-sm uppercase tracking-widest text-gloma-brown-light mb-3">
-            Visión general
-          </h2>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
-            <OverviewCard label="Límite diario" value="1000" hint="mensajes/día" />
-            <OverviewCard label="Días consecutivos" value="—" hint="histórico" />
-            <OverviewCard label="Calidad" value="Alta" hint="estado Meta" />
-            <OverviewCard label="Límite mensual" value="10 000" hint="mensajes/mes" />
-          </div>
-        </section>
+        {/* Visión general (4 cards estáticos) — ocultable con "Personalizar" (Sprint 15) */}
+        {!compactView && (
+          <section className="mb-6">
+            <h2 className="font-heading text-sm uppercase tracking-widest text-gloma-brown-light mb-3">
+              Visión general
+            </h2>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
+              <OverviewCard label="Límite diario" value="1000" hint="mensajes/día" />
+              <OverviewCard label="Días consecutivos" value="—" hint="histórico" />
+              <OverviewCard label="Calidad" value="Alta" hint="estado Meta" />
+              <OverviewCard label="Límite mensual" value="10 000" hint="mensajes/mes" />
+            </div>
+          </section>
+        )}
 
         {/* KPI Grid */}
-        <section className="mb-8">
+        <section data-tour="kpi-grid" className="mb-8">
           <h2 className="font-heading text-sm uppercase tracking-widest text-gloma-brown-light mb-3">
             Indicadores
           </h2>
@@ -433,7 +524,7 @@ export default function CampanasDashboard() {
             </div>
           </div>
 
-          <div className="bg-white border border-gloma-brown-light/20 rounded-2xl overflow-hidden shadow-sm">
+          <div data-tour="campaigns-table" className="bg-white border border-gloma-brown-light/20 rounded-2xl overflow-hidden shadow-sm">
             {loading && !campaigns ? (
               <div className="p-6 space-y-3">
                 {Array.from({ length: 5 }).map((_, i) => (
@@ -586,6 +677,7 @@ export default function CampanasDashboard() {
           </div>
         </section>
       </div>
+      {!loading && <TutorialOverlay moduleKey="campanas" steps={CAMPANAS_TUTORIAL} />}
     </Layout>
   );
 }

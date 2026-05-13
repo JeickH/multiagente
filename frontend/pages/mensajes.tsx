@@ -1,5 +1,29 @@
 import { useEffect, useRef, useState } from 'react';
 import Layout from '../components/Layout';
+import TutorialOverlay from '../components/TutorialOverlay';
+
+const MENSAJES_TUTORIAL = [
+  {
+    selector: '[data-tour="conv-list"]',
+    title: 'Lista de conversaciones',
+    body: 'Aquí ves todas las conversaciones de WhatsApp del equipo. Haz click en cualquiera para abrirla y leer su historial completo a la derecha.',
+  },
+  {
+    selector: '[data-tour="conv-filters"]',
+    title: 'Filtros por estado',
+    body: 'Usa estos chips para ver sólo las charlas Abiertas, Pendientes o Cerradas. Es la forma rápida de revisar qué mensajes están asignados a tu equipo o esperan respuesta.',
+  },
+  {
+    selector: '[data-tour="reply-composer"]',
+    title: 'Responder manualmente',
+    body: 'Cuando selecciones una conversación, escribe aquí tu respuesta y pulsa "Enviar" (o Enter). El mensaje sale por la cuenta de WhatsApp conectada en Mi Plan.',
+  },
+  {
+    selector: '[data-tour="user-badge"]',
+    title: 'Tu usuario conectado',
+    body: 'Esta es la sesión activa. Cada mensaje saliente queda asociado a tu usuario; los otros miembros del equipo también pueden responder en paralelo desde sus propias sesiones.',
+  },
+];
 
 type Conversation = {
   id: number;
@@ -221,7 +245,7 @@ export default function Mensajes() {
           <span className="text-2xl">💬</span>
           <h1 className="text-xl font-semibold text-gray-800">Bandeja de entrada</h1>
         </div>
-        <div className="flex items-center gap-4">
+        <div data-tour="user-badge" className="flex items-center gap-4">
           {me && (
             <div className="text-right">
               <div className="text-xs text-gray-500">Conectado como</div>
@@ -237,7 +261,7 @@ export default function Mensajes() {
       {/* Body: lista + panel */}
       <div className="flex-1 flex overflow-hidden">
         {/* Lista de conversaciones */}
-        <aside className="w-96 bg-white border-r border-gloma-rose-soft flex flex-col">
+        <aside data-tour="conv-list" className="w-96 bg-white border-r border-gloma-rose-soft flex flex-col">
           <div className="px-4 py-3 border-b border-gloma-rose-soft">
             <div className="flex items-center justify-between mb-3">
               <h2 className="font-semibold text-gray-800">Chats activos</h2>
@@ -259,7 +283,7 @@ export default function Mensajes() {
               onChange={(e) => setSearch(e.target.value)}
               className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:border-gloma-rose"
             />
-            <div className="flex gap-2 mt-3 flex-wrap">
+            <div data-tour="conv-filters" className="flex gap-2 mt-3 flex-wrap">
               {FILTERS.map((f) => (
                 <button
                   key={f.key}
@@ -382,7 +406,7 @@ export default function Mensajes() {
               </div>
 
               {/* Composer */}
-              <div className="bg-white border-t border-gloma-rose-soft p-4">
+              <div data-tour="reply-composer" className="bg-white border-t border-gloma-rose-soft p-4">
                 {errorMsg && (
                   <div className="mb-2 text-sm text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2">
                     {errorMsg}
@@ -503,6 +527,8 @@ export default function Mensajes() {
           </div>
         </div>
       )}
+
+      {me && <TutorialOverlay moduleKey="mensajes" steps={MENSAJES_TUTORIAL} />}
     </Layout>
   );
 }
