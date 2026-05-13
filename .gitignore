@@ -29,6 +29,7 @@ postgres_data/
 backend/.venv
 referencia/
 identidad_gloma/
+identidad_elecol/
 gemini_secrets
 
 # Credenciales locales — nunca a git

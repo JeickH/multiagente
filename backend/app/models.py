@@ -9,7 +9,9 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     Index,
+    CheckConstraint,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
 from .database import Base
 
@@ -391,3 +393,440 @@ class Lead(Base):
     ip_address = Column(String(64), nullable=True)
     contacted = Column(Boolean, nullable=False, default=False)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+
+
+# ===== Sprint 13: Contactos + Grupos =====
+# Estos modelos replican 1:1 el DDL definido en
+# backend/docs/sprint13_schema.md (§1.1, §1.2, §1.3). La migración #158 ya
+# aplicó el schema en local (docker-compose `db`); aquí solo mapeamos las
+# tablas a SQLAlchemy. No usar Base.metadata.create_all() para alterar:
+# las tablas se crean vía el script de migración, no aquí.
+
+
+def _mask_phone(phone: str) -> str:
+    """Enmascara teléfono E.164 dejando solo los últimos 4 dígitos.
+    Regla 1 (CLAUDE.md): los modelos con PII deben tener __repr__ redactado."""
+    if not phone:
+        return "<empty>"
+    if len(phone) <= 5:
+        return "***"
+    return phone[:3] + "***" + phone[-4:]
+
+
+def _mask_name(name) -> str:
+    if not name:
+        return "<empty>"
+    return name[0] + "***"
+
+
+class Contact(Base):
+    """Contacto perteneciente a un team (multi-tenant).
+
+    PII: `phone_e164`, `name`, `email`, `attributes` son datos del cliente.
+    `__repr__` redacta los campos sensibles (regla 1 de seguridad).
+    """
+
+    __tablename__ = "contacts"
+    id = Column(Integer, primary_key=True, index=True)
+    team_id = Column(
+        Integer, ForeignKey("teams.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    phone_e164 = Column(String(20), nullable=False)
+    name = Column(String(120), nullable=True)
+    email = Column(String(255), nullable=True)
+    attributes = Column(JSONB, nullable=False, default=dict, server_default="{}")
+    opt_in = Column(Boolean, nullable=False, default=True, server_default="true")
+    opt_in_source = Column(String(50), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+    )
+
+    __table_args__ = (
+        UniqueConstraint("team_id", "phone_e164", name="uq_contacts_team_phone"),
+        CheckConstraint(
+            r"phone_e164 ~ '^\+[1-9][0-9]{6,18}$'",
+            name="ck_contacts_phone_e164",
+        ),
+        Index("ix_contacts_team_id", "team_id"),
+        Index("ix_contacts_team_name", "team_id", "name"),
+    )
+
+    team = relationship("Team")
+    group_memberships = relationship(
+        "ContactGroupMember",
+        back_populates="contact",
+        cascade="all, delete-orphan",
+    )
+
+    @property
+    def groups(self):
+        return [m.group for m in self.group_memberships]
+
+    def __repr__(self) -> str:
+        return (
+            f"<Contact id={self.id} team_id={self.team_id} "
+            f"phone={_mask_phone(self.phone_e164)!r} "
+            f"name={_mask_name(self.name)!r} "
+            f"email=<REDACTED>>"
+        )
+
+    __str__ = __repr__
+
+
+class ContactGroup(Base):
+    __tablename__ = "contact_groups"
+    id = Column(Integer, primary_key=True, index=True)
+    team_id = Column(
+        Integer, ForeignKey("teams.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    name = Column(String(120), nullable=False)
+    description = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("team_id", "name", name="uq_contact_groups_team_name"),
+        Index("ix_contact_groups_team_id", "team_id"),
+    )
+
+    team = relationship("Team")
+    members = relationship(
+        "ContactGroupMember",
+        back_populates="group",
+        cascade="all, delete-orphan",
+    )
+
+    @property
+    def contacts(self):
+        return [m.contact for m in self.members]
+
+
+class ContactGroupMember(Base):
+    __tablename__ = "contact_group_members"
+    group_id = Column(
+        Integer,
+        ForeignKey("contact_groups.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    contact_id = Column(
+        Integer,
+        ForeignKey("contacts.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    added_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        Index("ix_contact_group_members_contact", "contact_id"),
+    )
+
+    group = relationship("ContactGroup", back_populates="members")
+    contact = relationship("Contact", back_populates="group_memberships")
+
+
+# ─── Sprint 13 / templates ────────────────────────────────────────────────
+# Mapea la tabla `whatsapp_templates` ya creada por la migración #158
+# (ver `backend/docs/sprint13_schema.md` §1.4). NO se crea aquí vía
+# Base.metadata.create_all() — la migración Python es la fuente de verdad.
+
+WHATSAPP_TEMPLATE_STATUSES = (
+    "PENDING",
+    "APPROVED",
+    "REJECTED",
+    "DISABLED",
+    "PAUSED",
+    "DELETED",
+)
+WHATSAPP_TEMPLATE_CATEGORIES = ("MARKETING", "UTILITY", "AUTHENTICATION")
+
+
+class WhatsappTemplate(Base):
+    """Cache local de las plantillas WhatsApp de Meta para una `MetaAccount`.
+
+    La fuente de verdad es Meta. Se sincroniza:
+      - On-demand (`POST /templates/sync`).
+      - Lazy (TTL 15 min al entrar a /campanas/plantillas).
+      - Por scheduler para PENDING (#162 sub-tick, fuera de scope #160).
+
+    Borrados upstream → status='DELETED' (no DELETE físico, preserva FK
+    desde `campaigns.template_id`).
+    """
+
+    __tablename__ = "whatsapp_templates"
+
+    id = Column(Integer, primary_key=True, index=True)
+    meta_account_id = Column(
+        Integer,
+        ForeignKey("meta_accounts.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    meta_template_id = Column(String(64), nullable=True, index=True)
+    name = Column(String(120), nullable=False)
+    category = Column(String(40), nullable=True)
+    language = Column(String(20), nullable=False)
+    status = Column(String(20), nullable=False, default="PENDING", server_default="PENDING")
+    components_json = Column(JSONB, nullable=False)
+    rejection_reason = Column(Text, nullable=True)
+    last_synced_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "meta_account_id", "name", "language",
+            name="uq_templates_account_name_lang",
+        ),
+        CheckConstraint(
+            "status IN ('PENDING','APPROVED','REJECTED','DISABLED','PAUSED','DELETED')",
+            name="ck_templates_status",
+        ),
+        CheckConstraint(
+            "category IS NULL OR category IN ('MARKETING','UTILITY','AUTHENTICATION')",
+            name="ck_templates_category",
+        ),
+        Index("ix_templates_account_status", "meta_account_id", "status"),
+    )
+
+    meta_account = relationship("MetaAccount")
+
+    def __repr__(self) -> str:
+        # Regla 1 (CLAUDE.md): nunca loggear contenido crudo de la plantilla
+        # (puede contener PII de ejemplo, S13-014). `components_json` se omite.
+        return (
+            f"<WhatsappTemplate id={self.id} meta_account_id={self.meta_account_id} "
+            f"name={self.name!r} language={self.language!r} status={self.status!r} "
+            f"components_json=<REDACTED> rejection_reason=<REDACTED>>"
+        )
+
+    __str__ = __repr__
+
+
+# ─── Sprint 13 / campaigns ────────────────────────────────────────────────
+# Mapea las tablas `campaigns`, `campaign_recipients`, `campaign_events`
+# creadas por la migración #158 (ver `backend/docs/sprint13_schema.md` §1.5,
+# §1.6, §1.7). NO usar Base.metadata.create_all() para alterar: la fuente de
+# verdad es el script de migración.
+
+CAMPAIGN_STATUSES = (
+    "draft",
+    "scheduled",
+    "running",
+    "completed",
+    "failed",
+    "cancelled",
+)
+CAMPAIGN_STATUS_DRAFT = "draft"
+CAMPAIGN_STATUS_SCHEDULED = "scheduled"
+CAMPAIGN_STATUS_RUNNING = "running"
+CAMPAIGN_STATUS_COMPLETED = "completed"
+CAMPAIGN_STATUS_FAILED = "failed"
+CAMPAIGN_STATUS_CANCELLED = "cancelled"
+
+CAMPAIGN_RECIPIENT_STATUSES = (
+    "queued",
+    "sending",
+    "sent",
+    "delivered",
+    "read",
+    "failed",
+    "skipped",
+)
+CR_STATUS_QUEUED = "queued"
+CR_STATUS_SENDING = "sending"
+CR_STATUS_SENT = "sent"
+CR_STATUS_DELIVERED = "delivered"
+CR_STATUS_READ = "read"
+CR_STATUS_FAILED = "failed"
+CR_STATUS_SKIPPED = "skipped"
+
+CAMPAIGN_EVENT_TYPES = (
+    "queued",
+    "sent",
+    "delivered",
+    "read",
+    "failed",
+    "clicked",
+    "sync_warning",
+)
+
+
+class Campaign(Base):
+    """Campaña de envío masivo perteneciente a un team.
+
+    Multi-tenant via `team_id` directo. Apunta a una `WhatsappTemplate`
+    aprobada y a una `MetaAccount` del mismo team. La validación cruzada
+    `template.meta_account_id == campaign.meta_account_id == user_team` es
+    responsabilidad del CRUD/router (S13-001).
+    """
+
+    __tablename__ = "campaigns"
+
+    id = Column(Integer, primary_key=True, index=True)
+    team_id = Column(
+        Integer, ForeignKey("teams.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    meta_account_id = Column(
+        Integer,
+        ForeignKey("meta_accounts.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    template_id = Column(
+        Integer,
+        ForeignKey("whatsapp_templates.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    name = Column(String(120), nullable=False)
+    status = Column(
+        String(20), nullable=False, default="draft", server_default="draft"
+    )
+    scheduled_at = Column(DateTime, nullable=True)
+    started_at = Column(DateTime, nullable=True)
+    completed_at = Column(DateTime, nullable=True)
+    template_variables_json = Column(
+        JSONB, nullable=False, default=dict, server_default="{}"
+    )
+    created_by_user_id = Column(
+        Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('draft','scheduled','running','completed','failed','cancelled')",
+            name="ck_campaigns_status",
+        ),
+        Index("ix_campaigns_team_status", "team_id", "status"),
+        Index("ix_campaigns_team_created", "team_id", "created_at"),
+    )
+
+    team = relationship("Team")
+    meta_account = relationship("MetaAccount")
+    template = relationship("WhatsappTemplate")
+    created_by = relationship("User")
+    recipients = relationship(
+        "CampaignRecipient",
+        back_populates="campaign",
+        cascade="all, delete-orphan",
+    )
+    events = relationship(
+        "CampaignEvent",
+        back_populates="campaign",
+        cascade="all, delete-orphan",
+    )
+
+    def __repr__(self) -> str:
+        # No PII en Campaign directamente, pero `template_variables_json`
+        # podría tener nombres de cliente; lo omitimos por defensa.
+        return (
+            f"<Campaign id={self.id} team_id={self.team_id} "
+            f"template_id={self.template_id} status={self.status!r} "
+            f"template_variables_json=<REDACTED>>"
+        )
+
+    __str__ = __repr__
+
+
+class CampaignRecipient(Base):
+    """Snapshot de un destinatario de campaña.
+
+    `phone_e164` es snapshot al momento de encolar, así si el contacto se
+    edita después el histórico no cambia. Para opt-in fail-closed (S13-003)
+    el sender re-lee `contacts.opt_in` antes del POST a Meta.
+    """
+
+    __tablename__ = "campaign_recipients"
+
+    id = Column(Integer, primary_key=True, index=True)
+    campaign_id = Column(
+        Integer,
+        ForeignKey("campaigns.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    contact_id = Column(
+        Integer,
+        ForeignKey("contacts.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    phone_e164 = Column(String(20), nullable=False)
+    meta_message_id = Column(String(80), nullable=True)
+    status = Column(
+        String(20), nullable=False, default="queued", server_default="queued"
+    )
+    error_code = Column(String(40), nullable=True)
+    sent_at = Column(DateTime, nullable=True)
+    delivered_at = Column(DateTime, nullable=True)
+    read_at = Column(DateTime, nullable=True)
+    failed_at = Column(DateTime, nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "campaign_id", "contact_id", name="uq_recipients_campaign_contact"
+        ),
+        UniqueConstraint("meta_message_id", name="uq_recipients_meta_message_id"),
+        CheckConstraint(
+            "status IN ('queued','sending','sent','delivered','read','failed','skipped')",
+            name="ck_recipients_status",
+        ),
+        Index("ix_recipients_campaign_status", "campaign_id", "status"),
+    )
+
+    campaign = relationship("Campaign", back_populates="recipients")
+    contact = relationship("Contact")
+
+    def __repr__(self) -> str:
+        # Regla 1 (CLAUDE.md): enmascarar PII (`phone_e164`).
+        return (
+            f"<CampaignRecipient id={self.id} campaign_id={self.campaign_id} "
+            f"contact_id={self.contact_id} phone={_mask_phone(self.phone_e164)!r} "
+            f"status={self.status!r} error_code={self.error_code!r}>"
+        )
+
+    __str__ = __repr__
+
+
+class CampaignEvent(Base):
+    """Evento atómico de una campaña (queued/sent/delivered/read/failed/...).
+
+    `payload_json` puede contener PII (números, mensajes de respuesta);
+    `__repr__` lo redacta (regla 1) y los schemas `...Out` por defecto NO
+    lo exponen (S13-011).
+    """
+
+    __tablename__ = "campaign_events"
+
+    id = Column(Integer, primary_key=True, index=True)
+    campaign_id = Column(
+        Integer,
+        ForeignKey("campaigns.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    recipient_id = Column(
+        Integer,
+        ForeignKey("campaign_recipients.id", ondelete="CASCADE"),
+        nullable=True,
+    )
+    event_type = Column(String(30), nullable=False)
+    payload_json = Column(JSONB, nullable=True)
+    meta_message_id = Column(String(80), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        CheckConstraint(
+            "event_type IN ('queued','sent','delivered','read','failed','clicked','sync_warning')",
+            name="ck_events_type",
+        ),
+        Index("ix_events_campaign_type", "campaign_id", "event_type"),
+        Index("ix_events_meta_message_id", "meta_message_id"),
+        Index("ix_events_campaign_created", "campaign_id", "created_at"),
+    )
+
+    campaign = relationship("Campaign", back_populates="events")
+    recipient = relationship("CampaignRecipient")
+
+    def __repr__(self) -> str:
+        return (
+            f"<CampaignEvent id={self.id} campaign_id={self.campaign_id} "
+            f"recipient_id={self.recipient_id} event_type={self.event_type!r} "
+            f"payload_json=<REDACTED>>"
+        )
+
+    __str__ = __repr__
