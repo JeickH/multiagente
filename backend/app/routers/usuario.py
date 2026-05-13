@@ -1,8 +1,10 @@
 import logging
 import os
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+from sqlalchemy.orm.attributes import flag_modified
 from .. import schemas, models, crud
 from ..database import SessionLocal
 from ..dependencies import get_current_owner_membership
@@ -218,3 +220,60 @@ def disconnect_my_meta_account(
         team.id,
     )
     return {"disconnected": removed}
+
+
+# ===== Tutoriales interactivos (Sprint 15) =====
+
+@router.get('/usuario/me/tutorials', response_model=schemas.TutorialsOut)
+def get_my_tutorials(user: models.User = Depends(get_current_user)):
+    """Devuelve el estado de los tutoriales interactivos del usuario.
+
+    Sólo expone llaves de la whitelist (mi_plan, mensajes, bots, campanas);
+    si la BD tiene llaves desconocidas (datos viejos) se ignoran silenciosamente.
+    """
+    raw = user.tutorials_completed or {}
+    out: dict[str, schemas.TutorialStateOut] = {}
+    for key in schemas.ALLOWED_TUTORIAL_MODULES:
+        entry = raw.get(key) or {}
+        out[key] = schemas.TutorialStateOut(
+            done=bool(entry.get("done", False)),
+            skipped=bool(entry.get("skipped", False)),
+            completed_at=entry.get("completed_at"),
+        )
+    return schemas.TutorialsOut(tutorials=out)
+
+
+@router.patch('/usuario/me/tutorials/{module}', response_model=schemas.TutorialStateOut)
+def mark_tutorial(
+    module: str,
+    payload: schemas.TutorialUpdateIn,
+    user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Marca un tutorial como completado o omitido.
+
+    `module` debe estar en la whitelist (mi_plan, mensajes, bots, campanas);
+    cualquier otro valor → 404 sin filtrar la lista de módulos válidos en el
+    detalle del error (sanitizado).
+    """
+    if module not in schemas.ALLOWED_TUTORIAL_MODULES:
+        raise HTTPException(status_code=404, detail="Módulo de tutorial no encontrado")
+
+    current = dict(user.tutorials_completed or {})
+    current[module] = {
+        "done": bool(payload.done),
+        "skipped": bool(payload.skipped),
+        "completed_at": datetime.utcnow().isoformat(timespec="seconds") + "Z",
+    }
+    user.tutorials_completed = current
+    flag_modified(user, "tutorials_completed")
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+
+    entry = user.tutorials_completed[module]
+    return schemas.TutorialStateOut(
+        done=bool(entry.get("done", False)),
+        skipped=bool(entry.get("skipped", False)),
+        completed_at=entry.get("completed_at"),
+    )

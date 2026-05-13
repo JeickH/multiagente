@@ -1,5 +1,29 @@
 import Layout from '../components/Layout';
+import TutorialOverlay from '../components/TutorialOverlay';
 import { useEffect, useState } from 'react';
+
+const MI_PLAN_TUTORIAL = [
+  {
+    selector: '[data-tour="plan-card"]',
+    title: 'Tu plan actual',
+    body: 'Aquí ves el plan que tienes contratado en Gloma y a cuántos usuarios da derecho. Esta tarjeta resume tu estado de cuenta.',
+  },
+  {
+    selector: '[data-tour="meta-card"]',
+    title: 'Cuenta de WhatsApp Business',
+    body: 'Esta es la cuenta de WhatsApp conectada al sistema. Desde aquí puedes ver el número, el nombre verificado y el estado de la conexión.',
+  },
+  {
+    selector: '[data-tour="meta-action"]',
+    title: 'Conectar o desconectar tu cuenta',
+    body: 'Con este botón conectas tu cuenta de WhatsApp Business (o la desconectas si ya estaba registrada). Sólo el propietario del equipo puede hacerlo.',
+  },
+  {
+    selector: '[data-tour="user-data"]',
+    title: 'Tus datos personales',
+    body: 'Nombre, correo y documento del usuario que inició sesión. Si necesitas modificar estos datos, escríbenos desde el botón de soporte.',
+  },
+];
 
 interface UserData {
   id: number;
@@ -155,7 +179,10 @@ export default function Usuario() {
           <p className="text-gray-400">Cargando...</p>
         ) : user ? (
           <div className="text-left max-w-md mx-auto space-y-4">
-            <div className="bg-gloma-rose-soft/30 rounded-lg p-4 border border-gloma-rose-soft">
+            <div
+              data-tour="plan-card"
+              className="bg-gloma-rose-soft/30 rounded-lg p-4 border border-gloma-rose-soft"
+            >
               <h2 className="text-sm font-medium text-gloma-brown mb-1">Plan Actual</h2>
               <p className="text-lg font-semibold text-gray-800">Plan Básico</p>
               <p className="text-sm text-gray-500">WhatsApp Business API - 10 usuarios</p>
@@ -163,6 +190,7 @@ export default function Usuario() {
 
             {/* Cuenta de WhatsApp (Meta) */}
             <div
+              data-tour="meta-card"
               className={`rounded-lg p-4 border ${
                 meta?.registered
                   ? 'bg-gloma-rose-soft/40 border-gloma-rose-soft'
@@ -203,7 +231,10 @@ export default function Usuario() {
               )}
 
               {meta?.registered && meta?.can_manage_meta_account && (
-                <div className="mt-3 pt-3 border-t border-gloma-rose-soft">
+                <div
+                  data-tour="meta-action"
+                  className="mt-3 pt-3 border-t border-gloma-rose-soft"
+                >
                   <button
                     onClick={handleDisconnect}
                     disabled={disconnecting}
@@ -215,7 +246,7 @@ export default function Usuario() {
               )}
 
               {!meta?.registered && (
-                <div className="mt-2">
+                <div data-tour="meta-action" className="mt-2">
                   {meta?.can_manage_meta_account ? (
                     <button
                       onClick={openConnectModal}
@@ -232,7 +263,7 @@ export default function Usuario() {
               )}
             </div>
 
-            <div className="space-y-3">
+            <div data-tour="user-data" className="space-y-3">
               <div>
                 <label className="text-sm text-gray-500">Nombre</label>
                 <p className="text-gray-800 font-medium">{user.nombre}</p>
@@ -348,6 +379,10 @@ export default function Usuario() {
             </form>
           </div>
         </div>
+      )}
+
+      {!loading && user && (
+        <TutorialOverlay moduleKey="mi_plan" steps={MI_PLAN_TUTORIAL} />
       )}
     </Layout>
   );

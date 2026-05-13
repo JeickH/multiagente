@@ -1,6 +1,25 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
 import Layout from '../components/Layout';
+import TutorialOverlay from '../components/TutorialOverlay';
+
+const BOTS_TUTORIAL = [
+  {
+    selector: '[data-tour="bots-table"]',
+    title: 'Visualiza tus bots',
+    body: 'En esta tabla aparecen todos los bots configurados para tu cuenta: nombre, estado y cuántas veces se han disparado. Haz click en el nombre para abrir el diseñador y el simulador del bot.',
+  },
+  {
+    selector: '[data-tour="trigger-column"]',
+    title: 'Reglas que activan el bot',
+    body: 'La columna "Activación" muestra cómo se dispara cada bot:\n⭐ por defecto · 🔑 por palabra clave · 🔗 manual. Esta es la regla que decide cuándo Gloma le pasa la conversación al bot.',
+  },
+  {
+    selector: '[data-tour="bot-link"]',
+    title: 'Probar el bot en el popup',
+    body: 'Haz click en el nombre del bot para abrir el detalle. Adentro encontrarás el botón "Probar Chatbot" que abre un popup tipo WhatsApp y te deja simular la conversación sin tocar Meta real.',
+  },
+];
 
 type BotListItem = {
   id: number;
@@ -181,18 +200,18 @@ export default function BotsPage() {
         )}
 
         {filtered.length > 0 && (
-          <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+          <div data-tour="bots-table" className="bg-white rounded-lg border border-gray-200 overflow-hidden">
             <table className="w-full">
               <thead className="bg-gray-50">
                 <tr className="text-sm text-gray-600">
                   <th className="text-left py-3 px-4 font-semibold">Nombre</th>
-                  <th className="text-left py-3 px-4 font-semibold">Activación</th>
+                  <th data-tour="trigger-column" className="text-left py-3 px-4 font-semibold">Activación</th>
                   <th className="text-center py-3 px-4 font-semibold">Disparado</th>
                   <th className="text-left py-3 px-4 font-semibold">Modificado el</th>
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((bot) => (
+                {filtered.map((bot, botIdx) => (
                   <tr
                     key={bot.id}
                     className="border-b border-gray-100 hover:bg-gray-50 transition-colors"
@@ -202,6 +221,7 @@ export default function BotsPage() {
                         href={`/bots/${bot.id}`}
                         target="_blank"
                         rel="noopener noreferrer"
+                        {...(botIdx === 0 ? { 'data-tour': 'bot-link' } : {})}
                         className="text-blue-600 hover:text-blue-800 hover:underline font-medium"
                       >
                         {bot.name}
@@ -226,6 +246,7 @@ export default function BotsPage() {
           </div>
         )}
       </div>
+      {bots !== null && <TutorialOverlay moduleKey="bots" steps={BOTS_TUTORIAL} />}
     </Layout>
   );
 }
