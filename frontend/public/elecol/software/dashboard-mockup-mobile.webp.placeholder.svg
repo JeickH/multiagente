@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 720" width="360" height="720" role="img" aria-label="Dashboard mobile">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#03045E"/>
+      <stop offset="1" stop-color="#0077B6"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="50%" cy="55%" r="60%">
+      <stop offset="0" stop-color="#90E0EF" stop-opacity="0.35"/>
+      <stop offset="1" stop-color="#90E0EF" stop-opacity="0"/>
+    </radialGradient>
+    <pattern id="grid" width="48" height="48" patternUnits="userSpaceOnUse">
+      <path d="M 48 0 L 0 0 0 48" fill="none" stroke="#00B4D8" stroke-opacity="0.07" stroke-width="1"/>
+    </pattern>
+  </defs>
+  <rect width="100%" height="100%" fill="url(#bg)"/>
+  <rect width="100%" height="100%" fill="url(#grid)"/>
+  <rect width="100%" height="100%" fill="url(#glow)"/>
+  <g opacity="0.55">
+    <circle cx="64.8" cy="158.4" r="14.4" fill="#00B4D8"/>
+    <circle cx="295.2" cy="561.6" r="21.599999999999998" fill="#90E0EF"/>
+    <path d="M0 468 Q 180 324 360 503.99999999999994" stroke="#90E0EF" stroke-opacity="0.4" stroke-width="1.5" fill="none"/>
+  </g>
+  <g font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif" fill="#CAF0F8" text-anchor="middle">
+    <text x="50%" y="324" font-size="32" font-weight="700" letter-spacing="2">DASHBOARD MOBILE</text>
+    <text x="50%" y="396.00000000000006" font-size="18" fill="#90E0EF" opacity="0.9">360 × 720  ·  PLACEHOLDER</text>
+    <text x="50%" y="446.4" font-size="14" fill="#CAF0F8" opacity="0.55">dashboard-mockup-mobile.webp</text>
+  </g>
+  <rect x="12" y="12" width="336" height="696" fill="none" stroke="#90E0EF" stroke-opacity="0.35" stroke-width="2" stroke-dasharray="6 8" rx="8"/>
+</svg>

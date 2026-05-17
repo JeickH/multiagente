@@ -23,7 +23,8 @@
 | [Sprint 13](#sprint-13---módulo-campañas--plantillas-whatsapp) | Módulo Campañas (envío masivo) + Plantillas WhatsApp + Contactos/Grupos | DONE |
 | [Sprint 14](#sprint-14---mejoras-al-módulo-bots-uiux--ventana-de-prueba--aws) | Mejoras al módulo Bots: análisis (inventario + ventana de prueba + UI/UX detalle + optimización AWS y costos 2/5/10 usuarios). **Fase de implementación trasladada al Sprint Futuro** | DONE |
 | [Sprint 15](#sprint-15---tutoriales-interactivos-por-módulo) | Tutoriales interactivos por módulo (Mi Plan, Mensajes, Bots, Campañas) con spotlight + persistencia por usuario | DONE |
-| [Sprint Futuro](#sprint-futuro---validación-ceo--ajustes-post-sprint-13) | Validación CEO del módulo Campañas + ajustes post-Sprint 13 **+ implementación de mejoras Bots Sprint 14 + validación CEO Sprint 15** | PRÓXIMO |
+| [Sprint 16](#sprint-16---landing-page-elecol-premium) | Landing premium `/elecol` (electrolineras solares LATAM, paleta Infinito Eléctrico, motion design, glassmorphism, counters animados) | EN CURSO |
+| [Sprint Futuro](#sprint-futuro---validación-ceo--ajustes-post-sprint-13) | Validación CEO del módulo Campañas + ajustes post-Sprint 13 **+ implementación de mejoras Bots Sprint 14 + validación CEO Sprint 15 + revisión profunda landing ELECOL (#206)** | PRÓXIMO |
 
 ---
 
@@ -1026,7 +1027,7 @@ Pantalla: `SimulatorModal` en `frontend/pages/bots/[id].tsx` líneas 158-430.
 | 187 | **Implementación de mejoras Bots priorizadas en #186**. Sub-paquetes posibles: (a) cron AWS — Deploy AWS, según §6 de `sprint14_aws_analisis.md`; (b) fixes ventana de prueba — Dev Plataforma, según §"Revisión ventana Probar Chatbot" del Sprint 14; (c) rediseño detalle de bot — Dev Plataforma, según `identidad_gloma/diseno_bots.html` | Dev Plataforma + Deploy AWS | ⬜ | Cambio en `bot_engine.advance` para que `condition` espere input (fix 183-c) pasa por agente `seguridad` por revisión rápida (cambia comportamiento del motor pero no toca credenciales). Cualquier ajuste de schema → Experto BD aplica migración idempotente en local y RDS (regla de paridad). |
 | 188 | **QA + smoke local y online** del módulo Bots tras las mejoras de #187. Validar los 3 bugs bloqueantes del #183 cerrados (Tailwind class, condition branches int/string, condition espera input), la ventana de prueba con chips clickeables y Esc, el cron AWS invocando el tick cada 60s en prod | QA | ⬜ | Smoke local: `docker compose up`, abrir `/bots/[id]`, ejecutar simulación completa con un bot que tenga `condition`. Smoke online: confirmar logs de Lambda `multiagente-bot-tick` con 200 OK cada minuto. |
 | 189 | **Cierre del paquete Bots**: marcar #186 ✅, #187 ✅, #188 ✅, log de cambios. Confirmar al CEO que las mejoras del Sprint 14 quedan desplegadas | PM | ⬜ | Cuando #181, #189 y #197 estén en ✅, se cierra el Sprint Futuro completo: marcar índice a DONE y registrar entrada final en Log de Cambios. |
-| 197 | **Validación CEO Sprint 15 — tutoriales interactivos** (local + online). Para resetear el demo: `UPDATE users SET tutorials_completed='{}'::jsonb WHERE correo='demo@gmail.com';` en cada DB. Recorrer los 4 módulos y verificar (a) que el tutorial aparece sólo la primera vez, (b) el spotlight resalta la zona correcta en cada paso, (c) "Omitir tutorial" funciona en cualquier paso, (d) "Finalizar" persiste y al recargar no vuelve | CEO + PM | ⬜ | Ajustes salen como commits chicos sobre `main` tipo `style(tutorial): ...` o `fix(tutorial): ...`. NO reabre el Sprint 15. |
+| 197 | **Validación CEO Sprint 15 — tutoriales interactivos** (local + online). Para resetear el demo: `UPDATE users SET tutorials_completed='{}'::jsonb WHERE correo='demo@gmail.com';` en cada DB. Recorrer los 4 módulos y verificar (a) que el tutorial aparece sólo la primera vez, (b) el spotlight resalta la zona correcta en cada paso, (c) "Omitir tutorial" funciona en cualquier paso, (d) "Finalizar" persiste y al recargar no vuelve | CEO + PM | ✅| Ajustes salen como commits chicos sobre `main` tipo `style(tutorial): ...` o `fix(tutorial): ...`. NO reabre el Sprint 15. |
 
 ### Checklist de validación (tarea #179)
 
@@ -1154,6 +1155,39 @@ Documentados en `backend/docs/sprint13_security_post_audit.md` para atender en s
 ### Follow-up para Sprint Futuro
 
 - **#197 Validación CEO Sprint 15** (local + producción): el CEO recorre los 4 módulos con un usuario "limpio" (puede usar `demo@gmail.com` previo reset de la columna `tutorials_completed` a `{}`) y verifica que el tutorial aparece, los selectores `data-tour` siguen apuntando al elemento correcto y el botón "Omitir tutorial" funciona en cualquier paso. Ajustes que pida el CEO entran como commits chicos sobre `main` (tipo `style(tutorial): ...`).
+
+---
+
+## Sprint 16 - Landing page ELECOL Premium
+
+**Objetivo**: Publicar una landing pública en `/elecol` para la marca ELECOL (electrolineras inteligentes con energía solar para LATAM). Identidad "Infinito Eléctrico — Edición Mar + Sol" — referencias visuales: Tesla Energy, Rivian, Apple, Stripe.
+
+**Alcance**:
+- 8 secciones según `ELECOL_Premium_Landing_Guide.md`: Header sticky con blur, Hero con video/render placeholder, Infraestructura inteligente (split + 4 cards), Software ELECOL OS (mockup dashboard + 6 features), Red LATAM (mapa), ROI & estadísticas (counters animados), CTA final, Footer minimalista.
+- Dark mode con paleta `#03045E / #0077B6 / #00B4D8 / #90E0EF / #CAF0F8` + acento solar `#FFC300`.
+- Microinteracciones: hover glow, partículas energéticas, líneas eléctricas SVG, counters RAF, reveal-on-scroll con IntersectionObserver, parallax sutil, smooth scrolling. **Sin** dependencias nuevas (todo Tailwind + CSS + React puro).
+- Carpetas y naming oficial para assets reales: `frontend/public/elecol/{hero,infraestructura,software,red-latam,cta,brand}` (placeholders provisionales generados por script, ver #200).
+
+**Restricciones**:
+- La landing es pública: añadir `/elecol` a `PUBLIC_PAGES` en `_app.tsx` para evitar redirect a `/login`.
+- NO tocar dominios productivos: `glomabeauty.com` sigue sirviendo solo `/gloma` (middleware con whitelist por host). `/elecol` queda accesible en la URL default de Amplify y en cualquier host que no esté en la whitelist Gloma. Si más adelante se quiere dominio propio (`elecol.co`, etc.) se abre sprint aparte.
+- NO tocar backend ni schema BD (landing 100% estática).
+- Identidad Gloma del resto de la app intacta.
+
+| # | Tarea | Responsable | Estado | Notas |
+|---|-------|------------|--------|-------|
+| 198 | **Apertura del sprint + plan** (este bloque) | PM | ✅ | Sprint registrado, tabla de tareas, criterios de cierre. |
+| 199 | **Estructura de assets**: crear `frontend/public/elecol/` con 6 subcarpetas (hero, infraestructura, software, red-latam, cta, brand) y `README.md` con naming oficial de cada imagen por sección (filename, dimensiones recomendadas, formato preferido). | PM / Dev Plataforma | ✅ | `frontend/public/elecol/README.md` documenta 27 assets con dimensiones display, entrega 2× y notas de identidad. |
+| 200 | **Script de placeholders provisionales**: `frontend/scripts/generate_elecol_placeholders.mjs` (Node puro, sin dependencias) que genera SVG en cada carpeta con la paleta ELECOL — gradientes oscuros + glow + etiqueta del filename — para que la landing se vea decente desde el primer push. Documentado en el README. | Dev Plataforma | ✅ | Generador idempotente. Para no-SVG genera `<file>.placeholder.svg` adjunto; para SVG escribe el filename canónico. Primera corrida: 27 placeholders escritos. |
+| 201 | **Implementación de la landing**: `frontend/pages/elecol.tsx` + componentes auxiliares según haga falta (sin libs nuevas). Implementar las 8 secciones del brief con motion design CSS, counters animados, reveal-on-scroll, partículas, líneas SVG, glassmorphism, hover glow, smooth scroll. Añadir `/elecol` a `PUBLIC_PAGES` en `_app.tsx`. | Dev Plataforma | ✅ | `pages/elecol.tsx` (≈900 LOC) con 8 secciones según brief. Hooks propios `useScrolled`, `useReveal` (IntersectionObserver), `useCountUp` (RAF + easeOutCubic). Partículas determinísticas (seeded, sin mismatch SSR), líneas SVG con `stroke-dasharray` animado, glassmorphism en cards (`backdrop-filter: blur(10px)` + border `rgba(0,180,216,.45)` en hover), corners HUD, scanlines mix-blend-mode, orbes aurora con `filter: blur(80px)` flotando. CTAs solares con `box-shadow` amarillo. `@media (prefers-reduced-motion)` desactiva animaciones. `/elecol` añadido a `PUBLIC_PAGES`. `next.config.js` habilita `dangerouslyAllowSVG` con CSP `script-src 'none'; sandbox;` para servir los placeholders SVG. Tipografías Space Grotesk (heads) + Inter (body) desde Google Fonts. Sin libs nuevas. |
+| 202 | **Verificación local**: `tsc --noEmit` exit 0, `next build` exit 0, `docker compose up frontend` → `GET /elecol` 200, navegación entre anclas funciona, header cambia a blur al scrollear, counters animan al entrar al viewport, no se rompe en mobile (375px) ni desktop (1440px). | QA / Dev Plataforma | ✅ | `tsc --noEmit` exit 0. `next build` exit 0, ruta `/elecol` prerendered estática (12.2 kB página / 115 kB First Load JS). Frontend container rebuildeado y reiniciado. `curl http://localhost:3000/elecol` → 200 (72 KB HTML) con markers presentes ("Las nuevas estaciones", "Infraestructura inteligente", "ELECOL OS", "Descargar Brief", "Energía que fluye como nuestro mar", `elecol-hero-gradient`, `elecol-cta-solar`). Placeholder SVG sirve 200 `Content-Type: image/svg+xml`. |
+| 203 | **Commit + push a `main`**: commit con changelog, push. Amplify auto-deploya el frontend (no requiere rebuild backend). | Dev Plataforma | ⬜ | Build job de Amplify SUCCEED. |
+| 204 | **Smoke online**: `https://main.d1cfl9ey07f61o.amplifyapp.com/elecol` → 200, secciones visibles, animaciones corren. Confirmar al CEO la URL para revisión. | QA | ⬜ | Verificación post-deploy. |
+| 205 | **Cierre del sprint + log de cambios** | PM | ⬜ | Entrada en `## Log de Cambios`. |
+
+### Follow-up para Sprint Futuro
+
+- **#206 Revisión profunda landing ELECOL + assets reales**: el CEO revisa `/elecol` desplegada y deja feedback (copy, jerarquía visual, microinteracciones, identidad). Paralelo: reemplazar los placeholders SVG provisionales por imágenes/renders/videos reales del equipo de diseño en `frontend/public/elecol/{hero,infraestructura,software,red-latam,cta,brand}` siguiendo el naming del `README.md`. Ajustes que pida el CEO entran como commits chicos sobre `main` (tipo `style(elecol): ...` o `feat(elecol): ...`). Si se requiere dominio propio (`elecol.co` o similar), abrir sprint dedicado por separado (Route 53 + ACM + Amplify domain association + middleware por host, espejo del Sprint 12 de Gloma).
 
 ---
 
