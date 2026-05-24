@@ -24,7 +24,8 @@
 | [Sprint 14](#sprint-14---mejoras-al-módulo-bots-uiux--ventana-de-prueba--aws) | Mejoras al módulo Bots: análisis (inventario + ventana de prueba + UI/UX detalle + optimización AWS y costos 2/5/10 usuarios). **Fase de implementación trasladada al Sprint Futuro** | DONE |
 | [Sprint 15](#sprint-15---tutoriales-interactivos-por-módulo) | Tutoriales interactivos por módulo (Mi Plan, Mensajes, Bots, Campañas) con spotlight + persistencia por usuario | DONE |
 | [Sprint 16](#sprint-16---landing-page-elecol-premium) | Landing premium `/elecol` (electrolineras solares LATAM, paleta Infinito Eléctrico, motion design, glassmorphism, counters animados) | DONE |
-| [Sprint Futuro](#sprint-futuro---validación-ceo--ajustes-post-sprint-13) | Validación CEO del módulo Campañas + ajustes post-Sprint 13 **+ implementación de mejoras Bots Sprint 14 + validación CEO Sprint 15 + revisión profunda landing ELECOL (#206)** | PRÓXIMO |
+| [Sprint 17](#sprint-17---migración-alb--api-gateway-http-api-ahorro-aws) | Migración ALB → API Gateway HTTP API (vía VPC Link + Cloud Map). Backend ahora en `https://api.glomabeauty.com`. Ahorro confirmado ~$26/mes | DONE |
+| [Sprint Futuro](#sprint-futuro---validación-ceo--ajustes-post-sprint-13) | Validación CEO del módulo Campañas + ajustes post-Sprint 13 **+ implementación de mejoras Bots Sprint 14 + validación CEO Sprint 15 + revisión profunda landing ELECOL (#206) + auditoría 48h Sprint 17 + plan rollback a ALB (#219, #220)** | PRÓXIMO |
 
 ---
 
@@ -1028,6 +1029,8 @@ Pantalla: `SimulatorModal` en `frontend/pages/bots/[id].tsx` líneas 158-430.
 | 188 | **QA + smoke local y online** del módulo Bots tras las mejoras de #187. Validar los 3 bugs bloqueantes del #183 cerrados (Tailwind class, condition branches int/string, condition espera input), la ventana de prueba con chips clickeables y Esc, el cron AWS invocando el tick cada 60s en prod | QA | ⬜ | Smoke local: `docker compose up`, abrir `/bots/[id]`, ejecutar simulación completa con un bot que tenga `condition`. Smoke online: confirmar logs de Lambda `multiagente-bot-tick` con 200 OK cada minuto. |
 | 189 | **Cierre del paquete Bots**: marcar #186 ✅, #187 ✅, #188 ✅, log de cambios. Confirmar al CEO que las mejoras del Sprint 14 quedan desplegadas | PM | ⬜ | Cuando #181, #189 y #197 estén en ✅, se cierra el Sprint Futuro completo: marcar índice a DONE y registrar entrada final en Log de Cambios. |
 | 197 | **Validación CEO Sprint 15 — tutoriales interactivos** (local + online). Para resetear el demo: `UPDATE users SET tutorials_completed='{}'::jsonb WHERE correo='demo@gmail.com';` en cada DB. Recorrer los 4 módulos y verificar (a) que el tutorial aparece sólo la primera vez, (b) el spotlight resalta la zona correcta en cada paso, (c) "Omitir tutorial" funciona en cualquier paso, (d) "Finalizar" persiste y al recargar no vuelve | CEO + PM | ✅| Ajustes salen como commits chicos sobre `main` tipo `style(tutorial): ...` o `fix(tutorial): ...`. NO reabre el Sprint 15. |
+| 219 | **Plan de rollback a ALB (heredado de Sprint 17)**: documentar y/o ejecutar el regreso a Application Load Balancer cuando el sistema necesite (a) HA con >1 task ECS, (b) routing path-based avanzado, (c) WAF/sticky sessions, (d) >>1M requests/mes haciendo el costo de API Gateway competitivo con ALB. Pasos: emitir cert wildcard `*.glomabeauty.com` o renovar para ALB, recrear ALB + target group + listener HTTPS, re-attach ECS service `loadBalancers`, mover A-record `api.glomabeauty.com` a ALB alias, mantener API Gateway durante 24h, validar smoke, eliminar API Gateway + VPC Link + Cloud Map. Costo del rollback: ~$24-28/mes adicionales pero gana HA real | CEO + Deploy AWS | ⬜ | **Trigger**: cuando el CEO valide que se necesita HA o cuando el tráfico justifique el costo. No bloqueante. |
+| 220 | **Auditoría 48h del Sprint 17** (cierre formal): revisar CloudWatch logs de las primeras 48h tras el cutover (≥2026-05-19) para confirmar latencia p95 estable, 0% 5xx, sin spikes raros de Cloud Map health checks. Si OK, cerrar el follow-up; si hay anomalías, abrir Sprint 18 de tuning | Seguridad + QA | ⬜ | Ejecución abreviada (10 min) ya completada en Sprint 17 #217 con 0 errores. Esta tarea cierra la auditoría formal. |
 
 ### Checklist de validación (tarea #179)
 
@@ -1191,6 +1194,62 @@ Documentados en `backend/docs/sprint13_security_post_audit.md` para atender en s
 
 ---
 
+## Sprint 17 - Migración ALB → API Gateway HTTP API (ahorro AWS)
+
+> Sprint abierto el **2026-05-16** y cerrado el **2026-05-17** a pedido del CEO. Objetivo: reducir ~$27.71/mes del ALB (29% del bruto AWS) preservando 100% el funcionamiento. Ejecutado end-to-end en una sesión (~1h calendario, ejecución autónoma autorizada por CEO).
+
+**Camino ejecutado**: API Gateway HTTP API → VPC Link → AWS Cloud Map (SRV records) → ECS Fargate. Cloud Map necesario porque HTTP API VPC Link sólo integra con ALB, NLB o Cloud Map (no directo con ECS service). NLB descartado porque no ahorra (~$16/mes fijo).
+
+**Estado final**: ✅ DONE. Backend público en `https://api.glomabeauty.com`. ALB eliminado. Frontend Gloma sigue en `https://app.glomabeauty.com`.
+
+| # | Tarea | Responsable | Estado | Notas |
+|---|-------|------------|--------|-------|
+| 207 | Crear AWS Cloud Map **private namespace** `multiagente.local` en VPC `vpc-0e774385bcbeec4ff` | Deploy AWS | ✅ | Namespace `ns-ewxiv2osrcu56qlr`, ~$0.50/mes. |
+| 208 | Crear Cloud Map **service** `backend` (SRV records, TTL 10s) | Deploy AWS | ✅ | Service `srv-gls4xaost6kxzc5u`. SRV (no A) necesario para propagar puerto 8000 a API Gateway. |
+| 209 | **PROD**: `aws ecs update-service --service-registries` + force-new-deployment (rolling, zero downtime) | Deploy AWS + QA | ✅ | Rolling deployment completado sin downtime. ECS task registrado en Cloud Map con IP:8000 HEALTHY. |
+| 210 | Crear **VPC Link** `multiagente-vpclink` (`f494bq`) en subnets `subnet-07829afbd13c5bb8f`, `subnet-00f56d6ce74d72a2e` (SG `sg-0499ec72831ef7da9`) | Deploy AWS | ✅ | Provisión gratuita; ~3 min para AVAILABLE. |
+| 211 | Crear **API Gateway HTTP API** `multiagente-api` (`pmg6lfu9cj`) + integración `ANY /{proxy+}` → VPC Link → Cloud Map | Deploy AWS | ✅ | Stage `$default` con auto-deploy. CORS `*`. ~$1/M req. |
+| 212 | Emitir **ACM cert** para `api.glomabeauty.com` en `sa-east-1` + DNS validation en Route 53 | Deploy AWS | ✅ | Cert ARN `7779edc0-8766-4e59-a07f-1bc8a72367fb`, ISSUED en <2 min. |
+| 213 | **Custom domain** `api.glomabeauty.com` en API Gateway + A-record alias en Route 53 zona `Z0523904259PXITAV9OOV` | Deploy AWS | ✅ | DNS propagó en <30s. `https://api.glomabeauty.com/docs` → 200. |
+| 214 | Actualizar `BACKEND_URL`, `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_BACKEND_URL` en Amplify `d1cfl9ey07f61o` + rebuild | Deploy AWS | ✅ | Job #23, SUCCEED en 2.5 min. Frontend Gloma ahora apunta a `https://api.glomabeauty.com`. |
+| 215 | Re-registrar Callback URL en Meta Business Manager | Deploy AWS + Dev Plataforma | ⏭ N/A | **No aplica**: ECS task definition NO tiene `META_APP_SECRET` ni `META_WEBHOOK_VERIFY_TOKEN` configurados (env `META_SANDBOX=1`). Producción Gloma es sandbox/demo sin integración Meta real. Endpoint `/meta/webhook` queda accesible vía `https://api.glomabeauty.com/meta/webhook` para cuando se conecte Meta real. |
+| 216 | Smoke test E2E (login JSON, /docs, /openapi.json, /campanas, /bots, /meta/webhook, frontend) + latencia p95 | QA | ✅ | Login con `demo@gmail.com` → 200 con JWT válido. Latencia p95=1.67s (cold-start primer request), p50=0.64s, min=0.56s. Frontend Gloma 200. |
+| 217 | Auditoría abreviada CloudWatch (10 min) + cero 5xx + cero errores | Seguridad + QA | ✅ | 0 ERROR logs, 0 5xx en 10 min. Cloud Map instancia HEALTHY. **Auditoría 48h completa queda como follow-up en Sprint Futuro (#220)**. |
+| 218 | Eliminar ALB `multiagente-alb` + target group `multiagente-tg` + SG `multiagente-alb-sg` + revocar ingress en ECS SG + update BITACORA + memoria persistente | Deploy AWS + PM | ✅ | ALB detached de ECS service (rolling deployment), luego deletado. SG `sg-0cdc92ccca3e1e5ce` eliminado. ECS service ahora 100% por Cloud Map. |
+
+### Resultado: URL y ahorro
+
+- 🔗 **Backend público**: `https://api.glomabeauty.com` (Swagger en `/docs`, OpenAPI en `/openapi.json`)
+- 🔗 **Frontend Gloma**: `https://app.glomabeauty.com` (consume backend internamente vía Amplify rewrite)
+- 💰 **Ahorro confirmado**: ~$26/mes (~$310/año). Nuevos costos: Cloud Map ~$0.50/mes + API Gateway ~$1/M req. ALB ($27.71/mes) eliminado.
+
+### Hallazgo bloqueante resuelto durante ejecución
+
+- **Subnets ECS son públicas** (`MapPublicIpOnLaunch=True`): primero usé Cloud Map con DNS A records, pero API Gateway integra a puerto 80 por default y el backend escucha en 8000 → 500 errors. Solución: recrear Cloud Map service con DNS **SRV** records (que sí propagan puerto), update ECS service-registries con `containerPort=8000`. Funcionó en el segundo rolling deployment.
+- **DNS del ALB en memoria persistente estaba mal** (`multiagente-alb-1689721042...` → real `multiagente-alb-673139873...`). Corregido en memoria.
+
+### Recursos AWS creados (referencia)
+
+| Recurso | ID / Nombre | Costo |
+|---|---|---|
+| Cloud Map namespace | `multiagente.local` (`ns-ewxiv2osrcu56qlr`) | ~$0.50/mes |
+| Cloud Map service | `backend` (`srv-gls4xaost6kxzc5u`, SRV records) | incluido |
+| VPC Link | `multiagente-vpclink` (`f494bq`) | gratis (sólo paga ENIs) |
+| HTTP API | `multiagente-api` (`pmg6lfu9cj`) | ~$1/M req |
+| ACM cert | `arn:...:certificate/7779edc0-8766-4e59-a07f-1bc8a72367fb` | gratis |
+| Route 53 A-record | `api.glomabeauty.com` → API Gateway alias | ~$0.50/mes |
+| **Total nuevo edge** | | **~$1.50/mes** vs $27.71 ALB |
+
+### Recursos AWS eliminados
+
+- ALB `multiagente-alb` (DNS `multiagente-alb-673139873.sa-east-1.elb.amazonaws.com`)
+- Target group `multiagente-tg/7b43e41fa71f7368`
+- HTTP listener puerto 80
+- Security group `sg-0cdc92ccca3e1e5ce` (`multiagente-alb-sg`)
+- Ingress rule del ECS SG (`sg-0499ec72831ef7da9`) que aceptaba :8000 desde el SG del ALB
+
+---
+
 ## Log de Cambios
 
 | Fecha | Agente | Acción |
@@ -1300,3 +1359,9 @@ Documentados en `backend/docs/sprint13_security_post_audit.md` para atender en s
 | 2026-05-16 | QA / Dev Plataforma | Sprint 16 #202: `tsc --noEmit` exit 0; `next build` exit 0 con `/elecol` prerendered estático (12.2 kB página / 115 kB First Load JS). Frontend container rebuildeado y reiniciado. `curl http://localhost:3000/elecol` → 200 (72 KB HTML) con los 7 markers presentes; placeholder SVG `image/svg+xml` 200. |
 | 2026-05-16 | Dev Plataforma / Deploy AWS | Sprint 16 #203-#204: commit `ad088e0` con changelog detallado, push a `main`. Amplify build **job 21 SUCCEED** para `ad088e0`. Smoke online: `https://main.d1cfl9ey07f61o.amplifyapp.com/elecol` → 200 (72 KB) con los 7 markers; placeholder SVG sirve 200 `image/svg+xml`. `glomabeauty.com` no se ve afectado (el middleware mantiene la whitelist host-based). |
 | 2026-05-16 | PM | **Sprint 16 cerrado** ✅. Validación profunda del CEO + reemplazo de placeholders SVG provisionales por assets reales del equipo de diseño consolidados como **#206** en el Sprint Futuro. URL para revisión: `https://main.d1cfl9ey07f61o.amplifyapp.com/elecol`. Sprint Futuro acumula ahora cuatro paquetes independientes: validación Campañas (#179-#181), mejoras Bots (#186-#189), validación tutoriales (#197) y revisión landing ELECOL (#206). |
+| 2026-05-16 | PM | **Sprint 17 abierto** (#207-#218). Migración ALB → API Gateway HTTP API + VPC Link + Cloud Map para ahorrar ~$26/mes preservando funcionamiento. Reporte ejecutivo del Plan agent: complejidad Media, ahorro $310/año, riesgo Bajo. CEO autoriza ejecución autónoma "de 3 en 3" tras detectar que sub-tasks subnets son públicas y plan original asumía privadas (hallazgo bloqueante resuelto reemplazando Cloud Map A→SRV con port 8000). |
+| 2026-05-17 | Deploy AWS | **Sprint 17 ejecutado end-to-end en una sola corrida** (~1h calendario). Creados: Cloud Map namespace `multiagente.local` (`ns-ewxiv2osrcu56qlr`) + service `backend` (`srv-gls4xaost6kxzc5u`, SRV records), VPC Link `multiagente-vpclink` (`f494bq`), HTTP API `multiagente-api` (`pmg6lfu9cj`) con integración ANY `/{proxy+}` → VPC Link → Cloud Map, ACM cert `api.glomabeauty.com` validado por DNS, custom domain + A-record alias Route 53. Dos rolling deployments del ECS service (zero downtime ambos): primero registrando A records, después corrigiendo a SRV con `containerPort=8000`. Env vars Amplify actualizadas (`BACKEND_URL`, `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_BACKEND_URL` → `https://api.glomabeauty.com`); job #23 SUCCEED en 2.5 min. Eliminados: ALB `multiagente-alb`, target group `multiagente-tg`, SG `multiagente-alb-sg`. |
+| 2026-05-17 | QA / Seguridad | **Sprint 17 #216-#217**: smoke test E2E vía `https://api.glomabeauty.com` — login JSON con `demo@gmail.com` → 200 con JWT válido, `/docs` y `/openapi.json` → 200, `/meta/webhook` → 403 (fail-closed correcto), frontend Gloma → 200. Latencia p95=1.67s (primer cold start de ENIs), p50=0.64s, min=0.56s. Auditoría abreviada CloudWatch 10 min: 0 ERROR logs, 0 5xx. T215 (Meta Business Manager callback) marcado N/A: prod corre `META_SANDBOX=1` sin `META_APP_SECRET` ni `META_WEBHOOK_VERIFY_TOKEN`, no hay integración Meta real que re-registrar. |
+| 2026-05-17 | PM | **Sprint 17 cerrado** ✅. Backend público en `https://api.glomabeauty.com`. Ahorro confirmado ~$26/mes (~$310/año) vs ALB anterior. Follow-ups movidos al Sprint Futuro: **#219** plan de rollback a ALB (cuando se necesite HA o tráfico crezca) y **#220** auditoría 48h formal (>=2026-05-19). Sprint Futuro acumula ahora seis paquetes: Campañas (#179-#181), Bots (#186-#189), tutoriales (#197), ELECOL (#206), rollback ALB (#219), auditoría 48h Sprint 17 (#220). Memoria persistente actualizada: ALB DNS eliminado, nueva arquitectura edge documentada. |
+| 2026-05-23 | UI/UX | **Iconos sidebar — kickoff.** El CEO solicita reemplazar los 5 emojis del menú lateral (`Mensajes` 💬, `Campañas` 📢, `Bots` 🤖, `Mi Plan` 👤, `Salir` 🚪) por iconos PNG generados con Canva AI. Restricciones: sin texto, sin fondo (transparente), estilo line-art outline blanco para que se vean sobre el sidebar `gloma-brown` (#5E503F). Creada carpeta `frontend/public/icons/sidebar/` con `README.md` que documenta style guide común (PNG 512×512, trazo blanco 7px, rounded caps/joins, padding 12%, estética Lucide/Phosphor) y los 5 prompts detallados por icono. Siguiente paso: invocar `canva-ai` para generar el primer batch y dejar los outputs en la misma carpeta para revisión del CEO. |
+| 2026-05-23 | Dev Plataforma / Deploy AWS | **Landing Gloma — reemplazo de imágenes preview2 y preview3 por assets reales.** El CEO entregó `referencia/landing_ft2.png` y `referencia/landing_ft4.png`. Mapeo: `landing_ft4.png` → `frontend/public/gloma/preview2.png` (sección "Aumenta ventas con campañas por WhatsApp"); `landing_ft2.png` → `frontend/public/gloma/preview3.png` (sección "Reduce 80% del tiempo en servicio al cliente"). No se modificó `pages/gloma.tsx` (los paths siguen siendo `/gloma/preview2.png` y `/gloma/preview3.png`). `tsc --noEmit` exit 0. Commit + push a `main` para disparar Amplify build (auto-deploy). |
