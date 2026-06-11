@@ -163,6 +163,12 @@ class Conversation(Base):
     contact_wa_id = Column(String, nullable=False)  # E.164 sin +
     contact_name = Column(String, nullable=True)
     status = Column(String, nullable=False, default="open")  # open | pending | closed
+    # Quién atiende la conversación. Por defecto el bot; al hacer handoff se
+    # reasigna a un asesor humano (ej. "asesor_1"). String simple para el MVP
+    # (no FK a users) — basta para distinguir bot vs humano en la UI.
+    assigned_to = Column(
+        String, nullable=False, default="bot", server_default="bot"
+    )
     last_message_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
@@ -212,10 +218,12 @@ AVAILABLE_BOT_CHANNELS = (
 BOT_STEP_TYPES = (
     "send_text",       # enviar mensaje de texto plano
     "send_template",   # enviar template aprobado (iniciar conversación)
-    "send_media",      # enviar imagen/video/documento
+    "send_media",      # enviar imagen/video/documento (uno o varios items)
     "wait_input",      # esperar respuesta del contacto
+    "llm",             # bloque "interpretado por LLM" (demo: lógica predefinida)
     "delay",           # pausa en segundos
     "condition",       # ramificación por variable / keyword
+    "handoff",         # pasar la conversación a un asesor humano
     "end",             # fin del flujo
 )
 

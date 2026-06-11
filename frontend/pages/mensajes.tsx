@@ -30,6 +30,7 @@ type Conversation = {
   contact_wa_id: string;
   contact_name: string | null;
   status: string;
+  assigned_to?: string;
   last_message_at: string;
   last_message_preview: string | null;
 };
@@ -48,6 +49,7 @@ type ConversationDetail = {
   contact_wa_id: string;
   contact_name: string | null;
   status: string;
+  assigned_to?: string;
   last_message_at: string;
   messages: Message[];
 };
@@ -347,6 +349,15 @@ export default function Mensajes() {
                       >
                         {c.status}
                       </span>
+                      {c.assigned_to && c.assigned_to !== 'bot' ? (
+                        <span className="inline-block mt-1 ml-1 px-2 py-0.5 text-[10px] rounded-full bg-emerald-50 text-emerald-700">
+                          👤 {c.assigned_to}
+                        </span>
+                      ) : (
+                        <span className="inline-block mt-1 ml-1 px-2 py-0.5 text-[10px] rounded-full bg-gray-100 text-gray-500">
+                          🤖 bot
+                        </span>
+                      )}
                     </div>
                   </button>
                 );
@@ -368,6 +379,17 @@ export default function Mensajes() {
                     {detail.contact_name || `+${detail.contact_wa_id}`}
                   </div>
                   <div className="text-xs text-gray-500">+{detail.contact_wa_id}</div>
+                </div>
+                <div className="ml-auto text-xs">
+                  {detail.assigned_to && detail.assigned_to !== 'bot' ? (
+                    <span className="px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 font-medium">
+                      Atiende: 👤 {detail.assigned_to}
+                    </span>
+                  ) : (
+                    <span className="px-2.5 py-1 rounded-full bg-gray-100 text-gray-500 font-medium">
+                      Atiende: 🤖 bot
+                    </span>
+                  )}
                 </div>
               </div>
 

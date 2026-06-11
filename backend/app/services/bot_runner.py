@@ -131,6 +131,18 @@ def run_turn(
             pass
         elif atype == "end":
             _send_text(db, conversation, bot, meta_account, payload.get("text", ""))
+        elif atype == "handoff":
+            # El bot entrega el chat a un humano: marcamos la conversación como
+            # pendiente y la reasignamos del "bot" al asesor indicado. La UI de
+            # mensajes mostrará el nuevo responsable.
+            assignee = payload.get("assignee") or "asesor_1"
+            conversation.status = "pending"
+            conversation.assigned_to = assignee
+            db.add(conversation)
+            db.commit()
+            text = payload.get("text", "")
+            if text and text.strip():
+                _send_text(db, conversation, bot, meta_account, text)
         elif atype == "pause":
             seconds = int(payload.get("seconds") or 0)
             if seconds > 0:

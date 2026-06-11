@@ -198,6 +198,7 @@ class ConversationOut(BaseModel):
     contact_wa_id: str
     contact_name: Optional[str] = None
     status: str
+    assigned_to: str = "bot"
     last_message_at: datetime
     last_message_preview: Optional[str] = None
 
@@ -210,6 +211,7 @@ class ConversationWithMessages(BaseModel):
     contact_wa_id: str
     contact_name: Optional[str] = None
     status: str
+    assigned_to: str = "bot"
     last_message_at: datetime
     messages: List[MessageOut] = []
 

@@ -21,6 +21,7 @@ def list_conversations(
             contact_wa_id=c.contact_wa_id,
             contact_name=c.contact_name,
             status=c.status,
+            assigned_to=getattr(c, "assigned_to", "bot") or "bot",
             last_message_at=c.last_message_at,
             last_message_preview=crud.last_message_preview(c),
         )
@@ -42,6 +43,7 @@ def get_conversation(
         contact_wa_id=conv.contact_wa_id,
         contact_name=conv.contact_name,
         status=conv.status,
+        assigned_to=getattr(conv, "assigned_to", "bot") or "bot",
         last_message_at=conv.last_message_at,
         messages=[schemas.MessageOut.model_validate(m) for m in conv.messages],
     )

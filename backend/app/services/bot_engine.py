@@ -83,6 +83,64 @@ def _resolve_condition_next(
     return step.next_step_id
 
 
+def _fmt(text: Optional[str], variables: Dict[str, Any]) -> str:
+    """Sustituye `{var}` por su valor en `variables`. Tolerante: si una llave
+    no existe la deja tal cual (no usa str.format para no romper con `{` sueltos).
+    """
+    s = text or ""
+    if not s or "{" not in s:
+        return s
+    for key, value in variables.items():
+        s = s.replace("{" + str(key) + "}", str(value))
+    return s
+
+
+def _extract_value(var: str, text: str) -> str:
+    """Demo de "extracción por LLM": saca un dato del mensaje libre del usuario.
+
+    Hoy es heurística mínima (sin LLM). Para `nombre` intenta detectar marcadores
+    típicos ("me llamo", "soy", ...) y si no, asume que el mensaje es el nombre.
+    """
+    t = (text or "").strip()
+    if not t:
+        return t
+    if var == "nombre":
+        low = t.lower()
+        for marker in ("me llamo ", "mi nombre es ", "soy ", "nombre:", "nombre "):
+            if marker in low:
+                idx = low.index(marker) + len(marker)
+                candidate = t[idx:].strip()
+                candidate = candidate.split(",")[0].split(".")[0].strip()
+                if candidate:
+                    return candidate.split()[0].capitalize()
+        # Sin marcador: tomamos la primera palabra como nombre.
+        first = t.split()
+        return first[0].capitalize() if first else t
+    return t
+
+
+def _resolve_llm_route(
+    config: Dict[str, Any], user_input: Optional[str]
+) -> Optional[int]:
+    """Para un paso `llm` en modo route: decide el próximo step_id según las
+    `intents` (cada una con `keywords` y un `step_id`). Primera intent cuyo
+    keyword aparezca como substring del mensaje gana. None si nada matchea.
+    """
+    if not user_input:
+        return None
+    low = user_input.lower()
+    for intent in config.get("intents") or []:
+        if not isinstance(intent, dict):
+            continue
+        target = intent.get("step_id")
+        if not isinstance(target, int):
+            continue
+        for kw in intent.get("keywords") or []:
+            if isinstance(kw, str) and kw and kw.lower() in low:
+                return target
+    return None
+
+
 def advance(
     bot: models.Bot,
     state: Optional[Dict[str, Any]],
@@ -113,6 +171,21 @@ def advance(
     consumed_input = False
     finished = False
 
+    # Regla del CEO: entre un mensaje del bot y el siguiente, SIEMPRE debe
+    # haber una respuesta del usuario (cada send_X = un "bloque" individual).
+    # Tras emitir un mensaje, si el siguiente paso no es wait_input ni end,
+    # detenemos el turno y esperamos input. Cuando llegue el próximo
+    # turn() con user_input, simplemente procesaremos el siguiente paso.
+    _STOP_AFTER_SEND_UNLESS = {"wait_input", "end"}
+
+    def _should_break_after_send(next_id: Optional[int]) -> bool:
+        if next_id is None:
+            return False
+        nxt = steps_by_id.get(next_id)
+        if nxt is None:
+            return False
+        return nxt.step_type not in _STOP_AFTER_SEND_UNLESS
+
     for _ in range(MAX_STEPS_PER_TURN):
         if current_id is None:
             finished = True
@@ -127,8 +200,10 @@ def advance(
         cfg = _config(step)
 
         if step.step_type == "send_text":
-            actions.append({"type": "say", "payload": {"text": cfg.get("text", "")}})
+            actions.append({"type": "say", "payload": {"text": _fmt(cfg.get("text", ""), variables)}})
             current_id = step.next_step_id
+            if _should_break_after_send(current_id):
+                break
 
         elif step.step_type == "send_template":
             name = cfg.get("template_name", "")
@@ -136,32 +211,107 @@ def advance(
                 {"type": "say", "payload": {"text": f"[plantilla] {name}"}}
             )
             current_id = step.next_step_id
+            if _should_break_after_send(current_id):
+                break
 
         elif step.step_type == "send_media":
+            # Un bloque puede enviar uno o VARIOS medios seguidos (ej. una
+            # imagen + un video) en el mismo turno. Si `items` viene como lista
+            # emitimos una acción por item; si no, fallback al medio único.
+            items = cfg.get("items")
+            if isinstance(items, list) and items:
+                for it in items:
+                    if not isinstance(it, dict):
+                        continue
+                    actions.append(
+                        {
+                            "type": "say_media",
+                            "payload": {
+                                "caption": _fmt(it.get("caption", ""), variables),
+                                "media_type": it.get("media_type", "image"),
+                                "url": it.get("url", ""),
+                            },
+                        }
+                    )
+            else:
+                actions.append(
+                    {
+                        "type": "say_media",
+                        "payload": {
+                            "caption": _fmt(cfg.get("caption", ""), variables),
+                            "media_type": cfg.get("media_type", "image"),
+                            "url": cfg.get("url", ""),
+                        },
+                    }
+                )
+            current_id = step.next_step_id
+            if _should_break_after_send(current_id):
+                break
+
+        elif step.step_type == "llm":
+            # Bloque "LLM" para la demo: el editor lo muestra como un bloque de
+            # IA, pero por detrás corre lógica predefinida (sin LLM real todavía).
+            #   mode="extract" → "extrae" un dato del último mensaje del usuario
+            #                    y lo guarda en una variable.
+            #   mode="route"   → interpreta el mensaje y decide el próximo paso
+            #                    según keywords (incluye detectar datos de reserva).
+            mode = cfg.get("mode", "route")
+            if mode == "extract":
+                var = cfg.get("variable") or "valor"
+                if user_input is not None:
+                    variables[var] = _extract_value(var, user_input)
+                current_id = step.next_step_id
+            else:  # route
+                target = _resolve_llm_route(cfg, user_input)
+                if target is None:
+                    default_target = cfg.get("default_step_id")
+                    target = default_target if isinstance(default_target, int) else None
+                current_id = target if isinstance(target, int) else step.next_step_id
+
+        elif step.step_type == "handoff":
+            # Entrega el control a un asesor humano. El bot_runner traduce esta
+            # acción a: conversation.status=pending + conversation.assigned_to.
+            # Tras el handoff la sesión del bot termina (el humano toma el chat).
             actions.append(
                 {
-                    "type": "say_media",
+                    "type": "handoff",
                     "payload": {
-                        "caption": cfg.get("caption", ""),
-                        "media_type": cfg.get("media_type", "image"),
+                        "assignee": cfg.get("assignee", "asesor_1"),
+                        "text": _fmt(cfg.get("text", ""), variables),
                     },
                 }
             )
-            current_id = step.next_step_id
+            current_id = None
+            finished = True
+            break
 
         elif step.step_type == "wait_input":
             if user_input is not None and not consumed_input:
                 # Guardamos la respuesta y avanzamos
                 variables[f"step_{step.id}_answer"] = user_input
                 consumed_input = True
-                current_id = step.next_step_id
+                # Branching por opción: si el config tiene `branches`
+                # ({opcion_texto: step_id}), la opción elegida define el
+                # próximo paso. Si no matchea, cae al `next_step_id` default.
+                branches = cfg.get("branches") or {}
+                target_id: Optional[int] = None
+                if isinstance(branches, dict) and user_input:
+                    low = user_input.strip().lower()
+                    for key, target in branches.items():
+                        if not isinstance(key, str):
+                            continue
+                        if key.lower() == low or key.lower() in low or low in key.lower():
+                            if isinstance(target, int):
+                                target_id = target
+                                break
+                current_id = target_id if target_id is not None else step.next_step_id
             else:
                 # Pedimos input y salimos
                 actions.append(
                     {
                         "type": "ask",
                         "payload": {
-                            "prompt": cfg.get("prompt", ""),
+                            "prompt": _fmt(cfg.get("prompt", ""), variables),
                             "options": list(cfg.get("options") or []),
                         },
                     }
@@ -184,9 +334,8 @@ def advance(
                 consumed_input = True
 
         elif step.step_type == "end":
-            actions.append(
-                {"type": "end", "payload": {"text": cfg.get("text", "")}}
-            )
+            # El nodo `end` NO envía mensaje al usuario: es solo un marcador
+            # del fin del flujo. El frontend mostrará el botón de reinicio.
             current_id = None
             finished = True
             break

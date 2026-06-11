@@ -28,7 +28,7 @@ type BotDetail = {
 };
 
 type BotAction = {
-  type: 'say' | 'say_media' | 'ask' | 'pause' | 'end';
+  type: 'say' | 'say_media' | 'ask' | 'pause' | 'end' | 'handoff';
   payload: Record<string, any>;
 };
 
@@ -39,12 +39,16 @@ type SimulateResponse = {
 };
 
 type ChatBubble =
-  | { role: 'bot'; kind: 'text'; text: string }
-  | { role: 'bot'; kind: 'media'; caption: string; media_type: string }
-  | { role: 'bot'; kind: 'ask'; prompt: string; options: string[] }
-  | { role: 'bot'; kind: 'pause'; seconds: number }
-  | { role: 'bot'; kind: 'end'; text: string }
-  | { role: 'user'; text: string };
+  | { role: 'bot'; kind: 'text'; text: string; time: string }
+  | { role: 'bot'; kind: 'media'; caption: string; media_type: string; url: string; time: string }
+  | { role: 'bot'; kind: 'ask'; prompt: string; options: string[]; time: string }
+  | { role: 'bot'; kind: 'pause'; seconds: number; time: string }
+  | { role: 'bot'; kind: 'end'; text: string; time: string }
+  | { role: 'bot'; kind: 'handoff'; assignee: string; text: string; time: string }
+  | { role: 'user'; text: string; time: string };
+
+const nowHHMM = (): string =>
+  new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
 
 const NODE_W = 260;
 const NODE_H = 200;
@@ -57,8 +61,10 @@ const STEP_STYLE: Record<string, { accent: string; icon: string; badge: string }
   send_template:{ accent: 'border-indigo-400', icon: '📋', badge: 'bg-indigo-50 text-indigo-700' },
   send_media:   { accent: 'border-purple-400', icon: '🖼️', badge: 'bg-purple-50 text-purple-700' },
   wait_input:   { accent: 'border-amber-400',  icon: '⌨️', badge: 'bg-amber-50 text-amber-700' },
+  llm:          { accent: 'border-fuchsia-400',icon: '🤖', badge: 'bg-fuchsia-50 text-fuchsia-700' },
   delay:        { accent: 'border-slate-400',  icon: '⏱️', badge: 'bg-slate-100 text-slate-700' },
   condition:    { accent: 'border-orange-400', icon: '🔀', badge: 'bg-orange-50 text-orange-700' },
+  handoff:      { accent: 'border-emerald-400',icon: '👤', badge: 'bg-emerald-50 text-emerald-700' },
   end:          { accent: 'border-rose-400',   icon: '🏁', badge: 'bg-rose-50 text-rose-700' },
 };
 
@@ -70,15 +76,35 @@ function StepNode({ step, isFirst }: { step: BotStep; isFirst: boolean }) {
       case 'send_text':
       case 'end':
         return <p className="text-sm text-gray-700">{cfg.text || '—'}</p>;
-      case 'send_media':
+      case 'send_media': {
+        const items: any[] = Array.isArray(cfg.items) && cfg.items.length
+          ? cfg.items
+          : [{ media_type: cfg.media_type, url: cfg.url, caption: cfg.caption }];
         return (
           <div>
-            <div className="bg-gray-100 rounded h-20 flex items-center justify-center text-gray-400 text-3xl mb-2">
-              {cfg.media_type === 'image' ? '🖼️' : '📎'}
+            <div className="flex gap-1 mb-2">
+              {items.slice(0, 3).map((it: any, idx: number) =>
+                it.url ? (
+                  it.media_type === 'video' ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <div key={idx} className="flex-1 bg-black rounded h-20 flex items-center justify-center text-white text-2xl">
+                      ▶︎
+                    </div>
+                  ) : (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img key={idx} src={it.url} alt="" className="flex-1 rounded h-20 object-cover min-w-0" />
+                  )
+                ) : (
+                  <div key={idx} className="flex-1 bg-gray-100 rounded h-20 flex items-center justify-center text-gray-400 text-3xl">
+                    {it.media_type === 'image' ? '🖼️' : '📎'}
+                  </div>
+                )
+              )}
             </div>
-            <p className="text-xs text-gray-600 line-clamp-2">{cfg.caption || '—'}</p>
+            <p className="text-xs text-gray-600 line-clamp-2">{cfg.caption || items[0]?.caption || '—'}</p>
           </div>
         );
+      }
       case 'wait_input':
         return (
           <div>
@@ -107,6 +133,39 @@ function StepNode({ step, isFirst }: { step: BotStep; isFirst: boolean }) {
                 ))}
               </div>
             )}
+          </div>
+        );
+      case 'llm': {
+        const isExtract = cfg.mode === 'extract';
+        return (
+          <div>
+            <span className="inline-block text-[10px] bg-fuchsia-50 text-fuchsia-700 rounded px-2 py-0.5 mb-1">
+              {isExtract ? `extrae → {${cfg.variable || 'valor'}}` : 'interpreta y enruta'}
+            </span>
+            <p className="text-sm text-gray-700">
+              {isExtract
+                ? 'Extrae un dato del mensaje del cliente con IA.'
+                : 'Lee el mensaje del cliente y decide la mejor respuesta.'}
+            </p>
+            {!isExtract && Array.isArray(cfg.intents) && (
+              <div className="flex flex-wrap gap-1 mt-1">
+                {cfg.intents.slice(0, 6).map((it: any, idx: number) => (
+                  <span key={idx} className="text-[10px] bg-fuchsia-50 text-fuchsia-700 rounded px-2 py-0.5">
+                    {(it.keywords && it.keywords[0]) || 'intent'}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      }
+      case 'handoff':
+        return (
+          <div>
+            <p className="text-sm text-gray-700 mb-1">
+              Pasa el chat a <span className="font-semibold">{cfg.assignee || 'asesor_1'}</span>.
+            </p>
+            {cfg.text && <p className="text-xs text-gray-500 line-clamp-2">"{cfg.text}"</p>}
           </div>
         );
       case 'delay':
@@ -170,33 +229,83 @@ function SimulatorModal({
   const [waitingInput, setWaitingInput] = useState(false);
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
+  const [typing, setTyping] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const getToken = () =>
     typeof window !== 'undefined' ? localStorage.getItem('token') : null;
 
-  const appendActionsAsBubbles = (actions: BotAction[]) => {
-    const newBubbles: ChatBubble[] = actions.map((a): ChatBubble => {
-      if (a.type === 'say') return { role: 'bot', kind: 'text', text: a.payload.text || '' };
-      if (a.type === 'say_media')
-        return {
-          role: 'bot',
-          kind: 'media',
-          caption: a.payload.caption || '',
-          media_type: a.payload.media_type || 'image',
-        };
-      if (a.type === 'ask')
-        return {
-          role: 'bot',
-          kind: 'ask',
-          prompt: a.payload.prompt || '',
-          options: a.payload.options || [],
-        };
-      if (a.type === 'pause')
-        return { role: 'bot', kind: 'pause', seconds: a.payload.seconds || 0 };
-      return { role: 'bot', kind: 'end', text: a.payload.text || '' };
-    });
-    setBubbles((prev) => [...prev, ...newBubbles]);
+  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+  // Delay base entre mensajes del bot (simula "escribiendo…"). Se hace
+  // proporcional al largo del texto para que mensajes cortos no esperen
+  // demasiado y mensajes largos se sientan naturales.
+  const typingDelayFor = (action: BotAction): number => {
+    const text =
+      action.type === 'say'
+        ? String(action.payload.text || '')
+        : action.type === 'say_media'
+        ? String(action.payload.caption || '')
+        : action.type === 'ask'
+        ? String(action.payload.prompt || '')
+        : '';
+    const base = 600;
+    const perChar = 18;
+    return Math.min(base + text.length * perChar, 2200);
+  };
+
+  const actionToBubble = (a: BotAction): ChatBubble => {
+    const time = nowHHMM();
+    if (a.type === 'say') return { role: 'bot', kind: 'text', text: a.payload.text || '', time };
+    if (a.type === 'say_media')
+      return {
+        role: 'bot',
+        kind: 'media',
+        caption: a.payload.caption || '',
+        media_type: a.payload.media_type || 'image',
+        url: a.payload.url || '',
+        time,
+      };
+    if (a.type === 'ask')
+      return {
+        role: 'bot',
+        kind: 'ask',
+        prompt: a.payload.prompt || '',
+        options: a.payload.options || [],
+        time,
+      };
+    if (a.type === 'pause')
+      return { role: 'bot', kind: 'pause', seconds: a.payload.seconds || 0, time };
+    if (a.type === 'handoff')
+      return {
+        role: 'bot',
+        kind: 'handoff',
+        assignee: a.payload.assignee || 'asesor_1',
+        text: a.payload.text || '',
+        time,
+      };
+    return { role: 'bot', kind: 'end', text: a.payload.text || '', time };
+  };
+
+  const renderActionsProgressively = async (actions: BotAction[]) => {
+    for (const action of actions) {
+      if (action.type === 'pause') {
+        // Respeta el delay del bot, capeado a 5s para que la simulación
+        // no se sienta congelada.
+        const secs = Number(action.payload.seconds) || 0;
+        setBubbles((prev) => [...prev, actionToBubble(action)]);
+        const wait = Math.min(secs * 1000, 5000);
+        if (wait > 0) await sleep(wait);
+        continue;
+      }
+      // Muestra indicador "escribiendo…" antes de cada burbuja del bot
+      setTyping(true);
+      await sleep(typingDelayFor(action));
+      setTyping(false);
+      setBubbles((prev) => [...prev, actionToBubble(action)]);
+      // Pequeña respiración entre burbujas consecutivas
+      await sleep(180);
+    }
   };
 
   const turn = async (userInput: string | null) => {
@@ -214,17 +323,20 @@ function SimulatorModal({
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data: SimulateResponse = await res.json();
-      appendActionsAsBubbles(data.actions);
       setState(data.next_state);
+      await renderActionsProgressively(data.actions);
       setFinished(data.finished);
-      const lastAction = data.actions[data.actions.length - 1];
-      setWaitingInput(!data.finished && lastAction?.type === 'ask');
+      // Regla del CEO: entre bloque y bloque siempre se espera respuesta del
+      // usuario. Habilitamos el input mientras el bot no haya terminado, sin
+      // depender de que la última acción sea 'ask'.
+      setWaitingInput(!data.finished);
     } catch (err: any) {
       setBubbles((prev) => [
         ...prev,
-        { role: 'bot', kind: 'text', text: `⚠️ Error en simulación: ${err.message}` },
+        { role: 'bot', kind: 'text', text: `⚠️ Error en simulación: ${err.message}`, time: nowHHMM() },
       ]);
     } finally {
+      setTyping(false);
       setSending(false);
     }
   };
@@ -240,187 +352,299 @@ function SimulatorModal({
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
   }, [bubbles]);
 
-  const handleSend = async () => {
-    const value = input.trim();
-    if (!value || sending) return;
-    setBubbles((prev) => [...prev, { role: 'user', text: value }]);
+  const sendValue = async (raw: string) => {
+    const value = raw.trim();
+    if (!value || sending || typing) return;
+    setBubbles((prev) => [...prev, { role: 'user', text: value, time: nowHHMM() }]);
     setInput('');
     setWaitingInput(false);
     await turn(value);
   };
+
+  const handleSend = () => sendValue(input);
 
   const handleReset = () => {
     setBubbles([]);
     setState(null);
     setFinished(false);
     setWaitingInput(false);
+    setTyping(false);
     setInput('');
     // Disparar primer turno
     setTimeout(() => turn(null), 0);
   };
 
+  // Wallpaper SVG de WhatsApp (doodle pattern, beige clásico)
+  const waWallpaper =
+    'url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22120%22 height=%22120%22 viewBox=%220 0 120 120%22%3E%3Cg fill=%22%23d4c8b8%22 fill-opacity=%220.4%22%3E%3Cpath d=%22M20 20h6v6h-6zm12 12h6v6h-6zm-30 30h6v6H2zm60 0h6v6h-6zm30 30h6v6h-6zm-15-60h6v6h-6zm-45 90h6v6h-6zm75 0h6v6h-6z%22/%3E%3Ccircle cx=%2280%22 cy=%2225%22 r=%223%22/%3E%3Ccircle cx=%2225%22 cy=%2275%22 r=%223%22/%3E%3Ccircle cx=%22100%22 cy=%2295%22 r=%223%22/%3E%3C/g%3E%3C/svg%3E")';
+
+  const Tick = () => (
+    <svg viewBox="0 0 16 11" className="w-4 h-3 inline-block fill-current">
+      <path d="M11.071 0.653a.5.5 0 0 0-.707.024l-5.04 5.43-2.33-2.33a.5.5 0 1 0-.707.707l2.694 2.694a.5.5 0 0 0 .72-.013l5.397-5.815a.5.5 0 0 0-.027-.697zm4 0a.5.5 0 0 0-.707.024l-5.04 5.43-.93-.93a.5.5 0 1 0-.707.707l1.294 1.294a.5.5 0 0 0 .72-.013l5.397-5.815a.5.5 0 0 0-.027-.697z" />
+    </svg>
+  );
+
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60"
       onClick={onClose}
     >
+      {/* Frame de celular */}
       <div
-        className="bg-white rounded-xl shadow-2xl w-full max-w-md h-[600px] flex flex-col"
+        className="relative bg-black rounded-[2.5rem] shadow-2xl p-3"
         onClick={(e) => e.stopPropagation()}
+        style={{ width: '380px', height: '720px' }}
       >
-        <div className="border-b border-gray-200 px-4 py-3 flex items-center justify-between bg-gloma-brown text-white rounded-t-xl">
-          <div className="flex items-center gap-2">
-            <span className="text-lg">🤖</span>
-            <div>
-              <div className="font-semibold text-sm">{botName}</div>
-              <div className="text-[11px] text-gloma-rose-soft">Simulación — no se envían mensajes reales</div>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={handleReset}
-              className="text-white/80 hover:text-white text-xs px-2 py-1 rounded hover:bg-gloma-brown-dark"
-              title="Reiniciar conversación"
-            >
-              ↻
-            </button>
-            <button
-              type="button"
-              onClick={onClose}
-              className="text-white/80 hover:text-white text-lg leading-none"
-              title="Cerrar"
-            >
-              ×
-            </button>
-          </div>
-        </div>
+        {/* Notch */}
+        <div className="absolute top-3 left-1/2 -translate-x-1/2 w-32 h-6 bg-black rounded-b-2xl z-20" />
+        {/* Botones laterales decorativos */}
+        <div className="absolute -left-1 top-24 w-1 h-16 bg-gray-800 rounded-l" />
+        <div className="absolute -left-1 top-44 w-1 h-10 bg-gray-800 rounded-l" />
+        <div className="absolute -right-1 top-32 w-1 h-20 bg-gray-800 rounded-r" />
 
-        <div
-          ref={scrollRef}
-          className="flex-1 overflow-y-auto px-4 py-4 space-y-3"
-          style={{
-            backgroundImage:
-              'linear-gradient(rgba(255,255,255,0.9), rgba(255,255,255,0.9)), url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22100%22 height=%22100%22%3E%3Ccircle cx=%2250%22 cy=%2250%22 r=%221%22 fill=%22%23d1fae5%22/%3E%3C/svg%3E")',
-            backgroundColor: '#f0fdf4',
-          }}
-        >
-          {bubbles.map((b, i) => {
-            if (b.role === 'user') {
-              return (
-                <div key={i} className="flex justify-end">
-                  <div className="bg-gloma-rose-soft/300 text-white rounded-2xl rounded-br-sm px-3 py-2 max-w-[75%] text-sm shadow-sm">
-                    {b.text}
-                  </div>
-                </div>
-              );
-            }
-            if (b.kind === 'text') {
-              return (
-                <div key={i} className="flex justify-start">
-                  <div className="bg-white text-gray-800 rounded-2xl rounded-bl-sm px-3 py-2 max-w-[75%] text-sm shadow-sm border border-gray-100">
-                    {b.text}
-                  </div>
-                </div>
-              );
-            }
-            if (b.kind === 'media') {
-              return (
-                <div key={i} className="flex justify-start">
-                  <div className="bg-white text-gray-800 rounded-2xl rounded-bl-sm px-3 py-2 max-w-[75%] text-sm shadow-sm border border-gray-100">
-                    <div className="bg-gray-100 rounded h-24 flex items-center justify-center text-3xl text-gray-400 mb-2">
-                      {b.media_type === 'image' ? '🖼️' : '📎'}
-                    </div>
-                    {b.caption && <div className="text-xs text-gray-600">{b.caption}</div>}
-                  </div>
-                </div>
-              );
-            }
-            if (b.kind === 'ask') {
-              return (
-                <div key={i} className="flex justify-start">
-                  <div className="bg-white text-gray-800 rounded-2xl rounded-bl-sm px-3 py-2 max-w-[75%] text-sm shadow-sm border border-gray-100">
-                    <div>{b.prompt}</div>
-                    {b.options.length > 0 && (
-                      <ul className="mt-2 space-y-1">
-                        {b.options.map((opt, j) => (
-                          <li key={j} className="text-xs bg-gray-50 rounded px-2 py-1 text-gray-600">
-                            {opt}
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                  </div>
-                </div>
-              );
-            }
-            if (b.kind === 'pause') {
-              return (
-                <div key={i} className="flex justify-center">
-                  <span className="text-[11px] text-gray-400 italic">
-                    …pausa de {b.seconds}s omitida en simulación…
-                  </span>
-                </div>
-              );
-            }
-            return (
-              <div key={i} className="flex justify-start">
-                <div className="bg-rose-50 text-rose-700 rounded-2xl rounded-bl-sm px-3 py-2 max-w-[75%] text-sm shadow-sm border border-rose-200">
-                  <div className="flex items-center gap-1 mb-1">
-                    <span>🏁</span>
-                    <span className="text-[11px] uppercase tracking-wide">Fin del flujo</span>
-                  </div>
-                  {b.text}
-                </div>
+        {/* Pantalla */}
+        <div className="relative w-full h-full rounded-[2rem] overflow-hidden flex flex-col bg-white">
+          {/* Status bar simulada */}
+          <div className="h-8 bg-[#075E54] flex items-center justify-between px-6 pt-1 text-white text-[11px] font-medium">
+            <span>{nowHHMM()}</span>
+            <div className="flex items-center gap-1">
+              <span>●●●●</span>
+              <span>📶</span>
+              <span>🔋</span>
+            </div>
+          </div>
+
+          {/* Header WhatsApp */}
+          <div className="bg-[#075E54] text-white px-3 py-2 flex items-center justify-between shadow-md">
+            <div className="flex items-center gap-3 min-w-0">
+              <button
+                type="button"
+                onClick={onClose}
+                className="text-white/90 hover:text-white text-lg leading-none px-1"
+                title="Cerrar"
+              >
+                ←
+              </button>
+              <div className="w-9 h-9 rounded-full bg-gloma-rose-soft text-gloma-brown flex items-center justify-center text-base shrink-0">
+                🤖
               </div>
-            );
-          })}
-          {sending && (
-            <div className="flex justify-start">
-              <div className="bg-white rounded-2xl rounded-bl-sm px-3 py-2 text-gray-400 text-sm shadow-sm border border-gray-100">
-                <span className="inline-block animate-pulse">● ● ●</span>
+              <div className="min-w-0">
+                <div className="font-semibold text-sm leading-tight truncate">{botName}</div>
+                <div className="text-[11px] text-white/80 leading-tight">
+                  {sending || typing ? 'escribiendo…' : 'en línea'}
+                </div>
               </div>
             </div>
-          )}
-          {finished && !sending && (
-            <div className="flex justify-center pt-2">
+            <div className="flex items-center gap-3 text-white/90">
               <button
                 type="button"
                 onClick={handleReset}
-                className="text-xs text-gloma-brown hover:text-gloma-brown-dark underline"
+                className="hover:text-white text-base"
+                title="Reiniciar conversación"
               >
-                Reiniciar simulación
+                ↻
               </button>
+              <span className="text-base" title="Videollamada">📹</span>
+              <span className="text-base" title="Llamada">📞</span>
             </div>
-          )}
-        </div>
+          </div>
 
-        <div className="border-t border-gray-200 px-4 py-3 bg-white rounded-b-xl">
-          <div className="flex items-center gap-2">
-            <input
-              type="text"
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') handleSend();
-              }}
-              disabled={!waitingInput || sending}
-              placeholder={
-                waitingInput
-                  ? 'Escribe tu respuesta…'
-                  : finished
-                  ? 'Conversación terminada. Reinicia para probar de nuevo.'
-                  : 'Esperando al bot…'
+          {/* Banner de simulación */}
+          <div className="bg-yellow-50 border-b border-yellow-200 px-3 py-1 text-[10px] text-yellow-800 text-center">
+            Simulación — no se envían mensajes reales
+          </div>
+
+          {/* Chat body */}
+          <div
+            ref={scrollRef}
+            className="flex-1 overflow-y-auto px-3 py-3 space-y-1.5"
+            style={{
+              backgroundImage: waWallpaper,
+              backgroundColor: '#ECE5DD',
+            }}
+          >
+            {bubbles.map((b, i) => {
+              if (b.role === 'user') {
+                return (
+                  <div key={i} className="flex justify-end">
+                    <div className="relative bg-[#DCF8C6] text-gray-800 rounded-lg rounded-tr-none px-2 py-1 max-w-[78%] text-sm shadow-sm">
+                      <div className="whitespace-pre-wrap break-words pr-12">{b.text}</div>
+                      <div className="absolute bottom-1 right-2 flex items-center gap-0.5 text-[10px] text-gray-500">
+                        <span>{b.time}</span>
+                        <span className="text-[#34B7F1]">
+                          <Tick />
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                );
               }
-              className="flex-1 text-sm px-3 py-2 border border-gray-200 rounded-full focus:outline-none focus:border-gloma-rose disabled:bg-gray-50 disabled:text-gray-400"
-            />
+              if (b.kind === 'text') {
+                return (
+                  <div key={i} className="flex justify-start">
+                    <div className="relative bg-white text-gray-800 rounded-lg rounded-tl-none px-2 py-1 max-w-[78%] text-sm shadow-sm">
+                      <div className="whitespace-pre-wrap break-words pr-10">{b.text}</div>
+                      <div className="absolute bottom-1 right-2 text-[10px] text-gray-400">
+                        {b.time}
+                      </div>
+                    </div>
+                  </div>
+                );
+              }
+              if (b.kind === 'media') {
+                return (
+                  <div key={i} className="flex justify-start">
+                    <div className="relative bg-white text-gray-800 rounded-lg rounded-tl-none p-1 max-w-[78%] text-sm shadow-sm">
+                      {b.url ? (
+                        b.media_type === 'video' ? (
+                          <video
+                            src={b.url}
+                            controls
+                            className="rounded w-full max-h-56 object-cover bg-black"
+                          />
+                        ) : (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={b.url}
+                            alt={b.caption || 'media'}
+                            className="rounded w-full max-h-56 object-cover"
+                          />
+                        )
+                      ) : (
+                        <div className="bg-gray-200 rounded h-32 flex items-center justify-center text-4xl text-gray-400">
+                          {b.media_type === 'image' ? '🖼️' : '📎'}
+                        </div>
+                      )}
+                      {b.caption && (
+                        <div className="text-xs text-gray-700 px-1 pt-1 pr-10 whitespace-pre-wrap break-words">
+                          {b.caption}
+                        </div>
+                      )}
+                      <div className="absolute bottom-1 right-2 text-[10px] text-gray-400">
+                        {b.time}
+                      </div>
+                    </div>
+                  </div>
+                );
+              }
+              if (b.kind === 'ask') {
+                const isLatestAsk =
+                  waitingInput &&
+                  bubbles
+                    .slice(i + 1)
+                    .every((nb) => nb.role !== 'bot' || nb.kind !== 'ask');
+                return (
+                  <div key={i} className="flex flex-col items-start gap-0.5">
+                    <div className="flex justify-start w-full">
+                      <div className="relative bg-white text-gray-800 rounded-lg rounded-tl-none px-2 py-1 max-w-[78%] text-sm shadow-sm">
+                        <div className="whitespace-pre-wrap break-words pr-10">{b.prompt}</div>
+                        <div className="absolute bottom-1 right-2 text-[10px] text-gray-400">
+                          {b.time}
+                        </div>
+                      </div>
+                    </div>
+                    {b.options.length > 0 && (
+                      <div className="w-full max-w-[78%] mt-0.5 bg-white rounded-lg shadow-sm border border-gray-100 overflow-hidden">
+                        {b.options.map((opt, j) => (
+                          <button
+                            key={j}
+                            type="button"
+                            onClick={() => sendValue(opt)}
+                            disabled={!isLatestAsk}
+                            className="w-full text-center text-sm text-[#0099FF] font-medium px-3 py-2 border-t border-gray-100 first:border-t-0 hover:bg-blue-50 active:bg-blue-100 disabled:text-gray-400 disabled:cursor-not-allowed disabled:hover:bg-white transition"
+                          >
+                            {opt}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              }
+              if (b.kind === 'pause') {
+                return (
+                  <div key={i} className="flex justify-center py-1">
+                    <span className="bg-white/80 text-[10px] text-gray-500 italic px-2 py-0.5 rounded-full shadow-sm">
+                      …pausa de {b.seconds}s…
+                    </span>
+                  </div>
+                );
+              }
+              if (b.kind === 'handoff') {
+                return (
+                  <div key={i} className="flex flex-col items-start gap-1 w-full">
+                    {b.text && (
+                      <div className="flex justify-start w-full">
+                        <div className="relative bg-white text-gray-800 rounded-lg rounded-tl-none px-2 py-1 max-w-[78%] text-sm shadow-sm">
+                          <div className="whitespace-pre-wrap break-words pr-10">{b.text}</div>
+                          <div className="absolute bottom-1 right-2 text-[10px] text-gray-400">
+                            {b.time}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                    <div className="flex justify-center w-full py-1">
+                      <span className="bg-emerald-50 text-emerald-700 text-[11px] font-medium px-3 py-1 rounded-full shadow-sm border border-emerald-100">
+                        👤 Conversación asignada a {b.assignee}
+                      </span>
+                    </div>
+                  </div>
+                );
+              }
+              return null;
+            })}
+            {(sending || typing) && (
+              <div className="flex justify-start">
+                <div className="bg-white rounded-lg rounded-tl-none px-3 py-2 text-gray-400 text-sm shadow-sm">
+                  <span className="inline-block animate-pulse">● ● ●</span>
+                </div>
+              </div>
+            )}
+            {finished && !sending && !typing && (
+              <div className="flex justify-center pt-2">
+                <button
+                  type="button"
+                  onClick={handleReset}
+                  className="bg-white/90 text-[11px] text-gloma-brown hover:text-gloma-brown-dark px-3 py-1 rounded-full shadow-sm border border-gray-200"
+                >
+                  ↻ Reiniciar simulación
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Footer estilo WhatsApp */}
+          <div className="bg-[#F0F0F0] px-2 py-2 flex items-end gap-2">
+            <div className="flex-1 bg-white rounded-3xl shadow-sm flex items-center px-3 py-1.5 gap-2">
+              <span className="text-gray-400 text-lg leading-none">😊</span>
+              <input
+                type="text"
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') handleSend();
+                }}
+                disabled={!waitingInput || sending || typing}
+                placeholder={
+                  waitingInput
+                    ? 'Mensaje'
+                    : finished
+                    ? 'Conversación terminada'
+                    : 'Esperando al bot…'
+                }
+                className="flex-1 text-sm bg-transparent focus:outline-none disabled:text-gray-400 placeholder-gray-400"
+              />
+              <span className="text-gray-400 text-base leading-none">📎</span>
+              <span className="text-gray-400 text-base leading-none">📷</span>
+            </div>
             <button
               type="button"
               onClick={handleSend}
-              disabled={!waitingInput || sending || input.trim() === ''}
-              className="bg-gloma-rose-soft/300 text-white rounded-full w-10 h-10 flex items-center justify-center hover:bg-gloma-brown disabled:bg-gray-300 disabled:cursor-not-allowed"
+              disabled={!waitingInput || sending || typing || input.trim() === ''}
+              className="bg-[#075E54] text-white rounded-full w-10 h-10 flex items-center justify-center shadow-md hover:bg-[#054C44] disabled:bg-gray-400 disabled:cursor-not-allowed shrink-0"
+              title={input.trim() === '' ? 'Mantén para grabar audio (deshabilitado)' : 'Enviar'}
             >
-              ➤
+              {input.trim() === '' ? '🎤' : '➤'}
             </button>
           </div>
         </div>
@@ -461,29 +685,124 @@ export default function BotDetailPage() {
   }, [id, router]);
 
   const layout = useMemo(() => {
-    if (!bot) return { nodes: [], edges: [], width: 0, height: 0 };
-    const nodes = bot.steps.map((step, idx) => ({
-      step,
-      x: PAD_X + idx * (NODE_W + GAP_X),
-      y: PAD_Y,
-    }));
-    const edges = bot.steps
-      .map((step) => {
-        if (!step.next_step_id) return null;
-        const from = nodes.find((n) => n.step.id === step.id);
-        const to = nodes.find((n) => n.step.id === step.next_step_id);
-        if (!from || !to) return null;
-        return {
-          id: `${step.id}-${step.next_step_id}`,
+    if (!bot || bot.steps.length === 0) {
+      return { nodes: [], edges: [], width: 0, height: 0 };
+    }
+    const stepsById = new Map(bot.steps.map((s) => [s.id, s] as const));
+
+    // Salidas (edges) de un step: branches por opción + default si no la cubre.
+    const outsOf = (
+      s: BotStep,
+    ): { target: number; label?: string }[] => {
+      const branches = (s.config as any)?.branches;
+      const list: { target: number; label?: string }[] = [];
+      const covered = new Set<number>();
+      if (branches && typeof branches === 'object') {
+        for (const [key, tgt] of Object.entries(branches)) {
+          if (typeof tgt === 'number' && stepsById.has(tgt)) {
+            list.push({ target: tgt, label: key });
+            covered.add(tgt);
+          }
+        }
+      }
+      if (
+        s.next_step_id &&
+        stepsById.has(s.next_step_id) &&
+        !covered.has(s.next_step_id)
+      ) {
+        list.push({
+          target: s.next_step_id,
+          label: list.length > 0 ? 'otro' : undefined,
+        });
+      }
+      return list;
+    };
+
+    // BFS para asignar niveles (columnas, x). Tomamos el max para evitar
+    // que un nodo retroceda si llega por dos caminos de distinto largo.
+    const levelOf = new Map<number, number>();
+    const root = bot.steps[0].id;
+    levelOf.set(root, 0);
+    const queue = [root];
+    while (queue.length > 0) {
+      const id = queue.shift()!;
+      const lvl = levelOf.get(id)!;
+      const s = stepsById.get(id)!;
+      for (const { target } of outsOf(s)) {
+        const existing = levelOf.get(target);
+        const newLvl = lvl + 1;
+        if (existing === undefined || existing < newLvl) {
+          levelOf.set(target, newLvl);
+          queue.push(target);
+        }
+      }
+    }
+    // Steps huérfanos (no alcanzables): los apilamos al final
+    let maxLvl = 0;
+    for (const v of levelOf.values()) if (v > maxLvl) maxLvl = v;
+    for (const s of bot.steps) {
+      if (!levelOf.has(s.id)) {
+        maxLvl += 1;
+        levelOf.set(s.id, maxLvl);
+      }
+    }
+
+    // Agrupar por nivel y posicionar
+    const byLevel = new Map<number, BotStep[]>();
+    for (const s of bot.steps) {
+      const lvl = levelOf.get(s.id)!;
+      if (!byLevel.has(lvl)) byLevel.set(lvl, []);
+      byLevel.get(lvl)!.push(s);
+    }
+
+    const ROW_GAP = 50;
+    const nodes: { step: BotStep; x: number; y: number }[] = [];
+    let maxRows = 0;
+    for (const [lvl, steps] of byLevel.entries()) {
+      if (steps.length > maxRows) maxRows = steps.length;
+      const colHeight = steps.length * NODE_H + (steps.length - 1) * ROW_GAP;
+      const startY = PAD_Y;
+      steps.forEach((s, i) => {
+        nodes.push({
+          step: s,
+          x: PAD_X + lvl * (NODE_W + GAP_X),
+          y: startY + i * (NODE_H + ROW_GAP),
+        });
+      });
+      void colHeight;
+    }
+
+    // Construir edges con label opcional por branch
+    type Edge = {
+      id: string;
+      x1: number;
+      y1: number;
+      x2: number;
+      y2: number;
+      label?: string;
+    };
+    const edges: Edge[] = [];
+    for (const s of bot.steps) {
+      const from = nodes.find((n) => n.step.id === s.id);
+      if (!from) continue;
+      const outs = outsOf(s);
+      outs.forEach((o, k) => {
+        const to = nodes.find((n) => n.step.id === o.target);
+        if (!to) return;
+        const offset = outs.length > 1 ? (k - (outs.length - 1) / 2) * 26 : 0;
+        edges.push({
+          id: `${s.id}-${o.target}-${k}`,
           x1: from.x + NODE_W,
-          y1: from.y + NODE_H / 2,
+          y1: from.y + NODE_H / 2 + offset,
           x2: to.x,
           y2: to.y + NODE_H / 2,
-        };
-      })
-      .filter(Boolean) as { id: string; x1: number; y1: number; x2: number; y2: number }[];
-    const width = PAD_X + bot.steps.length * (NODE_W + GAP_X);
-    const height = PAD_Y + NODE_H + 80;
+          label: o.label,
+        });
+      });
+    }
+
+    const width = PAD_X * 2 + (maxLvl + 1) * NODE_W + maxLvl * GAP_X;
+    const height = PAD_Y + maxRows * NODE_H + (maxRows - 1) * ROW_GAP + 80;
     return { nodes, edges, width, height };
   }, [bot]);
 
@@ -553,17 +872,48 @@ export default function BotDetailPage() {
                 </defs>
                 {layout.edges.map((edge) => {
                   const midX = (edge.x1 + edge.x2) / 2;
+                  const midY = (edge.y1 + edge.y2) / 2;
                   const d = `M ${edge.x1} ${edge.y1} C ${midX} ${edge.y1}, ${midX} ${edge.y2}, ${edge.x2} ${edge.y2}`;
+                  const labelText = edge.label
+                    ? edge.label.length > 22
+                      ? edge.label.slice(0, 22) + '…'
+                      : edge.label
+                    : null;
                   return (
-                    <path
-                      key={edge.id}
-                      d={d}
-                      stroke="#9ca3af"
-                      strokeWidth="2"
-                      strokeDasharray="5,5"
-                      fill="none"
-                      markerEnd="url(#arrowhead)"
-                    />
+                    <g key={edge.id}>
+                      <path
+                        d={d}
+                        stroke="#9ca3af"
+                        strokeWidth="2"
+                        strokeDasharray="5,5"
+                        fill="none"
+                        markerEnd="url(#arrowhead)"
+                      />
+                      {labelText && (
+                        <g>
+                          <rect
+                            x={midX - Math.max(labelText.length * 4, 30)}
+                            y={midY - 10}
+                            width={Math.max(labelText.length * 8, 60)}
+                            height="20"
+                            rx="10"
+                            fill="white"
+                            stroke="#d1d5db"
+                            strokeWidth="1"
+                          />
+                          <text
+                            x={midX}
+                            y={midY + 4}
+                            textAnchor="middle"
+                            fontSize="11"
+                            fill="#4b5563"
+                            fontFamily="system-ui, -apple-system, sans-serif"
+                          >
+                            {labelText}
+                          </text>
+                        </g>
+                      )}
+                    </g>
                   );
                 })}
               </svg>
