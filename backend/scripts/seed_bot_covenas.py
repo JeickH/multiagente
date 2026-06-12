@@ -64,7 +64,7 @@ STEPS = [
     # 5 — menú (pregunta abierta) — punto de retorno del bucle
     {"step_type": "wait_input", "label": "Menú (pregunta abierta)", "config": {
         "prompt": "¿Qué te gustaría saber? Pregúntame por los *tours incluidos*, "
-                  "las *condiciones*, el *itinerario* o los *métodos de pago*. "
+                  "*precios y condiciones*, el *itinerario* o los *métodos de pago*. "
                   "Y cuando estés listo para reservar, envíame tus datos 😉"}},
     # 6 — LLM: interpreta y enruta (cableado en _wire)
     {"step_type": "llm", "label": "LLM · interpreta y enruta", "config": {
@@ -75,11 +75,16 @@ STEPS = [
          "caption": "Estos son los tours incluidos en tu plan 🏝️"},
         {"media_type": "video", "url": f"{M}/tour.mp4",
          "caption": "Y mira un adelanto en video 🎥"}]}},
-    # 8 — condiciones (imagen + mensaje)
-    {"step_type": "send_media", "label": "Condiciones de reserva", "config": {
-        "media_type": "image", "url": f"{M}/tarifario1.jpeg",
-        "caption": "Se reserva con el *30% del valor total por persona* y debe "
-                   "estar cancelado de 10 a 8 días hábiles antes del viaje 🤗"}},
+    # 8 — precios + condiciones + hotel (tarifario1/2/3 + video, todo junto)
+    {"step_type": "send_media", "label": "Precios y condiciones", "config": {"items": [
+        {"media_type": "image", "url": f"{M}/tarifario1.jpeg",
+         "caption": "💰 *Precios y tarifas* del plan a Tolú & Coveñas:"},
+        {"media_type": "image", "url": f"{M}/tarifario2.jpeg"},
+        {"media_type": "image", "url": f"{M}/tarifario3.jpeg"},
+        {"media_type": "video", "url": f"{M}/hotel.mp4",
+         "caption": "🏨 Así es el hotel donde te hospedarás.\n\n"
+                    "Se reserva con el *30% del valor total por persona* y debe "
+                    "estar cancelado de 10 a 8 días hábiles antes del viaje 🤗"}]}},
     # 9 — itinerario (solo mensaje)
     {"step_type": "send_text", "label": "Itinerario", "config": {
         "text": "🌴✨ ITINERARIO TOLÚ & COVEÑAS ✨🌴\n\n"
@@ -140,17 +145,21 @@ def _wire(db, bot: models.Bot) -> None:
     P[6].config = _json_dumps({
         "mode": "route",
         "intents": [
-            {"keywords": ["tour", "incluye", "incluido", "hotel", "playa", "isla"],
+            {"keywords": ["tour", "tours", "incluye", "incluido", "playa", "isla",
+                          "islas", "ciénaga", "cienaga", "caimanera", "paseo"],
              "step_id": P[7].id},
-            {"keywords": ["condicion", "condiciones", "reembolso", "politica",
-                          "política", "cancela", "cancelacion", "cancelación", "abono"],
+            {"keywords": ["precio", "precios", "cuesta", "cuanto", "cuánto", "valor",
+                          "tarifa", "tarifas", "tarifario", "condicion", "condiciones",
+                          "reembolso", "politica", "política", "cancela", "cancelacion",
+                          "cancelación", "abono", "descuento", "hotel", "alojamiento",
+                          "hospeda", "habitacion", "habitación"],
              "step_id": P[8].id},
             {"keywords": ["itinerario", "dia a dia", "día a día", "agenda",
                           "cronograma", "actividad", "que hacemos", "qué hacemos"],
              "step_id": P[9].id},
             {"keywords": ["pago", "pagar", "metodo", "método", "metodos", "métodos",
-                          "transferencia", "pse", "tarjeta", "precio", "cuesta",
-                          "cuanto", "cuánto", "valor", "tarifa"],
+                          "transferencia", "pse", "tarjeta", "consignar", "nequi",
+                          "daviplata"],
              "step_id": P[10].id},
             {"keywords": ["quiero reservar", "reservar", "reserva", "apartar",
                           "separar", "quiero el plan", "lo quiero"],

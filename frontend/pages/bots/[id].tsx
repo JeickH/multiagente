@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useRouter } from 'next/router';
 import Head from 'next/head';
 
@@ -49,6 +49,28 @@ type ChatBubble =
 
 const nowHHMM = (): string =>
   new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+
+// Renderiza el markdown de WhatsApp: *negrita*, _cursiva_, ~tachado~.
+// Mantiene los saltos de línea (el contenedor usa whitespace-pre-wrap).
+function formatWa(text: string): ReactNode[] {
+  if (!text) return [text];
+  const parts: ReactNode[] = [];
+  const regex = /(\*[^*\n]+\*|_[^_\n]+_|~[^~\n]+~)/g;
+  let last = 0;
+  let m: RegExpExecArray | null;
+  let key = 0;
+  while ((m = regex.exec(text)) !== null) {
+    if (m.index > last) parts.push(text.slice(last, m.index));
+    const tok = m[0];
+    const inner = tok.slice(1, -1);
+    if (tok[0] === '*') parts.push(<strong key={key++}>{inner}</strong>);
+    else if (tok[0] === '_') parts.push(<em key={key++}>{inner}</em>);
+    else parts.push(<s key={key++}>{inner}</s>);
+    last = m.index + tok.length;
+  }
+  if (last < text.length) parts.push(text.slice(last));
+  return parts;
+}
 
 const NODE_W = 260;
 const NODE_H = 200;
@@ -483,7 +505,7 @@ function SimulatorModal({
                 return (
                   <div key={i} className="flex justify-start">
                     <div className="relative bg-white text-gray-800 rounded-lg rounded-tl-none px-2 py-1 max-w-[78%] text-sm shadow-sm">
-                      <div className="whitespace-pre-wrap break-words pr-10">{b.text}</div>
+                      <div className="whitespace-pre-wrap break-words pr-10">{formatWa(b.text)}</div>
                       <div className="absolute bottom-1 right-2 text-[10px] text-gray-400">
                         {b.time}
                       </div>
@@ -517,7 +539,7 @@ function SimulatorModal({
                       )}
                       {b.caption && (
                         <div className="text-xs text-gray-700 px-1 pt-1 pr-10 whitespace-pre-wrap break-words">
-                          {b.caption}
+                          {formatWa(b.caption)}
                         </div>
                       )}
                       <div className="absolute bottom-1 right-2 text-[10px] text-gray-400">
@@ -537,7 +559,7 @@ function SimulatorModal({
                   <div key={i} className="flex flex-col items-start gap-0.5">
                     <div className="flex justify-start w-full">
                       <div className="relative bg-white text-gray-800 rounded-lg rounded-tl-none px-2 py-1 max-w-[78%] text-sm shadow-sm">
-                        <div className="whitespace-pre-wrap break-words pr-10">{b.prompt}</div>
+                        <div className="whitespace-pre-wrap break-words pr-10">{formatWa(b.prompt)}</div>
                         <div className="absolute bottom-1 right-2 text-[10px] text-gray-400">
                           {b.time}
                         </div>
@@ -576,7 +598,7 @@ function SimulatorModal({
                     {b.text && (
                       <div className="flex justify-start w-full">
                         <div className="relative bg-white text-gray-800 rounded-lg rounded-tl-none px-2 py-1 max-w-[78%] text-sm shadow-sm">
-                          <div className="whitespace-pre-wrap break-words pr-10">{b.text}</div>
+                          <div className="whitespace-pre-wrap break-words pr-10">{formatWa(b.text)}</div>
                           <div className="absolute bottom-1 right-2 text-[10px] text-gray-400">
                             {b.time}
                           </div>
@@ -694,27 +716,30 @@ export default function BotDetailPage() {
     const outsOf = (
       s: BotStep,
     ): { target: number; label?: string }[] => {
-      const branches = (s.config as any)?.branches;
+      const cfg = (s.config as any) || {};
       const list: { target: number; label?: string }[] = [];
       const covered = new Set<number>();
+      const add = (tgt: unknown, label?: string) => {
+        if (typeof tgt === 'number' && stepsById.has(tgt) && !covered.has(tgt)) {
+          list.push({ target: tgt, label });
+          covered.add(tgt);
+        }
+      };
+      // wait_input/condition: branches por opción ({opcion: step_id})
+      const branches = cfg.branches;
       if (branches && typeof branches === 'object') {
-        for (const [key, tgt] of Object.entries(branches)) {
-          if (typeof tgt === 'number' && stepsById.has(tgt)) {
-            list.push({ target: tgt, label: key });
-            covered.add(tgt);
-          }
+        for (const [key, tgt] of Object.entries(branches)) add(tgt, key);
+      }
+      // llm en modo route: cada intent (keyword -> step_id) + default
+      if (Array.isArray(cfg.intents)) {
+        for (const intent of cfg.intents) {
+          const label = intent?.keywords?.[0];
+          add(intent?.step_id, label);
         }
       }
-      if (
-        s.next_step_id &&
-        stepsById.has(s.next_step_id) &&
-        !covered.has(s.next_step_id)
-      ) {
-        list.push({
-          target: s.next_step_id,
-          label: list.length > 0 ? 'otro' : undefined,
-        });
-      }
+      add(cfg.default_step_id, 'otro');
+      // salida por defecto (flujo lineal)
+      add(s.next_step_id, list.length > 0 ? 'otro' : undefined);
       return list;
     };
 
@@ -729,10 +754,12 @@ export default function BotDetailPage() {
       const lvl = levelOf.get(id)!;
       const s = stepsById.get(id)!;
       for (const { target } of outsOf(s)) {
-        const existing = levelOf.get(target);
-        const newLvl = lvl + 1;
-        if (existing === undefined || existing < newLvl) {
-          levelOf.set(target, newLvl);
+        // Primera visita gana (BFS shortest-path). Imprescindible para flujos
+        // con CICLOS (ej. bloques que vuelven al menú): si actualizáramos el
+        // nivel en cada back-edge, un ciclo provocaría un loop infinito que
+        // congela el editor.
+        if (!levelOf.has(target)) {
+          levelOf.set(target, lvl + 1);
           queue.push(target);
         }
       }
