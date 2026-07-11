@@ -106,11 +106,11 @@ def main() -> int:
             crud.add_member_to_team(db, team, asesora, role="agent")
         print(f"OK: asesora={asesora.correo} (handle={ASESORA_HANDLE})")
 
-        # Bot LLM: se re-crea en cada corrida para reflejar siempre la config
-        # más reciente (mismo patrón que seed_bot_covenas).
+        # Un único bot por cuenta (#254): se eliminan TODOS los bots previos
+        # del owner y se re-crea el LLM con la config más reciente.
         previos = (
             db.query(models.Bot)
-            .filter(models.Bot.user_id == owner.id, models.Bot.name == BOT_NAME)
+            .filter(models.Bot.user_id == owner.id)
             .all()
         )
         for b in previos:

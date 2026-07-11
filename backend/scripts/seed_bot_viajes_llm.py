@@ -4,9 +4,9 @@ Para la cuenta existente `agencia@demo.com` (creada por seed_bot_covenas.py):
   - Crea/re-crea el bot "Plan Tolú & Coveñas (IA)" con engine='llm', contexto
     a priori `demo_viajes` y el catálogo de medios ya publicado en
     frontend/public/demo_viajes/.
-  - El bot LLM queda como trigger DEFAULT de la cuenta; el bot de flujo legacy
-    ("Plan Tolú & Coveñas") queda PAUSADO en trigger manual (rollback fácil:
-    re-correr seed_bot_covenas.py y pausar este).
+  - Decisión CEO (Sprint 19 #254): esta cuenta tiene UN ÚNICO bot — el LLM.
+    Cualquier otro bot previo de la cuenta (p. ej. el de flujo legacy) se
+    ELIMINA. Rollback: re-correr seed_bot_covenas.py y borrar este.
 
 Requiere que seed_bot_covenas.py haya corrido antes (usa su cuenta y su asesor).
 
@@ -79,32 +79,19 @@ def main() -> int:
             print(f"ERROR: no existe {AGENCY_EMAIL}. Corre seed_bot_covenas.py primero.")
             return 1
 
-        # Re-crear el bot LLM (config siempre fresca).
+        # Un único bot por cuenta (#254): se eliminan TODOS los bots previos
+        # del owner (incluye el LLM anterior y el flujo legacy) y se crea el
+        # LLM fresco. Esto además libera el índice uq_one_default_bot_per_user.
         previos = (
             db.query(models.Bot)
-            .filter(models.Bot.user_id == owner.id, models.Bot.name == BOT_NAME)
+            .filter(models.Bot.user_id == owner.id)
             .all()
         )
         for b in previos:
             db.delete(b)
         if previos:
             db.commit()
-            print(f"OK: {len(previos)} bot(s) LLM previo(s) eliminado(s)")
-
-        # Pausar/degradar ANTES de crear: el índice parcial
-        # uq_one_default_bot_per_user solo admite un bot default por usuario.
-        legacy = (
-            db.query(models.Bot)
-            .filter(models.Bot.user_id == owner.id,
-                    models.Bot.trigger_type == models.BOT_TRIGGER_DEFAULT)
-            .all()
-        )
-        for b in legacy:
-            b.status = "paused"
-            b.trigger_type = models.BOT_TRIGGER_MANUAL
-        if legacy:
-            db.commit()
-            print(f"OK: {len(legacy)} bot(s) default previo(s) pausado(s)")
+            print(f"OK: {len(previos)} bot(s) previo(s) eliminado(s)")
 
         bot = crud.create_bot_with_steps(
             db, owner, name=BOT_NAME,

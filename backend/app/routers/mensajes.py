@@ -4,7 +4,7 @@ from typing import List
 
 from .. import models, schemas, crud
 from ..dependencies import get_db, get_current_membership, require_permission
-from ..services import meta_whatsapp
+from ..services import messaging
 
 router = APIRouter(prefix="/mensajes", tags=["mensajes"])
 
@@ -68,7 +68,9 @@ def send_message_in_conversation(
         )
 
     try:
-        meta_id, _ = meta_whatsapp.send_text_message(
+        # Sprint 19 (#254): envío por el puerto multi-proveedor (Meta o Twilio
+        # según account.provider) — mismo cambio que campañas/bots en Sprint 18.
+        meta_id, _ = messaging.send_text(
             account, conv.contact_wa_id, payload.content
         )
         msg = crud.add_message(
@@ -82,7 +84,7 @@ def send_message_in_conversation(
             status="sent",
         )
         return schemas.MessageOut.model_validate(msg)
-    except meta_whatsapp.MetaWhatsAppError as exc:
+    except messaging.MessagingError as exc:
         crud.add_message(
             db,
             conv,
@@ -93,7 +95,9 @@ def send_message_in_conversation(
             status="failed",
             error_detail=str(exc),
         )
-        raise HTTPException(status_code=502, detail=f"Error de Meta: {exc}")
+        raise HTTPException(
+            status_code=502, detail="Error del proveedor de WhatsApp al enviar el mensaje"
+        )
 
 
 @router.post("/conversaciones/nueva", response_model=schemas.MessageOut)
@@ -121,11 +125,12 @@ def start_new_conversation(
     )
 
     try:
-        meta_id, _ = meta_whatsapp.send_template_message(
+        # Sprint 19 (#254): plantilla por el puerto multi-proveedor.
+        meta_id, _ = messaging.send_template(
             account,
             payload.contact_wa_id,
             payload.template_name,
-            payload.language_code,
+            language_code=payload.language_code,
         )
         content_repr = f"[plantilla] {payload.template_name}"
         msg = crud.add_message(
@@ -139,7 +144,7 @@ def start_new_conversation(
             status="sent",
         )
         return schemas.MessageOut.model_validate(msg)
-    except meta_whatsapp.MetaWhatsAppError as exc:
+    except messaging.MessagingError as exc:
         crud.add_message(
             db,
             conv,
@@ -150,4 +155,6 @@ def start_new_conversation(
             status="failed",
             error_detail=str(exc),
         )
-        raise HTTPException(status_code=502, detail=f"Error de Meta: {exc}")
+        raise HTTPException(
+            status_code=502, detail="Error del proveedor de WhatsApp al enviar la plantilla"
+        )

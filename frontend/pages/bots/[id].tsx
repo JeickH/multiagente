@@ -35,7 +35,9 @@ type BotAction = {
 
 type SimulateResponse = {
   actions: BotAction[];
-  next_state: { current_step_id: number | null; variables: Record<string, any> } | null;
+  // Estado opaco del motor: bots de flujo guardan {current_step_id, variables};
+  // bots LLM (Sprint 19) guardan {history}. El cliente solo lo devuelve tal cual.
+  next_state: Record<string, any> | null;
   finished: boolean;
 };
 
