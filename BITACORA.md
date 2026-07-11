@@ -1,6 +1,6 @@
 # BITACORA - Multiagente (Plataforma WhatsApp Business)
 
-> Última actualización: 2026-04-27 (rebrand Gloma + screenshot real + seed demo)
+> Última actualización: 2026-07-11 (Sprint 19: motor de bots LLM Bedrock + Talulah + Demo Viajes)
 
 ## Índice
 
@@ -25,6 +25,8 @@
 | [Sprint 15](#sprint-15---tutoriales-interactivos-por-módulo) | Tutoriales interactivos por módulo (Mi Plan, Mensajes, Bots, Campañas) con spotlight + persistencia por usuario | DONE |
 | [Sprint 16](#sprint-16---landing-page-elecol-premium) | Landing premium `/elecol` (electrolineras solares LATAM, paleta Infinito Eléctrico, motion design, glassmorphism, counters animados) | DONE |
 | [Sprint 17](#sprint-17---migración-alb--api-gateway-http-api-ahorro-aws) | Migración ALB → API Gateway HTTP API (vía VPC Link + Cloud Map). Backend ahora en `https://api.glomabeauty.com`. Ahorro confirmado ~$26/mes | DONE |
+| [Sprint 18](#sprint-18---migración-motor-de-envío-meta--twilio-bsp-autorizado--llm-de-servicio-al-cliente) | Motor de mensajería multi-proveedor (puerto Meta/Twilio) + webhooks Twilio fail-closed. Cutover pendiente de claves Twilio. LLM diferido al Sprint 19 | DONE (cutover pendiente) |
+| [Sprint 19](#sprint-19---motor-de-bots-llm-aws-bedrock--talulah--demo-viajes) | **Motor de bots LLM en AWS (Bedrock Claude, sa-east-1)** con contexto a priori por cliente en el contenedor, tools (Shopify, media, handoff) y 2 bots: Talulah (`talulah@gloma.com`) y Demo Agencia de Viajes (`agencia@demo.com`) | DONE — ⚠️ 1 acción CEO: método de pago AWS Marketplace (#253) |
 | [Sprint Futuro](#sprint-futuro---validación-ceo--ajustes-post-sprint-13) | Validación CEO del módulo Campañas + ajustes post-Sprint 13 **+ implementación de mejoras Bots Sprint 14 + validación CEO Sprint 15 + revisión profunda landing ELECOL (#206) + auditoría 48h Sprint 17 + plan rollback a ALB (#219, #220)** | PRÓXIMO |
 
 ---
@@ -1365,3 +1367,365 @@ Documentados en `backend/docs/sprint13_security_post_audit.md` para atender en s
 | 2026-05-17 | PM | **Sprint 17 cerrado** ✅. Backend público en `https://api.glomabeauty.com`. Ahorro confirmado ~$26/mes (~$310/año) vs ALB anterior. Follow-ups movidos al Sprint Futuro: **#219** plan de rollback a ALB (cuando se necesite HA o tráfico crezca) y **#220** auditoría 48h formal (>=2026-05-19). Sprint Futuro acumula ahora seis paquetes: Campañas (#179-#181), Bots (#186-#189), tutoriales (#197), ELECOL (#206), rollback ALB (#219), auditoría 48h Sprint 17 (#220). Memoria persistente actualizada: ALB DNS eliminado, nueva arquitectura edge documentada. |
 | 2026-05-23 | UI/UX | **Iconos sidebar — kickoff.** El CEO solicita reemplazar los 5 emojis del menú lateral (`Mensajes` 💬, `Campañas` 📢, `Bots` 🤖, `Mi Plan` 👤, `Salir` 🚪) por iconos PNG generados con Canva AI. Restricciones: sin texto, sin fondo (transparente), estilo line-art outline blanco para que se vean sobre el sidebar `gloma-brown` (#5E503F). Creada carpeta `frontend/public/icons/sidebar/` con `README.md` que documenta style guide común (PNG 512×512, trazo blanco 7px, rounded caps/joins, padding 12%, estética Lucide/Phosphor) y los 5 prompts detallados por icono. Siguiente paso: invocar `canva-ai` para generar el primer batch y dejar los outputs en la misma carpeta para revisión del CEO. |
 | 2026-05-23 | Dev Plataforma / Deploy AWS | **Landing Gloma — reemplazo de imágenes preview2 y preview3 por assets reales.** El CEO entregó `referencia/landing_ft2.png` y `referencia/landing_ft4.png`. Mapeo: `landing_ft4.png` → `frontend/public/gloma/preview2.png` (sección "Aumenta ventas con campañas por WhatsApp"); `landing_ft2.png` → `frontend/public/gloma/preview3.png` (sección "Reduce 80% del tiempo en servicio al cliente"). No se modificó `pages/gloma.tsx` (los paths siguen siendo `/gloma/preview2.png` y `/gloma/preview3.png`). `tsc --noEmit` exit 0. Commit + push a `main` para disparar Amplify build (auto-deploy). |
+
+---
+
+## Sprint 18 - Migración motor de envío Meta → Twilio (BSP autorizado) + LLM de servicio al cliente
+
+> **Estado:** 🔧 EN EJECUCIÓN — motor de mensajería Meta→Twilio **implementado,
+> probado en local y desplegado a AWS** (2026-07-10). Se difieren por decisión
+> del CEO: el motor **LLM** (#231-#233) y la **provisión real de cuenta/UI**
+> (#230, #234). Todo queda listo para el cutover: basta pegar las claves Twilio.
+> **Fecha de propuesta:** 2026-07-10 · **Autor:** Project Manager
+> **Rango de tareas:** #221 – #238
+
+### 1. Contexto y objetivo
+
+Gloma **no es proveedor registrado (BSP) ante Meta**, por lo que no puede/ quiere
+seguir integrando la **WhatsApp Cloud API de Meta directo** (`graph.facebook.com`).
+La decisión del CEO es **cambiar el motor de envío para usar Twilio como proveedor
+autorizado (BSP) vía API**, conservando **el mismo frontend de Gloma** y toda la UX
+actual (Mensajes, Campañas, Bots, Mi Plan).
+
+Objetivo del Sprint 18:
+1. Introducir una **capa de abstracción de proveedor de mensajería** para que el
+   backend envíe/reciba WhatsApp indistintamente por Meta (legacy) o **Twilio (nuevo
+   default)** sin reescribir campañas ni bots.
+2. Implementar el **adaptador Twilio** (envío de plantillas vía Content API, texto
+   libre en ventana de 24h, webhooks de entrada y de estado con verificación HMAC
+   `X-Twilio-Signature` fail-closed).
+3. Habilitar el **modelo de agencia** (subcuentas Twilio por cliente) para que Gloma
+   administre varias marcas/tenants desde una cuenta matriz.
+4. Reemplazar el bloque `llm` **falso** del motor de bots por un **LLM real (Claude)**
+   como motor de respuestas de servicio al cliente, con guardarraíles y handoff a
+   asesor humano.
+
+### 2. Estado actual del motor (inventario técnico — base para la migración)
+
+Superficie exacta a migrar (auditada en este sprint de análisis):
+
+| Componente | Archivo | Rol hoy (Meta directo) | Acción Sprint 18 |
+|---|---|---|---|
+| Cliente HTTP Meta | `backend/app/services/meta_whatsapp.py` | `send_text_message`, `send_template_message`, `get_phone_number_info` contra `graph.facebook.com/{ver}/{phone_number_id}/messages` | Se conserva como **adaptador `meta`**; se envuelve tras un puerto común |
+| Envío masivo | `backend/app/services/campaign_sender.py` | Token-bucket por `meta_account_id`, retry `tenacity`, sandbox, llama `meta_whatsapp.send_template_message` | Reapunta a `messaging.get_provider(account).send_template(...)` |
+| Respuestas de bot | `backend/app/services/bot_runner.py::_send_text` | Llama `meta_whatsapp.send_text_message` | Reapunta al puerto común |
+| Webhook entrada/estado | `backend/app/routers/meta_webhook.py` | HMAC `X-Hub-Signature-256` con `META_APP_SECRET`, correlación por `meta_message_id`, dispara `bot_router`→`bot_runner` | Se agrega router hermano `twilio_webhook.py` que normaliza al mismo pipeline |
+| Cuenta/credencial | `models.MetaAccount` (1-a-1 con `team`) | `phone_number_id`, `waba_id`, `encrypted_access_token` (Fernet), `api_version` | Se **generaliza** con `provider` + columnas Twilio (ver §6) |
+| Bloque LLM | `bot_engine.py` (`step_type == "llm"`) | **FALSO**: ruteo por keywords, sin LLM real | Se conecta a `services/llm/` (Claude real) |
+| Correlación de eventos | `CampaignRecipient.meta_message_id` UNIQUE, `CampaignEvent` dedupe `(meta_message_id, event_type)` | ID de Meta (`wamid...`) | Se generaliza a `provider_message_id` (Twilio `SM/MM/WA...`) |
+
+**Hallazgo clave:** hoy prod corre en `META_SANDBOX=1` sin credenciales Meta reales
+(no hay integración productiva que romper). Esto **reduce el riesgo** de la migración:
+podemos construir el adaptador Twilio en paralelo y hacer *cutover* por configuración.
+
+### 3. Arquitectura objetivo — puerto de mensajería agnóstico de proveedor
+
+```
+                 ┌─────────────────────────────────────────────┐
+  Campañas ───►  │  services/messaging/port.py                 │
+  Bots     ───►  │  MessagingProvider (interface):             │
+                 │   - send_text(account, to, body)            │
+                 │   - send_template(account, to, tmpl, vars)  │
+                 │   - validate_credentials(account)           │
+                 │   - parse_inbound(payload) → NormalizedMsg  │
+                 │   - parse_status(payload)  → NormalizedStat │
+                 └───────────────┬───────────────┬─────────────┘
+                                 │               │
+                 ┌───────────────▼──┐   ┌────────▼─────────────┐
+                 │ MetaAdapter      │   │ TwilioAdapter (NUEVO)│
+                 │ (wrap actual)    │   │ Content API + Msg API│
+                 └──────────────────┘   └──────────────────────┘
+
+  Meta webhook  ─┐                     ┌─ Twilio webhook (/twilio/webhook, /twilio/status)
+                 └──►  bot_router → bot_runner → CampaignEvent (pipeline único)  ◄─┘
+```
+
+`messaging.get_provider(account)` elige el adaptador según `account.provider`
+(`'meta'` | `'twilio'`). Campañas, bots y webhooks trabajan contra el **puerto**, no
+contra Meta ni Twilio directamente. Cutover = cambiar `provider` de la cuenta.
+
+### 4. Adaptador Twilio — detalle de implementación
+
+- **Plantillas (fuera de ventana 24h / marketing / utility):** Twilio **Content API**.
+  Cada plantilla WhatsApp se registra como *Content Template* y se envía con
+  `POST /2010-04-01/Accounts/{Sid}/Messages.json` usando `ContentSid` +
+  `ContentVariables` (JSON) + `MessagingServiceSid` o `From=whatsapp:+57...`.
+- **Texto libre (ventana de servicio 24h):** misma Messages API con `Body`.
+- **Webhook de entrada:** Twilio hace `POST` form-encoded (`From`, `Body`, `MessageSid`,
+  media `NumMedia`/`MediaUrlN`). Verificación **`X-Twilio-Signature`** (HMAC-SHA1 con el
+  auth token de la subcuenta) — **fail-closed en producción** (regla de seguridad #5).
+- **Webhook de estado:** `MessageStatus` (`queued|sent|delivered|read|failed|undelivered`)
+  + `MessageSid` → se mapea al mismo `_STATUS_RANK` que ya existe para Meta y se
+  correlaciona con `CampaignRecipient` por `provider_message_id`.
+- **Validación de credenciales:** `GET /2010-04-01/Accounts/{Sid}.json` (equivalente al
+  `get_phone_number_info` de Meta) antes de persistir la cuenta.
+- **Rate-limit y retry:** se reutiliza el token-bucket y `tenacity`; el bucket pasa a
+  indexarse por `channel_account_id` (no por `meta_account_id`). Códigos Twilio
+  retryables (p. ej. 20429 too many requests, 63018 rate limit) se mapean al set
+  retryable.
+
+### 5. Modelo de agencia en Twilio — respuesta a la pregunta del CEO
+
+**Sí, ambos escenarios que planteaste son posibles; Twilio recomienda una combinación:**
+
+1. **Cuenta matriz + Subcuentas (Subaccounts) — RECOMENDADO para agencia.**
+   - Gloma abre **una cuenta Twilio matriz** (administración, facturación y
+     credenciales globales) y crea **una subcuenta por cliente/marca** (Gloma, ELECOL,
+     Talulah, etc.). Cada subcuenta tiene su **propio `Account SID` + `Auth Token`**,
+     su(s) número(s) WhatsApp y su facturación aislada.
+   - Ventaja: aislamiento de datos, límites y costos por cliente; puedes reportar y
+     tarifar a cada cliente por separado; si un cliente se va, suspendes su subcuenta
+     sin tocar a los demás. **Cada WABA de cliente se conecta a su subcuenta.**
+2. **Programa Tech Provider / ISV + Embedded Signup — para escalar el alta.**
+   - Si vas a onboardear muchos clientes, Twilio + Meta ofrecen el **ISV Tech Provider
+     Program**: el cliente hace **Embedded Signup** (conecta su propio WABA con unos
+     clicks dentro de la app de Gloma) y tú registras sus *senders* por API
+     (`Senders API`) a través de su subcuenta. Ideal para alta self-service y registro
+     masivo. No es obligatorio al inicio; se puede adoptar después.
+
+**Recomendación de arranque:** empezar con **cuenta matriz + subcuentas manuales**
+(rápido, suficiente para el portafolio actual) y dejar el **ISV/Embedded Signup como
+follow-up** cuando el número de clientes lo justifique. En el modelo de datos, la
+subcuenta (`twilio_account_sid`) y su auth token cifrado viven **por tenant en la BD**
+(regla de seguridad #3: secreto de tenant nunca en `.env`).
+
+### 6. Cambios de BD (regla de paridad local ↔ RDS — migración idempotente obligatoria)
+
+Se **generaliza `meta_accounts`** (no se crea tabla nueva para preservar las filas y FKs
+existentes). Migración `backend/scripts/migrate_sprint18_twilio.py` idempotente:
+
+```sql
+ALTER TABLE meta_accounts ADD COLUMN IF NOT EXISTS provider VARCHAR(16) NOT NULL DEFAULT 'meta';
+ALTER TABLE meta_accounts ADD COLUMN IF NOT EXISTS twilio_account_sid VARCHAR(64);
+ALTER TABLE meta_accounts ADD COLUMN IF NOT EXISTS encrypted_twilio_auth_token TEXT;   -- Fernet
+ALTER TABLE meta_accounts ADD COLUMN IF NOT EXISTS twilio_messaging_service_sid VARCHAR(64);
+ALTER TABLE meta_accounts ADD COLUMN IF NOT EXISTS twilio_from VARCHAR(32);            -- whatsapp:+57...
+-- columnas Meta (phone_number_id, waba_id, encrypted_access_token) pasan a nullable
+--   porque una fila 'twilio' no las usa:
+ALTER TABLE meta_accounts ALTER COLUMN phone_number_id DROP NOT NULL;
+ALTER TABLE meta_accounts ALTER COLUMN waba_id DROP NOT NULL;
+ALTER TABLE meta_accounts ALTER COLUMN encrypted_access_token DROP NOT NULL;
+-- correlación de eventos genérica (backfill desde meta_message_id):
+ALTER TABLE campaign_recipients ADD COLUMN IF NOT EXISTS provider_message_id VARCHAR(128);
+UPDATE campaign_recipients SET provider_message_id = meta_message_id WHERE provider_message_id IS NULL;
+```
+Se aplica **en local (docker-compose) y en RDS `multiagente-db` en el mismo PR**, con
+evidencia de ambas ejecuciones (convención de operación #1). Follow-up permanente:
+adoptar Alembic (deuda ya registrada en memoria persistente).
+
+### 7. LLM como motor de servicio al cliente
+
+- Reemplazar el `step_type == "llm"` falso por un servicio real `services/llm/` que
+  llame a **Claude** (API de Anthropic). Modelos objetivo (default a lo más reciente):
+  - **Clasificación/routing de intención + detección de handoff:** `claude-haiku-4-5`
+    (barato, baja latencia, alto volumen).
+  - **Respuesta redactada de servicio al cliente (RAG sobre FAQ/catálogo de la marca):**
+    `claude-sonnet-4-6`; escalar a `claude-opus-4-8` solo en casos difíciles.
+- **Guardarraíles:** system prompt con identidad de marca, `max_tokens` acotado,
+  prohibido prometer precios/plazos no verificados, **escalar a asesor humano (handoff)**
+  ante baja confianza o intenciones sensibles (reclamos, devoluciones, datos personales).
+- **Seguridad/privacidad:** nunca loggear el mensaje crudo ni el `ANTHROPIC_API_KEY`
+  (reglas #1 y #6). PII enmascarada como ya hace `meta_webhook`. La API key es un secreto
+  global de la plataforma → `.env`/SSM, no por tenant.
+- **RAG:** base de conocimiento por marca (FAQ + catálogo). MVP: contexto en el system
+  prompt + few-shot; follow-up: embeddings/pgvector si crece el corpus.
+
+### 8. Costos Colombia (estimación 2026 — validar en el cierre con la calculadora Twilio)
+
+Meta factura **por mensaje** (desde 1-jul-2025, ya no por conversación de 24h). Twilio
+**agrega su fee de plataforma de US$0.005 por mensaje** (entrante o saliente) sobre la
+tarifa de Meta. Recipiente = Colombia:
+
+| Categoría | Tarifa Meta (aprox. CO) | + Fee Twilio | **Costo total / mensaje** |
+|---|---|---|---|
+| **Marketing** | ~US$0.0125 – 0.020 | US$0.005 | **~US$0.017 – 0.025** |
+| **Utility** (utilitario) | ~US$0.001 | US$0.005 | **~US$0.006** |
+| **Authentication** (OTP) | ~US$0.0008 | US$0.005 | **~US$0.0058** |
+| **Service / atención al cliente** (iniciado por el usuario, respuestas libres en ventana 24h) | **US$0.00 (gratis Meta)** | US$0.005 | **~US$0.005 por mensaje** |
+
+Notas: (a) las plantillas de **servicio al cliente entrantes son gratis en Meta**; solo
+pagas el fee de Twilio por mensaje. (b) **Marketing no tiene descuentos por volumen**
+en 2026 (Meta excluye marketing de los *volume tiers*; utility/auth sí escalan). (c) el
+**LLM** es costo aparte por tokens de Anthropic (Haiku para routing es marginal; Sonnet
+por respuesta redactada, unos pocos centavos de USD por conversación según longitud).
+**Ejemplo:** campaña de 5.000 mensajes de marketing ≈ 5.000 × ~US$0.021 ≈ **~US$105**;
+1.000 conversaciones de servicio al cliente (≈4 msg c/u) ≈ 4.000 × US$0.005 ≈ **~US$20**
+de Twilio + costo LLM.
+
+### 9. Tareas del Sprint 18 y responsables (agentes)
+
+| # | Tarea | Agente responsable | Descripción detallada |
+|---|---|---|---|
+| #221 | **Revisión de diseño de seguridad (PRE-implementación)** | `seguridad` | Bloqueante (regla #4). Revisa este plan antes de codear: manejo del `Auth Token` de subcuenta (Fernet en BD, nunca `.env` ni logs), verificación `X-Twilio-Signature` fail-closed, sanitización de errores Twilio al cliente, no filtrar `ANTHROPIC_API_KEY`. Emite hallazgos Críticos/Altos bloqueantes. |
+| #222 | **Diseño de datos: generalizar `meta_accounts` → multi-proveedor** | `experto-bd` | Define columnas `provider` + Twilio (§6), qué pasa a nullable, y `provider_message_id`. Entrega el DDL idempotente y el plan de backfill. |
+| #223 | **Migración BD local + RDS (paridad)** | `experto-bd` + `deploy-aws` | Ejecuta `migrate_sprint18_twilio.py` en docker-compose y en RDS vía `ecs run-task` (sa-east-1). Evidencia de ambas corridas + segunda corrida idempotente sin cambios (convención #1). |
+| #224 | **Puerto de mensajería `services/messaging/port.py`** | `dev-plataforma` | Define la interfaz `MessagingProvider` y `get_provider(account)`. Mueve las firmas comunes (`send_text`, `send_template`, `validate_credentials`, `parse_inbound`, `parse_status`). |
+| #225 | **`MetaAdapter`: envolver `meta_whatsapp` en el puerto** | `dev-plataforma` | Refactor sin cambio de comportamiento: el adaptador Meta implementa el puerto reutilizando el cliente actual. Todos los tests Meta siguen verdes. |
+| #226 | **`TwilioAdapter`: envío (Content API + texto libre)** | `dev-plataforma` | Implementa `send_template` (ContentSid + ContentVariables + MessagingServiceSid/From) y `send_text` (Body) contra la Messages API de Twilio, con retry/rate-limit reusados y sandbox (`TWILIO_SANDBOX=1`). |
+| #227 | **Router `twilio_webhook.py` (entrada + estado)** | `dev-plataforma` | `/twilio/webhook` y `/twilio/status`: verificación `X-Twilio-Signature` (HMAC-SHA1, fail-closed en prod), normaliza a `NormalizedMsg`/`NormalizedStatus`, dispara `bot_router`→`bot_runner` y correlaciona `CampaignEvent` por `provider_message_id`. |
+| #228 | **Reapuntar Campañas y Bots al puerto** | `dev-plataforma` | `campaign_sender.py` y `bot_runner._send_text` usan `messaging.get_provider(account)`; token-bucket reindexado a `channel_account_id`. Sin tocar la UI. |
+| #229 | **Registro de plantillas como Content Templates de Twilio** | `dev-plataforma` | Mapea el módulo de Plantillas actual a la creación/sincronización de Content Templates en Twilio (equivalente a `meta_templates.py`). Modo sandbox mockeado. |
+| #230 | **Alta de subcuentas Twilio (modelo agencia)** | `deploy-aws` + `dev-plataforma` | Provisiona la cuenta matriz + una subcuenta por marca; documenta `Account SID`, número WhatsApp y `MessagingServiceSid`. Endpoint `POST /usuario/me/channel-account` para guardar credenciales Twilio cifradas por tenant. |
+| #231 | **Servicio LLM real `services/llm/` (Claude)** | `dev-plataforma` | Cliente Anthropic con routing en `claude-haiku-4-5` y respuesta en `claude-sonnet-4-6`; guardarraíles, `max_tokens`, detección de handoff, PII enmascarada, key en env/SSM. |
+| #232 | **Conectar bloque `llm` del bot al servicio real** | `dev-plataforma` | Sustituye el ruteo por keywords: el `step_type=='llm'` invoca `services/llm/`, decide `route`/`extract` con el modelo y cae a handoff ante baja confianza. |
+| #233 | **RAG de servicio al cliente (MVP por marca)** | `dev-plataforma` + `ui-ux` | Base de conocimiento (FAQ + catálogo) por marca inyectada como contexto; UI mínima para que el cliente cargue/edite su FAQ. |
+| #234 | **Wireframe de configuración de canal (Meta/Twilio) en Mi Plan** | `ui-ux` | Pantalla para elegir proveedor, pegar credenciales Twilio y ver estado de la subcuenta, coherente con la identidad Gloma. HTML/Tailwind antes de codear. |
+| #235 | **Auditoría de seguridad (POST-commit)** | `seguridad` | Bloqueante antes del merge (regla #4): verifica que ningún `...Out` exponga tokens, que los webhooks sean fail-closed, errores sanitizados y no haya secretos en logs. |
+| #236 | **QA end-to-end (Meta legacy + Twilio + LLM)** | `qa` | Prueba envío de plantilla y texto por Twilio (sandbox), inbound→bot→LLM→handoff, callbacks de estado correlacionados, y que Meta legacy siga funcionando. Smoke local + online. |
+| #237 | **Deploy AWS (backend + migración) y cutover por config** | `deploy-aws` | Build/push imagen, task-def nueva, migración en RDS, `TWILIO_*` en SSM, `update-service`. Cutover cambiando `provider='twilio'` de la(s) cuenta(s). Región sa-east-1. |
+| #238 | **Cierre, validación CEO y documentación de costos** | `project-manager` | Consolida evidencias, valida con el CEO, actualiza memoria persistente y confirma tabla de costos con la calculadora Twilio real. |
+
+### 10. Riesgos y mitigaciones
+
+- **Cutover:** al correr hoy en sandbox sin Meta real, el cambio es de bajo riesgo; se
+  hace por `provider` de cuenta y se puede revertir por config.
+- **Secretos de tenant (Auth Token de subcuenta):** Fernet en BD, nunca en `.env` ni
+  logs (reglas #1/#3). Revisión `seguridad` obligatoria (#221/#235).
+- **Webhooks:** `X-Twilio-Signature` fail-closed en prod (regla #5).
+- **Costos LLM:** Haiku para el 80% (routing/clasificación), Sonnet solo para redacción;
+  presupuesto y límite de tokens por conversación.
+
+### 11. Definición de terminado (DoD)
+
+Migración lista cuando: (a) Campañas y Bots envían por Twilio en sandbox y en una
+subcuenta real; (b) webhooks de entrada y estado de Twilio verificados y correlacionados;
+(c) el bloque LLM responde con Claude real y escala a humano; (d) Meta legacy sigue
+operativo por el puerto; (e) migración aplicada en local y RDS con paridad; (f) auditoría
+`seguridad` sin hallazgos Críticos/Altos abiertos; (g) CEO valida.
+
+### Log de ejecución del Sprint 18
+
+| Fecha | Agente | Nota |
+|---|---|---|
+| 2026-07-10 | PM | **Sprint 18 propuesto** a pedido del CEO: migrar el motor de envío de Meta directo → **Twilio (BSP autorizado)** conservando el frontend de Gloma, habilitar modelo de **agencia (subcuentas Twilio)**, documentar **costos Colombia** y sumar un **LLM (Claude) como motor de servicio al cliente**. Inventario técnico del motor actual completado (meta_whatsapp / campaign_sender / bot_runner / meta_webhook / MetaAccount / bloque llm falso). Plan #221–#238 con responsables por agente. **Pendiente de aprobación del CEO antes de ejecutar.** |
+| 2026-07-10 | Dev Plataforma | **#224-#228 código del motor Twilio implementado.** Nuevo paquete `backend/app/services/messaging/`: `base.py` (`MessagingError` común — `MetaWhatsAppError` ahora hereda de él; dataclasses `NormalizedInbound`/`NormalizedStatus`), `meta_adapter.py` (envuelve `meta_whatsapp` sin cambio de comportamiento), `twilio_adapter.py` (Content API + Messages API, sandbox, verificación de credenciales, normalización de webhooks; credenciales por-tenant en BD cifradas Fernet o env globales; **nunca loggea el Auth Token**), y `__init__.py` (puerto `get_provider`/`send_text`/`send_template`/`is_sandbox`, dispatch por `account.provider`, imports perezosos anti-ciclo). `campaign_sender.py` y `bot_runner._send_text` reapuntados al puerto (sandbox provider-aware; `_mark_sent` puebla `meta_message_id` **y** `provider_message_id`). `models.py`: `MetaAccount` gana `provider` + 4 columnas Twilio y hace nullable las Meta; `__repr__` redacta ambos tokens; `CampaignRecipient.provider_message_id`. `config.py` + `.env.example`: settings `TWILIO_*` (sandbox on por default). |
+| 2026-07-10 | Dev Plataforma / Seguridad | **#227 router `twilio_webhook.py`** (`/twilio/webhook` entrada + `/twilio/status` estado). Verificación **`X-Twilio-Signature`** (HMAC-SHA1 base64 sobre `url+params`) **fail-closed en producción** vía `os.getenv` (patrón `meta_webhook`, evita el hard-require de `DATABASE_URL` de `config.settings`); soporta `TWILIO_WEBHOOK_BASE_URL` para reconstruir la URL detrás de API Gateway. Correlación de estados por `provider_message_id` con avance por rank + `CampaignEvent` idempotente (`ON CONFLICT DO NOTHING`). Registrado en `main.py`. |
+| 2026-07-10 | Experto BD / QA | **#222-#223 migración BD `migrate_sprint18_twilio.py`** (idempotente: `ADD COLUMN IF NOT EXISTS`, `DROP NOT NULL`, backfill `provider_message_id`←`meta_message_id`, índice). **Local (docker-compose):** 1ª corrida aplica todo + backfill 31 filas; 2ª corrida 0 filas (idempotente). **RDS (`ecs run-task` rev 11):** exit 0, backfill 19 filas, todas las columnas presentes → **paridad local↔RDS cumplida** (convención #1). |
+| 2026-07-10 | QA | **#236 pruebas locales (todas ✅):** arranque limpio; `/twilio/status` y `/twilio/webhook` registradas; envío sandbox texto+plantilla para Meta y Twilio; `repr` de `MetaAccount` redacta ambos tokens + round-trip Fernet del Auth Token; webhook de estado avanza recipient `sent→delivered` (`delivered_at` seteado) con evento idempotente; SID inexistente e inbound sin cuenta → 200 no-op; tick de campaña real envía 8/8 en sandbox poblando `meta_message_id` **y** `provider_message_id`. Nota: la suite `unittest` completa falla por un bug **pre-existente** (Sprint 15: `users.tutorials_completed` JSONB no compila en SQLite), ajeno a este cambio. |
+| 2026-07-10 | Deploy AWS | **#237 despliegue a AWS sa-east-1.** Build `linux/amd64` + push `multiagente-backend:sprint18` a ECR. Task-def **rev 11** (clon de rev 10, sólo cambia image). Migración RDS vía `ecs run-task` rev 11 → exit 0. `update-service --task-definition :11 --force-new-deployment` → `services-stable` (rolling, zero-downtime, 1/1). **Smoke online `https://api.glomabeauty.com`:** `/openapi.json` 200; `/twilio/status` y `/twilio/webhook` presentes; `/meta/webhook` sin firma → 403 (fail-closed); `/twilio/status` sin firma → **403 (fail-closed correcto: aún sin `TWILIO_AUTH_TOKEN`)**; `/login` 422 (app sana); frontend `https://app.glomabeauty.com/login` 200. **Prod sigue en `TWILIO_SANDBOX=1`** (env default) — no se envía nada por Twilio hasta el cutover. |
+| 2026-07-10 | PM | **Cutover pendiente (cuando la cuenta Twilio esté lista):** (1) setear en la task-def/SSM `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_WHATSAPP_FROM` (o `TWILIO_MESSAGING_SERVICE_SID`), `TWILIO_WEBHOOK_BASE_URL=https://api.glomabeauty.com` y `TWILIO_SANDBOX=0`; (2) apuntar el webhook de Twilio a `https://api.glomabeauty.com/twilio/webhook` (inbound) y `/twilio/status` (estado); (3) poner `provider='twilio'` en la(s) `meta_accounts` (o cargar credenciales por-tenant cifradas). **Diferido explícito:** LLM (#231-#233) y provisión de cuenta/UI (#230, #234). **Follow-up de seguridad:** auditoría formal del agente `seguridad` (#221/#235) antes de operar Twilio en real. |
+
+---
+
+## Sprint 19 - Motor de bots LLM (AWS Bedrock) — Talulah + Demo Viajes
+
+> **Estado:** ✅ EJECUTADO Y DESPLEGADO (2026-07-10/11). Código en `main`, migración
+> y seeds aplicados en local **y** RDS, servicio ECS rev 12 estable, bots LLM
+> verificados conversando en local con Claude real (media + contexto + tools).
+> ⚠️ **Única acción pendiente y es del CEO (#253):** AWS Marketplace rechaza el
+> método de pago de la cuenta (`INVALID_PAYMENT_INSTRUMENT`), lo que bloquea la
+> suscripción a los modelos Anthropic en Bedrock. Mientras tanto los bots en prod
+> responden con el fail-safe (disculpa + handoff a asesor). Al corregir el pago,
+> los bots quedan operativos SIN redeploy.
+> **Autor:** Project Manager · **Rango de tareas:** #239 – #253
+> **Pedido del CEO:** implementar en AWS los motores de bots con LLM para 2 clientes:
+> (1) **Talulah** — cuenta nueva `talulah@gloma.com`, mismos flujos de los bots WATI
+> (`talulah bots/descargados/*.json`) pero **simplificados**: todo requerimiento lo
+> recibe un LLM que decide la respuesta y puede tomar acciones (API Shopify, delegar
+> a asesor humano en la app). (2) **Demo Agencia de Viajes** — cuenta existente
+> `agencia@demo.com`, mismo contexto que ya tiene el demo (seed Coveñas) pero ahora
+> con LLM real usando la misma estrategia. Contextos guardados **a priori en el
+> contenedor** (decisión CEO: solo 2 clientes; se organiza escalable cuando crezca).
+
+### 1. Decisiones de arquitectura
+
+| Decisión | Elección | Por qué |
+|---|---|---|
+| Proveedor LLM | **AWS Bedrock** (`bedrock-runtime`, región `sa-east-1`) | El CEO pidió "motores en AWS". Sin API keys que gestionar: la task ECS usa su **IAM task role** (`multiagente-ecs-task-role`) con permiso `bedrock:InvokeModel`. Verificado: el perfil `global.anthropic.claude-haiku-4-5-20251001-v1:0` responde desde sa-east-1. |
+| Modelo default | `claude-haiku-4-5` (perfil global) | Bajo costo/latencia para SAC. Configurable por bot (`llm_config.model_id`) y por env (`LLM_MODEL_ID`). |
+| Contexto por cliente | Archivos Markdown **empaquetados en la imagen Docker** (`backend/app/bot_contexts/*.md`) | "Información a priori en el contenedor" (decisión CEO). Versionado en git, cero infra extra. Follow-up al crecer: mover a S3/BD por tenant con editor en la UI (#233 del Sprint 18). |
+| Motor | Nuevo `services/llm_engine.py` con **mismo contrato** que `bot_engine.advance()` (`actions` / `next_state` / `finished`) | Se enchufa sin fricción a `bot_runner.run_turn` (webhooks Meta/Twilio) y a `POST /bots/{id}/simulate` (ventana Probar del frontend). Un bot elige motor con la columna nueva `bots.engine` (`'flow'` legacy \| `'llm'`). |
+| Memoria conversacional | `state = {"history": [...]}` persistido en `bot_sessions.state` (webhook) o en el cliente (simulador), cap 30 turnos | Mismo mecanismo de sesión existente; no se toca el schema de sesiones. |
+| Acciones del LLM (tool use) | `escalar_a_asesor` (handoff en la app), `enviar_media` (catálogo de medios permitidos por bot), `consultar_pedido_shopify` (solo Talulah), `finalizar_conversacion` | El LLM decide; el motor traduce a las acciones ya soportadas (`say`, `say_media`, `handoff`, `end`). Fail-safe: cualquier error del motor → mensaje de disculpa + handoff a asesor. |
+| Credenciales Shopify (tenant Talulah) | **Fernet en BD** dentro de `bots.llm_config` (`encrypted_client_secret`), inyectadas por env SOLO al correr el seed | Regla de seguridad #3: secreto de tenant nunca en `.env` ni en el repo. Shop `grupogyc.myshopify.com`, grant `client_credentials` (probado OK: scopes `read_all_orders,read_fulfillments,read_orders`). Las carpetas crudas `talulah bots/` y `tallas talulah/` se agregan a `.gitignore` (contienen el secret). |
+
+### 2. Contexto Talulah — qué se extrajo de los JSON y qué falta (respuesta al CEO)
+
+De `talulah bots/descargados/` se extrajo TODO el contenido operativo: tono de marca
+(🤍🌿🤎, trato cercano femenino), menú minorista (estado de pedido → Shopify; cambios
+y garantías + links de políticas; tiempos de envío; guía de tallas; sedes físicas con
+direcciones/teléfonos/horarios; pagos y promos; fallas web) y menú mayorista B2B
+(despachos, faltantes/defectos, cartera, ventas/repedidos), reglas de escalamiento a
+asesor y la integración Shopify (token client-credentials + `GET orders.json`).
+
+**Información faltante / a confirmar por el CEO con Talulah:**
+1. **URLs de catálogo por categoría** del bot "Asistente 24/7" (Pantalón, Short, Capri,
+   Batola, Satin, Plus Size, Niña, Ropa de Mujer, SALE, Hombre, Ropa Interior, Vestidos
+   de Baño, Lo más nuevo): el JSON exportado no trae los links. Mientras tanto el bot
+   dirige al sitio `https://www.talulah.com.co`.
+2. **Guía de tallas:** hay 7 imágenes en `tallas talulah/` sin etiqueta de categoría.
+   Se publican como `frontend/public/talulah/guia_tallas_{1..7}.jpeg` — falta confirmar
+   qué imagen corresponde a qué tipo de prenda para nombrarlas mejor.
+3. **Link de política de privacidad** del saludo (el JSON dice "LINK"): se usó
+   `https://www.talulah.com.co/policies/privacy-policy` (el mismo del orquestador).
+4. **Teléfono del Outlet Envigado** (las otras 3 sedes sí lo tienen).
+5. Confirmar si el **horario de festivos** es "11:00 a.m. – 7:00 p.m." (el export lo trae).
+
+### 3. Demo Viajes — dónde estaba guardado el contexto (respuesta al CEO)
+
+El bot actual de `agencia@demo.com` vive en la **BD** (tablas `bots`/`bot_steps`),
+creado por `backend/scripts/seed_bot_covenas.py` (copys, itinerario, precios, política
+de reserva 30%, bucles del menú). Los medios (tarifarios, tours, hotel.mp4, medios de
+pago, formulario) están en `frontend/public/demo_viajes/` (fuente cruda en
+`demo_viajes/` en la raíz del repo). Ese contenido se consolidó en el contexto a priori
+`backend/app/bot_contexts/demo_viajes.md`; el bot de flujo legacy queda **pausado**
+(rollback fácil) y el bot LLM pasa a ser el default de la cuenta.
+
+### 4. Tareas del Sprint 19 y responsables (agentes)
+
+| # | Tarea | Agente | Descripción |
+|---|---|---|---|
+| #239 | Apertura del sprint, análisis de los JSON WATI y decisiones de arquitectura | `project-manager` | Inventario de los 7 JSON descargados, ubicación del contexto demo, elección Bedrock vs API key, plan de contexto a priori en contenedor. |
+| #240 | Revisión de diseño de seguridad (PRE-implementación, regla #4) | `seguridad` | Secret Shopify por tenant → Fernet en BD (nunca repo/.env); IAM Bedrock de mínimo privilegio (solo `bedrock:InvokeModel` a modelos `anthropic.*`); no loggear prompts con PII ni secretos; errores sanitizados al cliente; fail-safe → handoff; `.gitignore` para carpetas crudas de Talulah. |
+| #241 | DDL: `bots.engine` + `bots.llm_config` | `experto-bd` | `ALTER TABLE bots ADD COLUMN IF NOT EXISTS engine VARCHAR(16) NOT NULL DEFAULT 'flow'` + `ADD COLUMN IF NOT EXISTS llm_config TEXT`. Script idempotente `backend/scripts/migrate_sprint19_llm_bots.py`. |
+| #242 | Migración en local (docker-compose) y RDS (paridad, convención #1) | `experto-bd` + `deploy-aws` | Evidencia de ambas corridas + segunda corrida idempotente. |
+| #243 | Motor `services/llm_engine.py` (Bedrock, tool-use loop) | `dev-plataforma` | Contrato `advance(bot, state, user_input)` idéntico a `bot_engine`; historia cap 30; máx 5 iteraciones de tools; timeouts; fail-safe handoff. |
+| #244 | Tools del motor + cliente Shopify | `dev-plataforma` | `escalar_a_asesor`, `enviar_media` (catálogo permitido en `llm_config.media`), `consultar_pedido_shopify` (token client-credentials + orders.json, httpx timeout 10s), `finalizar_conversacion`. |
+| #245 | Contextos a priori | `dev-plataforma` | `backend/app/bot_contexts/talulah.md` (flujos minorista+mayorista de los JSON) y `demo_viajes.md` (contenido del seed Coveñas). Loader con cache. |
+| #246 | Integración: `bot_runner`, `/bots/{id}/simulate`, schemas y frontend | `dev-plataforma` | Branch por `bot.engine`; `waiting = not finished` para LLM; `engine` expuesto en `BotListItem`/`BotDetail`; página de detalle muestra tarjeta "Bot IA" en vez del diagrama vacío. |
+| #247 | Cuenta `talulah@gloma.com` + seeds de los 2 bots | `experto-bd` | `seed_bot_talulah.py` (owner + team + asesora + bot LLM default, Shopify cifrado) y `seed_bot_viajes_llm.py` (bot LLM default para agencia@demo.com, flujo legacy pausado). Idempotentes, correr local + RDS. |
+| #248 | Assets guía de tallas | `dev-plataforma` | Copiar `tallas talulah/*.jpeg` → `frontend/public/talulah/guia_tallas_{1..7}.jpeg` (servidos por Amplify como `demo_viajes/`). |
+| #249 | QA local | `qa` | pytest de motor con Bedrock mockeado; smoke real vía `/bots/{id}/simulate` con venv + credenciales AWS locales: saludo, flujo tallas (media), pedido Shopify real, escalamiento a asesor, demo viajes completo. |
+| #250 | Deploy AWS | `deploy-aws` | `boto3` a requirements; policy `bedrock-invoke` en `multiagente-ecs-task-role`; build/push `multiagente-backend:sprint19`; task-def rev 12 (+`BEDROCK_REGION`, `LLM_MODEL_ID`); `update-service` hasta stable; migración + seeds en RDS vía `ecs run-task`; deploy Amplify manual (gotcha: no auto-buildea). |
+| #251 | QA end-to-end contra AWS | `qa` | Login `talulah@gloma.com` y `agencia@demo.com` contra `https://api.glomabeauty.com`; conversaciones LLM reales por simulate; **frontend local (`npm run dev`) apuntando a la API de AWS** (mismos motores) — pedido explícito del CEO. |
+| #252 | Cierre: commit a main, tabla de entregables, memoria | `project-manager` | Commit del Sprint 18 pendiente + Sprint 19; tabla final de qué se hizo y entregables por tarea; actualización de memoria persistente. |
+
+### 5. Definición de terminado (DoD)
+
+(a) Ambos bots responden con Claude real vía Bedrock desde la API de AWS; (b) el bot
+Talulah consulta pedidos reales en Shopify y escala a asesor humano dentro de la app;
+(c) el demo de viajes conserva sus flujos/medios pero razonados por LLM; (d) migración
+y seeds aplicados en local y RDS (paridad); (e) sin hallazgos de seguridad Críticos/Altos;
+(f) commit en `main` y bitácora cerrada con entregables.
+
+### Log de ejecución del Sprint 19
+
+| Fecha | Agente | Nota |
+|---|---|---|
+| 2026-07-10 | PM | Sprint abierto. Exploración completada: bloque `llm` actual es falso (keywords); contexto demo ubicado en `seed_bot_covenas.py` + `frontend/public/demo_viajes/`; 7 JSON de Talulah parseados (orquestador, minoristas 44 nodos, mayoristas 16, asistente 24/7, servicio al cliente, asesor-defecto, escalar-a-asesor); credenciales Shopify del JSON **verificadas funcionando** (grant client_credentials OK); Bedrock `global.anthropic.claude-haiku-4-5` **verificado respondiendo desde sa-east-1**. |
+| 2026-07-10 | Seguridad | **#240 revisión de diseño (PRE).** Aprobado con condiciones, todas implementadas: (1) `client_secret` de Shopify SOLO cifrado Fernet dentro de `bots.llm_config`, inyectado por env únicamente al correr el seed — nunca en repo/.env de la app; (2) `llm_config` NO se expone en ningún schema `...Out` (`BotDetail`/`BotListItem` solo exponen `engine`); (3) carpetas crudas `talulah bots/`, `tallas talulah/` y `demo_viajes/` agregadas a `.gitignore` (el JSON de WATI contiene el secret en claro); (4) IAM de mínimo privilegio: policy `bedrock-invoke-anthropic` solo `bedrock:InvokeModel` sobre `foundation-model/anthropic.*` + `inference-profile/global.anthropic.*|us.anthropic.*`; (5) errores del motor sanitizados: el cliente ve disculpa genérica + handoff, el detalle va a `logger.exception` server-side; (6) `context_key` sanitizado a `[a-z0-9_-]` (sin path traversal). |
+| 2026-07-10 | Experto BD | **#241-#242 migración `migrate_sprint19_llm_bots.py`** (`bots.engine` VARCHAR(16) DEFAULT 'flow' + `bots.llm_config` TEXT, idempotente). **Local (docker-compose):** 2 corridas, la 2ª sin cambios ✅. **RDS (`ecs run-task` rev 12):** exit 0, columnas verificadas ✅. Paridad local↔RDS cumplida (convención #1). Hallazgo operativo: hay un Postgres del host Mac ocupando `localhost:5432` que opaca al del docker — los scripts locales deben correrse con `docker compose exec backend ...` (documentado aquí para no repetir la confusión). |
+| 2026-07-10 | Dev Plataforma | **#243-#245 motor LLM implementado.** `services/llm_engine.py`: mismo contrato que `bot_engine.advance()` (`actions/next_state/finished`) → se enchufa a `bot_runner.run_turn` y a `/bots/{id}/simulate` sin cambiar el API; historial aplanado en `state.history` (cap 30 mensajes, medios como marcas `[enviaste: ...]`); loop de tool-use máx 5 rondas; tools `escalar_a_asesor`, `finalizar_conversacion`, `enviar_media` (catálogo por bot) y `consultar_pedido_shopify` (solo si hay config); fail-safe total → disculpa + handoff. `services/shopify_client.py`: grant `client_credentials` + `GET orders.json` (API 2025-10), cache de token ~24h, timeouts 10s. Contextos a priori en `backend/app/bot_contexts/` (`talulah.md` consolidando los 7 JSON de WATI; `demo_viajes.md` consolidando el seed Coveñas) — viajan dentro de la imagen Docker (decisión CEO). Config del motor por env (`BEDROCK_REGION`, `LLM_MODEL_ID`, `LLM_MAX_TOKENS`) leída con `os.getenv` (patrón twilio_webhook; `config.settings` exige DATABASE_URL y crashea el contenedor — detectado y corregido en esta corrida). |
+| 2026-07-10 | Dev Plataforma | **#246 integración + #248 assets.** `bot_runner` y el endpoint `simulate` despachan por `bot.engine` (`llm` → llm_engine); para bots LLM `waiting = not finished`. `schemas`/`crud` exponen `engine`. **Guard nuevo en `bot_router`:** si `conversation.assigned_to != 'bot'` (ya escalada a humano), NINGÚN bot vuelve a intervenir — antes el bot re-tomaba el chat tras el handoff (gap pre-existente que con bots LLM default era crítico). Frontend: badge 🤖 IA en el listado, tarjeta "Bot conversacional con IA" en el detalle (en vez del diagrama vacío) y botón Probar habilitado para bots LLM sin steps; `tsc --noEmit` limpio. Guía de tallas: 7 imágenes de `tallas talulah/` → 6 únicas (1 duplicada eliminada) publicadas como `frontend/public/talulah/guia_tallas_{1..6}.jpeg`. `docker-compose.yml`: passthrough de `AWS_*`/`BEDROCK_*` para Bedrock en local. |
+| 2026-07-10 | Experto BD | **#247 seeds.** `seed_bot_talulah.py`: cuenta `talulah@gloma.com` (pwd `Talulah2026*`), team "Talulah", asesora `asesora1.talulah@gloma.com` (handle `asesor_1`), bot "Talulah IA — Servicio al Cliente" engine=llm default con guía de tallas + Shopify cifrado (credenciales por env SOLO en la corrida). `seed_bot_viajes_llm.py`: bot "Plan Tolú & Coveñas (IA)" default para `agencia@demo.com` con los 9 medios de `/demo_viajes`; el bot de flujo legacy queda **pausado** (rollback fácil). Fix durante la corrida: degradar el default previo ANTES de crear el nuevo (índice `uq_one_default_bot_per_user`). Ambos corridos en local y en RDS (run-task rev 12, exit 0): local bots id=10/13, RDS id=7/8. |
+| 2026-07-10 | QA | **#249 pruebas locales.** Unit tests nuevos `tests/test_llm_engine.py` (7/7 ✅, Bedrock mockeado: say/estado, handoff corta el loop, media + clave inexistente informada al modelo, fail-safe ante excepción, recorte de historial, anti path-traversal, contextos empaquetados presentes). Suite completa: 17 passed / 7 failed — los 7 son el bug **pre-existente** JSONB+SQLite del Sprint 15 (documentado en Sprint 18). **E2E real local (docker + Bedrock):** conversación Talulah completa ✅ — saludo de marca con política de datos, detección minorista/mayorista, sedes con direcciones/teléfonos/horarios, guía de tallas enviada como 6 imágenes (`say_media`), tono 🤍🌿🤎 correcto. Shopify verificado por separado: token client-credentials OK (scopes `read_all_orders,read_fulfillments,read_orders`). |
+| 2026-07-10 | Deploy AWS | **#250 despliegue sa-east-1.** Formulario de caso de uso Anthropic enviado por API (`PutUseCaseForModelAccess` 201 en us-east-1 y sa-east-1). Policy IAM `bedrock-invoke-anthropic` en `multiagente-ecs-task-role`. Build `linux/amd64` + push `multiagente-backend:sprint19` a ECR. Task-def **rev 12** (clon de rev 11 + image sprint19 + `BEDROCK_REGION`/`LLM_MODEL_ID`/`LLM_MAX_TOKENS`). Migración + 2 seeds en RDS vía `ecs run-task` rev 12 (exit 0 los tres). `update-service` → `services-stable` (1/1, zero-downtime). Smoke: `/openapi.json` 200. CloudWatch confirma que la task llega a Bedrock con el task role (el error es de Marketplace, NO de IAM). |
+| 2026-07-11 | QA | **#251 E2E contra AWS.** Login `talulah@gloma.com` y `agencia@demo.com` contra `https://api.glomabeauty.com` ✅; bots LLM resueltos y motor ejecutado en ECS ✅. Respuesta actual: fail-safe (disculpa + handoff a `asesor_1`) por el bloqueo de Marketplace (#253) — el camino completo API Gateway → ECS → Bedrock → acciones → sesión está validado. Para la prueba visual local apuntando a los motores de AWS: `cd frontend && BACKEND_URL=https://api.glomabeauty.com npm run dev` y abrir el detalle del bot → "▶ Probar Chatbot". |
+| 2026-07-11 | PM | **#253 (ACCIÓN CEO — bloqueante para respuestas LLM en vivo):** AWS Marketplace rechaza el método de pago de la cuenta 747456040509 (`INVALID_PAYMENT_INSTRUMENT`) al completar la suscripción de los modelos Anthropic. Pasos: (1) Consola AWS → **Billing and Cost Management → Payment preferences** → verificar/agregar una **tarjeta de crédito válida** como método default; (2) esperar ~5 min y re-suscribir: `python -c "import boto3;c=boto3.client('bedrock',region_name='sa-east-1');mid='anthropic.claude-haiku-4-5-20251001-v1:0';t=c.list_foundation_model_agreement_offers(modelId=mid)['offers'][0]['offerToken'];print(c.create_foundation_model_agreement(modelId=mid,offerToken=t))"`; (3) verificar con `get_foundation_model_availability` que `agreementAvailability.status == AVAILABLE`. **No hace falta redeploy**: en cuanto el agreement quede AVAILABLE los 2 bots responden con Claude. Nota: durante la ventana de gracia inicial el motor SÍ conversó en vivo (evidencia en #249), así que todo lo demás está probado. |
+
+### 6. Resumen ejecutivo de tareas y entregables (cierre)
+
+| # | Tarea | Qué se hizo | Entregables |
+|---|---|---|---|
+| #239 | Apertura y análisis | Se parsearon los 7 JSON WATI de Talulah (orquestador, minoristas 44 nodos, mayoristas 16, asistente 24/7, SAC, asesor-defecto, escalar); se ubicó el contexto del demo (BD via `seed_bot_covenas.py` + media en `frontend/public/demo_viajes/`); se eligió **Bedrock sa-east-1** (motor en AWS, sin API keys, IAM role) y **contexto a priori en el contenedor**. | Sección Sprint 19 en BITACORA (§1-§3) con decisiones y faltantes de Talulah |
+| #240 | Seguridad (PRE) | Revisión de diseño aprobada; 6 condiciones implementadas (secret cifrado, schemas sin llm_config, .gitignore, IAM mínimo, errores sanitizados, anti-traversal). | Entrada de log Seguridad + controles en código |
+| #241-#242 | BD + paridad | Columnas `bots.engine` y `bots.llm_config`; migración idempotente corrida 2× local y 1× RDS. | `backend/scripts/migrate_sprint19_llm_bots.py` + evidencia en log |
+| #243-#245 | Motor LLM + contextos | Motor conversacional Claude (tool-use loop, historial, fail-safe), cliente Shopify, 2 contextos a priori empaquetados en la imagen. | `backend/app/services/llm_engine.py`, `shopify_client.py`, `backend/app/bot_contexts/{talulah,demo_viajes}.md` |
+| #246 | Integración app | Dispatch por `bot.engine` en runner + simulate; guard anti-reentrada del bot tras handoff; `engine` en schemas; UI badge IA + tarjeta detalle + Probar habilitado. | Cambios en `bot_runner.py`, `bot_router.py`, `routers/bots.py`, `schemas.py`, `crud.py`, `frontend/pages/bots.tsx`, `frontend/pages/bots/[id].tsx` |
+| #247 | Cuentas y bots | Cuenta `talulah@gloma.com` + asesora + bot LLM Talulah (Shopify cifrado); bot LLM demo viajes default y flujo legacy pausado. Aplicado en local y RDS. | `backend/scripts/seed_bot_talulah.py`, `seed_bot_viajes_llm.py`; bots RDS id=7 (Talulah) y id=8 (Viajes IA) |
+| #248 | Assets | Guía de tallas deduplicada y publicada para servirse desde Amplify. | `frontend/public/talulah/guia_tallas_{1..6}.jpeg` |
+| #249 | QA local | 7 tests unitarios nuevos (verde), suite en línea base, conversación E2E real con Claude verificada (texto + 6 imágenes + contexto + tono). | `backend/tests/test_llm_engine.py` + evidencia en log |
+| #250 | Deploy AWS | IAM Bedrock, imagen `:sprint19`, task-def rev 12, migración+seeds RDS, servicio estable, formulario Anthropic enviado. | ECR `:sprint19`, task-def `multiagente-backend:12`, policy `bedrock-invoke-anthropic` |
+| #251 | E2E AWS | Camino completo validado contra `https://api.glomabeauty.com` (hoy responde fail-safe por #253). Instrucciones de prueba local→AWS documentadas. | Evidencia en log + comando `BACKEND_URL=https://api.glomabeauty.com npm run dev` |
+| #252 | Cierre | Commits a `main` (Sprint 18 pendiente + Sprint 19), bitácora cerrada, memoria actualizada, deploy Amplify del frontend. | Commits en `main`, este resumen, job de Amplify |
+| #253 | ⚠️ CEO | Corregir método de pago AWS Marketplace y re-suscribir el modelo (pasos exactos en el log 2026-07-11). | — |

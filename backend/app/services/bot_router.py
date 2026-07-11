@@ -71,6 +71,12 @@ def resolve_bot_for_incoming_message(
         - (bot, None) → arrancar sesión nueva
         - (None, None) → ningún bot aplica, que lo tome un humano
     """
+    # 0) Sprint 19: si la conversación ya fue entregada a un asesor humano
+    #    (handoff), el bot NO vuelve a intervenir — el humano conserva el chat.
+    conv = db.query(models.Conversation).get(conversation_id)
+    if conv is not None and (conv.assigned_to or "bot") != "bot":
+        return None, None
+
     # 1) ¿Hay sesión activa? Sigue con ese bot.
     active = get_active_session(db, conversation_id)
     if active and active.bot:

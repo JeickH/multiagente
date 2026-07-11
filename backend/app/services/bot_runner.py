@@ -18,7 +18,7 @@ from typing import Optional
 from sqlalchemy.orm import Session
 
 from .. import crud, models
-from . import bot_engine, meta_whatsapp
+from . import bot_engine, llm_engine, messaging, meta_whatsapp
 
 logger = logging.getLogger(__name__)
 
@@ -105,12 +105,19 @@ def run_turn(
         session = _create_session(db, bot, conversation.id)
 
     state = _load_state(session)
-    result = bot_engine.advance(bot, state, user_input)
+    # Sprint 19: cada bot declara su motor. 'llm' = conversacional (Bedrock);
+    # 'flow' = pasos clásicos. Mismo contrato de actions/next_state/finished.
+    is_llm = getattr(bot, "engine", "flow") == "llm"
+    if is_llm:
+        result = llm_engine.advance(bot, state, user_input)
+    else:
+        result = bot_engine.advance(bot, state, user_input)
 
     actions = result["actions"]
     next_state = result["next_state"]
     finished = bool(result["finished"])
-    waiting = any(a.get("type") == "ask" for a in actions)
+    # Un bot LLM sin finalizar siempre espera el próximo mensaje del usuario.
+    waiting = any(a.get("type") == "ask" for a in actions) or (is_llm and not finished)
 
     # Procesamos las acciones en orden. Si encontramos un `pause`, cortamos
     # el turno y programamos un delay; el resto queda para cuando vuelva.
@@ -183,7 +190,9 @@ def _send_text(
         return
 
     try:
-        meta_id, _ = meta_whatsapp.send_text_message(
+        # Sprint 18: envía por el proveedor de la cuenta (Meta o Twilio) vía el
+        # puerto de mensajería. La firma (message_id, payload) es idéntica.
+        meta_id, _ = messaging.send_text(
             account, conversation.contact_wa_id, text
         )
         crud.add_message(

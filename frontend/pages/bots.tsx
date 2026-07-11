@@ -26,6 +26,7 @@ type BotListItem = {
   name: string;
   status: string;
   channels: string[];
+  engine?: 'flow' | 'llm';
   trigger_type: 'default' | 'keyword' | 'manual';
   trigger_config: Record<string, any> | null;
   triggered_count: number;
@@ -50,6 +51,15 @@ function relativeTime(iso: string): string {
   if (diffMo < 12) return `${diffMo} mes${diffMo === 1 ? '' : 'es'} hace`;
   const diffY = Math.floor(diffMo / 12);
   return `${diffY} año${diffY === 1 ? '' : 's'} hace`;
+}
+
+function EngineBadge({ bot }: { bot: BotListItem }) {
+  if (bot.engine !== 'llm') return null;
+  return (
+    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-purple-50 text-purple-700 border border-purple-200">
+      <span>🤖</span> IA
+    </span>
+  );
 }
 
 function TriggerBadge({ bot }: { bot: BotListItem }) {
@@ -228,6 +238,7 @@ export default function BotsPage() {
                       </a>
                     </td>
                     <td className="py-4 px-4">
+                      <EngineBadge bot={bot} />
                       <TriggerBadge bot={bot} />
                     </td>
                     <td className={`text-center py-4 px-4 font-mono ${bot.triggered_count === 0 ? 'text-gray-300' : 'text-gray-800'}`}>

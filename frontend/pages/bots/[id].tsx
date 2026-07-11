@@ -17,6 +17,7 @@ type BotDetail = {
   description?: string | null;
   status: string;
   channels: string[];
+  engine?: 'flow' | 'llm';
   trigger_type: 'default' | 'keyword' | 'manual';
   trigger_config: Record<string, any> | null;
   triggered_count: number;
@@ -857,7 +858,7 @@ export default function BotDetailPage() {
             <button
               type="button"
               onClick={() => setSimulatorOpen(true)}
-              disabled={!bot || bot.steps.length === 0}
+              disabled={!bot || (bot.engine !== 'llm' && bot.steps.length === 0)}
               className="px-4 py-1.5 text-sm bg-gloma-brown text-white rounded-md font-semibold hover:bg-gloma-brown-dark disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
             >
               ▶ Probar Chatbot
@@ -879,7 +880,23 @@ export default function BotDetailPage() {
             </div>
           )}
 
-          {bot && (
+          {bot && bot.engine === 'llm' && (
+            <div className="max-w-lg mx-auto mt-16 bg-white border border-gloma-rose-soft rounded-xl shadow-sm px-6 py-8 text-center">
+              <div className="text-4xl mb-3">🤖✨</div>
+              <h2 className="text-lg font-semibold text-gray-800 mb-2">Bot conversacional con IA</h2>
+              <p className="text-sm text-gray-600">
+                Este bot no usa un diagrama de pasos: cada mensaje lo interpreta
+                una IA (Claude) con el contexto de tu negocio y decide la mejor
+                respuesta — puede enviar imágenes o videos, consultar tus pedidos
+                y transferir el chat a un asesor humano cuando haga falta.
+              </p>
+              <p className="text-sm text-gray-500 mt-3">
+                Pruébalo con el botón <span className="font-semibold">▶ Probar Chatbot</span>.
+              </p>
+            </div>
+          )}
+
+          {bot && bot.engine !== 'llm' && (
             <div
               className="relative"
               style={{

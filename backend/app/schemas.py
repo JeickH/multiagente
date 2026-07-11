@@ -239,6 +239,7 @@ class BotListItem(BaseModel):
     name: str
     status: str
     channels: List[str]                 # ["whatsapp", "instagram", ...]
+    engine: str = "flow"                # 'flow' | 'llm' (Sprint 19)
     trigger_type: str                   # 'default' | 'keyword' | 'manual'
     trigger_config: Optional[dict] = None
     triggered_count: int
@@ -265,12 +266,17 @@ class BotStepOut(BaseModel):
 
 
 class BotDetail(BaseModel):
-    """Detalle de un bot con sus pasos ordenados para el diagrama."""
+    """Detalle de un bot con sus pasos ordenados para el diagrama.
+
+    NOTA Sprint 19: `llm_config` NO se expone (contiene el secreto Shopify
+    cifrado del tenant — regla de seguridad #2). Solo se expone `engine`.
+    """
     id: int
     name: str
     description: Optional[str] = None
     status: str
     channels: List[str]
+    engine: str = "flow"                # 'flow' | 'llm' (Sprint 19)
     trigger_type: str
     trigger_config: Optional[dict] = None
     triggered_count: int

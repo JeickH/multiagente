@@ -405,6 +405,7 @@ def bot_to_list_item(bot: models.Bot) -> dict:
         "name": bot.name,
         "status": bot.status,
         "channels": _parse_channels(bot.channels),
+        "engine": getattr(bot, "engine", None) or "flow",
         "trigger_type": bot.trigger_type,
         "trigger_config": _parse_config(bot.trigger_config),
         "triggered_count": bot.triggered_count,
@@ -422,6 +423,7 @@ def bot_to_detail(bot: models.Bot) -> dict:
         "description": bot.description,
         "status": bot.status,
         "channels": _parse_channels(bot.channels),
+        "engine": getattr(bot, "engine", None) or "flow",
         "trigger_type": bot.trigger_type,
         "trigger_config": _parse_config(bot.trigger_config),
         "triggered_count": bot.triggered_count,
@@ -474,6 +476,8 @@ def create_bot_with_steps(
     trigger_type: str = models.BOT_TRIGGER_MANUAL,
     trigger_config: Optional[dict] = None,
     steps: Optional[List[dict]] = None,
+    engine: str = "flow",
+    llm_config: Optional[dict] = None,
 ) -> models.Bot:
     """Crea un bot + pasos lineales.
 
@@ -497,6 +501,8 @@ def create_bot_with_steps(
         channels=channels_csv,
         trigger_type=trigger_type,
         trigger_config=_json.dumps(trigger_config) if trigger_config else None,
+        engine=engine,
+        llm_config=_json.dumps(llm_config, ensure_ascii=False) if llm_config else None,
     )
     db.add(bot)
     db.commit()

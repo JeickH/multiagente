@@ -34,3 +34,8 @@ gemini_secrets
 
 # Credenciales locales — nunca a git
 CREDENCIALES.txt
+
+# Material crudo de clientes — contiene credenciales de tenant, nunca a git
+talulah bots/
+tallas talulah/
+demo_viajes/
