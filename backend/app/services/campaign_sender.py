@@ -54,7 +54,7 @@ from tenacity import (
 )
 
 from .. import models
-from . import meta_whatsapp
+from . import messaging, meta_whatsapp
 
 
 logger = logging.getLogger(__name__)
@@ -165,17 +165,18 @@ class _SendResult:
 
 
 def _is_retryable_meta_error(exc: BaseException) -> bool:
-    """Retry si el error es 429 o un código Meta retryable conocido."""
-    if not isinstance(exc, meta_whatsapp.MetaWhatsAppError):
+    """Retry si el error del proveedor es transitorio (429 / rate-limit / 5xx).
+
+    Sprint 18: acepta `messaging.MessagingError` (cubre Meta y Twilio); cada
+    adaptador ya marca `retryable`. Se conservan los códigos Meta por robustez.
+    """
+    if not isinstance(exc, messaging.MessagingError):
         return False
+    if getattr(exc, "retryable", False):
+        return True
     if exc.status_code == 429:
         return True
-    # Códigos Meta vienen anidados en `payload.error.code` (Graph API).
-    try:
-        code = (exc.payload or {}).get("error", {}).get("code")
-        return code in _META_RETRYABLE_CODES
-    except Exception:
-        return False
+    return getattr(exc, "provider_code", None) in _META_RETRYABLE_CODES
 
 
 def _send_template_with_retry(
@@ -184,9 +185,9 @@ def _send_template_with_retry(
     template_name: str,
     language_code: str,
 ) -> tuple[str, dict]:
-    """POST a Meta con 3 retries y backoff exponencial sobre errores retryables.
+    """Envía por el proveedor de la cuenta con 3 retries y backoff exponencial.
 
-    Las exceptiones permanentes (4xx no retryables) burbujean sin reintentar.
+    Las excepciones permanentes (4xx no retryables) burbujean sin reintentar.
     """
 
     @retry(
@@ -196,7 +197,7 @@ def _send_template_with_retry(
         reraise=True,
     )
     def _attempt() -> tuple[str, dict]:
-        return meta_whatsapp.send_template_message(
+        return messaging.send_template(
             account, to_wa_id, template_name, language_code=language_code
         )
 
@@ -208,16 +209,15 @@ def _send_one(
     template: models.WhatsappTemplate,
     to_wa_id: str,
 ) -> _SendResult:
-    """Envía un mensaje a Meta o simula (sandbox).
+    """Envía un mensaje por el proveedor de la cuenta (Meta o Twilio) o simula.
 
-    Sandbox cuando:
-    - META_SANDBOX=1, o
-    - account.encrypted_access_token es NULL (no se configuró credencial real).
+    Sandbox cuando el adaptador del proveedor lo indique:
+    - Meta: `META_SANDBOX=1` o `encrypted_access_token` NULL.
+    - Twilio: `TWILIO_SANDBOX=1` o credenciales incompletas.
     """
-    sandbox = SANDBOX_MODE or not getattr(account, "encrypted_access_token", None)
-    if sandbox:
-        # No tocar Meta; simular wamid local. Cumple S13-002 (rate-limit local
-        # también aplica para coherencia de pruebas de carga).
+    if messaging.is_sandbox(account):
+        # No tocar al proveedor; simular id local. Cumple S13-002 (rate-limit
+        # local también aplica para coherencia de pruebas de carga).
         return _SendResult(
             success=True,
             meta_message_id=f"wamid.local-{uuid.uuid4().hex[:24]}",
@@ -234,24 +234,21 @@ def _send_one(
         if not message_id:
             return _SendResult(
                 success=False,
-                error_code="meta_no_message_id",
-                error_message="Meta no devolvió message id",
+                error_code="provider_no_message_id",
+                error_message="El proveedor no devolvió message id",
                 payload=payload,
                 permanent_failure=True,
             )
         return _SendResult(success=True, meta_message_id=message_id, payload=payload)
-    except meta_whatsapp.MetaWhatsAppError as exc:
-        # Tras retries, fallido permanente.
-        meta_code = None
-        try:
-            meta_code = (exc.payload or {}).get("error", {}).get("code")
-        except Exception:
-            pass
-        # Mensaje genérico para el evento; el detalle queda en logger.exception.
+    except messaging.MessagingError as exc:
+        # Tras retries, fallido permanente. Mensaje genérico para el evento; el
+        # detalle sanitizado queda en el payload y en logger.exception.
+        code = getattr(exc, "provider_code", None)
+        provider = getattr(exc, "provider", "provider") or "provider"
         return _SendResult(
             success=False,
-            error_code=f"meta_{meta_code}" if meta_code else f"meta_http_{exc.status_code}",
-            error_message="Meta rechazó el envío",
+            error_code=f"{provider}_{code}" if code else f"{provider}_http_{exc.status_code}",
+            error_message="El proveedor rechazó el envío",
             payload=exc.payload,
             permanent_failure=True,
         )
@@ -305,10 +302,14 @@ def _transition_to_sending(db: Session, recipient_id: int) -> bool:
 def _mark_sent(
     db: Session, recipient_id: int, meta_message_id: str, when: datetime
 ) -> None:
+    # Sprint 18: se persiste el id en ambas columnas — `meta_message_id`
+    # (correlación legacy del webhook Meta) y `provider_message_id` (correlación
+    # agnóstica que usa el webhook de Twilio).
     db.execute(
         text(
             "UPDATE campaign_recipients "
-            "SET status='sent', meta_message_id=:wamid, sent_at=:ts "
+            "SET status='sent', meta_message_id=:wamid, "
+            "provider_message_id=:wamid, sent_at=:ts "
             "WHERE id=:rid"
         ),
         {"rid": recipient_id, "wamid": meta_message_id, "ts": when},

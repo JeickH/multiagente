@@ -52,6 +52,36 @@ class Settings(BaseSettings):
     )
     meta_webhook_verify_token: Optional[str] = Field(default=None)
 
+    # ===== Twilio (Sprint 18) =====
+    # Credenciales de la cuenta matriz / bootstrap single-tenant. Las de cada
+    # cliente/subcuenta van en la BD cifradas (regla de seguridad #3). Cuando la
+    # cuenta esté lista, basta pegar estas claves y poner TWILIO_SANDBOX=0.
+    twilio_sandbox: bool = Field(
+        default=True,
+        description="Si True (default) o faltan credenciales, se simula el envío.",
+    )
+    twilio_account_sid: Optional[str] = Field(default=None)
+    twilio_auth_token: Optional[str] = Field(
+        default=None,
+        description="Auth Token de Twilio. Se usa también para verificar la firma "
+        "X-Twilio-Signature del webhook. NUNCA loggear.",
+    )
+    twilio_whatsapp_from: Optional[str] = Field(
+        default=None, description="Número emisor, p.ej. 'whatsapp:+573001234567'."
+    )
+    twilio_messaging_service_sid: Optional[str] = Field(default=None)
+    twilio_webhook_base_url: Optional[str] = Field(
+        default=None,
+        description="URL pública base del webhook (p.ej. https://api.glomabeauty.com) "
+        "para reconstruir la firma detrás de API Gateway. Si falta, se usa request.url.",
+    )
+
+    # ===== LLM / AWS Bedrock (Sprint 19) =====
+    # NOTA: el motor LLM (`services/llm_engine.py`) lee BEDROCK_REGION,
+    # LLM_MODEL_ID y LLM_MAX_TOKENS con os.getenv (patrón twilio_webhook:
+    # este Settings exige DATABASE_URL y el contenedor solo define POSTGRES_*).
+    # Las credenciales AWS las provee el IAM task role en ECS / ~/.aws en local.
+
     # ===== Entorno =====
     app_env: str = Field(default="development")
 

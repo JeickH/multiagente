@@ -8,18 +8,35 @@ import httpx
 from typing import Optional, Tuple, Dict, Any
 
 from .. import models
+from .messaging.base import MessagingError
 
 
 logger = logging.getLogger(__name__)
 
 
-class MetaWhatsAppError(Exception):
-    """Error al llamar a la API de Meta."""
+class MetaWhatsAppError(MessagingError):
+    """Error al llamar a la API de Meta.
+
+    Sprint 18: hereda de `MessagingError` para que el puerto de mensajería y
+    `campaign_sender` puedan capturar errores de Meta y Twilio con un solo
+    `except MessagingError`. Conserva la firma histórica `(message, status_code,
+    payload)` para no romper llamadores existentes.
+    """
 
     def __init__(self, message: str, status_code: int = 0, payload: Optional[dict] = None):
-        super().__init__(message)
-        self.status_code = status_code
-        self.payload = payload or {}
+        code = None
+        try:
+            code = (payload or {}).get("error", {}).get("code")
+        except Exception:
+            code = None
+        super().__init__(
+            message,
+            provider="meta",
+            status_code=status_code,
+            payload=payload,
+            provider_code=code,
+            retryable=(status_code == 429 or code in {80007, 131056}),
+        )
 
 
 # Patrón para detectar tokens Meta (prefix EAA + caracteres base64)

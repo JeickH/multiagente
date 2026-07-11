@@ -114,15 +114,26 @@ class MetaAccount(Base):
     team_id = Column(
         Integer, ForeignKey("teams.id", ondelete="CASCADE"), unique=True, nullable=False
     )
-    phone_number_id = Column(String, nullable=False)
-    waba_id = Column(String, nullable=False)
+    # Sprint 18: proveedor del canal de mensajería. 'meta' = WhatsApp Cloud API
+    # directo (legacy); 'twilio' = Twilio como BSP autorizado. Los campos Meta de
+    # abajo son nullable porque una fila 'twilio' no los usa (y viceversa).
+    provider = Column(String(16), nullable=False, default="meta", server_default="meta")
+    phone_number_id = Column(String, nullable=True)
+    waba_id = Column(String, nullable=True)
     display_phone = Column(String, nullable=False)
     verified_name = Column(String, nullable=True)  # Nombre visible en WhatsApp Business
     # IMPORTANTE: este campo guarda el ciphertext Fernet del access token.
     # Para descifrarlo usa backend.app.services.crypto.decrypt_secret.
     # NUNCA lo incluyas en un schema Pydantic de salida.
-    encrypted_access_token = Column(Text, nullable=False)
+    encrypted_access_token = Column(Text, nullable=True)
     api_version = Column(String, nullable=False, default="v22.0")
+    # ─── Credenciales Twilio (Sprint 18) — sólo cuando provider='twilio' ─────
+    twilio_account_sid = Column(String(64), nullable=True)
+    # Ciphertext Fernet del Auth Token de la subcuenta Twilio. Secreto de tenant:
+    # NUNCA en un schema de salida, nunca en logs (reglas de seguridad #1/#2/#3).
+    encrypted_twilio_auth_token = Column(Text, nullable=True)
+    twilio_messaging_service_sid = Column(String(64), nullable=True)
+    twilio_from = Column(String(32), nullable=True)  # p.ej. 'whatsapp:+573001234567'
     is_active = Column(Boolean, nullable=False, default=True)
     status = Column(
         String(32), nullable=False, default="pending", index=True
@@ -149,8 +160,9 @@ class MetaAccount(Base):
     def __repr__(self) -> str:
         return (
             f"<MetaAccount id={self.id} team_id={self.team_id} "
-            f"phone_number_id={self.phone_number_id} status={self.status!r} "
-            f"encrypted_access_token=<REDACTED>>"
+            f"provider={self.provider!r} phone_number_id={self.phone_number_id} "
+            f"status={self.status!r} encrypted_access_token=<REDACTED> "
+            f"encrypted_twilio_auth_token=<REDACTED>>"
         )
 
     __str__ = __repr__
@@ -253,6 +265,17 @@ class Bot(Base):
     status = Column(String(32), nullable=False, default="active")  # active | paused | draft
     # CSV de canales vinculados. Ej: "whatsapp,instagram,messenger".
     channels = Column(String(255), nullable=False, default="whatsapp")
+    # Sprint 19: motor del bot.
+    #   'flow' → pasos/steps clásicos (bot_engine)
+    #   'llm'  → conversacional con Claude vía Bedrock (llm_engine)
+    engine = Column(String(16), nullable=False, default="flow", server_default="flow")
+    # Sprint 19: JSON con la config del motor LLM. Ej:
+    #   {"context_key": "talulah", "assignee": "asesor_1", "model_id": null,
+    #    "media": {"guia_tallas_1": {"url": "...", "media_type": "image"}},
+    #    "shopify": {"shop": "x.myshopify.com", "client_id": "...",
+    #                "encrypted_client_secret": "<Fernet>"}}
+    # El client_secret de Shopify es secreto de tenant → SIEMPRE cifrado (regla #3).
+    llm_config = Column(Text, nullable=True)
     # Sprint 9: trigger de activación
     trigger_type = Column(
         String(32), nullable=False, default=BOT_TRIGGER_MANUAL
@@ -760,6 +783,9 @@ class CampaignRecipient(Base):
     )
     phone_e164 = Column(String(20), nullable=False)
     meta_message_id = Column(String(80), nullable=True)
+    # Sprint 18: id de mensaje agnóstico de proveedor (wamid de Meta o MessageSid
+    # de Twilio). Se correlacionan los callbacks de estado por esta columna.
+    provider_message_id = Column(String(128), nullable=True, index=True)
     status = Column(
         String(20), nullable=False, default="queued", server_default="queued"
     )

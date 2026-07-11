@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from .database import Base, engine
-from .routers import auth, usuario, mensajes, campanas, bots, teams, meta_webhook, internal, landing, contacts, templates, campaigns
+from .routers import auth, usuario, mensajes, campanas, bots, teams, meta_webhook, internal, landing, contacts, templates, campaigns, twilio_webhook
 
 Base.metadata.create_all(bind=engine)
 
@@ -22,6 +22,7 @@ app.include_router(campanas.router)
 app.include_router(bots.router)
 app.include_router(teams.router)
 app.include_router(meta_webhook.router)
+app.include_router(twilio_webhook.router)
 app.include_router(internal.router)
 app.include_router(landing.router)
 app.include_router(contacts.router)
