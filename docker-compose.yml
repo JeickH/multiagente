@@ -47,6 +47,13 @@ services:
       AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
       BEDROCK_REGION: ${BEDROCK_REGION:-sa-east-1}
       LLM_MODEL_ID: ${LLM_MODEL_ID:-global.anthropic.claude-haiku-4-5-20251001-v1:0}
+      # #263: Twilio (valores del .env raíz git-ignorado; en ECS van por SSM).
+      TWILIO_SANDBOX: ${TWILIO_SANDBOX:-1}
+      TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID:-}
+      TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN:-}
+      TWILIO_WHATSAPP_FROM: ${TWILIO_WHATSAPP_FROM:-}
+      TWILIO_MESSAGING_SERVICE_SID: ${TWILIO_MESSAGING_SERVICE_SID:-}
+      TWILIO_WEBHOOK_BASE_URL: ${TWILIO_WEBHOOK_BASE_URL:-}
     depends_on:
       - db
 
