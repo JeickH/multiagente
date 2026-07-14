@@ -1,0 +1,273 @@
+<!DOCTYPE html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+</head><body>
+<title>Motor de Bots LLM — Gloma · Sprint 19</title>
+<style>
+  :root {
+    --paper: #FBF8F5;
+    --ink: #2B2320;
+    --muted: #6E6058;
+    --line: #E7DDD5;
+    --card: #FFFFFF;
+    --brown: #7A5C49;
+    --brown-soft: #F1E7DF;
+    --llm: #A63FA0;
+    --llm-soft: #F9EDF8;
+    --ok: #1F7A5C;
+    --ok-soft: #E7F4EE;
+    --warn: #B45309;
+    --warn-soft: #FCF0E1;
+    --code-bg: #F4EEE9;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --paper: #17120F;
+      --ink: #EDE6E0;
+      --muted: #A99C93;
+      --line: #372E28;
+      --card: #201914;
+      --brown: #C79A7E;
+      --brown-soft: #2C221B;
+      --llm: #E08BD9;
+      --llm-soft: #33222F;
+      --ok: #5FC79E;
+      --ok-soft: #1B2E26;
+      --warn: #E9A159;
+      --warn-soft: #332413;
+      --code-bg: #241C16;
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper: #17120F; --ink: #EDE6E0; --muted: #A99C93; --line: #372E28;
+    --card: #201914; --brown: #C79A7E; --brown-soft: #2C221B;
+    --llm: #E08BD9; --llm-soft: #33222F; --ok: #5FC79E; --ok-soft: #1B2E26;
+    --warn: #E9A159; --warn-soft: #332413; --code-bg: #241C16;
+  }
+  :root[data-theme="light"] {
+    --paper: #FBF8F5; --ink: #2B2320; --muted: #6E6058; --line: #E7DDD5;
+    --card: #FFFFFF; --brown: #7A5C49; --brown-soft: #F1E7DF;
+    --llm: #A63FA0; --llm-soft: #F9EDF8; --ok: #1F7A5C; --ok-soft: #E7F4EE;
+    --warn: #B45309; --warn-soft: #FCF0E1; --code-bg: #F4EEE9;
+  }
+  * { box-sizing: border-box; }
+  body {
+    background: var(--paper); color: var(--ink);
+    font: 16px/1.65 "Avenir Next", "Segoe UI", system-ui, -apple-system, sans-serif;
+    margin: 0; padding: 0 20px 80px;
+  }
+  main { max-width: 900px; margin: 0 auto; }
+  header { padding: 48px 0 8px; border-bottom: 2px solid var(--brown); margin-bottom: 36px; }
+  h1 { font-size: 2rem; line-height: 1.2; margin: 0 0 10px; letter-spacing: -0.01em; text-wrap: balance; }
+  .sub { color: var(--muted); max-width: 62ch; margin: 0 0 18px; }
+  h2 { font-size: 1.35rem; margin: 52px 0 6px; letter-spacing: -0.01em; }
+  h3 { font-size: 1.02rem; margin: 26px 0 8px; }
+  .eyebrow {
+    display: block; font-size: 0.72rem; font-weight: 700; letter-spacing: 0.12em;
+    text-transform: uppercase; color: var(--brown); margin-top: 52px;
+  }
+  .eyebrow + h2 { margin-top: 2px; }
+  p { max-width: 68ch; }
+  code, pre { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 0.85em; }
+  code { background: var(--code-bg); padding: 1px 6px; border-radius: 5px; }
+  pre {
+    background: var(--code-bg); border: 1px solid var(--line); border-radius: 10px;
+    padding: 14px 16px; overflow-x: auto; line-height: 1.5;
+  }
+  pre code { background: none; padding: 0; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0 6px; }
+  .chip {
+    font-size: 0.78rem; font-weight: 600; padding: 4px 12px; border-radius: 999px;
+    border: 1px solid var(--line); background: var(--card);
+  }
+  .chip.ok { background: var(--ok-soft); color: var(--ok); border-color: transparent; }
+  .chip.warn { background: var(--warn-soft); color: var(--warn); border-color: transparent; }
+  .chip.llm { background: var(--llm-soft); color: var(--llm); border-color: transparent; }
+  .callout {
+    border-left: 4px solid var(--warn); background: var(--warn-soft);
+    border-radius: 0 10px 10px 0; padding: 12px 16px; margin: 18px 0; max-width: 74ch;
+  }
+  .callout.okc { border-left-color: var(--ok); background: var(--ok-soft); }
+  table {
+    border-collapse: collapse; width: 100%; font-size: 0.9rem;
+    font-variant-numeric: tabular-nums;
+  }
+  .tblwrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 12px; background: var(--card); margin: 14px 0; }
+  th, td { text-align: left; padding: 9px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  tr:last-child td { border-bottom: none; }
+  th { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); background: var(--paper); }
+  .tag { display: inline-block; font-size: 0.72rem; font-weight: 700; padding: 1px 9px; border-radius: 999px; white-space: nowrap; }
+  .tag.api { background: var(--brown-soft); color: var(--brown); }
+  .tag.media { background: var(--llm-soft); color: var(--llm); }
+  .tag.caso { background: var(--warn-soft); color: var(--warn); }
+  .tag.info { background: var(--code-bg); color: var(--muted); }
+  .tag.esc { background: var(--ok-soft); color: var(--ok); }
+  /* Diagrama de flujo en CSS */
+  .flow { display: flex; flex-direction: column; align-items: center; gap: 0; margin: 22px 0; }
+  .fnode {
+    border: 1.5px solid var(--line); background: var(--card); border-radius: 12px;
+    padding: 10px 18px; text-align: center; max-width: 480px; font-size: 0.9rem;
+  }
+  .fnode.llmn { border-color: var(--llm); background: var(--llm-soft); font-weight: 600; }
+  .fnode.esc { border-color: var(--ok); background: var(--ok-soft); }
+  .fnode small { display: block; color: var(--muted); font-weight: 400; }
+  .farrow { color: var(--muted); font-size: 1.1rem; line-height: 1.6; }
+  .fgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 8px; width: 100%; margin: 6px 0; }
+  .fgrid .fnode { max-width: none; font-size: 0.8rem; padding: 8px 10px; }
+  details { border: 1px solid var(--line); border-radius: 10px; padding: 10px 16px; background: var(--card); margin: 14px 0; }
+  summary { cursor: pointer; font-weight: 600; }
+  ol.steps { padding-left: 0; counter-reset: paso; list-style: none; max-width: 74ch; }
+  ol.steps li { counter-increment: paso; display: flex; gap: 12px; padding: 7px 0; border-bottom: 1px dashed var(--line); }
+  ol.steps li::before {
+    content: counter(paso); flex: 0 0 26px; height: 26px; border-radius: 50%;
+    background: var(--brown-soft); color: var(--brown); font-weight: 700; font-size: 0.8rem;
+    display: flex; align-items: center; justify-content: center; margin-top: 2px;
+  }
+  a { color: var(--brown); }
+  :focus-visible { outline: 2px solid var(--llm); outline-offset: 2px; border-radius: 4px; }
+  @media (prefers-reduced-motion: no-preference) {
+    .fnode { transition: transform 0.15s ease; }
+    .fnode:hover { transform: translateY(-1px); }
+  }
+</style>
+
+<main>
+<header>
+  <h1>Motor de Bots LLM en la app Gloma</h1>
+  <p class="sub">Cómo funciona la infraestructura en AWS y en el código, cómo se registran y se ven las decisiones del bot, y cuáles son los caminos definidos para Talulah y la Agencia de Viajes. Sprint 19 · tareas #239–#256.</p>
+  <div class="chips">
+    <span class="chip ok">✓ Motor + 2 bots implementados</span>
+    <span class="chip ok">✓ Observabilidad: logs + BD + visualizador</span>
+    <span class="chip llm">⌂ En LOCAL, esperando tu visto bueno para subir a AWS</span>
+    <span class="chip warn">⚠ #253: pago AWS Marketplace pendiente (bloquea respuestas en vivo)</span>
+  </div>
+</header>
+
+<span class="eyebrow">1 · Infraestructura</span>
+<h2>Qué corre en AWS y qué corre en el código</h2>
+<p>La idea central: <strong>un solo backend</strong> (el mismo de siempre, en ECS) gana un motor nuevo. Cuando un bot tiene <code>engine='llm'</code>, sus mensajes no siguen un flujo de pasos: los razona Claude en <strong>AWS Bedrock</strong>, con el conocimiento del cliente empaquetado dentro del contenedor.</p>
+
+<div class="flow" role="img" aria-label="Diagrama de infraestructura">
+  <div class="fnode">📱 Cliente por WhatsApp <small>Twilio o Meta (webhook) · o ventana “Probar Chatbot”</small></div>
+  <div class="farrow">↓</div>
+  <div class="fnode">🌐 <strong>api.glomabeauty.com</strong> <small>API Gateway → VPC Link → Cloud Map</small></div>
+  <div class="farrow">↓</div>
+  <div class="fnode">🐳 Backend FastAPI en <strong>ECS Fargate</strong> (sa-east-1) <small>imagen <code>multiagente-backend:sprint19</code> · task-def rev 12 · los contextos de cada cliente viajan dentro de la imagen (<code>backend/app/bot_contexts/*.md</code>)</small></div>
+  <div class="farrow">↓</div>
+  <div class="fgrid">
+    <div class="fnode llmn">🧠 AWS Bedrock<small>Claude Haiku 4.5 (perfil global) · autenticado con el IAM task role — sin API keys</small></div>
+    <div class="fnode">🗄️ RDS PostgreSQL<small>bots · sesiones · mensajes · <strong>bot_llm_decisions</strong></small></div>
+    <div class="fnode">🛍️ Shopify Admin API<small>pedidos de Talulah · secret cifrado Fernet en BD</small></div>
+  </div>
+</div>
+
+<div class="tblwrap"><table>
+  <tr><th>Pieza</th><th>Dónde</th><th>Qué hace</th></tr>
+  <tr><td><code>services/llm_engine.py</code></td><td>código</td><td>El motor: arma el prompt (contexto + historial), llama Bedrock, ejecuta las herramientas que pide la IA (máx. 5 rondas) y devuelve acciones + telemetría. Si algo falla: disculpa + pase a asesor (fail-safe).</td></tr>
+  <tr><td><code>bot_contexts/talulah.md</code> · <code>demo_viajes.md</code></td><td>código (imagen Docker)</td><td>Conocimiento “a priori” de cada cliente: tono, políticas, sedes, itinerarios, reglas de escalamiento. Versionado en git.</td></tr>
+  <tr><td><code>services/shopify_client.py</code></td><td>código</td><td>Consulta pedidos (token client_credentials + <code>orders.json</code>); el secreto del cliente vive cifrado en BD, nunca en el repo.</td></tr>
+  <tr><td><code>bots.engine</code> + <code>bots.llm_config</code></td><td>RDS / BD local</td><td>Qué motor usa cada bot y su configuración: contexto, asesor destino, catálogo de medios, Shopify, mapa de caminos.</td></tr>
+  <tr><td><code>bot_runner.py</code> · <code>/bots/{id}/simulate</code></td><td>código</td><td>Los dos puntos de entrada (WhatsApp real y ventana de prueba) despachan al mismo motor según <code>engine</code>.</td></tr>
+  <tr><td>Policy <code>bedrock-invoke-anthropic</code></td><td>IAM</td><td>Permiso mínimo: solo <code>bedrock:InvokeModel</code> sobre modelos Anthropic para el task role de ECS.</td></tr>
+</table></div>
+
+<span class="eyebrow">2 · Ciclo de un mensaje</span>
+<h2>Qué pasa cuando el cliente escribe</h2>
+<ol class="steps">
+  <li>Llega el mensaje (webhook Twilio/Meta o simulador) y se guarda en la conversación.</li>
+  <li><code>bot_router</code> decide qué bot atiende. Si la conversación ya fue entregada a un humano, <strong>ningún bot interviene</strong>.</li>
+  <li>El motor arma el prompt: contexto del cliente + reglas + historial de la sesión (últimos 30 mensajes) + catálogo de medios.</li>
+  <li>Claude responde: texto y/o <strong>herramientas</strong> — <code>enviar_media</code>, <code>consultar_pedido_shopify</code>, <code>escalar_a_asesor</code>, <code>finalizar_conversacion</code>.</li>
+  <li>El motor ejecuta cada herramienta y le devuelve el resultado a la IA para que redacte el mensaje final.</li>
+  <li>Las acciones salen al cliente (texto, imágenes, videos, handoff) y la sesión se persiste.</li>
+  <li><strong>Observabilidad:</strong> el turno queda en el log (<code>llm_decision …</code>) y en la tabla <code>bot_llm_decisions</code>.</li>
+  <li>Si la IA escaló, la conversación queda asignada al asesor en el módulo Mensajes (<code>assigned_to=asesor_1</code>).</li>
+</ol>
+
+<span class="eyebrow">3 · Observabilidad</span>
+<h2>Cómo sabemos qué decidió el bot</h2>
+<p>Tres capas, todas de <strong>solo lectura</strong> para el usuario:</p>
+
+<h3>a) En la app — visualizador y chat de prueba</h3>
+<p>El detalle del bot (<code>/bots/{id}</code>) ya no muestra una tarjeta genérica: muestra el <strong>diagrama del flujo</strong> — un bloque LLM de entrada, los caminos que puede tomar y un <em>bloque de acción LLM</em> por camino (el mensaje lo redacta la IA; la información sale de la fuente indicada: API Shopify, medios, caso o contexto). Y en la ventana <strong>▶ Probar Chatbot</strong>, después de cada respuesta aparece el chip <span class="tag media">🧭 camino: tallas</span> con la ruta que tomó la IA en ese turno.</p>
+
+<h3>b) En los logs (docker local / CloudWatch en AWS)</h3>
+<p>Una línea por turno, con metadatos y <strong>sin contenido del mensaje</strong> (regla de seguridad #1/#6):</p>
+<pre><code>INFO app.services.llm_engine: llm_decision bot=18 camino=tallas
+     tools=enviar_media rounds=2 latency_ms=2210 finished=False escalado=- failsafe=False</code></pre>
+
+<h3>c) En la base de datos — tabla <code>bot_llm_decisions</code></h3>
+<p>Una fila por turno, con el detalle completo (aquí sí va el texto del cliente: la BD ya es el registro oficial de mensajes).</p>
+<div class="tblwrap"><table>
+  <tr><th>Columna</th><th>Qué guarda</th></tr>
+  <tr><td><code>camino</code></td><td>Ruta tomada: la herramienta manda (escalar/pedido/fin), luego el medio enviado, luego el clasificador por keywords del mensaje.</td></tr>
+  <tr><td><code>tools_called</code></td><td>JSON con cada herramienta: nombre, input y resultado (p. ej. el pedido consultado y qué devolvió Shopify).</td></tr>
+  <tr><td><code>user_input</code> · <code>reply_preview</code></td><td>Lo que escribió el cliente y el inicio de la respuesta de la IA.</td></tr>
+  <tr><td><code>source</code></td><td><code>whatsapp</code> (conversación real) o <code>simulador</code> (ventana de prueba).</td></tr>
+  <tr><td><code>model_id</code> · <code>rounds</code> · <code>latency_ms</code></td><td>Modelo usado, rondas de razonamiento y duración del turno.</td></tr>
+  <tr><td><code>finished</code> · <code>escalated_to</code> · <code>failsafe</code></td><td>Cómo terminó: siguió, cerró, escaló a qué asesor, o cayó al plan B por error.</td></tr>
+</table></div>
+<p>Consulta típica: <code>SELECT camino, COUNT(*) FROM bot_llm_decisions GROUP BY camino;</code> — te dice por dónde están entrando los clientes.</p>
+
+<span class="eyebrow">4 · Caminos definidos</span>
+<h2>Bot Talulah IA — Servicio al Cliente</h2>
+<p>Un solo bloque LLM reemplaza al orquestador y los menús de botones de los JSON de WATI. Detecta si es clienta o tienda mayorista y toma uno de estos 14 caminos:</p>
+<div class="tblwrap"><table>
+  <tr><th>Camino</th><th>Acción del bloque LLM</th><th>Fuente</th><th>Desenlace</th></tr>
+  <tr><td>Estado de pedido</td><td>Pide el nº y consulta el pedido; redacta estado de envío, pago y rastreo</td><td><span class="tag api">API Shopify</span></td><td>Escala a asesora (seguimiento / no encontrado)</td></tr>
+  <tr><td>Cambios y garantías</td><td>Explica la política; garantía: recolecta orden + descripción + fotos y registra el caso (5 días hábiles)</td><td><span class="tag caso">caso</span></td><td>Escala a asesora</td></tr>
+  <tr><td>Tiempos de envío</td><td>Comparte política y tiempos</td><td><span class="tag info">shipping-policy</span></td><td>Vuelve al bloque LLM</td></tr>
+  <tr><td>Guía de tallas</td><td>Envía la guía en imágenes y acompaña</td><td><span class="tag media">guia_tallas_1..6</span></td><td>Vuelve al bloque LLM</td></tr>
+  <tr><td>Sedes físicas</td><td>4 tiendas con dirección, teléfono y horarios</td><td><span class="tag info">contexto</span></td><td>Vuelve al bloque LLM</td></tr>
+  <tr><td>Pagos y promos</td><td>Tip (incógnito; cupones no aplican en SALE)</td><td><span class="tag info">contexto</span></td><td>Escala a asesora</td></tr>
+  <tr><td>Fallas web</td><td>Tips técnicos (refrescar, otro navegador, caché)</td><td><span class="tag info">contexto</span></td><td>Escala a asesora</td></tr>
+  <tr><td>Catálogo</td><td>Dirige a talulah.com.co (links por categoría pendientes)</td><td><span class="tag info">web</span></td><td>Vuelve al bloque LLM</td></tr>
+  <tr><td>B2B · Despachos</td><td>Registra el nº de pedido</td><td><span class="tag caso">registro</span></td><td>Escala a logística</td></tr>
+  <tr><td>B2B · Faltantes y defectos</td><td>Lote/factura + descripción + fotos; caso a 5 días hábiles</td><td><span class="tag caso">caso B2B</span></td><td>Escala a soporte B2B</td></tr>
+  <tr><td>B2B · Cuenta y crédito</td><td>Anuncia contacto de cartera</td><td><span class="tag esc">asesora</span></td><td>Escala a cartera</td></tr>
+  <tr><td>B2B · Ventas y repedidos</td><td>Anuncia contacto comercial</td><td><span class="tag esc">asesor</span></td><td>Escala a comercial</td></tr>
+  <tr><td>Asesor humano / no entiende 2×</td><td>Aviso cálido y entrega el chat</td><td><span class="tag esc">handoff</span></td><td><code>assigned_to=asesor_1</code></td></tr>
+  <tr><td>Despedida</td><td>Cierra con cariño</td><td>—</td><td>Fin de la conversación</td></tr>
+</table></div>
+
+<h2>Bot Plan Tolú &amp; Coveñas IA (Agencia de Viajes)</h2>
+<div class="tblwrap"><table>
+  <tr><th>Camino</th><th>Acción del bloque LLM</th><th>Fuente</th><th>Desenlace</th></tr>
+  <tr><td>Info general</td><td>Resumen del plan (vie→lun, todo incluido)</td><td><span class="tag media">info_general.jpeg</span></td><td>Vuelve al bloque LLM</td></tr>
+  <tr><td>Tours incluidos</td><td>Caimanera + Tolú con imagen y video</td><td><span class="tag media">tours.jpeg + tour.mp4</span></td><td>Vuelve al bloque LLM</td></tr>
+  <tr><td>Precios y condiciones</td><td>Tarifarios + video del hotel + regla del 30%</td><td><span class="tag media">tarifario1-3 + hotel.mp4</span></td><td>Vuelve al bloque LLM</td></tr>
+  <tr><td>Itinerario</td><td>Día a día viernes→lunes</td><td><span class="tag info">contexto</span></td><td>Vuelve al bloque LLM</td></tr>
+  <tr><td>Métodos de pago</td><td>Transferencia, PSE y tarjeta</td><td><span class="tag media">medios_pago.jpeg</span></td><td>Vuelve al bloque LLM</td></tr>
+  <tr><td>Reserva</td><td>Formulario + recolecta nombre, cédula, personas y fecha</td><td><span class="tag media">formulario + datos</span></td><td>Escala al asesor (confirma disponibilidad)</td></tr>
+  <tr><td>Asesor humano</td><td>Aviso y entrega del chat</td><td><span class="tag esc">handoff</span></td><td><code>assigned_to=asesor_1</code></td></tr>
+  <tr><td>Despedida</td><td>Cierra la conversación</td><td>—</td><td>Fin</td></tr>
+</table></div>
+
+<details>
+  <summary>Fuente PlantUML del diagrama (también en <code>docs/bots_llm_caminos.puml</code>)</summary>
+  <p>Pégalo en <a href="https://www.plantuml.com/plantuml/uml" rel="noopener">plantuml.com</a> para renderizarlo. Es el mismo flujo de los JSON WATI, simplificado: los menús de botones se vuelven caminos que decide la IA.</p>
+  <pre><code>@startuml
+' Bot TALULAH IA: bloque LLM → 14 caminos → acciones
+' (Estado de pedido→Shopify+escala · Cambios/garantías→caso+escala ·
+'  Envíos/Tallas/Sedes/Catálogo→informa y vuelve · Pagos/Fallas→tip+escala ·
+'  B2B Despachos/Faltantes/Cartera/Ventas→registra/caso+escala ·
+'  Asesor→handoff · Despedida→fin)
+' Bot DEMO VIAJES IA: bloque LLM → 8 caminos
+' (Info/Tours/Precios/Itinerario/Pagos→media y vuelve ·
+'  Reserva→datos+escala · Asesor→handoff · Despedida→fin)
+' Versión completa: docs/bots_llm_caminos.puml
+@enduml</code></pre>
+</details>
+
+<span class="eyebrow">5 · Estado y prueba</span>
+<h2>Dónde estamos y cómo lo pruebas</h2>
+<div class="callout okc"><strong>Listo en LOCAL, esperando tu visto bueno.</strong> Nada de esto se subió a AWS ni a git todavía (el push despliega el frontend a producción automáticamente). Por eso <code>app.glomabeauty.com/bots/10</code> aún muestra la vista anterior.</div>
+<ol class="steps">
+  <li>En tu Mac: <code>cd ~/Documents/wati &amp;&amp; docker compose up -d</code> (ya quedó todo re-buildeado).</li>
+  <li>Abre <code>http://localhost:3000/login</code> → <code>talulah@gloma.com / Talulah2026*</code> (o <code>agencia@demo.com / Demo1234*</code>).</li>
+  <li>Módulo <strong>Bots</strong> → entra al bot: verás el <strong>diagrama</strong> bloque LLM → caminos → acciones.</li>
+  <li><strong>▶ Probar Chatbot</strong>: cada respuesta trae su chip 🧭 con el camino tomado.</li>
+  <li>Las decisiones quedan en <code>docker compose logs backend | grep llm_decision</code> y en la tabla <code>bot_llm_decisions</code>.</li>
+</ol>
+<div class="callout"><strong>⚠ Para ver a la IA conversando de verdad falta #253:</strong> AWS Marketplace rechaza el método de pago de la cuenta (<code>INVALID_PAYMENT_INSTRUMENT</code>), así que hoy el bot responde con el plan B (disculpa + pase a asesor, chip <em>camino: failsafe</em>). Se corrige en <em>Billing → Payment preferences</em> con una tarjeta de crédito válida; después re-suscribo el modelo y todo conversa sin redeploy.</div>
+<p>Cuando me des el OK: subo imagen a ECR, corro migración + seeds en RDS, redeploy de ECS, deploy de Amplify y commit a <code>main</code> — mismos pasos ya probados del sprint.</p>
+</main>
+</body></html>

@@ -103,6 +103,79 @@ class LlmEngineTests(unittest.TestCase):
             len(out["next_state"]["history"]), llm_engine._MAX_HISTORY_MESSAGES
         )
 
+    def test_telemetry_registra_camino_tools_y_latencia(self):
+        cfg = {
+            "context_key": "talulah",
+            "media": {"guia_tallas_1": {"url": "https://x/g1.jpeg",
+                                         "media_type": "image",
+                                         "camino": "tallas"}},
+        }
+        with patch.object(llm_engine, "_invoke_model") as mock:
+            mock.side_effect = [
+                _resp(
+                    [{"type": "tool_use", "id": "t1", "name": "enviar_media",
+                      "input": {"claves": ["guia_tallas_1"]}}],
+                    stop_reason="tool_use",
+                ),
+                _resp([{"type": "text", "text": "Aquí tu guía ✨"}]),
+            ]
+            out = llm_engine.advance(FakeBot(cfg), {"history": []}, "dudas de tallas")
+        tel = out["telemetry"]
+        self.assertEqual(tel["camino"], "tallas")          # media manda
+        self.assertEqual(tel["rounds"], 2)
+        self.assertEqual(tel["tools"][0]["tool"], "enviar_media")
+        self.assertIn("guia_tallas_1", tel["tools"][0]["resultado"])
+        self.assertGreaterEqual(tel["latency_ms"], 0)
+        self.assertIsNone(tel["escalated_to"])
+        self.assertIn("Aquí tu guía", tel["reply_preview"])
+
+    def test_telemetry_escalar_marca_escalated_to(self):
+        with patch.object(llm_engine, "_invoke_model") as mock:
+            mock.return_value = _resp(
+                [{"type": "tool_use", "id": "t1", "name": "escalar_a_asesor",
+                  "input": {"motivo": "pide humano"}}],
+                stop_reason="tool_use",
+            )
+            out = llm_engine.advance(
+                FakeBot({"context_key": "talulah", "assignee": "asesor_1"}),
+                {"history": []}, "quiero hablar con alguien",
+            )
+        tel = out["telemetry"]
+        self.assertEqual(tel["camino"], "escalar_a_asesor")
+        self.assertEqual(tel["escalated_to"], "asesor_1")
+        self.assertTrue(tel["finished"])
+
+    def test_telemetry_failsafe(self):
+        with patch.object(llm_engine, "_invoke_model", side_effect=RuntimeError("boom")):
+            out = llm_engine.advance(FakeBot(), None, "hola")
+        tel = out["telemetry"]
+        self.assertEqual(tel["camino"], "failsafe")
+        self.assertTrue(tel["failsafe"])
+        self.assertEqual(tel["escalated_to"], "asesor_1")
+
+    def test_clasificador_keywords_y_saludo(self):
+        cfg = {"caminos": {"sedes": ["tienda", "horario"],
+                            "tallas": ["talla"]}}
+        # keyword → camino definido
+        self.assertEqual(
+            llm_engine._classify_camino(cfg, "¿dónde queda la tienda?", [], [], False),
+            "sedes",
+        )
+        # sin match → respuesta_libre
+        self.assertEqual(
+            llm_engine._classify_camino(cfg, "hola qué tal", [], [], False),
+            "respuesta_libre",
+        )
+        # primer turno sin input → saludo
+        self.assertEqual(llm_engine._classify_camino(cfg, None, [], [], False), "saludo")
+        # shopify manda sobre keywords
+        self.assertEqual(
+            llm_engine._classify_camino(
+                cfg, "mi pedido", [{"tool": "consultar_pedido_shopify"}], [], False
+            ),
+            "estado_pedido",
+        )
+
     def test_context_key_sanitizado_no_escapa_del_directorio(self):
         self.assertEqual(llm_engine._load_context("../../etc/passwd"), "")
 

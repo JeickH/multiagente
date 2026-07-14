@@ -377,6 +377,52 @@ class BotSession(Base):
     conversation = relationship("Conversation")
 
 
+class BotLlmDecision(Base):
+    """Sprint 19 #255: bitácora de decisiones del motor LLM (observabilidad).
+
+    Una fila por turno de conversación: qué camino tomó el bot, qué
+    herramientas llamó y con qué resultado, cuánto tardó y cómo terminó.
+    El texto del usuario se guarda AQUÍ (la BD ya es el sistema de registro
+    de mensajes); a los logs de CloudWatch solo van metadatos sin contenido
+    (regla de seguridad #1/#6).
+    """
+
+    __tablename__ = "bot_llm_decisions"
+    id = Column(Integer, primary_key=True, index=True)
+    bot_id = Column(
+        Integer, ForeignKey("bots.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    session_id = Column(
+        Integer, ForeignKey("bot_sessions.id", ondelete="SET NULL"), nullable=True
+    )
+    conversation_id = Column(
+        Integer,
+        ForeignKey("conversations.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    source = Column(String(16), nullable=False, default="whatsapp")  # whatsapp | simulador
+    user_input = Column(Text, nullable=True)          # None en el turno de saludo
+    # Camino tomado: derivado de tools/media o clasificador por keywords
+    # (llm_config.caminos). Ej: 'tallas', 'estado_pedido', 'escalar_a_asesor'.
+    camino = Column(String(64), nullable=False, default="respuesta_libre")
+    tools_called = Column(Text, nullable=True)        # JSON [{tool,input,resultado}]
+    reply_preview = Column(String(300), nullable=True)
+    model_id = Column(String(128), nullable=True)
+    rounds = Column(Integer, nullable=False, default=1)   # llamadas al modelo en el turno
+    latency_ms = Column(Integer, nullable=True)
+    finished = Column(Boolean, nullable=False, default=False)
+    escalated_to = Column(String(64), nullable=True)  # handle del asesor si hubo handoff
+    failsafe = Column(Boolean, nullable=False, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        Index("ix_llm_decisions_bot_created", "bot_id", "created_at"),
+    )
+
+    bot = relationship("Bot")
+
+
 class BotPendingAction(Base):
     """Acción del bot diferida para pasos `delay` de minutos/horas.
 

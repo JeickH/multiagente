@@ -313,6 +313,9 @@ class BotSimulateOut(BaseModel):
     actions: List[BotAction] = []
     next_state: Optional[dict] = None
     finished: bool = False
+    # Sprint 19 #255: camino que tomó el motor LLM en este turno (solo bots
+    # 'llm'; None para bots de flujo). El simulador lo muestra como chip.
+    camino: Optional[str] = None
 
 
 # ===== Sprint 13: Contactos + Grupos =====

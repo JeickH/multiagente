@@ -85,12 +85,21 @@ def simulate_bot(
 
     # Sprint 19: los bots 'llm' conversan con Claude (Bedrock); los 'flow'
     # siguen el motor de pasos. El contrato del endpoint no cambia.
+    camino: str | None = None
     if getattr(bot, "engine", "flow") == "llm":
         result = llm_engine.advance(bot, payload.state, payload.user_input)
+        # #255: las pruebas desde la ventana "Probar Chatbot" también quedan
+        # registradas en bot_llm_decisions (source='simulador'), y el camino
+        # tomado se devuelve para que el usuario lo VEA en el chat de prueba.
+        llm_engine.record_decision(
+            db, bot, result.get("telemetry"), source="simulador"
+        )
+        camino = (result.get("telemetry") or {}).get("camino")
     else:
         result = bot_engine.advance(bot, payload.state, payload.user_input)
     return schemas.BotSimulateOut(
         actions=[schemas.BotAction(**a) for a in result["actions"]],
         next_state=result["next_state"],
         finished=result["finished"],
+        camino=camino,
     )

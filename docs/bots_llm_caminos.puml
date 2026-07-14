@@ -1,0 +1,179 @@
+@startuml
+title Bots LLM Sprint 19 — Caminos y acciones (estructura simplificada de los JSON WATI)
+skinparam padding 2
+skinparam shadowing false
+skinparam ActivityBackgroundColor #f4f6f8
+skinparam ActivityBorderColor #2b2b2b
+skinparam ActivityDiamondBackgroundColor #ffffff
+skinparam ActivityDiamondBorderColor #2b2b2b
+
+' ============================================================
+' BOT 1: TALULAH IA — Servicio al Cliente (talulah@gloma.com)
+' Un solo bloque LLM reemplaza al orquestador + menús de botones.
+' Cada camino termina en un "bloque de acción LLM": el mensaje al
+' cliente lo redacta la IA, la información sale de la fuente indicada.
+' ============================================================
+partition "Bot TALULAH IA (LLM)" {
+  start
+  :🤖 BLOQUE LLM
+  Recibe TODO mensaje del cliente,
+  detecta si es clienta (detal) o tienda (mayorista)
+  y decide el camino;
+  note right
+    Reemplaza: SAC Orquestador +
+    menús InteractiveList/Buttons
+    de los JSON WATI.
+    Observabilidad: cada turno queda
+    en logs + tabla bot_llm_decisions
+    (camino, tools, latencia).
+  end note
+  switch (camino detectado)
+
+  case ( Estado de pedido )
+    :[Acción LLM · API]
+    Pide nº de pedido y consulta
+    Shopify orders.json
+    (token client_credentials);
+    if (¿pedido encontrado?) then (sí)
+      :Mensaje LLM con estado de envío,
+      pago y URL de rastreo;
+      :ESCALAR → asesora (seguimiento);
+    else (no)
+      :Mensaje LLM "no lo encuentro";
+      :ESCALAR → asesora;
+    endif
+
+  case ( Cambios y garantías )
+    :[Acción LLM · caso]
+    Explica política (refund-policy);
+    para garantía recolecta
+    orden + descripción + fotos;
+    :Caso registrado (5 días hábiles);
+    :ESCALAR → asesora;
+
+  case ( Tiempos de envío )
+    :[Acción LLM · info]
+    Política shipping-policy;
+    :VOLVER al bloque LLM;
+
+  case ( Guía de tallas )
+    :[Acción LLM · media]
+    Envía guia_tallas_1..6.jpeg
+    + acompañamiento;
+    :VOLVER al bloque LLM;
+
+  case ( Sedes físicas )
+    :[Acción LLM · info]
+    4 tiendas: Envigado, Junín,
+    Outlet, Santafé (+ horarios);
+    :VOLVER al bloque LLM;
+
+  case ( Pagos y promos )
+    :[Acción LLM · info]
+    Tip (incógnito / cupones no
+    aplican en SALE);
+    :ESCALAR → asesora;
+
+  case ( Fallas web )
+    :[Acción LLM · info]
+    Tips (refrescar, otro navegador,
+    borrar caché);
+    :ESCALAR → asesora;
+
+  case ( Catálogo )
+    :[Acción LLM · info]
+    Dirige a talulah.com.co
+    (links por categoría PENDIENTES);
+    :VOLVER al bloque LLM;
+
+  case ( B2B Despachos )
+    :[Acción LLM · registro]
+    Pide nº de pedido y lo registra;
+    :ESCALAR → asesora logística;
+
+  case ( B2B Faltantes y defectos )
+    :[Acción LLM · caso]
+    Lote/factura + descripción + fotos;
+    :Caso registrado (5 días hábiles);
+    :ESCALAR → asesora B2B;
+
+  case ( B2B Cuenta y crédito )
+    :ESCALAR → asesora de cartera;
+
+  case ( B2B Ventas y repedidos )
+    :ESCALAR → asesor comercial;
+
+  case ( Asesor humano / fallback 2x )
+    :ESCALAR → asesora
+    (handoff en la app:
+    conversation.assigned_to=asesor_1);
+
+  case ( Despedida )
+    :FIN de la conversación;
+
+  endswitch
+  stop
+}
+
+' ============================================================
+' BOT 2: PLAN TOLÚ & COVEÑAS IA (agencia@demo.com)
+' ============================================================
+partition "Bot DEMO VIAJES IA (LLM)" {
+  start
+  :🤖 BLOQUE LLM (Maria Camila)
+  Saluda, captura el nombre
+  y decide el camino;
+  note right
+    Reemplaza: pasos wait_input +
+    "LLM route" por keywords del
+    bot de flujo del seed Coveñas.
+  end note
+  switch (camino detectado)
+
+  case ( Info general )
+    :[Acción LLM · media]
+    info_general.jpeg + resumen
+    (vie→lun, todo incluido);
+    :VOLVER al bloque LLM;
+
+  case ( Tours incluidos )
+    :[Acción LLM · media]
+    tours.jpeg + tour.mp4
+    (Caimanera + Tolú);
+    :VOLVER al bloque LLM;
+
+  case ( Precios y condiciones )
+    :[Acción LLM · media]
+    tarifario1-3.jpeg + hotel.mp4
+    + regla reserva 30%;
+    :VOLVER al bloque LLM;
+
+  case ( Itinerario )
+    :[Acción LLM · info]
+    Día a día vie–lun (del contexto);
+    :VOLVER al bloque LLM;
+
+  case ( Métodos de pago )
+    :[Acción LLM · media]
+    medios_pago.jpeg
+    (transferencia, PSE, tarjeta);
+    :VOLVER al bloque LLM;
+
+  case ( Reserva )
+    :[Acción LLM · media+datos]
+    fomulario_reserva.jpeg; recoge
+    nombre, cédula, nº personas, fecha;
+    :ESCALAR → asesor
+    (confirma disponibilidad);
+
+  case ( Asesor humano )
+    :ESCALAR → asesor_1;
+
+  case ( Despedida )
+    :FIN de la conversación;
+
+  endswitch
+  stop
+}
+
+@enduml

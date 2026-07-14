@@ -39,6 +39,8 @@ type SimulateResponse = {
   // bots LLM (Sprint 19) guardan {history}. El cliente solo lo devuelve tal cual.
   next_state: Record<string, any> | null;
   finished: boolean;
+  // Camino que tomó la IA en este turno (solo bots LLM) — se muestra como chip.
+  camino?: string | null;
 };
 
 type ChatBubble =
@@ -48,6 +50,7 @@ type ChatBubble =
   | { role: 'bot'; kind: 'pause'; seconds: number; time: string }
   | { role: 'bot'; kind: 'end'; text: string; time: string }
   | { role: 'bot'; kind: 'handoff'; assignee: string; text: string; time: string }
+  | { role: 'bot'; kind: 'camino'; camino: string; time: string }
   | { role: 'user'; text: string; time: string };
 
 const nowHHMM = (): string =>
@@ -81,16 +84,18 @@ const GAP_X = 80;
 const PAD_X = 60;
 const PAD_Y = 120;
 
-const STEP_STYLE: Record<string, { accent: string; icon: string; badge: string }> = {
-  send_text:    { accent: 'border-blue-400',   icon: '💬', badge: 'bg-blue-50 text-blue-700' },
-  send_template:{ accent: 'border-indigo-400', icon: '📋', badge: 'bg-indigo-50 text-indigo-700' },
-  send_media:   { accent: 'border-purple-400', icon: '🖼️', badge: 'bg-purple-50 text-purple-700' },
-  wait_input:   { accent: 'border-amber-400',  icon: '⌨️', badge: 'bg-amber-50 text-amber-700' },
-  llm:          { accent: 'border-fuchsia-400',icon: '🤖', badge: 'bg-fuchsia-50 text-fuchsia-700' },
-  delay:        { accent: 'border-slate-400',  icon: '⏱️', badge: 'bg-slate-100 text-slate-700' },
-  condition:    { accent: 'border-orange-400', icon: '🔀', badge: 'bg-orange-50 text-orange-700' },
-  handoff:      { accent: 'border-emerald-400',icon: '👤', badge: 'bg-emerald-50 text-emerald-700' },
-  end:          { accent: 'border-rose-400',   icon: '🏁', badge: 'bg-rose-50 text-rose-700' },
+// #265: cada tipo de bloque tiene un fondo pastel propio para resaltar del
+// fondo blanco del lienzo (pedido CEO).
+const STEP_STYLE: Record<string, { accent: string; icon: string; badge: string; bg: string }> = {
+  send_text:    { accent: 'border-blue-400',   icon: '💬', badge: 'bg-blue-100 text-blue-700',       bg: 'bg-blue-50' },
+  send_template:{ accent: 'border-indigo-400', icon: '📋', badge: 'bg-indigo-100 text-indigo-700',   bg: 'bg-indigo-50' },
+  send_media:   { accent: 'border-purple-400', icon: '🖼️', badge: 'bg-purple-100 text-purple-700',   bg: 'bg-purple-50' },
+  wait_input:   { accent: 'border-amber-400',  icon: '⌨️', badge: 'bg-amber-100 text-amber-700',     bg: 'bg-amber-50' },
+  llm:          { accent: 'border-fuchsia-400',icon: '🤖', badge: 'bg-fuchsia-100 text-fuchsia-700', bg: 'bg-fuchsia-50' },
+  delay:        { accent: 'border-slate-400',  icon: '⏱️', badge: 'bg-slate-200 text-slate-700',     bg: 'bg-slate-50' },
+  condition:    { accent: 'border-orange-400', icon: '🔀', badge: 'bg-orange-100 text-orange-700',   bg: 'bg-orange-50' },
+  handoff:      { accent: 'border-emerald-400',icon: '👤', badge: 'bg-emerald-100 text-emerald-700', bg: 'bg-emerald-50' },
+  end:          { accent: 'border-rose-400',   icon: '🏁', badge: 'bg-rose-100 text-rose-700',       bg: 'bg-rose-50' },
 };
 
 function StepNode({ step, isFirst }: { step: BotStep; isFirst: boolean }) {
@@ -162,6 +167,27 @@ function StepNode({ step, isFirst }: { step: BotStep; isFirst: boolean }) {
         );
       case 'llm': {
         const isExtract = cfg.mode === 'extract';
+        // Sprint 19 #256: bloque de ACCIÓN LLM — el mensaje al cliente lo
+        // redacta la IA; la información sale de la fuente integrada indicada.
+        if (cfg.mode === 'accion') {
+          // Feedback CEO #256: el bloque muestra el MENSAJE base (copy real,
+          // como los bloques de siempre); la IA lo adapta al conversar.
+          return (
+            <div>
+              <p className="text-sm text-gray-700">{cfg.mensaje || cfg.descripcion || '—'}</p>
+              <div className="flex flex-wrap gap-1 mt-1">
+                <span className="inline-block text-[10px] bg-fuchsia-50 text-fuchsia-700 rounded px-2 py-0.5">
+                  ✨ la IA adapta este mensaje
+                </span>
+                {cfg.fuente && (
+                  <span className="inline-block text-[10px] bg-indigo-50 text-indigo-700 rounded px-2 py-0.5">
+                    fuente: {cfg.fuente}
+                  </span>
+                )}
+              </div>
+            </div>
+          );
+        }
         return (
           <div>
             <span className="inline-block text-[10px] bg-fuchsia-50 text-fuchsia-700 rounded px-2 py-0.5 mb-1">
@@ -212,7 +238,7 @@ function StepNode({ step, isFirst }: { step: BotStep; isFirst: boolean }) {
 
   return (
     <div
-      className={`absolute bg-white rounded-xl border-t-4 ${style.accent} border border-gray-200 shadow-sm p-4 flex flex-col`}
+      className={`absolute ${style.bg} rounded-xl border-t-4 ${style.accent} border border-gray-200 shadow-sm p-4 flex flex-col`}
       style={{ width: NODE_W, minHeight: NODE_H }}
     >
       {isFirst && (
@@ -350,6 +376,12 @@ function SimulatorModal({
       const data: SimulateResponse = await res.json();
       setState(data.next_state);
       await renderActionsProgressively(data.actions);
+      if (data.camino) {
+        setBubbles((prev) => [
+          ...prev,
+          { role: 'bot', kind: 'camino', camino: data.camino!, time: nowHHMM() },
+        ]);
+      }
       setFinished(data.finished);
       // Regla del CEO: entre bloque y bloque siempre se espera respuesta del
       // usuario. Habilitamos el input mientras el bot no haya terminado, sin
@@ -595,6 +627,16 @@ function SimulatorModal({
                   </div>
                 );
               }
+              if (b.kind === 'camino') {
+                // Sprint 19 #255: ruta que tomó la IA en este turno (solo lectura).
+                return (
+                  <div key={i} className="flex justify-center py-0.5">
+                    <span className="bg-fuchsia-50 text-fuchsia-700 text-[10px] px-2 py-0.5 rounded-full shadow-sm border border-fuchsia-100">
+                      🧭 camino: {b.camino}
+                    </span>
+                  </div>
+                );
+              }
               if (b.kind === 'handoff') {
                 return (
                   <div key={i} className="flex flex-col items-start gap-1 w-full">
@@ -684,6 +726,9 @@ export default function BotDetailPage() {
   const [bot, setBot] = useState<BotDetail | null>(null);
   const [error, setError] = useState('');
   const [simulatorOpen, setSimulatorOpen] = useState(false);
+  // #265: zoom del visualizador. null = aún sin calcular; al cargar el bot se
+  // ajusta automáticamente para VER EL ESQUEMA COMPLETO (vista por defecto).
+  const [zoom, setZoom] = useState<number | null>(null);
 
   useEffect(() => {
     if (!id || typeof id !== 'string') return;
@@ -788,10 +833,18 @@ export default function BotDetailPage() {
     const ROW_GAP = 50;
     const nodes: { step: BotStep; x: number; y: number }[] = [];
     let maxRows = 0;
+    // Altura de la columna más alta: las demás se CENTRAN verticalmente
+    // respecto a ella para que las flechas se abran en abanico simétrico
+    // (feedback CEO #256: "que se repartan mejor").
+    let maxColHeight = 0;
+    for (const steps of byLevel.values()) {
+      const h = steps.length * NODE_H + (steps.length - 1) * ROW_GAP;
+      if (h > maxColHeight) maxColHeight = h;
+    }
     for (const [lvl, steps] of byLevel.entries()) {
       if (steps.length > maxRows) maxRows = steps.length;
       const colHeight = steps.length * NODE_H + (steps.length - 1) * ROW_GAP;
-      const startY = PAD_Y;
+      const startY = PAD_Y + (maxColHeight - colHeight) / 2;
       steps.forEach((s, i) => {
         nodes.push({
           step: s,
@@ -799,7 +852,6 @@ export default function BotDetailPage() {
           y: startY + i * (NODE_H + ROW_GAP),
         });
       });
-      void colHeight;
     }
 
     // Construir edges con label opcional por branch
@@ -819,11 +871,12 @@ export default function BotDetailPage() {
       outs.forEach((o, k) => {
         const to = nodes.find((n) => n.step.id === o.target);
         if (!to) return;
-        const offset = outs.length > 1 ? (k - (outs.length - 1) / 2) * 26 : 0;
+        // Feedback CEO #256: TODAS las flechas de un bloque salen del MISMO
+        // punto — la mitad de su lado derecho (sin offset por salida).
         edges.push({
           id: `${s.id}-${o.target}-${k}`,
           x1: from.x + NODE_W,
-          y1: from.y + NODE_H / 2 + offset,
+          y1: from.y + NODE_H / 2,
           x2: to.x,
           y2: to.y + NODE_H / 2,
           label: o.label,
@@ -835,6 +888,26 @@ export default function BotDetailPage() {
     const height = PAD_Y + maxRows * NODE_H + (maxRows - 1) * ROW_GAP + 80;
     return { nodes, edges, width, height };
   }, [bot]);
+
+  // #265: escala "ver todo" — el esquema completo cabe en el viewport.
+  const fitZoom = () => {
+    if (typeof window === 'undefined' || layout.width === 0) return 1;
+    const availW = window.innerWidth - 48;
+    const availH = window.innerHeight - 140; // header + margen
+    return Math.min(availW / Math.max(layout.width, 1000), availH / Math.max(layout.height, 500), 1);
+  };
+
+  useEffect(() => {
+    if (zoom === null && layout.width > 0) {
+      setZoom(Math.max(fitZoom(), 0.15));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [layout]);
+
+  const z = zoom ?? 1;
+  const zoomIn = () => setZoom(Math.min(z * 1.25, 2));
+  const zoomOut = () => setZoom(Math.max(z / 1.25, 0.15));
+  const zoomFit = () => setZoom(Math.max(fitZoom(), 0.15));
 
   return (
     <>
@@ -882,7 +955,7 @@ export default function BotDetailPage() {
             </div>
           )}
 
-          {bot && bot.engine === 'llm' && (
+          {bot && bot.engine === 'llm' && bot.steps.length === 0 && (
             <div className="max-w-lg mx-auto mt-16 bg-white border border-gloma-rose-soft rounded-xl shadow-sm px-6 py-8 text-center">
               <div className="text-4xl mb-3">🤖✨</div>
               <h2 className="text-lg font-semibold text-gray-800 mb-2">Bot conversacional con IA</h2>
@@ -898,12 +971,29 @@ export default function BotDetailPage() {
             </div>
           )}
 
-          {bot && bot.engine !== 'llm' && (
+          {bot && bot.engine === 'llm' && bot.steps.length > 0 && (
+            <div className="sticky left-0 mx-4 mt-4 max-w-2xl bg-fuchsia-50 border border-fuchsia-200 text-fuchsia-800 rounded-lg px-4 py-2 text-xs">
+              🤖 <span className="font-semibold">Bot con motor de IA:</span> cada
+              mensaje lo interpreta la IA y elige uno de estos caminos. Los bloques
+              de acción indican qué hace y de dónde saca la información; el texto
+              final al cliente siempre lo redacta la IA.
+            </div>
+          )}
+
+          {bot && (bot.engine !== 'llm' || bot.steps.length > 0) && (
+          <div
+            style={{
+              width: Math.max(layout.width, 1000) * z,
+              height: Math.max(layout.height, 500) * z,
+            }}
+          >
             <div
               className="relative"
               style={{
                 width: Math.max(layout.width, 1000),
                 height: Math.max(layout.height, 500),
+                transform: `scale(${z})`,
+                transformOrigin: 'top left',
               }}
             >
               <svg
@@ -968,6 +1058,36 @@ export default function BotDetailPage() {
                   <StepNode step={step} isFirst={idx === 0} />
                 </div>
               ))}
+            </div>
+          </div>
+          )}
+
+          {bot && (bot.engine !== 'llm' || bot.steps.length > 0) && (
+            <div className="fixed bottom-5 right-5 z-20 flex flex-col gap-2">
+              <button
+                type="button"
+                onClick={zoomIn}
+                title="Acercar zoom"
+                className="w-11 h-11 rounded-full bg-white border border-gray-300 shadow-md text-gray-700 text-xl font-bold hover:bg-gray-50 active:bg-gray-100"
+              >
+                +
+              </button>
+              <button
+                type="button"
+                onClick={zoomFit}
+                title="Ver el esquema completo (vista por defecto)"
+                className="w-11 h-11 rounded-full bg-white border border-gray-300 shadow-md text-gray-700 text-lg hover:bg-gray-50 active:bg-gray-100"
+              >
+                ⤢
+              </button>
+              <button
+                type="button"
+                onClick={zoomOut}
+                title="Alejar zoom"
+                className="w-11 h-11 rounded-full bg-white border border-gray-300 shadow-md text-gray-700 text-xl font-bold hover:bg-gray-50 active:bg-gray-100"
+              >
+                −
+              </button>
             </div>
           )}
         </main>

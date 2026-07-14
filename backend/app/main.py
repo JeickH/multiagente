@@ -1,7 +1,17 @@
+import logging
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from .database import Base, engine
 from .routers import auth, usuario, mensajes, campanas, bots, teams, meta_webhook, internal, landing, contacts, templates, campaigns, twilio_webhook
+
+# #255: los logs de la app (p. ej. `llm_decision ...` del motor de bots) van a
+# nivel INFO. Sin esto el root logger queda en WARNING y las decisiones del
+# LLM no se ven en CloudWatch/docker logs.
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+)
 
 Base.metadata.create_all(bind=engine)
 

@@ -110,6 +110,16 @@ def run_turn(
     is_llm = getattr(bot, "engine", "flow") == "llm"
     if is_llm:
         result = llm_engine.advance(bot, state, user_input)
+        # #255: registrar la decisión del turno (camino, tools, latencia) en
+        # bot_llm_decisions. Nunca rompe el turno (record_decision es defensivo).
+        llm_engine.record_decision(
+            db,
+            bot,
+            result.get("telemetry"),
+            source="whatsapp",
+            conversation_id=conversation.id,
+            session_id=session.id,
+        )
     else:
         result = bot_engine.advance(bot, state, user_input)
 

@@ -42,6 +42,7 @@ import json
 import logging
 import os
 import re
+import time
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -210,19 +211,32 @@ def _tools_for(cfg: Dict[str, Any]) -> List[Dict[str, Any]]:
             {
                 "name": "consultar_pedido_shopify",
                 "description": (
-                    "Consulta en Shopify el estado de un pedido por su número "
-                    "(sin puntos ni comas ni #). Devuelve estado de envío, "
-                    "estado de pago y URL de rastreo."
+                    "Busca pedidos en Shopify. Se puede buscar por número de "
+                    "pedido, por nombre del cliente, por número de documento "
+                    "(cédula) y/o por fecha — con al menos UN criterio. "
+                    "Devuelve hasta 3 coincidencias con estado de envío, "
+                    "estado de pago, fecha, cliente y URL de rastreo."
                 ),
                 "input_schema": {
                     "type": "object",
                     "properties": {
                         "numero_pedido": {
                             "type": "string",
-                            "description": "Número de pedido, ej: 1234",
-                        }
+                            "description": "Número de pedido, ej: 53826 (sin # ni puntos)",
+                        },
+                        "nombre_cliente": {
+                            "type": "string",
+                            "description": "Nombre y/o apellido del cliente, ej: Patricia Mejia",
+                        },
+                        "documento": {
+                            "type": "string",
+                            "description": "Cédula / número de documento, ej: 42062393",
+                        },
+                        "fecha": {
+                            "type": "string",
+                            "description": "Fecha del pedido en formato YYYY-MM-DD",
+                        },
                     },
-                    "required": ["numero_pedido"],
                 },
             }
         )
@@ -282,13 +296,15 @@ def _run_tool(
 
     if name == "consultar_pedido_shopify":
         shopify_cfg = cfg.get("shopify") or {}
-        numero = str(tool_input.get("numero_pedido", "")).strip().lstrip("#")
         try:
-            info = shopify_client.get_order_status(
+            info = shopify_client.search_orders(
                 shop=shopify_cfg.get("shop", ""),
                 client_id=shopify_cfg.get("client_id", ""),
                 encrypted_client_secret=shopify_cfg.get("encrypted_client_secret", ""),
-                order_name=numero,
+                numero=str(tool_input.get("numero_pedido", "")).strip().lstrip("#"),
+                nombre=str(tool_input.get("nombre_cliente", "")).strip(),
+                documento=str(tool_input.get("documento", "")).strip(),
+                fecha=str(tool_input.get("fecha", "")).strip(),
             )
             return json.dumps(info, ensure_ascii=False), False
         except Exception:
@@ -298,6 +314,99 @@ def _run_tool(
             return json.dumps({"error": "consulta no disponible"}), False
 
     return f"herramienta desconocida: {name}", False
+
+
+# ---------------------------------------------------------------------------
+# Observabilidad (#255): clasificación del camino + registro de decisiones
+# ---------------------------------------------------------------------------
+
+def _classify_camino(
+    cfg: Dict[str, Any],
+    user_input: Optional[str],
+    tools_called: List[Dict[str, Any]],
+    sent_media_log: List[str],
+    failsafe: bool,
+) -> str:
+    """Deriva el camino que tomó el bot en este turno.
+
+    Prioridad: (1) failsafe; (2) la herramienta llamada ES la decisión
+    (escalar/fin/shopify); (3) el `camino` declarado del medio enviado;
+    (4) clasificador por keywords de `llm_config.caminos`; (5) saludo si es
+    el primer turno; (6) respuesta_libre.
+    """
+    if failsafe:
+        return "failsafe"
+    tool_names = {t.get("tool") for t in tools_called}
+    if "escalar_a_asesor" in tool_names:
+        return "escalar_a_asesor"
+    if "consultar_pedido_shopify" in tool_names:
+        return "estado_pedido"
+    if "finalizar_conversacion" in tool_names:
+        return "fin"
+    if sent_media_log:
+        media = _media_catalog(cfg)
+        for key in sent_media_log:
+            camino = (media.get(key) or {}).get("camino")
+            if camino:
+                return str(camino)
+    text = (user_input or "").lower()
+    if text:
+        caminos = cfg.get("caminos")
+        if isinstance(caminos, dict):
+            for label, keywords in caminos.items():
+                if not isinstance(keywords, list):
+                    continue
+                for kw in keywords:
+                    if isinstance(kw, str) and kw and kw.lower() in text:
+                        return str(label)
+        return "respuesta_libre"
+    return "saludo"
+
+
+def record_decision(
+    db,
+    bot,
+    telemetry: Optional[Dict[str, Any]],
+    *,
+    source: str,
+    conversation_id: Optional[int] = None,
+    session_id: Optional[int] = None,
+) -> None:
+    """Persiste la decisión del turno en `bot_llm_decisions`.
+
+    Nunca debe romper el turno: cualquier error queda solo en el log.
+    """
+    if not telemetry:
+        return
+    try:
+        from .. import models
+
+        row = models.BotLlmDecision(
+            bot_id=bot.id,
+            session_id=session_id,
+            conversation_id=conversation_id,
+            source=source,
+            user_input=telemetry.get("user_input"),
+            camino=telemetry.get("camino", "respuesta_libre"),
+            tools_called=json.dumps(telemetry.get("tools") or [], ensure_ascii=False)
+            if telemetry.get("tools") else None,
+            reply_preview=(telemetry.get("reply_preview") or "")[:300] or None,
+            model_id=telemetry.get("model_id"),
+            rounds=int(telemetry.get("rounds") or 1),
+            latency_ms=telemetry.get("latency_ms"),
+            finished=bool(telemetry.get("finished")),
+            escalated_to=telemetry.get("escalated_to"),
+            failsafe=bool(telemetry.get("failsafe")),
+        )
+        db.add(row)
+        db.commit()
+    except Exception:
+        logger.exception("llm_engine: no se pudo registrar la decisión (bot=%s)",
+                         getattr(bot, "id", "?"))
+        try:
+            db.rollback()
+        except Exception:
+            pass
 
 
 # ---------------------------------------------------------------------------
@@ -353,27 +462,63 @@ def advance(
     state: Optional[Dict[str, Any]],
     user_input: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """Un turno de conversación LLM. Mismo contrato que `bot_engine.advance`."""
+    """Un turno de conversación LLM. Mismo contrato que `bot_engine.advance`,
+    más una clave extra `telemetry` (#255) que el caller persiste con
+    `record_decision()`. Los flow-bots no la emiten y nadie la requiere.
+    """
     cfg = _parse_llm_config(bot)
     actions: List[Dict[str, Any]] = []
+    t0 = time.monotonic()
     try:
-        return _advance_inner(bot, cfg, state, user_input, actions)
+        result = _advance_inner(bot, cfg, state, user_input, actions, t0)
     except Exception:
         # Fail-safe: el bot nunca deja al cliente colgado ni filtra el error.
         logger.exception("llm_engine: turno falló (bot=%s)", getattr(bot, "id", "?"))
+        assignee = cfg.get("assignee", "asesor_1")
         failsafe: List[Dict[str, Any]] = list(actions)
         failsafe.append({"type": "say", "payload": {"text": _FAILSAFE_TEXT}})
         failsafe.append(
             {
                 "type": "handoff",
                 "payload": {
-                    "assignee": cfg.get("assignee", "asesor_1"),
+                    "assignee": assignee,
                     "text": "",
                     "motivo": "failsafe: error del motor LLM",
                 },
             }
         )
-        return {"actions": failsafe, "next_state": None, "finished": True}
+        result = {
+            "actions": failsafe,
+            "next_state": None,
+            "finished": True,
+            "telemetry": {
+                "user_input": user_input,
+                "camino": "failsafe",
+                "tools": [],
+                "reply_preview": _FAILSAFE_TEXT,
+                "model_id": cfg.get("model_id") or _env_model_id(),
+                "rounds": 0,
+                "latency_ms": int((time.monotonic() - t0) * 1000),
+                "finished": True,
+                "escalated_to": assignee,
+                "failsafe": True,
+            },
+        }
+    # Log estructurado SIN contenido del mensaje (reglas #1/#6): solo metadatos.
+    tel = result.get("telemetry") or {}
+    logger.info(
+        "llm_decision bot=%s camino=%s tools=%s rounds=%s latency_ms=%s "
+        "finished=%s escalado=%s failsafe=%s",
+        getattr(bot, "id", "?"),
+        tel.get("camino"),
+        ",".join(t.get("tool", "?") for t in tel.get("tools") or []) or "-",
+        tel.get("rounds"),
+        tel.get("latency_ms"),
+        tel.get("finished"),
+        tel.get("escalated_to") or "-",
+        tel.get("failsafe"),
+    )
+    return result
 
 
 def _advance_inner(
@@ -382,6 +527,7 @@ def _advance_inner(
     state: Optional[Dict[str, Any]],
     user_input: Optional[str],
     actions: List[Dict[str, Any]],
+    t0: float,
 ) -> Dict[str, Any]:
     history = _load_history(state)
     system = _system_prompt(bot, cfg)
@@ -398,10 +544,14 @@ def _advance_inner(
 
     say_texts: List[str] = []
     sent_media_log: List[str] = []
+    tools_called: List[Dict[str, Any]] = []
+    escalated_to: Optional[str] = None
     finished = False
+    rounds = 0
 
     for _ in range(_MAX_TOOL_ROUNDS):
         data = _invoke_model(model_id, system, working, tools)
+        rounds += 1
         content = data.get("content") or []
 
         tool_results: List[Dict[str, Any]] = []
@@ -413,10 +563,21 @@ def _advance_inner(
                     actions.append({"type": "say", "payload": {"text": text}})
                     say_texts.append(text)
             elif btype == "tool_use":
+                name = block.get("name", "")
+                tool_input = block.get("input") or {}
                 result_text, ended = _run_tool(
-                    block.get("name", ""), block.get("input") or {}, cfg,
-                    actions, sent_media_log,
+                    name, tool_input, cfg, actions, sent_media_log,
                 )
+                # #255: cada tool llamada es una decisión — queda registrada.
+                tools_called.append(
+                    {
+                        "tool": name,
+                        "input": {k: str(v)[:200] for k, v in tool_input.items()},
+                        "resultado": result_text[:300],
+                    }
+                )
+                if name == "escalar_a_asesor":
+                    escalated_to = cfg.get("assignee", "asesor_1")
                 finished = finished or ended
                 tool_results.append(
                     {
@@ -441,4 +602,21 @@ def _advance_inner(
     history = history[-_MAX_HISTORY_MESSAGES:]
 
     next_state = None if finished else {"history": history}
-    return {"actions": actions, "next_state": next_state, "finished": finished}
+    telemetry = {
+        "user_input": user_input,
+        "camino": _classify_camino(cfg, user_input, tools_called, sent_media_log, False),
+        "tools": tools_called,
+        "reply_preview": assistant_summary[:300],
+        "model_id": model_id,
+        "rounds": rounds,
+        "latency_ms": int((time.monotonic() - t0) * 1000),
+        "finished": finished,
+        "escalated_to": escalated_to,
+        "failsafe": False,
+    }
+    return {
+        "actions": actions,
+        "next_state": next_state,
+        "finished": finished,
+        "telemetry": telemetry,
+    }

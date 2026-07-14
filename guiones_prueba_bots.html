@@ -1,0 +1,403 @@
+<!DOCTYPE html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+</head><body>
+<title>Guiones de prueba — Bots LLM Gloma</title>
+<style>
+  :root {
+    --paper:#FBF8F5; --ink:#2B2320; --muted:#6E6058; --line:#E7DDD5; --card:#FFFFFF;
+    --brown:#7A5C49; --brown-soft:#F1E7DF; --llm:#A63FA0; --llm-soft:#F9EDF8;
+    --ok:#1F7A5C; --ok-soft:#E7F4EE; --warn:#B45309; --warn-soft:#FCF0E1;
+    --code:#F4EEE9; --user:#DCF3D0; --botb:#FFFFFF;
+  }
+  @media (prefers-color-scheme: dark) { :root {
+    --paper:#17120F; --ink:#EDE6E0; --muted:#A99C93; --line:#372E28; --card:#201914;
+    --brown:#C79A7E; --brown-soft:#2C221B; --llm:#E08BD9; --llm-soft:#33222F;
+    --ok:#5FC79E; --ok-soft:#1B2E26; --warn:#E9A159; --warn-soft:#332413;
+    --code:#241C16; --user:#1F3A22; --botb:#2A211B; } }
+  :root[data-theme="dark"] {
+    --paper:#17120F; --ink:#EDE6E0; --muted:#A99C93; --line:#372E28; --card:#201914;
+    --brown:#C79A7E; --brown-soft:#2C221B; --llm:#E08BD9; --llm-soft:#33222F;
+    --ok:#5FC79E; --ok-soft:#1B2E26; --warn:#E9A159; --warn-soft:#332413;
+    --code:#241C16; --user:#1F3A22; --botb:#2A211B; }
+  :root[data-theme="light"] {
+    --paper:#FBF8F5; --ink:#2B2320; --muted:#6E6058; --line:#E7DDD5; --card:#FFFFFF;
+    --brown:#7A5C49; --brown-soft:#F1E7DF; --llm:#A63FA0; --llm-soft:#F9EDF8;
+    --ok:#1F7A5C; --ok-soft:#E7F4EE; --warn:#B45309; --warn-soft:#FCF0E1;
+    --code:#F4EEE9; --user:#DCF3D0; --botb:#FFFFFF; }
+  * { box-sizing:border-box; }
+  body { background:var(--paper); color:var(--ink); margin:0; padding:0 20px 80px;
+    font:16px/1.6 "Avenir Next","Segoe UI",system-ui,sans-serif; }
+  main { max-width:860px; margin:0 auto; }
+  header { padding:44px 0 14px; border-bottom:2px solid var(--brown); margin-bottom:24px; }
+  h1 { font-size:1.8rem; margin:0 0 8px; letter-spacing:-0.01em; text-wrap:balance; }
+  .sub { color:var(--muted); max-width:64ch; }
+  code { background:var(--code); padding:1px 6px; border-radius:5px;
+    font-family:ui-monospace,"SF Mono",Menlo,monospace; font-size:0.85em; }
+  .chips { display:flex; flex-wrap:wrap; gap:8px; margin-top:12px; }
+  .chip { font-size:0.76rem; font-weight:600; padding:3px 11px; border-radius:999px;
+    border:1px solid var(--line); background:var(--card); }
+  .chip.okv { background:var(--ok-soft); color:var(--ok); border-color:transparent; }
+  .chip.warnv { background:var(--warn-soft); color:var(--warn); border-color:transparent; }
+  details { border:1px solid var(--line); border-radius:12px; background:var(--card);
+    margin:12px 0; overflow:hidden; }
+  summary { cursor:pointer; font-weight:600; padding:14px 18px; display:flex;
+    align-items:center; gap:10px; flex-wrap:wrap; }
+  summary::-webkit-details-marker { display:none; }
+  summary::before { content:"▸"; color:var(--brown); }
+  details[open] summary::before { content:"▾"; }
+  .tno { background:var(--brown-soft); color:var(--brown); font-size:0.75rem;
+    font-weight:700; padding:2px 9px; border-radius:999px; }
+  .body { padding:2px 18px 18px; border-top:1px dashed var(--line); }
+  .meta { color:var(--muted); font-size:0.85rem; }
+  h4 { margin:16px 0 6px; font-size:0.8rem; text-transform:uppercase;
+    letter-spacing:0.08em; color:var(--brown); }
+  ol.guion { margin:4px 0; padding-left:20px; }
+  ol.guion li { padding:2px 0; }
+  .chat { background:var(--code); border:1px solid var(--line); border-radius:12px;
+    padding:12px; display:flex; flex-direction:column; gap:7px; }
+  .msg { max-width:82%; padding:7px 12px; border-radius:10px; font-size:0.88rem;
+    white-space:pre-wrap; word-break:break-word; }
+  .msg.user { align-self:flex-end; background:var(--user); border-bottom-right-radius:2px; }
+  .msg.bot { align-self:flex-start; background:var(--botb); border:1px solid var(--line);
+    border-top-left-radius:2px; }
+  .media { align-self:flex-start; font-size:0.8rem; color:var(--muted);
+    background:var(--botb); border:1px dashed var(--line); border-radius:8px; padding:4px 10px; }
+  .handoff { align-self:center; font-size:0.8rem; background:var(--ok-soft); color:var(--ok);
+    border-radius:999px; padding:3px 12px; }
+  .camino { align-self:center; font-size:0.74rem; background:var(--llm-soft); color:var(--llm);
+    border-radius:999px; padding:2px 10px; }
+  .camino.inline { display:inline-block; }
+  .hint { align-self:center; color:var(--muted); font-size:0.76rem; font-style:italic; }
+  .nota { background:var(--warn-soft); border-left:3px solid var(--warn);
+    padding:8px 12px; border-radius:0 8px 8px 0; font-size:0.88rem; }
+  .callout { border-left:4px solid var(--warn); background:var(--warn-soft);
+    border-radius:0 10px 10px 0; padding:12px 16px; margin:18px 0; }
+  .callout.okc { border-left-color:var(--ok); background:var(--ok-soft); }
+  h2 { font-size:1.25rem; margin:40px 0 8px; }
+  ul.datos { max-width:74ch; } ul.datos li { margin:6px 0; }
+  a { color:var(--brown); }
+  :focus-visible { outline:2px solid var(--llm); outline-offset:2px; }
+</style>
+<main>
+<header>
+  <h1>Guiones de prueba de los bots LLM</h1>
+  <p class="sub">10 pruebas para activar cada camino de los bots Talulah IA y Plan Tolú &amp; Coveñas IA. Cada una trae el guión para escribir en <b>▶ Probar Chatbot</b>, el resultado real que obtuve al correrla con Claude en vivo (Bedrock, 13-jul-2026) y mi veredicto de coherencia.</p>
+  <div class="chips">
+    <span class="chip okv">✓ 10/10 respuestas coherentes</span>
+    <span class="chip okv">✓ Shopify real: por número, cédula, nombre y fecha</span>
+    <span class="chip warnv">⚠ 1 hallazgo corregido: clasificador de caminos B2B</span>
+  </div>
+</header>
+
+<details>
+  <summary><span class="tno">T1</span> Saludo y bienvenida
+    <span class="chip okv">✅ Coherente</span></summary>
+  <div class="body">
+    <p class="meta">Cuenta: <code>talulah@gloma.com</code> · camino esperado:
+      <span class="camino inline">🧭 saludo</span></p>
+    <h4>Guión — escribe esto en “▶ Probar Chatbot”:</h4>
+    <ol class="guion"><li><code>Hola! soy Laura</code></li></ol>
+    <h4>Resultado real de mi corrida (13-jul-2026, Bedrock en vivo):</h4>
+    <div class="chat"><div class="hint">— apertura del chat (sin mensaje) —</div><div class="msg bot">¡Hola! 🤍 Bienvenida a Talulah 🌿
+
+Soy tu asistente virtual y estoy por aquí para acompañarte en todo lo que necesites. Para empezar, ¿cuál es tu nombre? 😊
+
+*Al continuar, aceptas nuestra política de datos:* https://www.talulah.com.co/policies/privacy-policy</div><div class="camino">🧭 camino: saludo</div><div class="msg user">Hola! soy Laura</div><div class="msg bot">¡Hola Laura! 🤎 Qué lindo conocerte ✨
+
+¿Me confirmas si eres clienta que compra para ti, o tienes una tienda que vende Talulah? Así sé cómo acompañarte mejor 🌿</div><div class="camino">🧭 camino: respuesta_libre</div></div>
+    <h4>Veredicto:</h4>
+    <p>Saludo de marca con 🤍🌿, pide el nombre y menciona la política de datos — igual al JSON WATI. Luego pregunta si es clienta o tienda (detección detal/mayorista del orquestador).</p>
+    
+  </div>
+</details>
+
+<details>
+  <summary><span class="tno">T2</span> Sedes físicas y horarios
+    <span class="chip okv">✅ Coherente</span></summary>
+  <div class="body">
+    <p class="meta">Cuenta: <code>talulah@gloma.com</code> · camino esperado:
+      <span class="camino inline">🧭 sedes</span></p>
+    <h4>Guión — escribe esto en “▶ Probar Chatbot”:</h4>
+    <ol class="guion"><li><code>Hola, soy Carolina</code></li><li><code>¿Dónde tienen tiendas físicas y en qué horarios atienden?</code></li></ol>
+    <h4>Resultado real de mi corrida (13-jul-2026, Bedrock en vivo):</h4>
+    <div class="chat"><div class="hint">— apertura del chat (sin mensaje) —</div><div class="msg bot">¡Hola! 👋🤍 Bienvenida a Talulah 🌿
+
+Soy tu asistente virtual y estoy por aquí para acompañarte en todo lo que necesites: estado de tu pedido, tallas, cambios, información de nuestras tiendas y más ✨
+
+Antes que nada, me gustaría saber tu nombre 🤎 y también confirmar: *¿eres clienta minorista o tienes una tienda que vende Talulah?*
+
+Al continuar, aceptas nuestra política de datos: https://www.talulah.com.co/policies/privacy-policy
+
+¿Cómo te puedo ayudar hoy? 🌿💚</div><div class="camino">🧭 camino: saludo</div><div class="msg user">Hola, soy Carolina</div><div class="msg bot">¡Hola Carolina! 🤍 Qué lindo tenerte por aquí en Talulah 🌿
+
+Me encantaría saber: *¿eres clienta que compra para ti o tienes una tienda que vende nuestras prendas?* 
+
+Con eso entiendo mejor cómo acompañarte 🤎✨</div><div class="camino">🧭 camino: respuesta_libre</div><div class="msg user">¿Dónde tienen tiendas físicas y en qué horarios atienden?</div><div class="msg bot">¡Perfecto, Carolina! 🌿 Te dejo nuestras sedes:
+
+🏠 *Envigado* — Calle 36 Sur #42-24, Local 401 — 📞 304 347 4929
+🗺️ https://maps.google.com/?q=6.17112721,-75.58669778
+
+🏠 *Junín (Medellín)* — Carrera 49 #49-75 — 📞 301 673 9418
+🗺️ https://maps.google.com/?q=6.24893676,-75.56717414
+
+🏠 *Outlet Envigado* — Calle 45A #29 Sur-70
+🗺️ https://maps.google.com/?q=6.17983510,-75.59659210
+
+🏠 *Santafé Medellín* — CC Santafé, Local 3210 (Cra 43A, Cll 7 Sur-170) — 📞 304 243 6841
+🗺️ https://maps.google.com/?q=6.19646831,-75.57378612
+
+🕰️ *Horarios:* lunes a sábado 10:00 a.m. – 8:00 p.m.; domingos y festivos 11:00 </div><div class="camino">🧭 camino: sedes</div></div>
+    <h4>Veredicto:</h4>
+    <p>Entrega las 4 sedes con dirección, teléfono, mapa y horarios, tomadas del contexto (datos reales del JSON). Camino registrado: sedes.</p>
+    
+  </div>
+</details>
+
+<details>
+  <summary><span class="tno">T3</span> Guía de tallas (envía imágenes)
+    <span class="chip okv">✅ Coherente</span></summary>
+  <div class="body">
+    <p class="meta">Cuenta: <code>talulah@gloma.com</code> · camino esperado:
+      <span class="camino inline">🧭 tallas</span></p>
+    <h4>Guión — escribe esto en “▶ Probar Chatbot”:</h4>
+    <ol class="guion"><li><code>Hola</code></li><li><code>Tengo dudas con la talla de un pantalón, ¿cómo sé cuál soy?</code></li></ol>
+    <h4>Resultado real de mi corrida (13-jul-2026, Bedrock en vivo):</h4>
+    <div class="chat"><div class="hint">— apertura del chat (sin mensaje) —</div><div class="msg bot">¡Hola! 🤍 Bienvenida a Talulah 🌿
+
+Soy tu asistente por acá, con gusto te acompaño en todo lo que necesites. Antes que nada, ¿cuál es tu nombre? 
+
+Al continuar aceptas nuestra política de datos: https://www.talulah.com.co/policies/privacy-policy
+
+¿En qué te puedo ayudar hoy? ✨</div><div class="camino">🧭 camino: saludo</div><div class="msg user">Hola</div><div class="msg bot">¡Hola! 🤎 Qué lindo tenerte por aquí. Me encantaría saber tu nombre para acompañarte mejor 🌿
+
+¿Cómo te llamas? ✨</div><div class="camino">🧭 camino: respuesta_libre</div><div class="msg user">Tengo dudas con la talla de un pantalón, ¿cómo sé cuál soy?</div><div class="msg bot">¡Perfecto! 🤍 Te voy a compartir nuestra guía de tallas para que encuentres la tuya sin problema.</div><div class="media">🖼️ envía <code>guia_tallas_1.jpeg</code></div><div class="media">🖼️ envía <code>guia_tallas_2.jpeg</code></div><div class="media">🖼️ envía <code>guia_tallas_3.jpeg</code></div><div class="media">🖼️ envía <code>guia_tallas_4.jpeg</code></div><div class="media">🖼️ envía <code>guia_tallas_5.jpeg</code></div><div class="media">🖼️ envía <code>guia_tallas_6.jpeg</code></div><div class="msg bot">¡Listo! 🌿 Aquí te dejo la guía completa de tallas Talulah.
+
+Si tienes alguna duda adicional o necesitas ayuda con tus medidas, con gusto te acompaño ✨🤎</div><div class="camino">🧭 camino: tallas</div></div>
+    <h4>Veredicto:</h4>
+    <p>Detecta la duda de talla, envía las 6 imágenes de la guía y ofrece acompañamiento con las medidas — replica el camino &#x27;Dudas sobre Tallas&#x27; del JSON.</p>
+    
+  </div>
+</details>
+
+<details>
+  <summary><span class="tno">T4</span> Estado de pedido por NÚMERO (Shopify real)
+    <span class="chip okv">✅ Coherente</span></summary>
+  <div class="body">
+    <p class="meta">Cuenta: <code>talulah@gloma.com</code> · camino esperado:
+      <span class="camino inline">🧭 estado_pedido</span></p>
+    <h4>Guión — escribe esto en “▶ Probar Chatbot”:</h4>
+    <ol class="guion"><li><code>Hola, soy Patricia</code></li><li><code>¿Cómo va mi pedido? El número es 53826</code></li></ol>
+    <h4>Resultado real de mi corrida (13-jul-2026, Bedrock en vivo):</h4>
+    <div class="chat"><div class="hint">— apertura del chat (sin mensaje) —</div><div class="msg bot">¡Hola! 👋 Bienvenida a Talulah 🤍🌿
+
+Soy tu asistente virtual y estoy por aquí para acompañarte en lo que necesites: tu pedido, cambios, tallas, ubicación de nuestras tiendas... ¡lo que sea! ✨
+
+Antes que nada, me encantaría saber tu nombre 🤎
+
+*Al continuar aceptas nuestra política de datos: https://www.talulah.com.co/policies/privacy-policy*</div><div class="camino">🧭 camino: saludo</div><div class="msg user">Hola, soy Patricia</div><div class="msg bot">¡Hola Patricia! 🤍 Qué lindo tenerte por aquí.
+
+¿En qué te puedo ayudar hoy? 🌿🤎</div><div class="camino">🧭 camino: respuesta_libre</div><div class="msg user">¿Cómo va mi pedido? El número es 53826</div><div class="msg bot">¡Claro, Patricia! 🌿 Déjame revisar tu pedido para ti.</div><div class="msg bot">¡Listo! 🌿 Encontré tu pedido #53826 (13 de julio, 2026).
+
+• **Estado de pago:** Pagado ✅
+• **Estado de envío:** Sin despachar
+• **Rastreo:** https://www.talulah.com.co/62824087717/orders/3d023813c89b9debad67c96f76df0a3e/authenticate?key=ef95d153d1e3b7eb9b9c20aa5590c0f8
+
+Tu pedido está en proceso de preparación 🤎. Pronto recibirás un email con la información de rastreo cuando sea despachado. Si tienes dudas adicionales, ¡con gusto te acompaño! ✨</div><div class="camino">🧭 camino: estado_pedido</div></div>
+    <h4>Veredicto:</h4>
+    <p>Consulta REAL a Shopify por número: pedido #53826 de Patricia Mejia — pagado, sin despachar, con URL de rastreo verdadera. Es la rama &#x27;Sí&#x27; de la condición ¿pedido encontrado?</p>
+    
+  </div>
+</details>
+
+<details>
+  <summary><span class="tno">T5</span> Estado de pedido por CÉDULA sin número (Shopify real)
+    <span class="chip okv">✅ Coherente</span></summary>
+  <div class="body">
+    <p class="meta">Cuenta: <code>talulah@gloma.com</code> · camino esperado:
+      <span class="camino inline">🧭 estado_pedido</span></p>
+    <h4>Guión — escribe esto en “▶ Probar Chatbot”:</h4>
+    <ol class="guion"><li><code>Hola</code></li><li><code>Quiero saber cómo va mi pedido pero no tengo el número a la mano</code></li><li><code>Mi cédula es 42062393</code></li></ol>
+    <h4>Resultado real de mi corrida (13-jul-2026, Bedrock en vivo):</h4>
+    <div class="chat"><div class="hint">— apertura del chat (sin mensaje) —</div><div class="msg bot">¡Hola! 👋 Bienvenid@ a *Talulah* 🤍🌿
+
+Soy tu asistente virtual por aquí. Con gusto te acompaño con cualquier pregunta sobre tus pedidos, cambios, tallas, nuestras tiendas o lo que necesites ✨
+
+Antes que nada, ¿cuál es tu nombre? 🤎
+
+*Al continuar, aceptas nuestra política de datos:* https://www.talulah.com.co/policies/privacy-policy</div><div class="camino">🧭 camino: saludo</div><div class="msg user">Hola</div><div class="msg bot">¡Hola! 🤍 Qué lindo tenerte por acá.
+
+¿Me dices tu nombre, porfa? Así te acompaño de forma más personal 🌿🤎</div><div class="camino">🧭 camino: respuesta_libre</div><div class="msg user">Quiero saber cómo va mi pedido pero no tengo el número a la mano</div><div class="msg bot">Con gusto te ayudo a rastrearlo 🌿
+
+Para encontrar tu pedido me puedes dar:
+• Tu *nombre completo*
+• Tu *cédula/número de documento*
+• La *fecha* en que lo hiciste (o aproximada)
+
+Con al menos uno de estos datos lo localizamos juntas 🤎✨</div><div class="camino">🧭 camino: estado_pedido</div><div class="msg user">Mi cédula es 42062393</div><div class="msg bot">Perfecto 🤎 Dame un momentito...</div><div class="msg bot">¡Listo! 🌿 Encontré tu pedido Patricia 🤎
+
+*Pedido #53826* (13 de julio de 2026)
+• *Estado de pago:* ✅ Pagado
+• *Estado de envío:* Sin despachar
+• *Rastreo:* https://www.talulah.com.co/62824087717/orders/3d023813c89b9debad67c96f76df0a3e/authenticate?key=ef95d153d1e3b7eb9b9c20aa5590c0f8
+
+Tu pedido está en proceso de preparación 🌿✨. Para más detalles sobre tiempos de envío puedes consultar aquí: https://www.talulah.com.co/policies/shipping-policy
+
+¿Hay algo más en lo que te pueda ayudar? 🤍</div><div class="camino">🧭 camino: estado_pedido</div></div>
+    <h4>Veredicto:</h4>
+    <p>Sin número, el bot ofrece buscar por nombre/cédula/fecha (funcionalidad nueva #258). Con la cédula 42062393 encuentra el pedido #53826 en Shopify y hasta saluda a Patricia por su nombre.</p>
+    
+  </div>
+</details>
+
+<details>
+  <summary><span class="tno">T6</span> Estado de pedido por NOMBRE (Shopify real)
+    <span class="chip okv">✅ Coherente (con nota)</span></summary>
+  <div class="body">
+    <p class="meta">Cuenta: <code>talulah@gloma.com</code> · camino esperado:
+      <span class="camino inline">🧭 estado_pedido</span></p>
+    <h4>Guión — escribe esto en “▶ Probar Chatbot”:</h4>
+    <ol class="guion"><li><code>Hola, quiero rastrear mi pedido, no recuerdo el número. Soy Valentina Larochy</code></li></ol>
+    <h4>Resultado real de mi corrida (13-jul-2026, Bedrock en vivo):</h4>
+    <div class="chat"><div class="hint">— apertura del chat (sin mensaje) —</div><div class="msg bot">¡Hola! 🤍 Bienvenida a Talulah 🌿
+
+Soy tu asistente virtual y estoy acá para acompañarte en todo lo que necesites: pedidos, tallas, cambios, tiendas y mucho más 🤎
+
+Antes que nada, me encantaría saber tu nombre ✨
+
+*Al continuar, aceptas nuestra política de datos:* https://www.talulah.com.co/policies/privacy-policy
+
+¿En qué te puedo ayudar hoy? 💕</div><div class="camino">🧭 camino: saludo</div><div class="msg user">Hola, quiero rastrear mi pedido, no recuerdo el número. Soy Valentina Larochy</div><div class="msg bot">¡Hola Valentina! 🤍 Con gusto te ayudo a rastrear tu pedido 🌿
+
+Para encontrarlo sin el número, cuéntame al menos uno de estos datos:
+- Tu *cédula o documento de identidad*
+- La *fecha aproximada* en que lo realizaste (ej: 15 de enero)
+- O tu *nombre completo* si es diferente al que me diste
+
+¿Cuál de estos tienes a la mano? 🤎</div><div class="camino">🧭 camino: estado_pedido</div></div>
+    <h4>Veredicto:</h4>
+    <p>Con solo el nombre, el bot pide un dato adicional (cédula o fecha) antes de entregar información — comportamiento conservador que protege datos de terceros. Ver nota de seguridad al final: definir la política de verificación de identidad.</p>
+    
+  </div>
+</details>
+
+<details>
+  <summary><span class="tno">T7</span> Cambios y garantías
+    <span class="chip okv">✅ Coherente</span></summary>
+  <div class="body">
+    <p class="meta">Cuenta: <code>talulah@gloma.com</code> · camino esperado:
+      <span class="camino inline">🧭 cambios_garantias</span></p>
+    <h4>Guión — escribe esto en “▶ Probar Chatbot”:</h4>
+    <ol class="guion"><li><code>Hola</code></li><li><code>Compré una blusa y me quedó grande, ¿cómo hago el cambio?</code></li></ol>
+    <h4>Resultado real de mi corrida (13-jul-2026, Bedrock en vivo):</h4>
+    <div class="chat"><div class="hint">— apertura del chat (sin mensaje) —</div><div class="msg bot">¡Hola! 🤍 Bienvenida a Talulah 🌿
+
+Soy tu asistente virtual y estoy aquí para acompañarte en todo lo que necesites. Antes que nada, ¿cuál es tu nombre? 🤎
+
+*Al continuar, aceptas nuestra política de datos:*
+https://www.talulah.com.co/policies/privacy-policy</div><div class="camino">🧭 camino: saludo</div><div class="msg user">Hola</div><div class="msg bot">¡Hola! 🤍 Qué lindo tenerte por aquí. ¿Cuál es tu nombre? ✨</div><div class="camino">🧭 camino: respuesta_libre</div><div class="msg user">Compré una blusa y me quedó grande, ¿cómo hago el cambio?</div><div class="msg bot">¡Claro! Con gusto te ayudo 🌿
+
+Para los *cambios*, puedes acercarte a cualquiera de nuestras tiendas a nivel nacional y allí te lo resolvemos sin problema 🤎
+
+Estas son nuestras sedes:
+
+🏠 *Envigado* — Calle 36 Sur #42-24, Local 401 — 📞 304 347 4929
+🏠 *Junín (Medellín)* — Carrera 49 #49-75 — 📞 301 673 9418
+🏠 *Outlet Envigado* — Calle 45A #29 Sur-70
+🏠 *Santafé Medellín* — CC Santafé, Local 3210 — 📞 304 243 6841
+
+🕰️ Lunes a sábado 10 a.m. – 8 p.m. | Domingos y festivos 11 a.m. – 7 p.m.
+
+¿Te queda cerca alguna de estas ubicaciones? ✨</div><div class="camino">🧭 camino: cambios_garantias</div></div>
+    <h4>Veredicto:</h4>
+    <p>Explica la política de cambios (refund-policy) y dirige a las tiendas a nivel nacional, como el sub-flujo &#x27;Cambio&#x27; del JSON.</p>
+    
+  </div>
+</details>
+
+<details>
+  <summary><span class="tno">T8</span> B2B faltantes y defectos (caso + escala)
+    <span class="chip okv">✅ Coherente (clasificador afinado)</span></summary>
+  <div class="body">
+    <p class="meta">Cuenta: <code>talulah@gloma.com</code> · camino esperado:
+      <span class="camino inline">🧭 mayorista_faltantes</span></p>
+    <h4>Guión — escribe esto en “▶ Probar Chatbot”:</h4>
+    <ol class="guion"><li><code>Hola, tengo una tienda que vende Talulah</code></li><li><code>En el último pedido me llegaron faltantes</code></li><li><code>Factura F-2291, faltaron 3 batolas talla M, ya les envío las fotos</code></li></ol>
+    <h4>Resultado real de mi corrida (13-jul-2026, Bedrock en vivo):</h4>
+    <div class="chat"><div class="hint">— apertura del chat (sin mensaje) —</div><div class="msg bot">¡Hola! 👋 Bienvenida a Talulah 🤍
+
+Soy tu asistente virtual y estoy acá para acompañarte en lo que necesites. Antes que nada, ¿cuál es tu nombre? 🌿
+
+*Al</div><div class="camino">🧭 camino: saludo</div><div class="msg user">Hola, tengo una tienda que vende Talulah</div><div class="msg bot">¡Hola, qué lindo tenerte por aquí! 🤎 Soy el asistente B2B de Talulah 🌿
+
+Perfecto, me alegra estar conectada contigo. ¿Cuál es tu nombre y el de tu tie</div><div class="camino">🧭 camino: mayorista_ventas</div><div class="msg user">En el último pedido me llegaron faltantes</div><div class="msg bot">¡Lamento ese inconveniente! 🙏 Con gusto lo revisamos juntas.
+
+Para registrar tu caso, necesito que me proporciones en un mensaje:
+1. *Número de lote o</div><div class="camino">🧭 camino: mayorista_faltantes</div><div class="msg user">Factura F-2291, faltaron 3 batolas talla M, ya les envío las fotos</div><div class="msg bot">Perfecto 🌿 Quedo atenta a las fotos. 
+
+Mientras las recibes, confirma si tienes a la mano la *descripción del color o referencia* de esas 3 batolas ta</div><div class="camino">🧭 camino: mayorista_faltantes</div></div>
+    <h4>Veredicto:</h4>
+    <p>Detecta el perfil B2B, pide factura/lote + descripción + fotos y confirma el caso F-2291 — el sub-flujo &#x27;Faltantes y Defectos&#x27; del JSON mayorista. En la primera corrida las respuestas fueron correctas pero el chip de camino salía mal etiquetado; se afinaron las prioridades del clasificador y quedó: mayorista_ventas → mayorista_faltantes.</p>
+    <p class="nota">Re-ejecutado tras afinar el clasificador de caminos (v1 etiquetaba sedes/estado_pedido/tiempos_envio por keywords ambiguas; las respuestas del bot siempre fueron correctas).</p>
+  </div>
+</details>
+
+<details>
+  <summary><span class="tno">V9</span> Precios y condiciones del plan (tarifarios)
+    <span class="chip okv">✅ Coherente</span></summary>
+  <div class="body">
+    <p class="meta">Cuenta: <code>agencia@demo.com</code> · camino esperado:
+      <span class="camino inline">🧭 precios_condiciones</span></p>
+    <h4>Guión — escribe esto en “▶ Probar Chatbot”:</h4>
+    <ol class="guion"><li><code>Hola! soy Pedro</code></li><li><code>¿Qué precio tiene el plan y qué incluye?</code></li></ol>
+    <h4>Resultado real de mi corrida (13-jul-2026, Bedrock en vivo):</h4>
+    <div class="chat"><div class="hint">— apertura del chat (sin mensaje) —</div><div class="msg bot">Hola, ¡Buen día! Espero que se encuentre muy bien el día de hoy, mi nombre es *Maria Camila*, asesora de la *Agencia de Viajes Arranquemos Pues*. ¿Con quién tengo el gusto? 😊</div><div class="camino">🧭 camino: saludo</div><div class="msg user">Hola! soy Pedro</div><div class="msg bot">¡Hola Pedro! 🤗 Qué gusto conocerte. ¿Cómo estás?
+
+Te cuento que somos la *Agencia de Viajes Arranquemos Pues* y tenemos un plan *estrella* que te va a encantar: **Tolú &amp; Coveñas** 🌴✨. Es un viaje de *viernes a lunes* con todo incluido: hotel, comidas y transporte. ¡Te muestro la info!</div><div class="media">🖼️ envía <code>info_general.jpeg</code></div><div class="msg bot">¿Te llama la atención, Pedro? 😊 Cuéntame, ¿viajarías con alguien más?</div><div class="camino">🧭 camino: info_general</div><div class="msg user">¿Qué precio tiene el plan y qué incluye?</div><div class="msg bot">¡Excelente pregunta, Pedro! 💬
+
+El plan incluye *todo bien bonito*: 🙌
+- 🚌 Transporte ida y regreso desde Medellín
+- 🏨 Hotel con todas las comodidades
+- 🍽️ Desayuno, almuerzo y cena (viernes a lunes)
+- 🌿 Tour a la Ciénaga de La Caimanera
+- 🌴 Tour a Tolú (ideal para compras y artesanías)
+
+Para los precios exactos, aquí te dejo los tarifarios con todas las opciones:</div><div class="media">🖼️ envía <code>tarifario1.jpeg</code></div><div class="media">🖼️ envía <code>tarifario2.jpeg</code></div><div class="media">🖼️ envía <code>tarifario3.jpeg</code></div><div class="msg bot">Ahí ves todas las opciones según cuántas personas viajen 😊. ¿Qué te parece, Pedro? ¿Te interesa conocer más del hotel o de los tours? ✨</div><div class="camino">🧭 camino: precios_condiciones</div></div>
+    <h4>Veredicto:</h4>
+    <p>Describe qué incluye el plan y envía los 3 tarifarios SIN inventar cifras (los precios solo en imágenes, como se definió). Camino: precios_condiciones.</p>
+    
+  </div>
+</details>
+
+<details>
+  <summary><span class="tno">V10</span> Reserva completa → pase a asesor
+    <span class="chip okv">✅ Coherente</span></summary>
+  <div class="body">
+    <p class="meta">Cuenta: <code>agencia@demo.com</code> · camino esperado:
+      <span class="camino inline">🧭 escalar_a_asesor</span></p>
+    <h4>Guión — escribe esto en “▶ Probar Chatbot”:</h4>
+    <ol class="guion"><li><code>Hola, quiero reservar el plan a Coveñas</code></li><li><code>Pedro Pérez, CC 1020304050, 2 personas, 24 de julio</code></li></ol>
+    <h4>Resultado real de mi corrida (13-jul-2026, Bedrock en vivo):</h4>
+    <div class="chat"><div class="hint">— apertura del chat (sin mensaje) —</div><div class="msg bot">Hola, ¡Buen día! Espero que se encuentre muy bien el día de hoy, mi nombre es *Maria Camila*, asesora de la *Agencia de Viajes Arranquemos Pues*. ¿Con quién tengo el gusto? 😊</div><div class="media">🖼️ envía <code>info_general.jpeg</code></div><div class="camino">🧭 camino: info_general</div><div class="msg user">Hola, quiero reservar el plan a Coveñas</div><div class="msg bot">¡Qué emoción! 🌴✨ Me encanta tu entusiasmo. Te cuento que nuestro plan estrella es *Tolú &amp; Coveñas*, un viaje increíble de viernes a lunes con todo incluido: hotel, alimentación y transporte 🚌.
+
+Te dejo aquí la información general del plan para que conozcas todos los detalles 📦. ¿Cuál es tu nombre para poder ayudarte mejor? 😊</div><div class="media">🖼️ envía <code>info_general.jpeg</code></div><div class="camino">🧭 camino: info_general</div><div class="msg user">Pedro Pérez, CC 1020304050, 2 personas, 24 de julio</div><div class="msg bot">¡Perfecto, Pedro! 🙌 Recibí tus datos:
+- *Nombre*: Pedro Pérez
+- *CC*: 1020304050
+- *Personas*: 2
+- *Fecha*: 24 de julio
+
+¡Listo! 🙌 Recibí tus datos. Te conecto con uno de nuestros asesores para confirmar disponibilidad y finalizar tu reserva. En un momento te escriben por aquí 💬</div><div class="handoff">👤 Conversación asignada a <b>asesor_1</b> · motivo: Reserva: Pedro Pérez, CC 1020304050, 2 personas, 24 de julio (Tolú &amp; Coveñas)</div><div class="camino">🧭 camino: escalar_a_asesor</div></div>
+    <h4>Veredicto:</h4>
+    <p>Recibe los datos de reserva, los confirma uno a uno y escala al asesor con el motivo completo registrado: &#x27;Reserva: Pedro Pérez, CC 1020304050, 2 personas, 24 de julio&#x27;. La conversación queda asignada a asesor_1 en el módulo Mensajes.</p>
+    
+  </div>
+</details>
+<h2>Hallazgos y datos que faltan para el funcionamiento 100%</h2>
+<div class="callout okc"><b>Lo que ya funciona con datos reales de Shopify:</b> búsqueda de pedidos por <b>número</b>, por <b>cédula/documento</b> (viene en los pedidos web como "Número de documento"), por <b>nombre del cliente</b> y por <b>fecha</b> — combinables. Probado con las últimas 10 órdenes reales de grupogyc.myshopify.com.</div>
+<div class="callout"><b>⚠ Decisión de seguridad pendiente (CEO):</b> hoy cualquiera que escriba un nombre o una cédula puede consultar el estado del pedido de otra persona (incluye URL de rastreo con dirección). Recomendación del agente de seguridad: exigir que coincidan <b>dos</b> datos (p. ej. cédula + nombre) antes de mostrar el detalle, o solo confirmar existencia y escalar a asesora. Defínelo y lo implemento.</div>
+<ul class="datos">
+  <li><b>Shopify:</b> nada más por ahora — con el scope actual (read_orders) alcanza. Si algún día quieres buscar clientes sin pedido reciente (&gt;100 pedidos hacia atrás) haría falta el scope <code>read_customers</code> en la app de Shopify.</li>
+  <li><b>Cédula en pedidos:</b> solo los pedidos del checkout web traen "Número de documento"; los de canales sin ese campo no son buscables por cédula (sí por número/nombre/fecha).</li>
+  <li><b>Talulah — pendientes de contenido:</b> (1) links de catálogo por categoría (Pantalón, Short, Capri, Batola, Satín, Plus Size, Niña, SALE, Hombre); (2) confirmar qué imagen de la guía de tallas corresponde a qué prenda; (3) teléfono del Outlet Envigado; (4) confirmar horario de domingos/festivos; (5) link definitivo de política de privacidad del saludo.</li>
+  <li><b>Producción WhatsApp real:</b> claves Twilio (cuenta matriz + subcuenta) para el cutover del Sprint 18 — sin esto los bots solo operan en la ventana de prueba de la app.</li>
+</ul>
+<p class="sub">Para repetirlas tú: <code>localhost:3000/login</code> → cuenta indicada en cada prueba → módulo Bots → abrir el bot → ▶ Probar Chatbot → escribir el guión en orden. Cada decisión queda en la tabla <code>bot_llm_decisions</code> y en <code>docker compose logs backend | grep llm_decision</code>.</p>
+</main></body></html>
