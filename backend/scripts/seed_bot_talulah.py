@@ -51,6 +51,13 @@ SHOPIFY_SHOP = os.environ.get("TALULAH_SHOPIFY_SHOP", "")
 SHOPIFY_CLIENT_ID = os.environ.get("TALULAH_SHOPIFY_CLIENT_ID", "")
 SHOPIFY_CLIENT_SECRET = os.environ.get("TALULAH_SHOPIFY_CLIENT_SECRET", "")
 
+# #264: catálogo de WhatsApp (Meta Commerce Manager). El content_sid es la
+# plantilla twilio/catalog — se crea con create_twilio_catalog_template.py
+# cuando existan las claves Twilio; mientras esté vacío el bot usa fallback
+# de texto (y el simulador muestra la tarjeta de catálogo igual).
+CATALOG_ID = os.environ.get("TALULAH_CATALOG_ID", "176204398531184")
+CATALOG_CONTENT_SID = os.environ.get("TALULAH_CATALOG_CONTENT_SID", "")
+
 
 def _llm_config() -> dict:
     cfg: dict = {
@@ -108,6 +115,11 @@ def _llm_config() -> dict:
             "asesor": ["asesor", "asesora", "humano", "persona", "agente"],
         },
     }
+    if CATALOG_ID:
+        cfg["catalogo"] = {
+            "catalog_id": CATALOG_ID,
+            "content_sid": CATALOG_CONTENT_SID,
+        }
     if SHOPIFY_SHOP and SHOPIFY_CLIENT_ID and SHOPIFY_CLIENT_SECRET:
         cfg["shopify"] = {
             "shop": SHOPIFY_SHOP,
@@ -213,11 +225,13 @@ STEPS = [
         "mensaje": "¡Ups! A veces la tecnología necesita un respiro 🌿. "
                    "Intenta: refrescar, otro navegador o dispositivo, borrar "
                    "caché. Una asesora te ayudará a entrar ✨"}},
-    {"step_type": "llm", "label": "Catálogo", "config": {  # 19
-        "mode": "accion", "accion": "info", "fuente": "talulah.com.co",
-        "mensaje": "Con gusto 🤍 te muestro nuestra colección ✨ Pantalón, "
-                   "Short, Capri, Batola, Satín, Plus Size, Niña, SALE y "
-                   "Hombre en talulah.com.co"}},
+    {"step_type": "llm", "label": "Catálogo de WhatsApp", "config": {  # 19
+        "mode": "accion", "accion": "catalogo",
+        "fuente": "Catálogo Meta Commerce (id 176204398531184) vía "
+                  "twilio/catalog",
+        "mensaje": "Con gusto 🤍 te comparto nuestro catálogo 🛍️ Ahí puedes "
+                   "ver la colección completa: Pantalón, Short, Capri, Batola, "
+                   "Satín, Plus Size, Niña, SALE y Hombre ✨"}},
     # ── B2B mayoristas (JSON SAC Mayoristas) ──
     {"step_type": "llm", "label": "B2B Despachos · pide nº pedido", "config": {  # 20
         "mode": "accion", "accion": "registro", "fuente": "conversación",

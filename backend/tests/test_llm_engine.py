@@ -176,6 +176,25 @@ class LlmEngineTests(unittest.TestCase):
             "estado_pedido",
         )
 
+    def test_tool_catalogo_emite_say_catalog(self):
+        cfg = {"context_key": "talulah",
+               "catalogo": {"catalog_id": "176204398531184", "content_sid": ""}}
+        with patch.object(llm_engine, "_invoke_model") as mock:
+            mock.side_effect = [
+                _resp(
+                    [{"type": "tool_use", "id": "t1", "name": "enviar_catalogo",
+                      "input": {"titulo": "Colección", "cuerpo": "Mira 🛍️"}}],
+                    stop_reason="tool_use",
+                ),
+                _resp([{"type": "text", "text": "¿Te ayudo con algo más?"}]),
+            ]
+            out = llm_engine.advance(FakeBot(cfg), {"history": []},
+                                     "quiero ver el catálogo")
+        types = [a["type"] for a in out["actions"]]
+        self.assertEqual(types, ["say_catalog", "say"])
+        self.assertEqual(out["actions"][0]["payload"]["catalog_id"], "176204398531184")
+        self.assertEqual(out["telemetry"]["camino"], "catalogo")
+
     def test_context_key_sanitizado_no_escapa_del_directorio(self):
         self.assertEqual(llm_engine._load_context("../../etc/passwd"), "")
 

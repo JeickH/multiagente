@@ -142,6 +142,34 @@ def run_turn(
             # Cuando integremos upload de media real a Meta se reemplaza esto.
             caption = payload.get("caption", "")
             _send_text(db, conversation, bot, meta_account, caption or "[archivo multimedia]")
+        elif atype == "say_catalog":
+            # Sprint 19 #264: catálogo de WhatsApp. Si hay Content Template
+            # (twilio/catalog) y la cuenta es Twilio, va como mensaje nativo;
+            # si no, fallback al texto que redactó la IA.
+            content_sid = payload.get("content_sid") or ""
+            cuerpo = payload.get("cuerpo", "")
+            sent = False
+            if (
+                content_sid
+                and meta_account is not None
+                and crud.is_meta_account_usable(meta_account)
+                and messaging.provider_of(meta_account) == "twilio"
+            ):
+                try:
+                    meta_id, _ = messaging.send_template(
+                        meta_account, conversation.contact_wa_id, content_sid
+                    )
+                    crud.add_message(
+                        db, conversation, direction="outbound",
+                        content=cuerpo or "[catálogo]", message_type="catalog",
+                        meta_message_id=meta_id, sent_by_user_id=None,
+                        status="sent",
+                    )
+                    sent = True
+                except Exception:
+                    logger.exception("bot_runner: envío de catálogo falló bot=%s", bot.id)
+            if not sent:
+                _send_text(db, conversation, bot, meta_account, cuerpo or "🛍️ Catálogo")
         elif atype == "ask":
             # El `ask` en sí no viaja al contacto: el prompt ya se envió como
             # `say` inmediatamente antes. Solo marca que el motor espera input.

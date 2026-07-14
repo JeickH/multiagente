@@ -205,6 +205,33 @@ def _tools_for(cfg: Dict[str, Any]) -> List[Dict[str, Any]]:
                 },
             }
         )
+    catalogo_cfg = cfg.get("catalogo")
+    if isinstance(catalogo_cfg, dict) and catalogo_cfg.get("catalog_id"):
+        tools.append(
+            {
+                "name": "enviar_catalogo",
+                "description": (
+                    "Envía el catálogo de productos de WhatsApp (mensaje nativo "
+                    "con los productos de la marca). Úsalo cuando el cliente "
+                    "quiera ver productos, la colección o el catálogo. "
+                    "Acompáñalo con un texto breve e invitador."
+                ),
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "titulo": {
+                            "type": "string",
+                            "description": "Título corto del catálogo (máx 60 chars)",
+                        },
+                        "cuerpo": {
+                            "type": "string",
+                            "description": "Texto que acompaña al catálogo",
+                        },
+                    },
+                    "required": ["cuerpo"],
+                },
+            }
+        )
     shopify_cfg = cfg.get("shopify")
     if isinstance(shopify_cfg, dict) and shopify_cfg.get("shop"):
         tools.append(
@@ -294,6 +321,22 @@ def _run_tool(
             result += f"; claves inexistentes: {', '.join(unknown)}"
         return result, False
 
+    if name == "enviar_catalogo":
+        catalogo = cfg.get("catalogo") or {}
+        actions.append(
+            {
+                "type": "say_catalog",
+                "payload": {
+                    "titulo": str(tool_input.get("titulo", ""))[:60],
+                    "cuerpo": str(tool_input.get("cuerpo", ""))[:1024],
+                    "catalog_id": catalogo.get("catalog_id", ""),
+                    "content_sid": catalogo.get("content_sid", ""),
+                },
+            }
+        )
+        sent_media_log.append("catalogo_whatsapp")
+        return "catálogo enviado al cliente", False
+
     if name == "consultar_pedido_shopify":
         shopify_cfg = cfg.get("shopify") or {}
         try:
@@ -341,6 +384,8 @@ def _classify_camino(
         return "escalar_a_asesor"
     if "consultar_pedido_shopify" in tool_names:
         return "estado_pedido"
+    if "enviar_catalogo" in tool_names:
+        return "catalogo"
     if "finalizar_conversacion" in tool_names:
         return "fin"
     if sent_media_log:

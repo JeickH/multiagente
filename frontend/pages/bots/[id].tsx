@@ -29,7 +29,7 @@ type BotDetail = {
 };
 
 type BotAction = {
-  type: 'say' | 'say_media' | 'ask' | 'pause' | 'end' | 'handoff';
+  type: 'say' | 'say_media' | 'say_catalog' | 'ask' | 'pause' | 'end' | 'handoff';
   payload: Record<string, any>;
 };
 
@@ -51,6 +51,7 @@ type ChatBubble =
   | { role: 'bot'; kind: 'end'; text: string; time: string }
   | { role: 'bot'; kind: 'handoff'; assignee: string; text: string; time: string }
   | { role: 'bot'; kind: 'camino'; camino: string; time: string }
+  | { role: 'bot'; kind: 'catalog'; titulo: string; cuerpo: string; time: string }
   | { role: 'user'; text: string; time: string };
 
 const nowHHMM = (): string =>
@@ -315,6 +316,14 @@ function SimulatorModal({
         caption: a.payload.caption || '',
         media_type: a.payload.media_type || 'image',
         url: a.payload.url || '',
+        time,
+      };
+    if (a.type === 'say_catalog')
+      return {
+        role: 'bot',
+        kind: 'catalog',
+        titulo: a.payload.titulo || 'Catálogo',
+        cuerpo: a.payload.cuerpo || '',
         time,
       };
     if (a.type === 'ask')
@@ -624,6 +633,32 @@ function SimulatorModal({
                     <span className="bg-white/80 text-[10px] text-gray-500 italic px-2 py-0.5 rounded-full shadow-sm">
                       …pausa de {b.seconds}s…
                     </span>
+                  </div>
+                );
+              }
+              if (b.kind === 'catalog') {
+                // #264: catálogo de WhatsApp — en el teléfono real es el
+                // mensaje nativo de productos; aquí se representa como tarjeta.
+                return (
+                  <div key={i} className="flex justify-start w-full">
+                    <div className="bg-white rounded-lg rounded-tl-none shadow-sm max-w-[78%] overflow-hidden">
+                      <div className="bg-gradient-to-r from-fuchsia-100 to-rose-100 px-3 py-3 flex items-center gap-2">
+                        <span className="text-2xl">🛍️</span>
+                        <div>
+                          <div className="text-sm font-semibold text-gray-800">{b.titulo}</div>
+                          <div className="text-[10px] text-gray-500">Catálogo de WhatsApp</div>
+                        </div>
+                      </div>
+                      {b.cuerpo && (
+                        <div className="px-3 py-2 text-sm text-gray-800 whitespace-pre-wrap break-words">
+                          {formatWa(b.cuerpo)}
+                        </div>
+                      )}
+                      <div className="border-t border-gray-100 text-center text-sm text-[#0099FF] font-medium py-2">
+                        Ver artículos
+                      </div>
+                      <div className="text-right text-[10px] text-gray-400 px-2 pb-1">{b.time}</div>
+                    </div>
                   </div>
                 );
               }
