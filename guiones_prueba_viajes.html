@@ -1,0 +1,290 @@
+<!DOCTYPE html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"></head><body><title>Guiones de prueba — Bot Agencia de Viajes (Tolú & Coveñas IA)</title>
+<style>
+  :root {
+    --paper:#F5FAF7; --ink:#20302B; --muted:#5E7268; --line:#D8E6DE; --card:#FFFFFF;
+    --brand:#1F7A5C; --brand-soft:#E7F4EE; --llm:#A63FA0; --llm-soft:#F9EDF8;
+    --ok:#1F7A5C; --ok-soft:#E7F4EE; --warn:#B45309; --warn-soft:#FCF0E1;
+    --code:#EBF3EE; --user:#DCF3D0; --botb:#FFFFFF;
+  }
+  @media (prefers-color-scheme: dark) { :root {
+    --paper:#101714; --ink:#E4EEE8; --muted:#93A79C; --line:#2A3A32; --card:#18211C;
+    --brand:#5FC79E; --brand-soft:#1B2E26; --llm:#E08BD9; --llm-soft:#33222F;
+    --ok:#5FC79E; --ok-soft:#1B2E26; --warn:#E9A159; --warn-soft:#332413;
+    --code:#1D2822; --user:#1F3A22; --botb:#212B25; } }
+  :root[data-theme="dark"] {
+    --paper:#101714; --ink:#E4EEE8; --muted:#93A79C; --line:#2A3A32; --card:#18211C;
+    --brand:#5FC79E; --brand-soft:#1B2E26; --llm:#E08BD9; --llm-soft:#33222F;
+    --ok:#5FC79E; --ok-soft:#1B2E26; --warn:#E9A159; --warn-soft:#332413;
+    --code:#1D2822; --user:#1F3A22; --botb:#212B25; }
+  :root[data-theme="light"] {
+    --paper:#F5FAF7; --ink:#20302B; --muted:#5E7268; --line:#D8E6DE; --card:#FFFFFF;
+    --brand:#1F7A5C; --brand-soft:#E7F4EE; --llm:#A63FA0; --llm-soft:#F9EDF8;
+    --ok:#1F7A5C; --ok-soft:#E7F4EE; --warn:#B45309; --warn-soft:#FCF0E1;
+    --code:#EBF3EE; --user:#DCF3D0; --botb:#FFFFFF; }
+  * { box-sizing:border-box; }
+  body { background:var(--paper); color:var(--ink); margin:0; padding:0 20px 80px;
+    font:16px/1.6 "Avenir Next","Segoe UI",system-ui,sans-serif; }
+  main { max-width:860px; margin:0 auto; }
+  header { padding:44px 0 14px; border-bottom:2px solid var(--brand); margin-bottom:24px; }
+  h1 { font-size:1.8rem; margin:0 0 8px; letter-spacing:-0.01em; text-wrap:balance; }
+  .sub { color:var(--muted); max-width:64ch; }
+  code { background:var(--code); padding:1px 6px; border-radius:5px;
+    font-family:ui-monospace,"SF Mono",Menlo,monospace; font-size:0.85em; }
+  .chips { display:flex; flex-wrap:wrap; gap:8px; margin-top:12px; }
+  .chip { font-size:0.76rem; font-weight:600; padding:3px 11px; border-radius:999px;
+    border:1px solid var(--line); background:var(--card); }
+  .chip.okv { background:var(--ok-soft); color:var(--ok); border-color:transparent; }
+  .chip.warnv { background:var(--warn-soft); color:var(--warn); border-color:transparent; }
+  details { border:1px solid var(--line); border-radius:12px; background:var(--card);
+    margin:12px 0; overflow:hidden; }
+  summary { cursor:pointer; font-weight:600; padding:14px 18px; display:flex;
+    align-items:center; gap:10px; flex-wrap:wrap; }
+  summary::-webkit-details-marker { display:none; }
+  summary::before { content:"▸"; color:var(--brand); }
+  details[open] summary::before { content:"▾"; }
+  .tno { background:var(--brand-soft); color:var(--brand); font-size:0.75rem;
+    font-weight:700; padding:2px 9px; border-radius:999px; }
+  .body { padding:2px 18px 18px; border-top:1px dashed var(--line); }
+  .meta { color:var(--muted); font-size:0.85rem; }
+  h4 { margin:16px 0 6px; font-size:0.8rem; text-transform:uppercase;
+    letter-spacing:0.08em; color:var(--brand); }
+  ol.guion { margin:4px 0; padding-left:20px; }
+  ol.guion li { padding:2px 0; }
+  .chat { background:var(--code); border:1px solid var(--line); border-radius:12px;
+    padding:12px; display:flex; flex-direction:column; gap:7px; }
+  .msg { max-width:82%; padding:7px 12px; border-radius:10px; font-size:0.88rem;
+    white-space:pre-wrap; word-break:break-word; }
+  .msg.user { align-self:flex-end; background:var(--user); border-bottom-right-radius:2px; }
+  .msg.bot { align-self:flex-start; background:var(--botb); border:1px solid var(--line);
+    border-top-left-radius:2px; }
+  .media { align-self:flex-start; font-size:0.8rem; color:var(--muted);
+    background:var(--botb); border:1px dashed var(--line); border-radius:8px; padding:4px 10px; }
+  .handoff { align-self:center; font-size:0.8rem; background:var(--ok-soft); color:var(--ok);
+    border-radius:999px; padding:3px 12px; }
+  .camino { align-self:center; font-size:0.74rem; background:var(--llm-soft); color:var(--llm);
+    border-radius:999px; padding:2px 10px; }
+  .camino.inline { display:inline-block; }
+  .hint { align-self:center; color:var(--muted); font-size:0.76rem; font-style:italic; }
+  .callout { border-left:4px solid var(--brand); background:var(--brand-soft);
+    border-radius:0 10px 10px 0; padding:12px 16px; margin:18px 0; }
+  a { color:var(--brand); }
+  :focus-visible { outline:2px solid var(--llm); outline-offset:2px; }
+</style>
+<main>
+<header>
+  <h1>Guiones de prueba — Bot Agencia de Viajes 🌴</h1>
+  <p class="sub">10 pruebas para activar cada camino del bot <b>Plan Tolú &amp; Coveñas (IA)</b>. Cada una trae el guión para escribir en <b>▶ Probar Chatbot</b>, el resultado real de mi corrida con Claude en vivo y el veredicto de coherencia.</p>
+  <div class="chips">
+    <span class="chip">Cuenta: <code>agencia@demo.com</code> · clave: <code>Demo1234*</code></span>
+    <span class="chip okv">✓ 10/10 respuestas coherentes</span>
+    <span class="chip okv">✓ Incluye la prueba del bloque post-acción (V9)</span>
+  </div>
+</header>
+<div class="callout"><b>Cómo probar:</b> entra a <code>app.glomabeauty.com/login</code> (online) o <code>localhost:3000/login</code> (local) con la cuenta de arriba → módulo <b>Bots</b> → abre <b>Plan Tolú &amp; Coveñas (IA)</b> (verás el diagrama con el bloque LLM, los caminos y el bloque post-acción) → <b>▶ Probar Chatbot</b> → escribe los guiones en orden. Cada turno muestra su chip 🧭 con el camino tomado, y todo queda registrado en la tabla <code>bot_llm_decisions</code>.</div>
+
+<details>
+  <summary><span class="tno">V1</span> Saludo de Maria Camila
+    <span class="chip okv">✅ Coherente</span></summary>
+  <div class="body">
+    <p class="meta">Camino esperado: <span class="camino inline">🧭 saludo</span></p>
+    <h4>Guión — escribe esto en “▶ Probar Chatbot”:</h4>
+    <ol class="guion"><li><code>Hola! buenas tardes</code></li></ol>
+    <h4>Resultado real de mi corrida (14-jul-2026, Claude en vivo vía Bedrock):</h4>
+    <div class="chat"><div class="hint">— apertura del chat (sin mensaje) —</div><div class="msg bot">Hola, ¡Buen día! Espero que se encuentre muy bien el día de hoy, mi nombre es *Maria Camila*, asesora de la *Agencia de Viajes Arranquemos Pues*. ¿Con quién tengo el gusto? 😊</div><div class="camino">🧭 camino: saludo</div><div class="msg user">Hola! buenas tardes</div><div class="msg bot">¡Hola! Buenas tardes, ¿cómo estás? 😊 Me da mucho gusto saludarte. ¿Cuál es tu nombre? 🌴</div><div class="camino">🧭 camino: respuesta_libre</div></div>
+    <h4>Veredicto:</h4>
+    <p>Saludo idéntico al copy original de Maria Camila: se presenta, pregunta el nombre y espera. Camino: saludo.</p>
+  </div>
+</details>
+
+<details>
+  <summary><span class="tno">V2</span> Información general del plan
+    <span class="chip okv">✅ Coherente</span></summary>
+  <div class="body">
+    <p class="meta">Camino esperado: <span class="camino inline">🧭 info_general</span></p>
+    <h4>Guión — escribe esto en “▶ Probar Chatbot”:</h4>
+    <ol class="guion"><li><code>Hola, soy Camilo, vi la publicidad del viaje a Coveñas, cuéntame más</code></li></ol>
+    <h4>Resultado real de mi corrida (14-jul-2026, Claude en vivo vía Bedrock):</h4>
+    <div class="chat"><div class="hint">— apertura del chat (sin mensaje) —</div><div class="msg bot">Hola, ¡Buen día! Espero que se encuentre muy bien el día de hoy, mi nombre es *Maria Camila*, asesora de la *Agencia de Viajes Arranquemos Pues*. ¿Con quién tengo el gusto? 😊</div><div class="camino">🧭 camino: saludo</div><div class="msg user">Hola, soy Camilo, vi la publicidad del viaje a Coveñas, cuéntame más</div><div class="msg bot">¡Hola Camilo! 😊 Qué emoción, me encanta tu interés 🌴✨
+
+Te cuento: nuestro *Plan Tolú &amp; Coveñas* es una experiencia de **viernes a lunes** súper completa. Incluye **hotel, alimentación, transporte ida y regreso**, y unos tours increíbles por la región. Es un plan todo incluido pensado para que disfrutes sin preocupaciones 🙌
+
+Te muestro la información general:</div><div class="media">🖼️ envía <code>info_general.jpeg</code></div><div class="msg bot">¿Te gustaría saber de los tours que incluimos, los precios, o el hotel donde nos hospedamos? 💬</div><div class="camino">🧭 camino: info_general</div></div>
+    <h4>Veredicto:</h4>
+    <p>Con el nombre y el interés detectados, presenta el plan (vie→lun, todo incluido) y envía la imagen de información general. Camino: info_general.</p>
+  </div>
+</details>
+
+<details>
+  <summary><span class="tno">V3</span> Tours incluidos (imagen + video)
+    <span class="chip okv">✅ Coherente</span></summary>
+  <div class="body">
+    <p class="meta">Camino esperado: <span class="camino inline">🧭 tours</span></p>
+    <h4>Guión — escribe esto en “▶ Probar Chatbot”:</h4>
+    <ol class="guion"><li><code>Hola, soy Diana</code></li><li><code>¿Qué tours incluye el plan?</code></li></ol>
+    <h4>Resultado real de mi corrida (14-jul-2026, Claude en vivo vía Bedrock):</h4>
+    <div class="chat"><div class="hint">— apertura del chat (sin mensaje) —</div><div class="msg bot">Hola, ¡Buen día! Espero que se encuentre muy bien el día de hoy, mi nombre es *Maria Camila*, asesora de la *Agencia de Viajes Arranquemos Pues*. ¿Con quién tengo el gusto? 😊</div><div class="camino">🧭 camino: saludo</div><div class="msg user">Hola, soy Diana</div><div class="msg bot">¡Hola Diana! 🤗 Mucho gusto, mi amor. ¿Cómo estás?
+
+Te cuento que somos la *Agencia de Viajes Arranquemos Pues* y tenemos un plan *estrella* que te va a encantar: **Tolú &amp; Coveñas** 🌴✨. Un viaje de *viernes a lunes* con todo incluido: hotel, comidas, transporte y tours increíbles. 
+
+¿Te gustaría conocer más detalles? 😊</div><div class="media">🖼️ envía <code>info_general.jpeg</code></div><div class="camino">🧭 camino: info_general</div><div class="msg user">¿Qué tours incluye el plan?</div><div class="msg bot">¡Excelente pregunta, Diana! 🙌
+
+El plan incluye dos tours espectaculares:
+
+🌿 *Tour a la Ciénaga de La Caimanera* (sábado): una experiencia única en la naturaleza.
+🌴 *Tour a Tolú* (domingo): perfecto para compras y artesanías 🛍️.
+
+Mira estos videos y detalles:</div><div class="media">🖼️ envía <code>tours.jpeg</code></div><div class="media">🖼️ envía <code>tour.mp4</code></div><div class="msg bot">¿Hay algo más que quieras saber sobre los tours o el plan? 😊</div><div class="camino">🧭 camino: tours</div></div>
+    <h4>Veredicto:</h4>
+    <p>Describe los tours (Ciénaga de La Caimanera y Tolú) y envía la imagen + el video de tours. Camino: tours.</p>
+  </div>
+</details>
+
+<details>
+  <summary><span class="tno">V4</span> Precios y condiciones (tarifarios)
+    <span class="chip okv">✅ Coherente</span></summary>
+  <div class="body">
+    <p class="meta">Camino esperado: <span class="camino inline">🧭 precios_condiciones</span></p>
+    <h4>Guión — escribe esto en “▶ Probar Chatbot”:</h4>
+    <ol class="guion"><li><code>Hola, soy Andrés</code></li><li><code>¿Cuánto cuesta el plan por persona?</code></li></ol>
+    <h4>Resultado real de mi corrida (14-jul-2026, Claude en vivo vía Bedrock):</h4>
+    <div class="chat"><div class="hint">— apertura del chat (sin mensaje) —</div><div class="msg bot">Hola, ¡Buen día! Espero que se encuentre muy bien el día de hoy, mi nombre es *Maria Camila*, asesora de la *Agencia de Viajes Arranquemos Pues*. ¿Con quién tengo el gusto? 😊</div><div class="camino">🧭 camino: saludo</div><div class="msg user">Hola, soy Andrés</div><div class="msg bot">¡Hola Andrés! 🙌 Mucho gusto, es un placer conocerte. 
+
+Te cuento que tenemos un *plan increíble* a **Tolú &amp; Coveñas** 🌴✨ — viernes a lunes, con hotel, alimentación, transporte y tours incluidos. ¿Te gustaría conocer todos los detalles? 😊</div><div class="media">🖼️ envía <code>info_general.jpeg</code></div><div class="camino">🧭 camino: info_general</div><div class="msg user">¿Cuánto cuesta el plan por persona?</div><div class="msg bot">¡Excelente pregunta, Andrés! 💳 
+
+Los precios varían según el tipo de habitación y la ocupación. Te muestro nuestro tarifario completo para que veas todas las opciones:</div><div class="media">🖼️ envía <code>tarifario1.jpeg</code></div><div class="media">🖼️ envía <code>tarifario2.jpeg</code></div><div class="media">🖼️ envía <code>tarifario3.jpeg</code></div><div class="msg bot">Con el *30% de anticipo* apartas tu cupo y el resto debe estar pagado de 10 a 8 días hábiles antes del viaje 🤗. ¿Cuántas personas irían y en qué fecha estás pensando? 📦</div><div class="camino">🧭 camino: precios_condiciones</div></div>
+    <h4>Veredicto:</h4>
+    <p>NO inventa cifras: envía los 3 tarifarios y explica la condición de reserva del 30% por persona. Camino: precios_condiciones.</p>
+  </div>
+</details>
+
+<details>
+  <summary><span class="tno">V5</span> Itinerario día a día
+    <span class="chip okv">✅ Coherente (con nota)</span></summary>
+  <div class="body">
+    <p class="meta">Camino esperado: <span class="camino inline">🧭 itinerario</span></p>
+    <h4>Guión — escribe esto en “▶ Probar Chatbot”:</h4>
+    <ol class="guion"><li><code>Hola, soy Paula</code></li><li><code>¿Cómo es el itinerario del viaje? ¿qué hacemos cada día?</code></li></ol>
+    <h4>Resultado real de mi corrida (14-jul-2026, Claude en vivo vía Bedrock):</h4>
+    <div class="chat"><div class="hint">— apertura del chat (sin mensaje) —</div><div class="msg bot">Hola, ¡Buen día! Espero que se encuentre muy bien el día de hoy, mi nombre es *Maria Camila*, asesora de la *Agencia de Viajes Arranquemos Pues*. ¿Con quién tengo el gusto? 😊</div><div class="camino">🧭 camino: saludo</div><div class="msg user">Hola, soy Paula</div><div class="msg bot">¡Hola Paula! 🙌 Qué gusto conocerte. Te escribo porque tenemos un *plan increíble* para estas vacaciones: *Tolú &amp; Coveñas* 🌴✨
+
+Es un viaje de **viernes a lunes** con todo incluido: hotel, comidas y transporte. Te voy a mostrar todos los detalles para que veas qué te espera 😊</div><div class="media">🖼️ envía <code>info_general.jpeg</code></div><div class="msg bot">¿Te interesa conocer más sobre los tours, precios o el hotel, Paula? 💬</div><div class="camino">🧭 camino: info_general</div><div class="msg user">¿Cómo es el itinerario del viaje? ¿qué hacemos cada día?</div><div class="msg bot">¡Excelente pregunta, Paula! 🌴✨ Te cuento día a día:
+
+*🚌 Viernes – Viaje*: salimos entre 6:00 y 9:00 pm desde la Estación Universidad. La hora exacta se confirma un día antes.
+
+*📍 Sábado – Caimanera*: desayuno, almuerzo y cena incluidos. 🚣‍♀️ *Tour a la Ciénaga de La Caimanera* (la canoa a la Casa Flotante es opcional, $25.000 aprox.).
+
+*📍 Domingo – Tolú*: desayuno, almuerzo y cena incluidos. 🛍️ *Tour a Tolú*, perfecto para compras y artesanías (bici-taxi al Malecón es opcional).
+
+*🚌 Lunes – Regreso*: desayuno incluido, salimos entre 9:00 a.m. y 1:00 p.m. 🤗
+
+⚠️ El itinerario puede cambiar por t</div><div class="media">🖼️ envía <code>tours.jpeg</code></div><div class="media">🖼️ envía <code>tour.mp4</code></div><div class="camino">🧭 camino: tours</div></div>
+    <h4>Veredicto:</h4>
+    <p>Responde el itinerario completo día a día (viernes→lunes, del contexto). El chip marcó &#x27;tours&#x27; porque acompañó la respuesta con la imagen y el video de tours — el medio enviado tiene prioridad en la clasificación; la respuesta en sí es el itinerario correcto.</p>
+  </div>
+</details>
+
+<details>
+  <summary><span class="tno">V6</span> Métodos de pago
+    <span class="chip okv">✅ Coherente</span></summary>
+  <div class="body">
+    <p class="meta">Camino esperado: <span class="camino inline">🧭 pagos</span></p>
+    <h4>Guión — escribe esto en “▶ Probar Chatbot”:</h4>
+    <ol class="guion"><li><code>Hola, soy Jorge</code></li><li><code>¿Cómo puedo pagar? ¿reciben PSE?</code></li></ol>
+    <h4>Resultado real de mi corrida (14-jul-2026, Claude en vivo vía Bedrock):</h4>
+    <div class="chat"><div class="hint">— apertura del chat (sin mensaje) —</div><div class="msg bot">Hola, ¡Buen día! Espero que se encuentre muy bien el día de hoy, mi nombre es *Maria Camila*, asesora de la *Agencia de Viajes Arranquemos Pues*. ¿Con quién tengo el gusto? 😊</div><div class="camino">🧭 camino: saludo</div><div class="msg user">Hola, soy Jorge</div><div class="msg bot">¡Hola Jorge! 🙌 Mucho gusto, hermano. ¿Cómo estás? 😊
+
+Te cuento que trabajamos con el *Plan a Tolú &amp; Coveñas*, una escapadita de viernes a lunes con todo incluido: hotel, comidas, transporte y tours por la costa caribeña. ¿Te interesa conocer más detalles? 🌴✨</div><div class="media">🖼️ envía <code>info_general.jpeg</code></div><div class="camino">🧭 camino: info_general</div><div class="msg user">¿Cómo puedo pagar? ¿reciben PSE?</div><div class="msg bot">¡Claro que sí, Jorge! 💳 Recibimos *PSE*, transferencia y tarjeta. Te muestro todos los métodos disponibles 👇</div><div class="media">🖼️ envía <code>medios_pago.jpeg</code></div><div class="msg bot">¿Te gustaría ver los precios del plan? 💬✨</div><div class="camino">🧭 camino: pagos</div></div>
+    <h4>Veredicto:</h4>
+    <p>Confirma transferencia, PSE y tarjeta y envía la imagen de medios de pago. Camino: pagos.</p>
+  </div>
+</details>
+
+<details>
+  <summary><span class="tno">V7</span> Reserva completa → pase a asesor
+    <span class="chip okv">✅ Coherente</span></summary>
+  <div class="body">
+    <p class="meta">Camino esperado: <span class="camino inline">🧭 escalar_a_asesor</span></p>
+    <h4>Guión — escribe esto en “▶ Probar Chatbot”:</h4>
+    <ol class="guion"><li><code>Hola, quiero reservar para ir con mi esposa</code></li><li><code>Carlos Gómez, CC 79456123, 2 personas, 7 de agosto</code></li></ol>
+    <h4>Resultado real de mi corrida (14-jul-2026, Claude en vivo vía Bedrock):</h4>
+    <div class="chat"><div class="hint">— apertura del chat (sin mensaje) —</div><div class="msg bot">Hola, ¡Buen día! Espero que se encuentre muy bien el día de hoy, mi nombre es *Maria Camila*, asesora de la *Agencia de Viajes Arranquemos Pues*. ¿Con quién tengo el gusto? 😊</div><div class="media">🖼️ envía <code>info_general.jpeg</code></div><div class="camino">🧭 camino: info_general</div><div class="msg user">Hola, quiero reservar para ir con mi esposa</div><div class="msg bot">¡Qué emoción! 🌴✨ Me encanta que vayan los dos a disfrutar de *Tolú &amp; Coveñas*. Es un plan increíble: hotel, comidas y transporte incluidos de viernes a lunes 🤗.
+
+Cuéntame, ¿ya conocen el plan? Te muestro los detalles, los tours que incluye y los precios para que veas todo bien 💬.</div><div class="media">🖼️ envía <code>tours.jpeg</code></div><div class="media">🖼️ envía <code>tour.mp4</code></div><div class="media">🖼️ envía <code>tarifario1.jpeg</code></div><div class="media">🖼️ envía <code>tarifario2.jpeg</code></div><div class="media">🖼️ envía <code>tarifario3.jpeg</code></div><div class="msg bot">¿Cuál es tu nombre? 😊 Y dime, ¿en qué fecha te gustaría viajar?</div><div class="camino">🧭 camino: tours</div><div class="msg user">Carlos Gómez, CC 79456123, 2 personas, 7 de agosto</div><div class="msg bot">¡Perfecto, Carlos! 🙌 Recibí todos tus datos:
+
+*Carlos Gómez*
+*CC: 79456123*
+*2 personas*
+*Fecha: 7 de agosto*
+
+¡Listo, Carlos! 🙌 Recibí tus datos. Te conecto con uno de nuestros asesores para confirmar disponibilidad y finalizar tu reserva. En un momento te escriben por aquí 💬</div><div class="handoff">👤 Conversación asignada a <b>asesor_1</b> · motivo: Reserva para Carlos Gómez - 2 personas - 7 de agosto - CC 79456123</div><div class="camino">🧭 camino: escalar_a_asesor</div></div>
+    <h4>Veredicto:</h4>
+    <p>Detecta la intención de reserva, muestra el plan/tarifas, pide los datos y al recibirlos los confirma uno a uno y escala al asesor con el motivo completo: &#x27;Reserva para Carlos Gómez - 2 personas - 7 de agosto - CC 79456123&#x27;. La conversación queda asignada a asesor_1 en Mensajes.</p>
+  </div>
+</details>
+
+<details>
+  <summary><span class="tno">V8</span> Pedir asesor humano directo
+    <span class="chip okv">✅ Coherente</span></summary>
+  <div class="body">
+    <p class="meta">Camino esperado: <span class="camino inline">🧭 escalar_a_asesor</span></p>
+    <h4>Guión — escribe esto en “▶ Probar Chatbot”:</h4>
+    <ol class="guion"><li><code>Hola, prefiero hablar con una persona por favor</code></li></ol>
+    <h4>Resultado real de mi corrida (14-jul-2026, Claude en vivo vía Bedrock):</h4>
+    <div class="chat"><div class="hint">— apertura del chat (sin mensaje) —</div><div class="msg bot">Hola, ¡Buen día! Espero que se encuentre muy bien el día de hoy, mi nombre es *Maria Camila*, asesora de la *Agencia de Viajes Arranquemos Pues*. ¿Con quién tengo el gusto? 😊</div><div class="camino">🧭 camino: saludo</div><div class="msg user">Hola, prefiero hablar con una persona por favor</div><div class="msg bot">¡Claro! Lo entiendo perfectamente 🙌. Te voy a conectar con uno de nuestros asesores humanos en un momentico para que te brinde la mejor atención.</div><div class="handoff">👤 Conversación asignada a <b>asesor_1</b> · motivo: Cliente solicita hablar directamente con un asesor humano desde el inicio</div><div class="camino">🧭 camino: escalar_a_asesor</div></div>
+    <h4>Veredicto:</h4>
+    <p>Ante &#x27;prefiero hablar con una persona&#x27;, avisa con simpatía y transfiere de inmediato al asesor humano. Camino: escalar_a_asesor.</p>
+  </div>
+</details>
+
+<details>
+  <summary><span class="tno">V9</span> Post-acción: nuevo tema tras recibir precios
+    <span class="chip okv">✅ Coherente — valida el bloque post-acción</span></summary>
+  <div class="body">
+    <p class="meta">Camino esperado: <span class="camino inline">🧭 itinerario</span></p>
+    <h4>Guión — escribe esto en “▶ Probar Chatbot”:</h4>
+    <ol class="guion"><li><code>Hola, soy Sara</code></li><li><code>¿Qué precio tiene el plan?</code></li><li><code>Ok, ¿y el itinerario cómo es?</code></li></ol>
+    <h4>Resultado real de mi corrida (14-jul-2026, Claude en vivo vía Bedrock):</h4>
+    <div class="chat"><div class="hint">— apertura del chat (sin mensaje) —</div><div class="msg bot">Hola, ¡Buen día! Espero que se encuentre muy bien el día de hoy, mi nombre es *Maria Camila*, asesora de la *Agencia de Viajes Arranquemos Pues*. ¿Con quién tengo el gusto? 😊</div><div class="camino">🧭 camino: saludo</div><div class="msg user">Hola, soy Sara</div><div class="msg bot">¡Hola Sara! 🌴 Qué gusto conocerte. Te escribo porque tenemos un *plan increíble* para ti: **Tolú &amp; Coveñas**, un viaje de playa que sale los *viernes y regresa el lunes*. Incluye hotel, comida y transporte 😊✨
+
+Déjame mostrarte la información general:</div><div class="media">🖼️ envía <code>info_general.jpeg</code></div><div class="msg bot">¿Te llama la atención, Sara? 🤗 Te cuento más detalles o te muestro los tours que incluye el plan.</div><div class="camino">🧭 camino: info_general</div><div class="msg user">¿Qué precio tiene el plan?</div><div class="msg bot">Claro, Sara 💬 Te muestro los tarifarios con todos los precios:</div><div class="media">🖼️ envía <code>tarifario1.jpeg</code></div><div class="media">🖼️ envía <code>tarifario2.jpeg</code></div><div class="media">🖼️ envía <code>tarifario3.jpeg</code></div><div class="msg bot">Aquí está el desglose completo, Sara 📊✨ Los precios varían según la fecha y la acomodación que elijas. Lo mejor es que te reserves con el *30% del valor total por persona* y el resto lo pagas de 10 a 8 días antes del viaje 🙌
+
+¿Hay alguna fecha que te llame la atención o quieres conocer más del plan? 😊</div><div class="camino">🧭 camino: precios_condiciones</div><div class="msg user">Ok, ¿y el itinerario cómo es?</div><div class="msg bot">¡Perfecto, Sara! 🌴 Te cuento cómo es el viaje paso a paso:
+
+🚌 *Viernes – Viaje*: salimos entre 6:00 y 9:00 pm desde la Estación Universidad – Calle Carabobo. La hora exacta se confirma un día antes 📍
+
+📍 *Sábado – Caimanera*: desayuno, almuerzo y cena incluidos 🍽️ Tour a la Ciénaga de La Caimanera 🌿 (la canoa a la Casa Flotante es opcional, $25.000 aprox.)
+
+📍 *Domingo – Tolú*: desayuno, almuerzo y cena incluidos 🍽️ Tour por Tolú, perfecto para compras y artesanías 🛍️ (el bici-taxi al Malecón es opcional, $3.000–$4.000)
+
+🚌 *Lunes – Regreso*: desayuno incluido y salida entre 9:00 a.m. y 1:00 p.m.</div><div class="camino">🧭 camino: itinerario</div></div>
+    <h4>Veredicto:</h4>
+    <p>Tras entregar los precios (acción completada), el cliente cambia de tema y el bloque LLM post-acción lo re-enruta: responde el itinerario completo. Caminos: precios_condiciones → itinerario.</p>
+  </div>
+</details>
+
+<details>
+  <summary><span class="tno">V10</span> Despedida → fin de conversación
+    <span class="chip okv">✅ Coherente (con nota)</span></summary>
+  <div class="body">
+    <p class="meta">Camino esperado: <span class="camino inline">🧭 fin</span></p>
+    <h4>Guión — escribe esto en “▶ Probar Chatbot”:</h4>
+    <ol class="guion"><li><code>Hola, soy Luis</code></li><li><code>¿Qué incluye el plan?</code></li><li><code>Listo, gracias! luego te escribo para reservar</code></li></ol>
+    <h4>Resultado real de mi corrida (14-jul-2026, Claude en vivo vía Bedrock):</h4>
+    <div class="chat"><div class="hint">— apertura del chat (sin mensaje) —</div><div class="msg bot">Hola, ¡Buen día! Espero que se encuentre muy bien el día de hoy, mi nombre es *Maria Camila*, asesora de la *Agencia de Viajes Arranquemos Pues*. ¿Con quién tengo el gusto? 😊🌴✨</div><div class="camino">🧭 camino: saludo</div><div class="msg user">Hola, soy Luis</div><div class="msg bot">¡Hola *Luis*! 🙌 Qué gusto conocerte. Te escribo porque tenemos un plan espectacular para ti: *Tolú &amp; Coveñas*, un viaje de ensueño saliendo el viernes y regresando el lunes. 🌴✨
+
+Incluye hotel, todas las comidas y transporte ida y regreso. ¿Te gustaría conocer los detalles? 😊</div><div class="media">🖼️ envía <code>info_general.jpeg</code></div><div class="camino">🧭 camino: info_general</div><div class="msg user">¿Qué incluye el plan?</div><div class="msg bot">¡Excelente pregunta, *Luis*! 🤗 El plan incluye:
+
+🏨 *Hotel* donde te hospedas todo el fin de semana
+🍽️ *Todas las comidas* (desayuno, almuerzo y cena)
+🚌 *Transporte ida y regreso* desde la Estación Universidad
+🌿 *Tours incluidos*: Ciénaga de La Caimanera (sábado) y Tolú (domingo)
+
+Recuerda que salimos el viernes y regresamos el lunes. ¿Quieres ver más detalles de los tours o conocer los precios? 😊</div><div class="media">🖼️ envía <code>tours.jpeg</code></div><div class="media">🖼️ envía <code>tour.mp4</code></div><div class="camino">🧭 camino: tours</div><div class="msg user">Listo, gracias! luego te escribo para reservar</div><div class="msg bot">¡Perfecto, *Luis*! 🙌 Cuando estés listo me escribes sin problema. Aquí estaré para ayudarte con tu reserva. 
+
+¡Que disfrutes pensando en ese viaje! 🌴✨😊</div><div class="camino">🧭 camino: reserva</div></div>
+    <h4>Veredicto:</h4>
+    <p>Ante &#x27;gracias, luego te escribo para reservar&#x27; se despide con calidez SIN cerrar la conversación — correcto, porque el mensaje deja la puerta abierta (intención futura de reservar). Con una despedida seca (&#x27;gracias, eso era todo&#x27;) sí cierra con finalizar_conversacion, como se validó en el bot de Talulah.</p>
+  </div>
+</details>
+<p class="sub">Los precios nunca se dicen en texto: siempre van en los tarifarios (imágenes), como se definió. La reserva siempre termina en un asesor humano con los datos del cliente en el motivo del traspaso.</p>
+</main></body></html>
