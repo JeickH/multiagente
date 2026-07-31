@@ -14,12 +14,18 @@ import { useCallback, useEffect, useRef, useState } from 'react';
  * backend (cifrado; el cliente solo lo reenvía).
  */
 
+// Misma paleta que la landing (`pages/gloma.tsx`) y /automatas.
+// El verde WhatsApp se mantiene: es el affordance del canal, no del branding.
 const BRAND = {
-  rose: '#F7D1CD',
-  brown: '#5E503F',
-  cream: '#FDFBF7',
-  roseSoft: '#FBE9E7',
-  brownLight: '#8B7A67',
+  bgBase: '#101817',
+  bgAlt: '#0B1413',
+  forest: '#004D40',
+  mint: '#4DB6AC',
+  mintSoft: 'rgba(77,182,172,0.12)',
+  surface: 'rgba(255,255,255,0.05)',
+  border: 'rgba(77,182,172,0.15)',
+  text: '#E6EFEE',
+  textMuted: 'rgba(230,239,238,0.65)',
   whatsapp: '#25D366',
 };
 
@@ -95,7 +101,7 @@ function TypingDots() {
             width: 6,
             height: 6,
             borderRadius: 9999,
-            backgroundColor: BRAND.brownLight,
+            backgroundColor: BRAND.mint,
             display: 'inline-block',
             animation: `glomaTyping 1.2s ease-in-out ${i * 0.18}s infinite`,
           }}
@@ -228,6 +234,9 @@ export default function GlomaChatWidget() {
           70% { box-shadow: 0 0 0 16px rgba(37, 211, 102, 0); }
           100% { box-shadow: 0 0 0 0 rgba(37, 211, 102, 0); }
         }
+        .gloma-chat-input::placeholder {
+          color: rgba(230, 239, 238, 0.35);
+        }
       `}</style>
 
       {/* ===== Panel de chat ===== */}
@@ -242,7 +251,8 @@ export default function GlomaChatWidget() {
             width: 'min(23rem, calc(100vw - 2rem))',
             height: 'min(31rem, calc(100vh - 8rem))',
             borderRadius: 20,
-            backgroundColor: BRAND.cream,
+            backgroundColor: BRAND.bgBase,
+            border: `1px solid ${BRAND.border}`,
             fontFamily: 'Inter, system-ui, sans-serif',
             animation: 'glomaWidgetIn 260ms cubic-bezier(.22,.61,.36,1) both',
           }}
@@ -250,17 +260,17 @@ export default function GlomaChatWidget() {
           {/* Header */}
           <div
             className="flex items-center gap-3 px-4 py-3"
-            style={{ backgroundColor: BRAND.brown, color: '#FFFFFF' }}
+            style={{ backgroundColor: BRAND.forest, color: BRAND.text }}
           >
             <div
               className="flex items-center justify-center rounded-full shrink-0"
-              style={{ width: 38, height: 38, backgroundColor: BRAND.rose }}
+              style={{ width: 38, height: 38, backgroundColor: BRAND.mint }}
             >
               <span
                 style={{
                   fontFamily: 'Syne, system-ui, sans-serif',
                   fontWeight: 800,
-                  color: BRAND.brown,
+                  color: BRAND.bgBase,
                   fontSize: 16,
                 }}
               >
@@ -303,14 +313,14 @@ export default function GlomaChatWidget() {
           <div ref={scrollRef} className="flex-1 overflow-y-auto px-3 py-4 space-y-2.5">
             <p
               className="text-[11px] text-center px-6 pb-1"
-              style={{ color: BRAND.brownLight }}
+              style={{ color: BRAND.textMuted }}
             >
               Estás hablando con el agente de IA de Gloma — el mismo tipo de
               agente que montamos para tu marca ✨
             </p>
             <p
               className="text-[10px] text-center px-6 pb-2"
-              style={{ color: BRAND.brownLight, opacity: 0.8 }}
+              style={{ color: BRAND.textMuted, opacity: 0.8 }}
             >
               Guardamos la conversación para mejorar el servicio. No compartas
               datos sensibles (contraseñas o información bancaria).
@@ -326,15 +336,15 @@ export default function GlomaChatWidget() {
                   style={
                     m.from === 'user'
                       ? {
-                          backgroundColor: BRAND.brown,
-                          color: '#FFFFFF',
+                          backgroundColor: BRAND.mint,
+                          color: BRAND.bgBase,
                           borderRadius: '16px 16px 4px 16px',
                         }
                       : {
-                          backgroundColor: '#FFFFFF',
-                          color: BRAND.brown,
+                          backgroundColor: BRAND.surface,
+                          color: BRAND.text,
                           borderRadius: '16px 16px 16px 4px',
-                          boxShadow: '0 1px 2px rgba(94,80,63,0.08)',
+                          border: `1px solid ${BRAND.border}`,
                         }
                   }
                 >
@@ -356,9 +366,9 @@ export default function GlomaChatWidget() {
                 <div
                   className="px-3 py-2.5"
                   style={{
-                    backgroundColor: '#FFFFFF',
+                    backgroundColor: BRAND.surface,
                     borderRadius: '16px 16px 16px 4px',
-                    boxShadow: '0 1px 2px rgba(94,80,63,0.08)',
+                    border: `1px solid ${BRAND.border}`,
                   }}
                 >
                   <TypingDots />
@@ -376,9 +386,9 @@ export default function GlomaChatWidget() {
                     onClick={() => sendSuggestion(s)}
                     className="text-[11px] px-2.5 py-1.5 rounded-full transition-colors hover:opacity-80"
                     style={{
-                      backgroundColor: BRAND.roseSoft,
-                      color: BRAND.brown,
-                      border: `1px solid ${BRAND.rose}`,
+                      backgroundColor: BRAND.mintSoft,
+                      color: BRAND.text,
+                      border: `1px solid ${BRAND.border}`,
                     }}
                   >
                     {s}
@@ -405,7 +415,7 @@ export default function GlomaChatWidget() {
           <form
             onSubmit={submit}
             className="flex items-center gap-2 px-3 py-3"
-            style={{ backgroundColor: '#FFFFFF', borderTop: `1px solid ${BRAND.roseSoft}` }}
+            style={{ backgroundColor: BRAND.bgAlt, borderTop: `1px solid ${BRAND.border}` }}
           >
             <input
               ref={inputRef}
@@ -415,11 +425,11 @@ export default function GlomaChatWidget() {
               disabled={finished}
               placeholder={finished ? 'Conversación finalizada' : 'Escribe tu pregunta…'}
               aria-label="Escribe tu mensaje"
-              className="flex-1 px-3 py-2 text-[13px] rounded-full focus:outline-none disabled:opacity-60"
+              className="gloma-chat-input flex-1 px-3 py-2 text-[13px] rounded-full focus:outline-none disabled:opacity-60"
               style={{
-                backgroundColor: BRAND.cream,
-                color: BRAND.brown,
-                border: `1px solid ${BRAND.roseSoft}`,
+                backgroundColor: 'rgba(255,255,255,0.04)',
+                color: BRAND.text,
+                border: `1px solid ${BRAND.border}`,
               }}
             />
             <button
@@ -427,7 +437,7 @@ export default function GlomaChatWidget() {
               disabled={sending || finished || !input.trim()}
               aria-label="Enviar mensaje"
               className="flex items-center justify-center rounded-full transition-opacity disabled:opacity-40"
-              style={{ width: 38, height: 38, backgroundColor: BRAND.brown, color: '#FFFFFF' }}
+              style={{ width: 38, height: 38, backgroundColor: BRAND.mint, color: BRAND.bgBase }}
             >
               <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M22 2 11 13M22 2l-7 20-4-9-9-4 20-7z" />
@@ -468,8 +478,8 @@ export default function GlomaChatWidget() {
               width: 13,
               height: 13,
               borderRadius: 9999,
-              backgroundColor: BRAND.rose,
-              border: '2px solid #FFFFFF',
+              backgroundColor: BRAND.mint,
+              border: `2px solid ${BRAND.bgBase}`,
             }}
           />
         )}

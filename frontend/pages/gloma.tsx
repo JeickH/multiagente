@@ -7,18 +7,27 @@ import GlomaChatWidget from '../components/GlomaChatWidget';
 /**
  * Landing page de Gloma.
  *
- * Identidad (identidad_gloma/branding_gloma_v2.html):
- *  - Paleta: Rosa empolvado #F7D1CD, Marrón tierra #5E503F, Crema #FDFBF7.
- *  - Tipografía: Syne (títulos) + Inter (cuerpo).
- *  - Concepto "Soft Cyber": mucho aire, limpio, cálido.
+ * Identidad — paleta alineada al nuevo mercado objetivo (agencias de viajes),
+ * la misma de la landing /automatas (Gorvek):
+ *  - Deep Forest #004D40, Algorithmic Mint #4DB6AC, Soft Mint #E0F2F1,
+ *    Technical Black #101817.
+ *  - El acento (#4DB6AC) se reserva para CTAs, métricas y highlights.
+ *  - Tipografía: Syne (títulos) + Inter (cuerpo) — sin cambios.
  */
 
 const BRAND = {
-  rose: '#F7D1CD',
-  brown: '#5E503F',
-  cream: '#FDFBF7',
-  roseSoft: '#FBE9E7',
-  brownLight: '#8B7A67',
+  bgBase: '#101817',
+  bgAlt: '#0B1413',
+  forest: '#004D40',
+  mint: '#4DB6AC',
+  softMint: '#E0F2F1',
+  mintSoft: 'rgba(77,182,172,0.12)',
+  cardBg: 'rgba(255,255,255,0.03)',
+  cardBorder: 'rgba(77,182,172,0.15)',
+  cardBorderHover: 'rgba(77,182,172,0.45)',
+  text: '#E6EFEE',
+  textMuted: 'rgba(230,239,238,0.65)',
+  textDim: 'rgba(230,239,238,0.45)',
 };
 
 // --- Datos -----------------------------------------------------------------
@@ -258,10 +267,10 @@ function InteractiveHeader() {
 
   // Círculos decorativos — sus posiciones se modifican con el cursor (parallax distinto para cada uno)
   const orbs = [
-    { size: 260, top: '10%', left: '8%', bg: BRAND.rose, factor: 40, opacity: 0.6 },
-    { size: 160, top: '60%', left: '18%', bg: BRAND.roseSoft, factor: 30, opacity: 0.5 },
-    { size: 320, top: '20%', right: '6%', bg: BRAND.rose, factor: 55, opacity: 0.35 },
-    { size: 120, top: '70%', right: '24%', bg: BRAND.roseSoft, factor: 22, opacity: 0.55 },
+    { size: 260, top: '10%', left: '8%', bg: BRAND.mint, factor: 40, opacity: 0.35 },
+    { size: 160, top: '60%', left: '18%', bg: BRAND.forest, factor: 30, opacity: 0.55 },
+    { size: 320, top: '20%', right: '6%', bg: BRAND.mint, factor: 55, opacity: 0.22 },
+    { size: 120, top: '70%', right: '24%', bg: BRAND.forest, factor: 22, opacity: 0.6 },
   ];
 
   return (
@@ -283,7 +292,7 @@ function InteractiveHeader() {
           className="absolute inset-0"
           style={{
             background:
-              'linear-gradient(to right, rgba(94,80,63,0.62), rgba(94,80,63,0.15))',
+              'linear-gradient(to right, rgba(16,24,23,0.88), rgba(16,24,23,0.45))',
           }}
         />
       </div>
@@ -322,8 +331,8 @@ function InteractiveHeader() {
       >
         <defs>
           <linearGradient id="lineGrad" x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0%" stopColor={BRAND.rose} stopOpacity="0.7" />
-            <stop offset="100%" stopColor={BRAND.rose} stopOpacity="0" />
+            <stop offset="0%" stopColor={BRAND.mint} stopOpacity="0.7" />
+            <stop offset="100%" stopColor={BRAND.mint} stopOpacity="0" />
           </linearGradient>
         </defs>
         <g fill="none" stroke="url(#lineGrad)" strokeWidth="1.3">
@@ -331,7 +340,7 @@ function InteractiveHeader() {
           <path d="M 160,620 C 360,520 520,680 760,560" />
           <path d="M 900,140 C 1020,220 1120,380 1040,540" />
         </g>
-        <g fill={BRAND.rose}>
+        <g fill={BRAND.mint}>
           <circle cx="80" cy="160" r="5" opacity="0.9" />
           <circle cx="240" cy="120" r="3.5" opacity="0.75" />
           <circle cx="520" cy="220" r="4.5" opacity="0.8" />
@@ -357,7 +366,7 @@ function InteractiveHeader() {
           href="#contacto"
           onClick={smoothScrollToContacto}
           className="hidden md:inline-block px-5 py-2 rounded-full text-sm font-medium transition-opacity hover:opacity-90"
-          style={{ backgroundColor: BRAND.rose, color: BRAND.brown }}
+          style={{ backgroundColor: BRAND.mint, color: BRAND.bgBase }}
         >
           Agenda una demo
         </a>
@@ -404,7 +413,7 @@ function InteractiveHeader() {
             target="_blank"
             rel="noopener noreferrer"
             className="inline-block px-6 py-3 rounded-full text-sm font-semibold text-center transition-opacity hover:opacity-90"
-            style={{ backgroundColor: BRAND.rose, color: BRAND.brown }}
+            style={{ backgroundColor: BRAND.mint, color: BRAND.bgBase }}
           >
             Escríbenos por WhatsApp
           </a>
@@ -445,20 +454,20 @@ function ContactForm({
   // estado "thanks" con un check brandeado dibujándose.
   const ringStyle: React.CSSProperties = isSending
     ? {
-        boxShadow: `0 0 0 0 ${BRAND.rose}`,
+        boxShadow: `0 0 0 0 ${BRAND.mint}`,
         animation: 'glomaRing 1.4s ease-out infinite',
       }
     : isError
-    ? { boxShadow: `0 0 0 3px ${BRAND.rose}` }
+    ? { boxShadow: `0 0 0 3px ${BRAND.mint}` }
     : {};
 
   return (
     <>
       <style jsx global>{`
         @keyframes glomaRing {
-          0%   { box-shadow: 0 0 0 0 rgba(247,209,205,0.95); }
-          70%  { box-shadow: 0 0 0 14px rgba(247,209,205,0); }
-          100% { box-shadow: 0 0 0 0 rgba(247,209,205,0); }
+          0%   { box-shadow: 0 0 0 0 rgba(77,182,172,0.95); }
+          70%  { box-shadow: 0 0 0 14px rgba(77,182,172,0); }
+          100% { box-shadow: 0 0 0 0 rgba(77,182,172,0); }
         }
         @keyframes glomaCheckDraw {
           to { stroke-dashoffset: 0; }
@@ -467,11 +476,21 @@ function ContactForm({
           0%   { opacity: 0; transform: translateY(8px); }
           100% { opacity: 1; transform: translateY(0); }
         }
+        .gloma-input::placeholder {
+          color: rgba(230,239,238,0.35);
+        }
+        .gloma-input:focus {
+          border-color: ${BRAND.mint} !important;
+          box-shadow: 0 0 0 3px rgba(77,182,172,0.18);
+        }
       `}</style>
 
       <div
-        className="relative bg-white rounded-3xl shadow-md overflow-hidden transition-transform duration-500"
+        className="relative rounded-3xl shadow-md overflow-hidden transition-transform duration-500"
         style={{
+          backgroundColor: BRAND.cardBg,
+          border: `1px solid ${BRAND.cardBorder}`,
+          backdropFilter: 'blur(8px)',
           ...ringStyle,
           transform: isSending ? 'scale(0.985)' : 'scale(1)',
         }}
@@ -487,7 +506,7 @@ function ContactForm({
             pointerEvents: isDone ? 'none' : 'auto',
           }}
         >
-          <label className="block text-sm font-medium mb-2" style={{ color: BRAND.brown }}>
+          <label className="block text-sm font-medium mb-2" style={{ color: BRAND.textMuted }}>
             Correo electrónico
           </label>
           <input
@@ -497,14 +516,15 @@ function ContactForm({
             onChange={(e) => setForm({ ...form, email: e.target.value })}
             placeholder="tu@empresa.com"
             disabled={isSending}
-            className="w-full px-4 py-3 border rounded-xl text-sm mb-5 focus:outline-none transition-colors disabled:opacity-60"
+            className="gloma-input w-full px-4 py-3 border rounded-xl text-sm mb-5 focus:outline-none transition-colors disabled:opacity-60"
             style={{
-              borderColor: BRAND.roseSoft,
-              color: BRAND.brown,
+              backgroundColor: 'rgba(255,255,255,0.02)',
+              borderColor: BRAND.cardBorder,
+              color: BRAND.text,
               fontFamily: 'Inter, system-ui, sans-serif',
             }}
           />
-          <label className="block text-sm font-medium mb-2" style={{ color: BRAND.brown }}>
+          <label className="block text-sm font-medium mb-2" style={{ color: BRAND.textMuted }}>
             Teléfono
           </label>
           <input
@@ -514,10 +534,11 @@ function ContactForm({
             onChange={(e) => setForm({ ...form, telefono: e.target.value })}
             placeholder="+57 300 000 0000"
             disabled={isSending}
-            className="w-full px-4 py-3 border rounded-xl text-sm mb-6 focus:outline-none transition-colors disabled:opacity-60"
+            className="gloma-input w-full px-4 py-3 border rounded-xl text-sm mb-6 focus:outline-none transition-colors disabled:opacity-60"
             style={{
-              borderColor: BRAND.roseSoft,
-              color: BRAND.brown,
+              backgroundColor: 'rgba(255,255,255,0.02)',
+              borderColor: BRAND.cardBorder,
+              color: BRAND.text,
               fontFamily: 'Inter, system-ui, sans-serif',
             }}
           />
@@ -525,7 +546,7 @@ function ContactForm({
             type="submit"
             disabled={isSending}
             className="w-full py-3 rounded-full font-semibold text-sm transition-all hover:opacity-90 disabled:opacity-70 disabled:cursor-not-allowed"
-            style={{ backgroundColor: BRAND.brown, color: '#FFFFFF' }}
+            style={{ backgroundColor: BRAND.mint, color: BRAND.bgBase }}
           >
             {isSending ? 'Enviando…' : 'Hablar con un especialista'}
           </button>
@@ -533,7 +554,7 @@ function ContactForm({
             <p
               className="mt-4 text-sm text-center"
               style={{
-                color: BRAND.brown,
+                color: BRAND.textMuted,
                 fontFamily: 'Inter, system-ui, sans-serif',
                 animation: 'glomaThanksFloat 400ms ease-out both',
               }}
@@ -547,14 +568,14 @@ function ContactForm({
         {isDone && (
           <div
             className="absolute inset-0 flex flex-col items-center justify-center px-6 md:px-8 text-center"
-            style={{ backgroundColor: '#FFFFFF' }}
+            style={{ backgroundColor: BRAND.bgAlt }}
             role="status"
             aria-live="polite"
           >
             <div
               className="w-20 h-20 rounded-full flex items-center justify-center mb-5"
               style={{
-                backgroundColor: BRAND.roseSoft,
+                backgroundColor: BRAND.mintSoft,
                 animation: 'glomaThanksFloat 500ms ease-out both',
               }}
             >
@@ -563,13 +584,13 @@ function ContactForm({
                   cx="20"
                   cy="20"
                   r="18"
-                  stroke={BRAND.rose}
+                  stroke={BRAND.cardBorderHover}
                   strokeWidth="2"
                   fill="none"
                 />
                 <path
                   d="M12 20.5 L18 26.5 L29 14.5"
-                  stroke={BRAND.brown}
+                  stroke={BRAND.mint}
                   strokeWidth="3"
                   strokeLinecap="round"
                   strokeLinejoin="round"
@@ -587,7 +608,7 @@ function ContactForm({
               style={{
                 fontFamily: 'Syne, system-ui, sans-serif',
                 fontWeight: 700,
-                color: BRAND.brown,
+                color: BRAND.text,
                 animation: 'glomaThanksFloat 500ms ease-out 250ms both',
               }}
             >
@@ -597,7 +618,7 @@ function ContactForm({
               className="text-sm md:text-base"
               style={{
                 fontFamily: 'Inter, system-ui, sans-serif',
-                color: BRAND.brownLight,
+                color: BRAND.textMuted,
                 animation: 'glomaThanksFloat 500ms ease-out 380ms both',
               }}
             >
@@ -615,10 +636,21 @@ function StatsSection() {
   return (
     <section
       ref={ref}
-      className="py-20 md:py-24"
-      style={{ backgroundColor: BRAND.brown, color: '#FFFFFF' }}
+      className="py-20 md:py-24 relative overflow-hidden"
+      style={{
+        background: `linear-gradient(180deg, ${BRAND.bgAlt} 0%, ${BRAND.bgBase} 100%)`,
+        color: BRAND.text,
+      }}
     >
-      <div className="max-w-5xl mx-auto px-6 md:px-10">
+      <div
+        aria-hidden="true"
+        className="absolute inset-0 pointer-events-none"
+        style={{
+          backgroundImage:
+            'radial-gradient(circle at 50% 0%, rgba(77,182,172,0.10), transparent 60%)',
+        }}
+      />
+      <div className="relative max-w-5xl mx-auto px-6 md:px-10">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-10 md:gap-6 text-center">
           {STATS.map((s, i) => (
             <div
@@ -632,7 +664,10 @@ function StatsSection() {
             >
               <div
                 className="w-20 h-20 rounded-full flex items-center justify-center mb-4 overflow-hidden"
-                style={{ backgroundColor: BRAND.rose }}
+                style={{
+                  backgroundColor: BRAND.mintSoft,
+                  border: `1px solid ${BRAND.cardBorderHover}`,
+                }}
               >
                 <Image
                   src={s.icon}
@@ -647,7 +682,7 @@ function StatsSection() {
                 style={{
                   fontFamily: 'Syne, system-ui, sans-serif',
                   fontWeight: 800,
-                  color: BRAND.rose,
+                  color: BRAND.mint,
                 }}
               >
                 <AnimatedNumber
@@ -719,9 +754,25 @@ export default function GlomaLanding() {
         />
       </Head>
 
+      <style jsx global>{`
+        html,
+        body {
+          background-color: ${BRAND.bgBase};
+        }
+        .gloma-root ::selection {
+          background: ${BRAND.mint};
+          color: ${BRAND.bgBase};
+        }
+        .gloma-card:hover {
+          border-color: ${BRAND.cardBorderHover} !important;
+          box-shadow: 0 24px 60px -20px rgba(0, 0, 0, 0.55),
+            0 0 50px -20px rgba(77, 182, 172, 0.35);
+        }
+      `}</style>
+
       <div
         className="gloma-root min-h-screen"
-        style={{ backgroundColor: BRAND.cream, color: BRAND.brown }}
+        style={{ backgroundColor: BRAND.bgBase, color: BRAND.text }}
       >
         <InteractiveHeader />
 
@@ -740,7 +791,7 @@ export default function GlomaLanding() {
                     style={{
                       fontFamily: 'Syne, system-ui, sans-serif',
                       fontWeight: 700,
-                      color: BRAND.brown,
+                      color: BRAND.text,
                     }}
                   >
                     {s.title}
@@ -749,14 +800,17 @@ export default function GlomaLanding() {
                     className="text-base md:text-lg leading-relaxed"
                     style={{
                       fontFamily: 'Inter, system-ui, sans-serif',
-                      color: BRAND.brownLight,
+                      color: BRAND.textMuted,
                     }}
                   >
                     {s.text}
                   </p>
                 </div>
                 <div className="md:[direction:ltr]">
-                  <div className="relative aspect-[4/3] rounded-3xl overflow-hidden shadow-lg">
+                  <div
+                    className="relative aspect-[4/3] rounded-3xl overflow-hidden shadow-lg"
+                    style={{ border: `1px solid ${BRAND.cardBorder}` }}
+                  >
                     <Image src={s.image} alt={s.title} fill className="object-cover" />
                   </div>
                 </div>
@@ -766,7 +820,7 @@ export default function GlomaLanding() {
         </section>
 
         {/* ===== FEATURES ===== */}
-        <section className="py-20 md:py-28" style={{ backgroundColor: '#FFFFFF' }}>
+        <section className="py-20 md:py-28" style={{ backgroundColor: BRAND.bgAlt }}>
           <div className="max-w-6xl mx-auto px-6 md:px-10">
             <Reveal className="text-center max-w-2xl mx-auto mb-14 md:mb-20">
               <h2
@@ -774,7 +828,7 @@ export default function GlomaLanding() {
                 style={{
                   fontFamily: 'Syne, system-ui, sans-serif',
                   fontWeight: 700,
-                  color: BRAND.brown,
+                  color: BRAND.text,
                 }}
               >
                 Todo lo que necesitas, sin fricciones
@@ -784,12 +838,18 @@ export default function GlomaLanding() {
               {FEATURES.map((f, i) => (
                 <Reveal key={f.title} delay={i * 80}>
                   <div
-                    className="p-6 md:p-7 rounded-2xl transition-transform hover:-translate-y-1 h-full"
-                    style={{ backgroundColor: BRAND.cream }}
+                    className="gloma-card p-6 md:p-7 rounded-2xl transition-all hover:-translate-y-1 h-full"
+                    style={{
+                      backgroundColor: BRAND.cardBg,
+                      border: `1px solid ${BRAND.cardBorder}`,
+                    }}
                   >
                     <div
                       className="w-14 h-14 rounded-full flex items-center justify-center mb-4 overflow-hidden"
-                      style={{ backgroundColor: BRAND.roseSoft }}
+                      style={{
+                        backgroundColor: BRAND.mintSoft,
+                        border: `1px solid ${BRAND.cardBorder}`,
+                      }}
                     >
                       <Image
                         src={f.icon}
@@ -804,7 +864,7 @@ export default function GlomaLanding() {
                       style={{
                         fontFamily: 'Syne, system-ui, sans-serif',
                         fontWeight: 600,
-                        color: BRAND.brown,
+                        color: BRAND.text,
                       }}
                     >
                       {f.title}
@@ -813,7 +873,7 @@ export default function GlomaLanding() {
                       className="text-sm leading-relaxed"
                       style={{
                         fontFamily: 'Inter, system-ui, sans-serif',
-                        color: BRAND.brownLight,
+                        color: BRAND.textMuted,
                       }}
                     >
                       {f.text}
@@ -829,15 +889,27 @@ export default function GlomaLanding() {
         <StatsSection />
 
         {/* ===== CONTACTO ===== */}
-        <section id="contacto" className="py-20 md:py-28" style={{ backgroundColor: BRAND.cream }}>
-          <div className="max-w-5xl mx-auto px-6 md:px-10 grid grid-cols-1 md:grid-cols-2 gap-12 md:gap-16 items-start">
+        <section
+          id="contacto"
+          className="py-20 md:py-28 relative overflow-hidden"
+          style={{ backgroundColor: BRAND.bgBase }}
+        >
+          <div
+            aria-hidden="true"
+            className="absolute inset-0 pointer-events-none"
+            style={{
+              backgroundImage:
+                'radial-gradient(ellipse at 50% 100%, rgba(0,77,64,0.30), transparent 60%)',
+            }}
+          />
+          <div className="relative max-w-5xl mx-auto px-6 md:px-10 grid grid-cols-1 md:grid-cols-2 gap-12 md:gap-16 items-start">
             <Reveal>
               <h2
                 className="text-3xl md:text-5xl mb-6 leading-tight"
                 style={{
                   fontFamily: 'Syne, system-ui, sans-serif',
                   fontWeight: 700,
-                  color: BRAND.brown,
+                  color: BRAND.text,
                 }}
               >
                 ¿Listo para escalar tus ventas sin ampliar tu equipo?
@@ -846,7 +918,7 @@ export default function GlomaLanding() {
                 className="text-base md:text-lg mb-8"
                 style={{
                   fontFamily: 'Inter, system-ui, sans-serif',
-                  color: BRAND.brownLight,
+                  color: BRAND.textMuted,
                 }}
               >
                 Cuéntanos un poco de tu negocio y te contactamos para mostrarte cómo Gloma puede funcionar para ti.
@@ -856,7 +928,7 @@ export default function GlomaLanding() {
                 target="_blank"
                 rel="noopener noreferrer"
                 className="inline-flex items-center px-5 py-3 rounded-full text-sm font-semibold transition-transform hover:-translate-y-0.5"
-                style={{ backgroundColor: BRAND.brown, color: '#FFFFFF' }}
+                style={{ backgroundColor: BRAND.mint, color: BRAND.bgBase }}
               >
                 Escríbenos por WhatsApp
               </a>
@@ -875,7 +947,13 @@ export default function GlomaLanding() {
         </section>
 
         {/* ===== FOOTER ===== */}
-        <footer style={{ backgroundColor: BRAND.brown, color: '#FFFFFF' }}>
+        <footer
+          style={{
+            backgroundColor: BRAND.bgAlt,
+            color: BRAND.text,
+            borderTop: `1px solid ${BRAND.cardBorder}`,
+          }}
+        >
           <div className="max-w-6xl mx-auto px-6 md:px-10 py-14 grid grid-cols-1 md:grid-cols-3 gap-10">
             <div>
               <div className="flex items-center mb-4">
@@ -890,8 +968,8 @@ export default function GlomaLanding() {
             </div>
             <div>
               <h4
-                className="text-sm font-semibold mb-4 tracking-wide uppercase opacity-80"
-                style={{ fontFamily: 'Inter, system-ui, sans-serif' }}
+                className="text-sm font-semibold mb-4 tracking-wide uppercase"
+                style={{ fontFamily: 'Inter, system-ui, sans-serif', color: BRAND.mint }}
               >
                 Contacto
               </h4>
@@ -906,8 +984,8 @@ export default function GlomaLanding() {
             </div>
             <div>
               <h4
-                className="text-sm font-semibold mb-4 tracking-wide uppercase opacity-80"
-                style={{ fontFamily: 'Inter, system-ui, sans-serif' }}
+                className="text-sm font-semibold mb-4 tracking-wide uppercase"
+                style={{ fontFamily: 'Inter, system-ui, sans-serif', color: BRAND.mint }}
               >
                 Conecta
               </h4>
