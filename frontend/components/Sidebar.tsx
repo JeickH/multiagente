@@ -1,6 +1,7 @@
 import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
+import { useEffect, useState } from 'react';
 
 const menu = [
   { name: 'Mensajes', path: '/mensajes', icon: '💬' },
@@ -9,8 +10,36 @@ const menu = [
   { name: 'Mi Plan', path: '/usuario', icon: '👤' },
 ];
 
+// Sprint 21 #284: "Citas" es un módulo interno de Gloma (las demos que agenda
+// su bot institucional). El backend ya bloquea `/citas` con 403 para las demás
+// cuentas; esto solo evita mostrar una pestaña que no les sirve.
+const CITAS_ITEM = { name: 'Citas', path: '/citas', icon: '📅' };
+const GLOMA_DOMAIN = '@glomabeauty.com';
+
 export default function Sidebar() {
   const router = useRouter();
+  const [esGloma, setEsGloma] = useState(false);
+
+  useEffect(() => {
+    let cancelado = false;
+    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+    if (!token) return;
+    fetch('/api/usuario/me', { headers: { Authorization: `Bearer ${token}` } })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((u) => {
+        if (!cancelado && u?.correo) {
+          setEsGloma(String(u.correo).toLowerCase().endsWith(GLOMA_DOMAIN));
+        }
+      })
+      .catch(() => {
+        /* no-op: si falla, simplemente no se muestra el módulo interno */
+      });
+    return () => {
+      cancelado = true;
+    };
+  }, []);
+
+  const items = esGloma ? [...menu, CITAS_ITEM] : menu;
 
   return (
     <aside className="bg-gloma-brown text-white w-24 flex flex-col justify-between items-center py-6 min-h-screen font-body">
@@ -27,7 +56,7 @@ export default function Sidebar() {
       </div>
       {/* Menú */}
       <nav className="flex flex-col gap-8 flex-1">
-        {menu.map((item) => (
+        {items.map((item) => (
           <Link href={item.path} key={item.name} legacyBehavior>
             <a className={`flex flex-col items-center transition-colors ${
               router.pathname === item.path

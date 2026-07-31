@@ -1908,3 +1908,17 @@ el CEO consulte desde su equipo hay tres caminos, pendientes de su decisión:
 puerto 5432 a internet), (b) un bastión/túnel SSM (más seguro, más setup), o
 (c) una vista de "Demos agendadas" dentro de la app con login (lo más limpio para uso
 diario; queda como #283 en Sprint Futuro).
+
+### 4. Adición #283-#287 — módulo interno "Citas" (2026-07-31)
+
+**Pedido del CEO:** una pestaña `/citas` accesible **solo para la cuenta de Gloma**,
+con un visualizador de la tabla de demos que permita editarla (cambiar valores cuando
+se agenda o se reprograma una sesión).
+
+| # | Tarea | Agente | Resultado |
+|---|---|---|---|
+| #283 | Router `/citas` (listar, editar, borrar) | `dev-plataforma` | `backend/app/routers/citas.py`: `GET /citas` (con filtro por estado + resumen), `PATCH /citas/{id}` (parcial) y `DELETE /citas/{id}`. Dependencia `require_gloma_account`: pasa el owner `gloma@glomabeauty.com` y los miembros de su team; cualquier otra sesión → **403** sin explicar por qué (regla #6). Estados: `solicitada`, `confirmada`, `realizada`, `cancelada`, `no_asistio`. |
+| #284 | Página `/citas` + ítem de menú | `ui-ux` + `dev-plataforma` | `frontend/pages/citas.tsx`: tarjetas de resumen, filtros por estado, tabla (agendada, prospecto, contacto, franja, canal, estado, acciones), cambio de estado en línea con un `select`, modal de edición completo (nombre, empresa, correo, teléfono, día, hora, estado, notas) y borrado con confirmación; estado "Módulo privado 🔒" si el backend responde 403. `Sidebar` muestra la pestaña **solo** a correos `@glomabeauty.com` (cosmético: la autorización real es del backend). |
+| #285 | Seguridad | `seguridad` | Validación **server-side** de la edición: correo con formato válido, estado dentro del enum, día solo de lunes a viernes; el log de la edición registra los **campos** cambiados, nunca los valores (PII). El módulo no aparece en el menú de otras cuentas y su API responde 403 aunque conozcan la URL. |
+| #286 | QA local | `qa` | `GET /citas` como Gloma → 200 con las 2 citas y el resumen; como `talulah@gloma.com` → **403**; sin token → **401**. `PATCH` de estado+hora+notas → 200 y persistido; estado inventado, correo inválido y día "sábado" → **422**; id inexistente → **404**. `npm run build` compila `/citas` (4.75 kB). |
+| #287 | Deploy | `deploy-aws` | Imagen `multiagente-backend:sprint21b`, task-def **rev 16**, `update-service` a rev 16; frontend por Amplify con el push a `main`. |
