@@ -88,14 +88,22 @@ def encrypt_secret(plaintext: str) -> str:
         raise CryptoError("No se pudo cifrar el secreto") from exc
 
 
-def decrypt_secret(ciphertext: str) -> str:
-    """Descifra un ciphertext Fernet. Lanza CryptoError opaco en caso de fallo."""
+def decrypt_secret(ciphertext: str, *, ttl_seconds: int | None = None) -> str:
+    """Descifra un ciphertext Fernet. Lanza CryptoError opaco en caso de fallo.
+
+    `ttl_seconds` (opcional) rechaza tokens más viejos que ese lapso usando el
+    timestamp que Fernet firma dentro del token. Se usa para sesiones efímeras
+    (p. ej. el chat público de la landing), no para secretos en reposo.
+    """
     if not isinstance(ciphertext, str):
         raise CryptoError("ciphertext debe ser str")
     if not ciphertext:
         raise CryptoError("ciphertext vacío no permitido")
     try:
-        return _get_fernet().decrypt(ciphertext.encode("utf-8")).decode("utf-8")
+        raw = ciphertext.encode("utf-8")
+        if ttl_seconds is None:
+            return _get_fernet().decrypt(raw).decode("utf-8")
+        return _get_fernet().decrypt(raw, ttl=ttl_seconds).decode("utf-8")
     except InvalidToken as exc:
         raise CryptoError("No se pudo descifrar el secreto") from exc
     except Exception as exc:

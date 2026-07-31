@@ -2,6 +2,8 @@ import Head from 'next/head';
 import Image from 'next/image';
 import { useEffect, useRef, useState } from 'react';
 
+import GlomaChatWidget from '../components/GlomaChatWidget';
+
 /**
  * Landing page de Gloma.
  *
@@ -927,6 +929,11 @@ export default function GlomaLanding() {
             © 2026 Gloma.
           </div>
         </footer>
+
+        {/* Botón flotante de WhatsApp → conversa con el bot institucional
+            (Sprint 20 #270): el visitante prueba el agente sin salir de la
+            landing y sin necesidad de tener WhatsApp. */}
+        <GlomaChatWidget />
       </div>
     </>
   );

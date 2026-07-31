@@ -489,6 +489,20 @@ def _invoke_model(
 # Motor
 # ---------------------------------------------------------------------------
 
+_MD_BOLD_RE = re.compile(r"\*\*(?=\S)([^*\n]+?)(?<=\S)\*\*")
+
+
+def _to_whatsapp_format(text: str) -> str:
+    """Normaliza el markdown que a veces emite el modelo al formato WhatsApp.
+
+    WhatsApp usa `*negrilla*` (un asterisco) y muestra `**así**` literalmente,
+    con los asteriscos a la vista. El system prompt lo pide, pero el modelo
+    recae en markdown de vez en cuando: se corrige aquí para los tres canales
+    (WhatsApp, simulador y landing) en vez de en cada frontend.
+    """
+    return _MD_BOLD_RE.sub(r"*\1*", text)
+
+
 def _load_history(state: Optional[Dict[str, Any]]) -> List[Dict[str, str]]:
     if not state:
         return []
@@ -603,7 +617,7 @@ def _advance_inner(
         for block in content:
             btype = block.get("type")
             if btype == "text":
-                text = (block.get("text") or "").strip()
+                text = _to_whatsapp_format((block.get("text") or "").strip())
                 if text:
                     actions.append({"type": "say", "payload": {"text": text}})
                     say_texts.append(text)
