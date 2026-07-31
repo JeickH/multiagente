@@ -280,6 +280,8 @@ def landing_chat(payload: ChatIn, request: Request, db: Session = Depends(get_db
         payload.message,
     )
     llm_engine.record_decision(db, bot, result.get("telemetry"), source="landing")
+    # #276: si el bot agendó una demo en este turno, queda en `demo_bookings`.
+    llm_engine.record_booking(db, bot, result.get("telemetry"), source="landing")
 
     actions: List[ChatAction] = []
     handoff = False

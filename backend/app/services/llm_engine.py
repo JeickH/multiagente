@@ -205,6 +205,52 @@ def _tools_for(cfg: Dict[str, Any]) -> List[Dict[str, Any]]:
                 },
             }
         )
+    if cfg.get("agenda") is not None:
+        tools.append(
+            {
+                "name": "registrar_demo",
+                "description": (
+                    "Registra la sesión de demostración que el prospecto acaba "
+                    "de agendar. Úsala SOLO cuando ya tengas su correo y la "
+                    "franja elegida (día de lunes a viernes y hora entre 2:00 "
+                    "p.m. y 6:00 p.m.). Después de usarla, despídete."
+                ),
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "correo": {
+                            "type": "string",
+                            "description": "Correo del prospecto, tal como lo escribió.",
+                        },
+                        "nombre": {"type": "string", "description": "Nombre del prospecto."},
+                        "empresa": {
+                            "type": "string",
+                            "description": "Empresa o negocio del prospecto.",
+                        },
+                        "telefono": {
+                            "type": "string",
+                            "description": "Teléfono, solo si lo dio.",
+                        },
+                        "dia": {
+                            "type": "string",
+                            "description": "Día elegido: lunes, martes, miércoles, jueves o viernes.",
+                        },
+                        "hora": {
+                            "type": "string",
+                            "description": "Hora elegida entre 2:00 p.m. y 6:00 p.m.",
+                        },
+                        "notas": {
+                            "type": "string",
+                            "description": (
+                                "Resumen breve de lo que necesita el prospecto "
+                                "(industria, caso de uso, sistemas que usa)."
+                            ),
+                        },
+                    },
+                    "required": ["correo", "dia", "hora"],
+                },
+            }
+        )
     catalogo_cfg = cfg.get("catalogo")
     if isinstance(catalogo_cfg, dict) and catalogo_cfg.get("catalog_id"):
         tools.append(
@@ -270,14 +316,64 @@ def _tools_for(cfg: Dict[str, Any]) -> List[Dict[str, Any]]:
     return tools
 
 
+_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s.]+\.[a-zA-Z]{2,}$")
+_DIAS_VALIDOS = ("lunes", "martes", "miércoles", "miercoles", "jueves", "viernes")
+
+
+def _clean_booking(tool_input: Dict[str, Any]) -> tuple[Optional[Dict[str, str]], str]:
+    """Valida y normaliza los datos de una demo. Devuelve (booking|None, mensaje).
+
+    El mensaje va al MODELO (no al cliente): si algo falta o el correo no es
+    válido, se le dice para que lo vuelva a pedir con sus propias palabras.
+    """
+    def _s(key: str, limit: int) -> str:
+        return str(tool_input.get(key) or "").strip()[:limit]
+
+    correo = _s("correo", 255).lower()
+    if not _EMAIL_RE.match(correo):
+        return None, (
+            "el correo no parece válido: pídeselo de nuevo con amabilidad y "
+            "vuelve a llamar la herramienta"
+        )
+    dia = _s("dia", 16).lower()
+    if not any(dia.startswith(d[:4]) for d in _DIAS_VALIDOS):
+        return None, (
+            "el día debe ser de lunes a viernes: confirma la franja con el "
+            "prospecto y vuelve a llamar la herramienta"
+        )
+    return {
+        "correo": correo,
+        "nombre": _s("nombre", 120),
+        "empresa": _s("empresa", 160),
+        "telefono": _s("telefono", 32),
+        "dia": dia,
+        "hora": _s("hora", 16),
+        "notas": _s("notas", 500),
+    }, ""
+
+
 def _run_tool(
     name: str,
     tool_input: Dict[str, Any],
     cfg: Dict[str, Any],
     actions: List[Dict[str, Any]],
     sent_media_log: List[str],
+    bookings: Optional[List[Dict[str, str]]] = None,
 ) -> tuple[str, bool]:
     """Ejecuta una tool. Devuelve (tool_result_text, turno_terminado)."""
+    if name == "registrar_demo":
+        booking, problema = _clean_booking(tool_input)
+        if booking is None:
+            return problema, False
+        # La reserva NO se persiste aquí (el motor no tiene sesión de BD):
+        # viaja en `telemetry` y la guarda el caller con `record_booking()`.
+        if bookings is not None:
+            bookings.append(booking)
+        return (
+            f"demo registrada para el {booking['dia']} a las "
+            f"{booking['hora'] or 'la hora acordada'}; ya puedes despedirte"
+        ), False
+
     if name == "escalar_a_asesor":
         actions.append(
             {
@@ -380,6 +476,8 @@ def _classify_camino(
     if failsafe:
         return "failsafe"
     tool_names = {t.get("tool") for t in tools_called}
+    if "registrar_demo" in tool_names:
+        return "demo_agendada"
     if "escalar_a_asesor" in tool_names:
         return "escalar_a_asesor"
     if "consultar_pedido_shopify" in tool_names:
@@ -406,6 +504,58 @@ def _classify_camino(
                         return str(label)
         return "respuesta_libre"
     return "saludo"
+
+
+def record_booking(
+    db,
+    bot,
+    telemetry: Optional[Dict[str, Any]],
+    *,
+    source: str,
+) -> int:
+    """Persiste en `demo_bookings` las demos agendadas en este turno (#276).
+
+    La llaman los 3 canales del bot (landing, simulador y `bot_runner`) justo
+    después de `advance()`. Nunca debe romper el turno: si falla, el error
+    queda solo en el log — sin PII (regla de seguridad #1).
+    """
+    bookings = (telemetry or {}).get("bookings") or []
+    if not bookings:
+        return 0
+    guardadas = 0
+    try:
+        from .. import models
+
+        for b in bookings:
+            db.add(
+                models.DemoBooking(
+                    bot_id=getattr(bot, "id", None),
+                    source=source[:16],
+                    nombre=b.get("nombre") or None,
+                    empresa=b.get("empresa") or None,
+                    correo=b["correo"],
+                    telefono=b.get("telefono") or None,
+                    dia=b.get("dia") or None,
+                    hora=b.get("hora") or None,
+                    notas=b.get("notas") or None,
+                )
+            )
+            guardadas += 1
+        db.commit()
+        logger.info(
+            "demo_booking guardadas=%s bot=%s source=%s",
+            guardadas, getattr(bot, "id", "?"), source,
+        )
+    except Exception:
+        logger.exception(
+            "llm_engine: no se pudo registrar la demo (bot=%s)", getattr(bot, "id", "?")
+        )
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        return 0
+    return guardadas
 
 
 def record_decision(
@@ -603,6 +753,7 @@ def _advance_inner(
 
     say_texts: List[str] = []
     sent_media_log: List[str] = []
+    bookings: List[Dict[str, str]] = []
     tools_called: List[Dict[str, Any]] = []
     escalated_to: Optional[str] = None
     finished = False
@@ -625,7 +776,7 @@ def _advance_inner(
                 name = block.get("name", "")
                 tool_input = block.get("input") or {}
                 result_text, ended = _run_tool(
-                    name, tool_input, cfg, actions, sent_media_log,
+                    name, tool_input, cfg, actions, sent_media_log, bookings,
                 )
                 # #255: cada tool llamada es una decisión — queda registrada.
                 tools_called.append(
@@ -663,6 +814,7 @@ def _advance_inner(
     next_state = None if finished else {"history": history}
     telemetry = {
         "user_input": user_input,
+        "bookings": bookings,   # #276: las persiste el caller con record_booking()
         "camino": _classify_camino(cfg, user_input, tools_called, sent_media_log, False),
         "tools": tools_called,
         "reply_preview": assistant_summary[:300],

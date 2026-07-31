@@ -120,6 +120,10 @@ def run_turn(
             conversation_id=conversation.id,
             session_id=session.id,
         )
+        # Sprint 21 #276: demos agendadas por WhatsApp → `demo_bookings`.
+        llm_engine.record_booking(
+            db, bot, result.get("telemetry"), source="whatsapp"
+        )
     else:
         result = bot_engine.advance(bot, state, user_input)
 

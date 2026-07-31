@@ -49,6 +49,15 @@ def _llm_config() -> dict:
     return {
         "context_key": "gloma",
         "assignee": ASESOR_HANDLE,
+        # Sprint 21 #276: habilita la tool `registrar_demo`. Las franjas viven
+        # en el contexto a priori (gloma.md); esto solo activa la herramienta y
+        # documenta la ventana de atención.
+        "agenda": {
+            "dias": "lunes a viernes",
+            "horas": ["2:00 p.m.", "3:00 p.m.", "4:00 p.m.", "5:00 p.m.",
+                       "6:00 p.m."],
+            "zona": "America/Bogota",
+        },
         # #255 observabilidad: clasificador de camino por keywords cuando el
         # turno no llama tools (las tools SON la decisión y tienen prioridad).
         # Orden = prioridad de matcheo: primero lo comercial (precio/demo),
@@ -194,6 +203,18 @@ STEPS = [
         "text": "Te conecto con un especialista de nuestro equipo para verlo "
                 "con tu caso en la mano ✨. Dame un momento 🤍"}},
     {"step_type": "end", "label": "Fin de la conversación", "config": {}},
+    # 20-21 — agendamiento de la demo (Sprint 21 #276/#277)
+    {"step_type": "llm", "label": "Agenda · ofrece franjas y pide correo", "config": {
+        "mode": "accion", "accion": "info", "fuente": "contexto a priori · agenda",
+        "mensaje": "Franjas en bullets: lunes a viernes · 2:00, 3:00, 4:00, "
+                   "5:00 y 6:00 p.m. Luego pide correo (y nombre/empresa si "
+                   "faltan) para registrar la demo."}},
+    {"step_type": "llm", "label": "Agenda · registra la demo y se despide", "config": {
+        "mode": "accion", "accion": "registro",
+        "fuente": "tool registrar_demo → tabla demo_bookings",
+        "mensaje": "¡Listo! 🤍 Tu demo quedó registrada para el <día> a las "
+                   "<hora>. Te llega la confirmación a <correo> y un "
+                   "especialista te escribe para coordinar el enlace ✨"}},
 ]
 
 # Camino del router principal → posición del bloque que lo atiende.
@@ -213,6 +234,7 @@ ROUTER_INTENTS = [
     ("Campañas", 14),
     ("Varios públicos", 15),
     ("Cómo empezar / demo", 16),
+    ("Agendar demo", 20),
     ("Asesor humano", 18),
     ("Despedida", 19),
 ]
@@ -242,11 +264,15 @@ def _wire(db, bot: models.Bot) -> None:
         P[pos].next_step_id = P[17].id
     for pos in (11, 12, 13, 14, 15):
         P[pos].next_step_id = P[17].id
-    # Precios y "cómo empezar" terminan en un especialista humano
+    # Precios termina en un especialista humano; "cómo empezar" propone la demo
     P[10].next_step_id = P[18].id
-    P[16].next_step_id = P[18].id
+    P[16].next_step_id = P[20].id
+    # Agendamiento: franjas + correo → registra en demo_bookings → fin
+    P[20].next_step_id = P[21].id
+    P[21].next_step_id = P[19].id
 
-    _route(17, [("Nueva pregunta", 1), ("Asesor", 18), ("Despedida", 19)])
+    _route(17, [("Nueva pregunta", 1), ("Agendar demo", 20), ("Asesor", 18),
+                ("Despedida", 19)])
     P[18].next_step_id = None
     db.commit()
 

@@ -94,6 +94,11 @@ def simulate_bot(
         llm_engine.record_decision(
             db, bot, result.get("telemetry"), source="simulador"
         )
+        # Sprint 21 #276: una demo agendada desde la ventana de prueba también
+        # queda registrada en `demo_bookings` (misma tabla que la landing).
+        llm_engine.record_booking(
+            db, bot, result.get("telemetry"), source="simulador"
+        )
         camino = (result.get("telemetry") or {}).get("camino")
     else:
         result = bot_engine.advance(bot, payload.state, payload.user_input)

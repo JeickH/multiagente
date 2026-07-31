@@ -60,6 +60,59 @@ class WhatsappFormatTests(unittest.TestCase):
         )
 
 
+class RegistrarDemoTests(unittest.TestCase):
+    """Sprint 21 #276: validación y telemetría de la tool `registrar_demo`."""
+
+    CFG = {"context_key": "gloma", "assignee": "asesor_1", "agenda": {}}
+
+    def test_la_tool_solo_existe_si_el_bot_tiene_agenda(self):
+        con = {t["name"] for t in llm_engine._tools_for(self.CFG)}
+        sin = {t["name"] for t in llm_engine._tools_for({"context_key": "gloma"})}
+        self.assertIn("registrar_demo", con)
+        self.assertNotIn("registrar_demo", sin)
+
+    def test_datos_validos_producen_reserva_normalizada(self):
+        booking, msg = llm_engine._clean_booking({
+            "correo": "  Marcela@BellaModa.com ", "dia": "Miércoles",
+            "hora": "4:00 p.m.", "nombre": "Marcela", "empresa": "Bella Moda",
+        })
+        self.assertEqual(msg, "")
+        self.assertEqual(booking["correo"], "marcela@bellamoda.com")
+        self.assertEqual(booking["dia"], "miércoles")
+
+    def test_correo_invalido_no_registra_y_pide_de_nuevo(self):
+        booking, msg = llm_engine._clean_booking(
+            {"correo": "no-es-correo", "dia": "lunes", "hora": "3:00 p.m."}
+        )
+        self.assertIsNone(booking)
+        self.assertIn("correo", msg)
+
+    def test_fin_de_semana_no_registra(self):
+        booking, msg = llm_engine._clean_booking(
+            {"correo": "a@b.com", "dia": "sábado", "hora": "3:00 p.m."}
+        )
+        self.assertIsNone(booking)
+        self.assertIn("lunes a viernes", msg)
+
+    def test_la_reserva_viaja_en_telemetry_para_que_la_guarde_el_caller(self):
+        bot = FakeBot()
+        bot.llm_config = json.dumps(self.CFG)
+        with patch.object(llm_engine, "_invoke_model") as mock:
+            mock.return_value = _resp(
+                [{"type": "tool_use", "id": "t1", "name": "registrar_demo",
+                  "input": {"correo": "juan@kinovet.com", "dia": "lunes",
+                            "hora": "3:00 p.m.", "nombre": "Juan"}}],
+                stop_reason="tool_use",
+            )
+            out = llm_engine.advance(bot, None, "quiero la demo el lunes 3pm")
+        tel = out["telemetry"]
+        self.assertEqual(tel["camino"], "demo_agendada")
+        self.assertEqual(tel["bookings"][0]["correo"], "juan@kinovet.com")
+        # La reserva NO se emite como acción: el runner y el simulador solo
+        # conocen say/say_media/handoff/end.
+        self.assertNotIn("demo_booking", {a["type"] for a in out["actions"]})
+
+
 class LandingSessionTests(unittest.TestCase):
     def test_roundtrip_de_la_sesion_cifrada(self):
         history = [{"role": "user", "content": "hola"}]

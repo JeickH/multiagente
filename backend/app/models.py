@@ -476,6 +476,38 @@ class Lead(Base):
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
 
 
+class DemoBooking(Base):
+    """Sprint 21 #275: demos que el bot de Gloma agenda con un prospecto.
+
+    La escribe la herramienta `registrar_demo` del motor LLM, desde cualquiera
+    de los 3 canales del bot (`source`: landing | simulador | whatsapp). Es la
+    tabla que el CEO monitorea; por eso `estado` empieza en 'solicitada' y se
+    mueve a mano (o desde la app más adelante).
+
+    Contiene datos de contacto de un prospecto (PII): nunca se loggea su
+    contenido ni se expone en endpoints públicos.
+    """
+
+    __tablename__ = "demo_bookings"
+    id = Column(Integer, primary_key=True, index=True)
+    bot_id = Column(
+        Integer, ForeignKey("bots.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    source = Column(String(16), nullable=False, default="landing", index=True)
+    nombre = Column(String(120), nullable=True)
+    empresa = Column(String(160), nullable=True)
+    correo = Column(String(255), nullable=False, index=True)
+    telefono = Column(String(32), nullable=True)
+    dia = Column(String(16), nullable=True)        # lunes..viernes
+    hora = Column(String(16), nullable=True)       # 2:00 p.m. .. 6:00 p.m.
+    notas = Column(String(500), nullable=True)     # lo que el prospecto contó
+    estado = Column(String(24), nullable=False, default="solicitada", index=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+
+    def __repr__(self) -> str:  # PII fuera de los logs (regla de seguridad #1)
+        return f"<DemoBooking id={self.id} source={self.source} estado={self.estado}>"
+
+
 # ===== Sprint 13: Contactos + Grupos =====
 # Estos modelos replican 1:1 el DDL definido en
 # backend/docs/sprint13_schema.md (§1.1, §1.2, §1.3). La migración #158 ya
