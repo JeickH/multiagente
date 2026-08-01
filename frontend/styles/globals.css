@@ -2,17 +2,18 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Branding Gloma por defecto en toda la app de mensajería.
+/* Branding Gloma por defecto en toda la app de mensajería (paleta de la
+   landing: Deep Forest / Algorithmic Mint / Soft Mint).
    La landing /automatas (Gorvek) override con sus propios estilos. */
 body {
   font-family: 'Inter', 'Segoe UI', Arial, sans-serif;
-  background: #FDFBF7; /* gloma cream */
-  color: #5E503F;       /* gloma brown */
+  background: #F5FAF9; /* gloma cream (fondo claro con tinte mint) */
+  color: #004D40;       /* gloma brown → Deep Forest */
 }
 
 ::selection {
-  background: #F7D1CD; /* gloma rose */
-  color: #5E503F;
+  background: #8FD6CE; /* gloma rose → mint claro */
+  color: #004D40;
 }
 
 input, button, select, textarea {

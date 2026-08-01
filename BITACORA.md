@@ -1929,3 +1929,17 @@ se agenda o se reprograma una sesión).
 |---|---|---|---|
 | #288 | La pestaña se ve solo en la cuenta donde funciona | `dev-plataforma` | Nuevo `GET /citas/access` → `{allowed: bool}` (200 siempre, no filtra nada). El `Sidebar` ya no adivina por el dominio del correo: le pregunta al backend si ESTA sesión puede usar el módulo. Verificado: `gloma@glomabeauty.com` → `true`, `asesor1.gloma@glomabeauty.com` (miembro del team) → `true`, `talulah@gloma.com` → `false` (y sin pestaña). |
 | #289 | Alta manual de citas | `dev-plataforma` | `POST /citas` (201) con `source='manual'` para las demos agendadas por fuera del bot (llamada, correo, evento). Misma validación que la edición: correo obligatorio y válido, estado del enum, día L-V (correo malo y "domingo" → 422; otra cuenta → 403). En la UI: botón **"+ Nueva cita"** en el encabezado y en el estado vacío, reusando la ventana de edición (título y botón cambian a "Nueva cita" / "Crear cita"). |
+
+### 5. #290 — Paleta de la app alineada a la nueva identidad (2026-07-31)
+
+**Pedido del CEO:** la plataforma debe usar los colores nuevos de la marca (los que
+ya tiene la landing).
+
+| # | Tarea | Agente | Resultado |
+|---|---|---|---|
+| #290 | Re-tinte de la plataforma | `ui-ux` | Los tokens `gloma-*` están usados ~800 veces con un rol semántico fijo (`brown` = primario oscuro, `rose` = acento claro sobre oscuro, `rose-soft`/`cream` = fondos claros), así que se cambiaron **los valores** en `tailwind.config.js` en vez de tocar 20 pantallas: `brown → #004D40` (Deep Forest), `brown-dark → #003A30`, `brown-darker → #00271F`, `brown-light → #4A7A72` (4.9:1 sobre blanco), `rose → #8FD6CE` (mint claro, 6:1 sobre Deep Forest), `rose-soft → #E0F2F1` (Soft Mint), `cream → #F5FAF9`. Se agregaron tokens con nombre real para lo nuevo: `gloma-forest`, `gloma-mint` (#4DB6AC), `gloma-soft-mint`, `gloma-black` (#101817). También `styles/globals.css` (body y `::selection`), la paleta embebida del 404 y los badges de estado de `/citas`. Corregido de paso `font-title` (clase inexistente) → `font-heading` en `/citas`. Verificado: se auditaron los usos de `text-gloma-rose` (todos sobre fondo oscuro, siguen legibles) y el CSS compilado ya no contiene ningún hex de la paleta anterior. |
+
+**Nota:** en este mismo commit va el rediseño de la landing (`pages/gloma.tsx` y el
+widget) a la paleta Deep Forest/Mint, que estaba en el árbol de trabajo sin commitear:
+sin él, producción quedaría con la app en verde y la landing en rosa. Revertible por
+archivo si se quiere separar.

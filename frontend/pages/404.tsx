@@ -8,15 +8,15 @@ import { useEffect, useState } from 'react';
  *  - Middleware rewritea rutas de plataforma (login, bots, …) cuando el host
  *    es glomabeauty.com, porque la plataforma vive bajo el dominio de Amplify.
  *
- * Diseño alineado con /gloma (Syne + Inter, rosa empolvado + marrón tierra).
+ * Diseño alineado con /gloma (Syne + Inter, Deep Forest + Algorithmic Mint).
  */
 
 const BRAND = {
-  rose: '#F7D1CD',
-  brown: '#5E503F',
-  cream: '#FDFBF7',
-  roseSoft: '#FBE9E7',
-  brownLight: '#8B7A67',
+  rose: '#8FD6CE',
+  brown: '#004D40',
+  cream: '#F5FAF9',
+  roseSoft: '#E0F2F1',
+  brownLight: '#4A7A72',
 };
 
 export default function NotFound() {

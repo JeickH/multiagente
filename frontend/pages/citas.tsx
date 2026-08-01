@@ -35,8 +35,8 @@ type CitasResponse = {
 const HORAS = ['2:00 p.m.', '3:00 p.m.', '4:00 p.m.', '5:00 p.m.', '6:00 p.m.'];
 
 const ESTADO_STYLE: Record<string, { bg: string; color: string; label: string }> = {
-  solicitada: { bg: '#FBE9E7', color: '#9A3412', label: 'Solicitada' },
-  confirmada: { bg: '#DCFCE7', color: '#166534', label: 'Confirmada' },
+  solicitada: { bg: '#FEF3C7', color: '#92400E', label: 'Solicitada' },
+  confirmada: { bg: '#E0F2F1', color: '#004D40', label: 'Confirmada' },
   realizada: { bg: '#DBEAFE', color: '#1E40AF', label: 'Realizada' },
   cancelada: { bg: '#F3F4F6', color: '#4B5563', label: 'Cancelada' },
   no_asistio: { bg: '#FEE2E2', color: '#991B1B', label: 'No asistió' },
@@ -202,7 +202,7 @@ export default function CitasPage() {
       <div className="flex-1 overflow-auto p-8 font-body">
         <header className="mb-6 flex items-start justify-between gap-4 flex-wrap">
           <div>
-            <h1 className="text-3xl font-title font-bold text-gloma-brown">Citas</h1>
+            <h1 className="text-3xl font-heading font-bold text-gloma-brown">Citas</h1>
             <p className="text-sm text-gloma-brown-light mt-1">
               Demos que agendó el agente de Gloma desde la landing, el simulador o
               WhatsApp — y las que agregues a mano.
@@ -222,7 +222,7 @@ export default function CitasPage() {
         {denied && (
           <div className="bg-white border border-gloma-rose rounded-xl p-8 text-center">
             <p className="text-4xl mb-3">🔒</p>
-            <h2 className="font-title text-xl text-gloma-brown mb-2">Módulo privado</h2>
+            <h2 className="font-heading text-xl text-gloma-brown mb-2">Módulo privado</h2>
             <p className="text-sm text-gloma-brown-light">
               Las citas del agente institucional solo son visibles para la cuenta de Gloma.
             </p>
@@ -243,7 +243,7 @@ export default function CitasPage() {
                   key={k.label}
                   className="bg-white rounded-xl border border-gloma-rose px-5 py-4"
                 >
-                  <div className="text-2xl font-title font-bold text-gloma-brown">
+                  <div className="text-2xl font-heading font-bold text-gloma-brown">
                     {k.value}
                   </div>
                   <div className="text-xs text-gloma-brown-light">{k.label}</div>
@@ -433,7 +433,7 @@ export default function CitasPage() {
             onSubmit={guardar}
             className="bg-white rounded-2xl w-full max-w-lg p-6 font-body max-h-[90vh] overflow-y-auto"
           >
-            <h2 className="font-title text-xl font-bold text-gloma-brown mb-1">
+            <h2 className="font-heading text-xl font-bold text-gloma-brown mb-1">
               {editing.id === 0 ? 'Nueva cita' : `Editar cita #${editing.id}`}
             </h2>
             <p className="text-xs text-gloma-brown-light mb-5">
