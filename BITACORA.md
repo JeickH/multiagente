@@ -1922,3 +1922,10 @@ se agenda o se reprograma una sesión).
 | #285 | Seguridad | `seguridad` | Validación **server-side** de la edición: correo con formato válido, estado dentro del enum, día solo de lunes a viernes; el log de la edición registra los **campos** cambiados, nunca los valores (PII). El módulo no aparece en el menú de otras cuentas y su API responde 403 aunque conozcan la URL. |
 | #286 | QA local | `qa` | `GET /citas` como Gloma → 200 con las 2 citas y el resumen; como `talulah@gloma.com` → **403**; sin token → **401**. `PATCH` de estado+hora+notas → 200 y persistido; estado inventado, correo inválido y día "sábado" → **422**; id inexistente → **404**. `npm run build` compila `/citas` (4.75 kB). |
 | #287 | Deploy | `deploy-aws` | Imagen `multiagente-backend:sprint21b`, task-def **rev 16**, `update-service` a rev 16; frontend por Amplify con el push a `main`. |
+
+**Ajustes #288-#289 (pedido del CEO, 2026-07-31):**
+
+| # | Tarea | Agente | Resultado |
+|---|---|---|---|
+| #288 | La pestaña se ve solo en la cuenta donde funciona | `dev-plataforma` | Nuevo `GET /citas/access` → `{allowed: bool}` (200 siempre, no filtra nada). El `Sidebar` ya no adivina por el dominio del correo: le pregunta al backend si ESTA sesión puede usar el módulo. Verificado: `gloma@glomabeauty.com` → `true`, `asesor1.gloma@glomabeauty.com` (miembro del team) → `true`, `talulah@gloma.com` → `false` (y sin pestaña). |
+| #289 | Alta manual de citas | `dev-plataforma` | `POST /citas` (201) con `source='manual'` para las demos agendadas por fuera del bot (llamada, correo, evento). Misma validación que la edición: correo obligatorio y válido, estado del enum, día L-V (correo malo y "domingo" → 422; otra cuenta → 403). En la UI: botón **"+ Nueva cita"** en el encabezado y en el estado vacío, reusando la ventana de edición (título y botón cambian a "Nueva cita" / "Crear cita"). |

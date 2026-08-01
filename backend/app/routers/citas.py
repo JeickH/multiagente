@@ -126,6 +126,49 @@ class CitaUpdate(BaseModel):
         return v
 
 
+class CitaCreate(BaseModel):
+    """Alta manual desde el panel (una demo agendada por teléfono, correo, etc.)."""
+
+    correo: str = Field(..., max_length=255)
+    nombre: Optional[str] = Field(default=None, max_length=120)
+    empresa: Optional[str] = Field(default=None, max_length=160)
+    telefono: Optional[str] = Field(default=None, max_length=32)
+    dia: Optional[str] = Field(default=None, max_length=16)
+    hora: Optional[str] = Field(default=None, max_length=16)
+    notas: Optional[str] = Field(default=None, max_length=500)
+    estado: str = Field(default="solicitada", max_length=24)
+
+    @field_validator("correo")
+    @classmethod
+    def _check_correo(cls, v: str) -> str:
+        v = (v or "").strip().lower()
+        if not EMAIL_RE.match(v):
+            raise ValueError("Correo inválido")
+        return v
+
+    @field_validator("estado")
+    @classmethod
+    def _check_estado(cls, v: str) -> str:
+        v = (v or "solicitada").strip().lower()
+        if v not in ESTADOS:
+            raise ValueError(f"Estado inválido. Usa uno de: {', '.join(ESTADOS)}")
+        return v
+
+    @field_validator("dia")
+    @classmethod
+    def _check_dia(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return None
+        v = v.strip().lower()
+        if v and v not in DIAS:
+            raise ValueError(f"Día inválido. Usa uno de: {', '.join(DIAS)}")
+        return v or None
+
+
+class AccesoOut(BaseModel):
+    allowed: bool
+
+
 class CitasResumen(BaseModel):
     total: int
     solicitadas: int
@@ -138,6 +181,40 @@ class CitasOut(BaseModel):
     resumen: CitasResumen
     estados: List[str] = list(ESTADOS)
     dias: List[str] = list(DIAS)
+
+
+@router.get("/access", response_model=AccesoOut)
+def check_access(
+    user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """¿Esta sesión puede usar el módulo? Lo consulta el menú del frontend
+    para mostrar la pestaña solo en la cuenta donde realmente funciona (#288).
+    Responde 200 siempre (no filtra nada: solo dice sí o no)."""
+    try:
+        require_gloma_account(user=user, db=db)
+    except HTTPException:
+        return AccesoOut(allowed=False)
+    return AccesoOut(allowed=True)
+
+
+@router.post("", response_model=CitaOut, status_code=status.HTTP_201_CREATED)
+def create_cita(
+    payload: CitaCreate,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(require_gloma_account),
+):
+    """Agrega una cita a mano (la que no llegó por el bot). `source='manual'`."""
+    cita = models.DemoBooking(
+        bot_id=None,
+        source="manual",
+        **payload.model_dump(),
+    )
+    db.add(cita)
+    db.commit()
+    db.refresh(cita)
+    logger.info("cita creada manualmente id=%s", cita.id)
+    return CitaOut.model_validate(cita)
 
 
 @router.get("", response_model=CitasOut)

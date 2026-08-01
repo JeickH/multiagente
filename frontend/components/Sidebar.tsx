@@ -10,26 +10,24 @@ const menu = [
   { name: 'Mi Plan', path: '/usuario', icon: '👤' },
 ];
 
-// Sprint 21 #284: "Citas" es un módulo interno de Gloma (las demos que agenda
-// su bot institucional). El backend ya bloquea `/citas` con 403 para las demás
-// cuentas; esto solo evita mostrar una pestaña que no les sirve.
+// Sprint 21 #284/#288: "Citas" es un módulo interno de Gloma (las demos que
+// agenda su bot institucional). La pestaña se muestra solo si el backend dice
+// que ESTA sesión puede usarlo (`GET /citas/access`), no adivinando por el
+// correo: así el botón aparece únicamente en la cuenta donde funciona.
 const CITAS_ITEM = { name: 'Citas', path: '/citas', icon: '📅' };
-const GLOMA_DOMAIN = '@glomabeauty.com';
 
 export default function Sidebar() {
   const router = useRouter();
-  const [esGloma, setEsGloma] = useState(false);
+  const [puedeCitas, setPuedeCitas] = useState(false);
 
   useEffect(() => {
     let cancelado = false;
     const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
     if (!token) return;
-    fetch('/api/usuario/me', { headers: { Authorization: `Bearer ${token}` } })
+    fetch('/api/citas/access', { headers: { Authorization: `Bearer ${token}` } })
       .then((r) => (r.ok ? r.json() : null))
-      .then((u) => {
-        if (!cancelado && u?.correo) {
-          setEsGloma(String(u.correo).toLowerCase().endsWith(GLOMA_DOMAIN));
-        }
+      .then((res) => {
+        if (!cancelado) setPuedeCitas(Boolean(res?.allowed));
       })
       .catch(() => {
         /* no-op: si falla, simplemente no se muestra el módulo interno */
@@ -39,7 +37,7 @@ export default function Sidebar() {
     };
   }, []);
 
-  const items = esGloma ? [...menu, CITAS_ITEM] : menu;
+  const items = puedeCitas ? [...menu, CITAS_ITEM] : menu;
 
   return (
     <aside className="bg-gloma-brown text-white w-24 flex flex-col justify-between items-center py-6 min-h-screen font-body">

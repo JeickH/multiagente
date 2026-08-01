@@ -46,6 +46,22 @@ const SOURCE_LABEL: Record<string, string> = {
   landing: '🌐 Landing',
   simulador: '🧪 Simulador',
   whatsapp: '💬 WhatsApp',
+  manual: '✍️ Manual',
+};
+
+/** Fila vacía para el alta manual (#289). */
+const CITA_NUEVA: Cita = {
+  id: 0,
+  created_at: '',
+  source: 'manual',
+  nombre: '',
+  empresa: '',
+  correo: '',
+  telefono: '',
+  dia: '',
+  hora: '',
+  notas: '',
+  estado: 'solicitada',
 };
 
 function fechaCorta(iso: string): string {
@@ -118,6 +134,9 @@ export default function CitasPage() {
     setFormError(null);
   };
 
+  /** Alta manual: la misma ventana de edición, pero sin id (#289). */
+  const abrirNueva = () => abrirEdicion(CITA_NUEVA);
+
   const guardar = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editing) return;
@@ -136,8 +155,9 @@ export default function CitasPage() {
         setSaving(false);
         return;
       }
-      await authedFetch<Cita>(`/citas/${editing.id}`, {
-        method: 'PATCH',
+      const esNueva = editing.id === 0;
+      await authedFetch<Cita>(esNueva ? '/citas' : `/citas/${editing.id}`, {
+        method: esNueva ? 'POST' : 'PATCH',
         body: JSON.stringify(body),
       });
       setEditing(null);
@@ -180,11 +200,23 @@ export default function CitasPage() {
   return (
     <Layout variant="fullscreen">
       <div className="flex-1 overflow-auto p-8 font-body">
-        <header className="mb-6">
-          <h1 className="text-3xl font-title font-bold text-gloma-brown">Citas</h1>
-          <p className="text-sm text-gloma-brown-light mt-1">
-            Demos que agendó el agente de Gloma desde la landing, el simulador o WhatsApp.
-          </p>
+        <header className="mb-6 flex items-start justify-between gap-4 flex-wrap">
+          <div>
+            <h1 className="text-3xl font-title font-bold text-gloma-brown">Citas</h1>
+            <p className="text-sm text-gloma-brown-light mt-1">
+              Demos que agendó el agente de Gloma desde la landing, el simulador o
+              WhatsApp — y las que agregues a mano.
+            </p>
+          </div>
+          {!denied && (
+            <button
+              type="button"
+              onClick={abrirNueva}
+              className="px-4 py-2 rounded-full text-sm font-semibold bg-gloma-brown text-white hover:opacity-90 whitespace-nowrap"
+            >
+              + Nueva cita
+            </button>
+          )}
         </header>
 
         {denied && (
@@ -290,6 +322,15 @@ export default function CitasPage() {
                           <p className="text-3xl mb-2">📅</p>
                           Todavía no hay demos agendadas
                           {filtro ? ' con este estado.' : '.'}
+                          {!filtro && (
+                            <button
+                              type="button"
+                              onClick={abrirNueva}
+                              className="block mx-auto mt-3 px-4 py-2 rounded-full text-xs font-semibold bg-gloma-brown text-white hover:opacity-90"
+                            >
+                              + Agregar una a mano
+                            </button>
+                          )}
                         </td>
                       </tr>
                     )}
@@ -393,11 +434,14 @@ export default function CitasPage() {
             className="bg-white rounded-2xl w-full max-w-lg p-6 font-body max-h-[90vh] overflow-y-auto"
           >
             <h2 className="font-title text-xl font-bold text-gloma-brown mb-1">
-              Editar cita #{editing.id}
+              {editing.id === 0 ? 'Nueva cita' : `Editar cita #${editing.id}`}
             </h2>
             <p className="text-xs text-gloma-brown-light mb-5">
-              Agendada el {fechaCorta(editing.created_at)} ·{' '}
-              {SOURCE_LABEL[editing.source] || editing.source}
+              {editing.id === 0
+                ? 'Registro manual: para las demos que se agendaron por fuera del agente (llamada, correo, evento). El correo es obligatorio.'
+                : `Agendada el ${fechaCorta(editing.created_at)} · ${
+                    SOURCE_LABEL[editing.source] || editing.source
+                  }`}
             </p>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -497,7 +541,11 @@ export default function CitasPage() {
                 disabled={saving}
                 className="px-4 py-2 rounded-full text-sm font-semibold bg-gloma-brown text-white hover:opacity-90 disabled:opacity-60"
               >
-                {saving ? 'Guardando…' : 'Guardar cambios'}
+                {saving
+                  ? 'Guardando…'
+                  : editing.id === 0
+                  ? 'Crear cita'
+                  : 'Guardar cambios'}
               </button>
             </div>
           </form>
