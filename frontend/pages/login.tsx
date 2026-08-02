@@ -40,12 +40,12 @@ export default function Login() {
     <div className="flex flex-col items-center justify-center min-h-screen bg-gloma-cream">
       <div className="flex flex-col items-center mb-6">
         <Image
-          src="/gloma/logo_gloma_original_trans.png"
+          src="/gloma/logo_login.png"
           alt="Gloma"
-          width={320}
-          height={400}
+          width={615}
+          height={748}
           priority
-          className="object-contain h-32 w-auto"
+          className="object-contain h-32 w-auto rounded-2xl"
         />
       </div>
       <div className="bg-gloma-brown rounded-3xl shadow-2xl px-10 py-10 flex flex-col items-center w-full max-w-md">
