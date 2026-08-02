@@ -7,7 +7,7 @@ autorización:
   herramienta `registrar_demo` del bot desde sus 3 canales (landing,
   simulador y WhatsApp), más las que se agreguen a mano.
 - `/citas/solicitudes` → tabla `leads`: las solicitudes "Quiero que me
-  contacten" del formulario de la landing (#291), con seguimiento
+  contacten" del formulario de la landing (#298), con seguimiento
   `pendiente` / `contactado`.
 
 Autorización: solo el owner de la cuenta Gloma y los miembros de su team. No
@@ -40,7 +40,7 @@ ESTADOS = ("solicitada", "confirmada", "realizada", "cancelada", "no_asistio")
 DIAS = ("lunes", "martes", "miércoles", "jueves", "viernes")
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s.]+\.[a-zA-Z]{2,}$")
 
-# Solicitudes de contacto (#291): el CEO solo necesita saber si ya se contactó
+# Solicitudes de contacto (#298): el CEO solo necesita saber si ya se contactó
 # al prospecto o si sigue pendiente.
 ESTADOS_SOLICITUD = ("pendiente", "contactado")
 
@@ -196,7 +196,7 @@ class CitasOut(BaseModel):
     dias: List[str] = list(DIAS)
 
 
-# --- Solicitudes de contacto (#291) ---------------------------------------
+# --- Solicitudes de contacto (#298) ---------------------------------------
 
 
 class SolicitudOut(BaseModel):
@@ -401,7 +401,7 @@ def delete_cita(
 
 
 # ===========================================================================
-# Solicitudes de contacto (#291) — tabla `leads`
+# Solicitudes de contacto (#298) — tabla `leads`
 #
 # Las rutas viven bajo el mismo router (y por lo tanto bajo la misma
 # autorización) porque para el CEO son la otra mitad del mismo trabajo:

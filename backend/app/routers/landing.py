@@ -42,7 +42,7 @@ PHONE_RE = re.compile(r"^[+\d][\d\s\-()]{5,30}$")
 class LeadIn(BaseModel):
     """Solicitud de contacto del form de la landing ("Quiero que me contacten").
 
-    #291: `nombre` es obligatorio — el equipo necesita a quién llamar cuando
+    #298: `nombre` es obligatorio — el equipo necesita a quién llamar cuando
     hace el seguimiento desde `/citas`.
     """
 

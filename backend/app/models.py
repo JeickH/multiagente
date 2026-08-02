@@ -465,11 +465,11 @@ class Lead(Base):
     No tiene FK a users porque son prospects, no clientes aún.
     `source` permite distinguir orígenes cuando haya más de una landing.
 
-    Sprint 21 #291: el form pide `nombre` y el CEO gestiona las solicitudes
+    Sprint 21 #297: el form pide `nombre` y el CEO gestiona las solicitudes
     desde `/citas` → subsección "Solicitudes de contacto", así que la fila
     dejó de ser solo un registro y ahora tiene ciclo de vida: `estado`
     (`pendiente` | `contactado`), `notas` y `updated_at`. El booleano
-    `contacted` original quedó reemplazado por `estado` (migración #291).
+    `contacted` original quedó reemplazado por `estado` (migración #297).
 
     Contiene PII de prospectos: nunca se loggea su contenido ni se expone en
     endpoints públicos (regla de seguridad #1).

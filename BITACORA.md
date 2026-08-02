@@ -1984,3 +1984,54 @@ turno de la despedida. Segunda vuelta: los 5 escenarios cierran bien y quedaron 
 filas en `demo_bookings`** con fecha real (ids 4-8: 2026-08-05 3 p.m., 4 p.m. y
 2026-08-06 11 a.m., etc.). Tests: **42 passed**, incluido el ejemplo exacto del CEO
 (jueves 2:30 p.m. → martes 3 y 4 p.m. + miércoles 10 y 11 a.m.).
+
+### 7. #297-#301 — Solicitudes de contacto desde la landing (2026-08-02)
+
+**Pedido del CEO:** (a) en la sección de contacto de la landing, el botón
+"Escríbenos por WhatsApp" debe **abrir el chat con el bot de la página** en vez de
+mandar a WhatsApp; (b) el formulario debe pedir **nombre** y su botón decir
+**"Quiero que me contacten"**; (c) esas solicitudes se registran en una tabla de la
+base de Gloma y (d) el admin las gestiona desde `/citas`, en una subsección donde
+pueda marcarlas **contactadas o pendientes** y **agregar, editar y eliminar**.
+
+| # | Tarea | Agente | Resultado |
+|---|---|---|---|
+| #297 | Tabla de solicitudes | `experto-bd` | Se **extendió `leads`** (la tabla que ya recibía el formulario desde Sprint 11) en vez de crear una segunda tabla con el mismo significado: `nombre VARCHAR(120)`, `estado VARCHAR(16)` (`pendiente` \| `contactado`, default `pendiente`, indexado), `notas VARCHAR(500)` y `updated_at`. El booleano `contacted` se **backfillea** a `estado` y se elimina (era la misma información en dos lugares). Migración idempotente `backend/scripts/migrate_sprint21_leads_solicitudes.py`. Ventaja para el CEO: las solicitudes históricas aparecen en el panel desde el día uno. |
+| #298 | Endpoints | `dev-plataforma` | Público: `POST /landing/leads` ahora exige `nombre` (2-120 chars, se limpian caracteres de control y espacios dobles); sigue con el rate-limit de 5/IP/hora. Privado (misma autorización `require_gloma_account` que el resto de `/citas`): `GET /citas/solicitudes` (filtro por estado + resumen), `POST /citas/solicitudes` (alta manual, `source='manual'`), `PATCH /citas/solicitudes/{id}` (parcial) y `DELETE /citas/solicitudes/{id}`. Validación server-side: correo con formato válido y estado dentro del enum. |
+| #299 | Landing | `ui-ux` + `dev-plataforma` | El CTA "Escríbenos por WhatsApp" de la sección de contacto ya no es un `<a>` a `wa.me`: dispara el evento `gloma:open-chat` que abre el widget del bot institucional (se usó un evento de `window` en vez de subir el estado porque el widget es un singleton flotante). El formulario suma el campo **Nombre** (requerido) y su botón dice **"Quiero que me contacten"**. *No se tocó* el botón del hero (sigue yendo a WhatsApp) porque el pedido era la sección de contacto — cambiarlo también es una línea si el CEO lo quiere. |
+| #300 | Subsección en `/citas` | `dev-plataforma` | La página pasó a tener dos pestañas: **"Demos agendadas"** (lo que ya existía) y **"Solicitudes de contacto"** (tabla `leads`): tarjetas Total / Pendientes / Contactados, filtros, badge + selector de seguimiento en línea, "+ Nueva solicitud", modal de edición (nombre, correo, teléfono, seguimiento, notas) y borrado con confirmación. El permiso se consulta una vez con `GET /citas/access` y decide si se pintan las pestañas o el estado "Módulo privado 🔒". |
+| #301 | Deploy | `deploy-aws` | Migración en RDS + imagen `:sprint21e`, task-def nueva revisión y build de Amplify. |
+
+**Seguridad (revisión inline, sin hallazgos bloqueantes).** La tabla guarda PII de
+prospectos: `Lead.__repr__` la redacta (regla #1), los logs solo registran id y
+campos cambiados —nunca valores—, y `SolicitudOut` **no** expone `ip_address` ni
+`user_agent` aunque estén en la fila (minimización). Los 4 endpoints nuevos cuelgan
+de `require_gloma_account`, así que otra cuenta recibe 403 aunque conozca la URL, y
+sin token es 401. El endpoint público mantiene el rate-limit por IP y valida todo del
+lado del servidor.
+
+**Validaciones.**
+- Migración local (docker-compose): 1ª corrida agrega columnas e índice; se recreó
+  `contacted` a mano con una fila en `true` y la 2ª corrida hizo backfill
+  (`estado='contactado'`) y el `DROP`; 3ª corrida sin cambios. 6 filas históricas
+  preservadas.
+- API local: `POST /landing/leads` sin nombre → 422, con nombre de 1 letra → 422, con
+  `"  Ana   María  QA "` → 200 y la fila queda con `nombre='Ana María QA'`,
+  `email` en minúsculas y `estado='pendiente'`. Panel: alta manual → 201, cambio de
+  estado → 200 con `updated_at`, estado inventado → 422, correo inválido → 422, id
+  inexistente → 404, borrado → 204 y luego 404, sin token → 401. `GET /citas` (demos)
+  sigue respondiendo igual.
+- `pytest`: **56 passed** (14 nuevos en `backend/tests/test_landing_leads.py`). Los
+  errores de `tests/test_meta_account_flow.py` siguen siendo los preexistentes de
+  SQLite + `JSONB` (Sprint 15).
+- Frontend: `tsc --noEmit` limpio y `npm run build` OK (`/citas` 6.66 kB, `/gloma`
+  12.3 kB).
+
+**Cómo consulta el CEO las solicitudes:**
+
+```sql
+SELECT created_at, nombre, email, telefono, estado, notas
+FROM leads ORDER BY created_at DESC;
+```
+
+o, más cómodo, en `app.glomabeauty.com` → **Citas** → pestaña *Solicitudes de contacto*.

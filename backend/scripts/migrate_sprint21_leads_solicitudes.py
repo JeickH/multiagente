@@ -1,4 +1,4 @@
-"""Migración Sprint 21 #291: `leads` pasa a ser "solicitudes de contacto".
+"""Migración Sprint 21 #297: `leads` pasa a ser "solicitudes de contacto".
 
 El formulario de la landing ahora pide **nombre** y el CEO gestiona cada
 solicitud desde `/citas` → subsección "Solicitudes de contacto", así que la
@@ -19,7 +19,7 @@ mismo PR (convención #1 de paridad).
 
 Uso:
     docker compose exec backend python scripts/migrate_sprint21_leads_solicitudes.py
-    # RDS: aws ecs run-task con command override (ver BITACORA Sprint 21 #295)
+    # RDS: aws ecs run-task con command override (ver BITACORA Sprint 21 #301)
 
 Consulta de monitoreo para el CEO:
     SELECT created_at, nombre, email, telefono, estado, notas
@@ -124,7 +124,7 @@ def main() -> int:
         ).one()
         print(f"leads: {total} filas, {pendientes} pendientes")
 
-    print("Migración #291 OK.")
+    print("Migración #297 OK.")
     return 0
 
 

@@ -119,7 +119,7 @@ const WHATSAPP_URL =
  * no quede pegado al borde superior.
  */
 /**
- * Abre el chat con el bot institucional que vive en `GlomaChatWidget` (#292).
+ * Abre el chat con el bot institucional que vive en `GlomaChatWidget` (#299).
  * El visitante prueba el agente en la misma página: no necesita tener el
  * WhatsApp de Gloma ni salir de la landing.
  */
@@ -442,7 +442,7 @@ function InteractiveHeader() {
 
 type FormStatus = 'idle' | 'sending' | 'ok' | 'error';
 
-/** Datos del form "Quiero que me contacten" (#291). */
+/** Datos del form "Quiero que me contacten" (#299). */
 type ContactFormValues = { nombre: string; email: string; telefono: string };
 
 function ContactForm({
@@ -965,7 +965,7 @@ export default function GlomaLanding() {
               >
                 Cuéntanos un poco de tu negocio y te contactamos para mostrarte cómo Gloma puede funcionar para ti.
               </p>
-              {/* #292: abre la conversación con el bot de la landing en vez de
+              {/* #299: abre la conversación con el bot de la landing en vez de
                   mandar a wa.me — el visitante prueba el agente aquí mismo. */}
               <button
                 type="button"

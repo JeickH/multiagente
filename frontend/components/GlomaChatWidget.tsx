@@ -34,7 +34,7 @@ const WHATSAPP_URL =
 
 /**
  * Evento global para abrir el chat desde cualquier parte de la landing
- * (#292: el CTA "Escríbenos por WhatsApp" de la sección de contacto abre esta
+ * (#299: el CTA "Escríbenos por WhatsApp" de la sección de contacto abre esta
  * conversación en vez de mandar al visitante a wa.me). Se usa un evento de
  * `window` en vez de subir el estado para no volver el widget un componente
  * controlado por cada página que lo monte — es un singleton flotante.
@@ -204,7 +204,7 @@ export default function GlomaChatWidget() {
     if (open) setUnread(false);
   }, [msgs, open]);
 
-  // Otros CTAs de la landing abren esta conversación (#292).
+  // Otros CTAs de la landing abren esta conversación (#299).
   useEffect(() => {
     const abrir = () => setOpen(true);
     window.addEventListener(OPEN_CHAT_EVENT, abrir);
