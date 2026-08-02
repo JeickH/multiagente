@@ -122,11 +122,23 @@ const WHATSAPP_URL =
  * Abre el chat con el bot institucional que vive en `GlomaChatWidget` (#299).
  * El visitante prueba el agente en la misma página: no necesita tener el
  * WhatsApp de Gloma ni salir de la landing.
+ *
+ * Con `mensaje`, la conversación arranca con esa intención ya dicha (#302):
+ * el bot responde a eso de una — p. ej. con las franjas disponibles para la
+ * demo — en lugar de empezar por el saludo.
  */
-function abrirChatDelBot() {
+function abrirChatDelBot(mensaje?: string) {
   if (typeof window === 'undefined') return;
-  window.dispatchEvent(new Event(OPEN_CHAT_EVENT));
+  window.dispatchEvent(
+    new CustomEvent(OPEN_CHAT_EVENT, {
+      detail: mensaje ? { message: mensaje } : undefined,
+    })
+  );
 }
+
+/** Lo que "escribe" el visitante al pulsar "Agenda una demo" (#302). */
+const MENSAJE_AGENDAR_DEMO =
+  'Quiero agendar una demostración. ¿Qué horarios tienen disponibles?';
 
 function smoothScrollToContacto(e: React.MouseEvent<HTMLAnchorElement>) {
   e.preventDefault();
@@ -372,14 +384,16 @@ function InteractiveHeader() {
             className="object-contain h-28 md:h-40 w-auto"
           />
         </div>
-        <a
-          href="#contacto"
-          onClick={smoothScrollToContacto}
+        {/* #302: en vez de bajar al formulario, le pide la demo al agente —
+            que responde con las franjas disponibles y la registra. */}
+        <button
+          type="button"
+          onClick={() => abrirChatDelBot(MENSAJE_AGENDAR_DEMO)}
           className="hidden md:inline-block px-5 py-2 rounded-full text-sm font-medium transition-opacity hover:opacity-90"
           style={{ backgroundColor: BRAND.mint, color: BRAND.bgBase }}
         >
           Agenda una demo
-        </a>
+        </button>
       </nav>
 
       {/* Contenido principal (título + subtítulo + CTAs) */}
@@ -418,15 +432,16 @@ function InteractiveHeader() {
             transition: 'opacity 900ms ease 300ms, transform 900ms cubic-bezier(.22,.61,.36,1) 300ms',
           }}
         >
-          <a
-            href={WHATSAPP_URL}
-            target="_blank"
-            rel="noopener noreferrer"
+          {/* #302: el CTA principal del hero conversa con el agente en la
+              misma página en vez de mandar a wa.me. */}
+          <button
+            type="button"
+            onClick={() => abrirChatDelBot()}
             className="inline-block px-6 py-3 rounded-full text-sm font-semibold text-center transition-opacity hover:opacity-90"
             style={{ backgroundColor: BRAND.mint, color: BRAND.bgBase }}
           >
-            Escríbenos por WhatsApp
-          </a>
+            Hablar con un asesor
+          </button>
           <a
             href="#contacto"
             onClick={smoothScrollToContacto}
@@ -969,7 +984,7 @@ export default function GlomaLanding() {
                   mandar a wa.me — el visitante prueba el agente aquí mismo. */}
               <button
                 type="button"
-                onClick={abrirChatDelBot}
+                onClick={() => abrirChatDelBot()}
                 className="inline-flex items-center px-5 py-3 rounded-full text-sm font-semibold transition-transform hover:-translate-y-0.5"
                 style={{ backgroundColor: BRAND.mint, color: BRAND.bgBase }}
               >

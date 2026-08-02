@@ -39,9 +39,20 @@ const WHATSAPP_URL =
  * `window` en vez de subir el estado para no volver el widget un componente
  * controlado por cada página que lo monte — es un singleton flotante.
  *
- * Uso: `window.dispatchEvent(new Event(OPEN_CHAT_EVENT))`.
+ * `detail.message` (#302) abre la conversación **con una intención ya dicha**:
+ * el mensaje se muestra como si lo hubiera escrito el visitante y se manda al
+ * bot, que responde directo a eso (p. ej. con las franjas de la demo) en vez
+ * de arrancar por el saludo.
+ *
+ * Uso:
+ *   window.dispatchEvent(new Event(OPEN_CHAT_EVENT));
+ *   window.dispatchEvent(
+ *     new CustomEvent(OPEN_CHAT_EVENT, { detail: { message: '…' } })
+ *   );
  */
 export const OPEN_CHAT_EVENT = 'gloma:open-chat';
+
+export type OpenChatDetail = { message?: string };
 
 const SUGERENCIAS = [
   '¿Qué hace Gloma por mi empresa?',
@@ -204,12 +215,22 @@ export default function GlomaChatWidget() {
     if (open) setUnread(false);
   }, [msgs, open]);
 
-  // Otros CTAs de la landing abren esta conversación (#299).
+  // Otros CTAs de la landing abren esta conversación (#299), opcionalmente con
+  // una intención ya escrita (#302).
   useEffect(() => {
-    const abrir = () => setOpen(true);
+    const abrir = (e: Event) => {
+      setOpen(true);
+      const texto = (e as CustomEvent<OpenChatDetail>).detail?.message?.trim();
+      if (!texto || sending || finished) return;
+      // Marcar la conversación como iniciada evita que el efecto del saludo
+      // dispare un turno vacío encima de este.
+      startedRef.current = true;
+      pushMsgs([{ from: 'user', text: texto }]);
+      void send(texto);
+    };
     window.addEventListener(OPEN_CHAT_EVENT, abrir);
     return () => window.removeEventListener(OPEN_CHAT_EVENT, abrir);
-  }, []);
+  }, [send, pushMsgs, sending, finished]);
 
   // Escape cierra el panel.
   useEffect(() => {

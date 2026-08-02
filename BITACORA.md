@@ -2035,3 +2035,14 @@ FROM leads ORDER BY created_at DESC;
 ```
 
 o, más cómodo, en `app.glomabeauty.com` → **Citas** → pestaña *Solicitudes de contacto*.
+
+**Ajuste #302 (pedido del CEO, 2026-08-02):** los dos CTAs que quedaban llevando
+fuera de la página ahora conversan con el agente. El **"Agenda una demo"** del header
+abre el chat con la intención ya escrita (*"Quiero agendar una demostración. ¿Qué
+horarios tienen disponibles?"*), así que el bot responde de una con las 4 franjas
+disponibles y registra la cita — verificado contra `api.glomabeauty.com`: responde
+"Jueves 6 de agosto, 10:00 a.m. / 11:00 a.m. / 12:00 m. / 1:00 p.m.". El botón del
+hero pasó de **"Escríbenos por WhatsApp"** a **"Hablar con un asesor"** y abre el
+mismo chat (sin mensaje previo: el bot saluda). Implementación: `OPEN_CHAT_EVENT`
+acepta `detail.message`; cuando llega, el widget lo pinta como mensaje del visitante,
+lo envía y se salta el turno de saludo. El enlace a WhatsApp del footer se mantiene.
