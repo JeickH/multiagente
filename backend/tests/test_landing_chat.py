@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import os
 import unittest
+from datetime import date, datetime
 from unittest.mock import patch
 
 from cryptography.fernet import Fernet
@@ -60,10 +61,79 @@ class WhatsappFormatTests(unittest.TestCase):
         )
 
 
+class FranjasAgendaTests(unittest.TestCase):
+    """Sprint 21 #291: política de agenda — L-V 10:00-16:00, +3 días hábiles."""
+
+    CFG = {"agenda": {"hora_inicio": 10, "hora_fin": 16,
+                      "dias_habiles_min": 3, "opciones": 4}}
+
+    def _labels(self, ahora):
+        return [f["label"] for f in llm_engine.proximas_franjas(self.CFG, ahora)]
+
+    def test_ejemplo_del_ceo_jueves_230pm(self):
+        # Jueves 6 de agosto de 2026, 2:30 p.m. → martes 11 (3 días hábiles)
+        # desde las 3 p.m., y sigue el miércoles 12 desde las 10 a.m.
+        ahora = datetime(2026, 8, 6, 14, 30, tzinfo=llm_engine._TZ_CO)
+        self.assertEqual(self._labels(ahora), [
+            "Martes 11 de agosto, 3:00 p.m.",
+            "Martes 11 de agosto, 4:00 p.m.",
+            "Miércoles 12 de agosto, 10:00 a.m.",
+            "Miércoles 12 de agosto, 11:00 a.m.",
+        ])
+
+    def test_hora_en_punto_no_se_salta_esa_hora(self):
+        # 11:00 en punto → la primera franja del día candidato es 11:00.
+        ahora = datetime(2026, 8, 6, 11, 0, tzinfo=llm_engine._TZ_CO)
+        self.assertEqual(self._labels(ahora)[0], "Martes 11 de agosto, 11:00 a.m.")
+
+    def test_antes_de_abrir_arranca_a_las_10(self):
+        ahora = datetime(2026, 8, 6, 7, 15, tzinfo=llm_engine._TZ_CO)
+        self.assertEqual(self._labels(ahora)[0], "Martes 11 de agosto, 10:00 a.m.")
+
+    def test_despues_de_cerrar_pasa_al_dia_habil_siguiente(self):
+        # Jueves 8 p.m. → el día candidato (martes) ya no tiene cupo → miércoles.
+        ahora = datetime(2026, 8, 6, 20, 0, tzinfo=llm_engine._TZ_CO)
+        self.assertEqual(self._labels(ahora)[0], "Miércoles 12 de agosto, 10:00 a.m.")
+
+    def test_los_fines_de_semana_no_se_ofrecen(self):
+        # Viernes 10 a.m. → +3 hábiles = miércoles (sábado y domingo no cuentan).
+        ahora = datetime(2026, 8, 7, 10, 0, tzinfo=llm_engine._TZ_CO)
+        labels = self._labels(ahora)
+        self.assertTrue(labels[0].startswith("Miércoles 12"))
+        self.assertFalse(any("Sábado" in l or "Domingo" in l for l in labels))
+
+    def test_franja_valida_rechaza_lo_que_no_cumple(self):
+        ahora = datetime(2026, 8, 6, 14, 30, tzinfo=llm_engine._TZ_CO)
+        ok, _ = llm_engine.franja_valida("2026-08-11", "15:00", self.CFG, ahora)
+        self.assertTrue(ok)
+        # Antes del mínimo (+3 hábiles)
+        ok, msg = llm_engine.franja_valida("2026-08-07", "10:00", self.CFG, ahora)
+        self.assertFalse(ok)
+        # Sábado
+        ok, msg = llm_engine.franja_valida("2026-08-15", "10:00", self.CFG, ahora)
+        self.assertFalse(ok)
+        self.assertIn("lunes a viernes", msg)
+        # Fuera del horario
+        ok, msg = llm_engine.franja_valida("2026-08-12", "18:00", self.CFG, ahora)
+        self.assertFalse(ok)
+        # Formato inválido
+        ok, _ = llm_engine.franja_valida("11 de agosto", "3pm", self.CFG, ahora)
+        self.assertFalse(ok)
+
+    def test_el_prompt_incluye_las_franjas_calculadas(self):
+        bot = FakeBot()
+        bot.llm_config = json.dumps({"context_key": "gloma", **self.CFG})
+        prompt = llm_engine._system_prompt(bot, json.loads(bot.llm_config))
+        self.assertIn("Agenda de demostraciones", prompt)
+        self.assertIn("registrar_demo", prompt)
+
+
 class RegistrarDemoTests(unittest.TestCase):
     """Sprint 21 #276: validación y telemetría de la tool `registrar_demo`."""
 
-    CFG = {"context_key": "gloma", "assignee": "asesor_1", "agenda": {}}
+    CFG = {"context_key": "gloma", "assignee": "asesor_1",
+           "agenda": {"hora_inicio": 10, "hora_fin": 16,
+                      "dias_habiles_min": 3, "opciones": 4}}
 
     def test_la_tool_solo_existe_si_el_bot_tiene_agenda(self):
         con = {t["name"] for t in llm_engine._tools_for(self.CFG)}
@@ -71,28 +141,49 @@ class RegistrarDemoTests(unittest.TestCase):
         self.assertIn("registrar_demo", con)
         self.assertNotIn("registrar_demo", sin)
 
+    def _futuro(self):
+        """Una franja válida: +10 días hábiles, siempre dentro de la política."""
+        d = llm_engine._sumar_dias_habiles(
+            datetime.now(llm_engine._TZ_CO).date(), 10
+        )
+        return d.isoformat()
+
     def test_datos_validos_producen_reserva_normalizada(self):
+        fecha = self._futuro()
         booking, msg = llm_engine._clean_booking({
-            "correo": "  Marcela@BellaModa.com ", "dia": "Miércoles",
-            "hora": "4:00 p.m.", "nombre": "Marcela", "empresa": "Bella Moda",
-        })
+            "correo": "  Marcela@BellaModa.com ", "fecha": fecha,
+            "hora": "15:00", "nombre": "Marcela", "empresa": "Bella Moda",
+        }, self.CFG)
         self.assertEqual(msg, "")
         self.assertEqual(booking["correo"], "marcela@bellamoda.com")
-        self.assertEqual(booking["dia"], "miércoles")
+        self.assertEqual(booking["fecha"], fecha)
+        self.assertEqual(booking["hora"], "3:00 p.m.")
 
     def test_correo_invalido_no_registra_y_pide_de_nuevo(self):
         booking, msg = llm_engine._clean_booking(
-            {"correo": "no-es-correo", "dia": "lunes", "hora": "3:00 p.m."}
+            {"correo": "no-es-correo", "fecha": self._futuro(), "hora": "11:00"},
+            self.CFG,
         )
         self.assertIsNone(booking)
         self.assertIn("correo", msg)
 
     def test_fin_de_semana_no_registra(self):
+        # Un sábado cualquiera bien adelante en el calendario.
+        sabado = date(2026, 8, 15)
         booking, msg = llm_engine._clean_booking(
-            {"correo": "a@b.com", "dia": "sábado", "hora": "3:00 p.m."}
+            {"correo": "a@b.com", "fecha": sabado.isoformat(), "hora": "11:00"},
+            self.CFG,
         )
         self.assertIsNone(booking)
         self.assertIn("lunes a viernes", msg)
+
+    def test_franja_demasiado_pronto_no_registra(self):
+        hoy = datetime.now(llm_engine._TZ_CO).date()
+        booking, msg = llm_engine._clean_booking(
+            {"correo": "a@b.com", "fecha": hoy.isoformat(), "hora": "11:00"},
+            self.CFG,
+        )
+        self.assertIsNone(booking)
 
     def test_la_reserva_viaja_en_telemetry_para_que_la_guarde_el_caller(self):
         bot = FakeBot()
@@ -100,8 +191,11 @@ class RegistrarDemoTests(unittest.TestCase):
         with patch.object(llm_engine, "_invoke_model") as mock:
             mock.return_value = _resp(
                 [{"type": "tool_use", "id": "t1", "name": "registrar_demo",
-                  "input": {"correo": "juan@kinovet.com", "dia": "lunes",
-                            "hora": "3:00 p.m.", "nombre": "Juan"}}],
+                  "input": {"correo": "juan@kinovet.com",
+                            "fecha": llm_engine._sumar_dias_habiles(
+                                datetime.now(llm_engine._TZ_CO).date(), 10
+                            ).isoformat(),
+                            "hora": "15:00", "nombre": "Juan"}}],
                 stop_reason="tool_use",
             )
             out = llm_engine.advance(bot, None, "quiero la demo el lunes 3pm")

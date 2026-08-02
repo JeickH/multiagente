@@ -49,13 +49,16 @@ def _llm_config() -> dict:
     return {
         "context_key": "gloma",
         "assignee": ASESOR_HANDLE,
-        # Sprint 21 #276: habilita la tool `registrar_demo`. Las franjas viven
-        # en el contexto a priori (gloma.md); esto solo activa la herramienta y
-        # documenta la ventana de atención.
+        # Sprint 21 #276/#291: habilita la tool `registrar_demo` y define la
+        # política de agenda. El motor calcula con esto las 4 franjas que se le
+        # ofrecen a cada prospecto (y las valida al registrar), así que el
+        # modelo no hace cuentas de fechas.
         "agenda": {
+            "hora_inicio": 10,       # primera cita del día (hora Colombia)
+            "hora_fin": 16,          # última cita del día
+            "dias_habiles_min": 3,   # anticipación mínima, en días hábiles
+            "opciones": 4,           # franjas que se ofrecen por conversación
             "dias": "lunes a viernes",
-            "horas": ["2:00 p.m.", "3:00 p.m.", "4:00 p.m.", "5:00 p.m.",
-                       "6:00 p.m."],
             "zona": "America/Bogota",
         },
         # #255 observabilidad: clasificador de camino por keywords cuando el
@@ -204,17 +207,19 @@ STEPS = [
                 "con tu caso en la mano ✨. Dame un momento 🤍"}},
     {"step_type": "end", "label": "Fin de la conversación", "config": {}},
     # 20-21 — agendamiento de la demo (Sprint 21 #276/#277)
-    {"step_type": "llm", "label": "Agenda · ofrece franjas y pide correo", "config": {
-        "mode": "accion", "accion": "info", "fuente": "contexto a priori · agenda",
-        "mensaje": "Franjas en bullets: lunes a viernes · 2:00, 3:00, 4:00, "
-                   "5:00 y 6:00 p.m. Luego pide correo (y nombre/empresa si "
-                   "faltan) para registrar la demo."}},
+    {"step_type": "llm", "label": "Agenda · ofrece 4 franjas y pide correo", "config": {
+        "mode": "accion", "accion": "info",
+        "fuente": "franjas calculadas por el motor (L-V 10am-4pm, +3 días "
+                  "hábiles)",
+        "mensaje": "Tras resolver la PRIMERA pregunta propone la demo y muestra "
+                   "en bullets las 4 franjas disponibles más cercanas. Luego "
+                   "pide el correo (y nombre/empresa si faltan)."}},
     {"step_type": "llm", "label": "Agenda · registra la demo y se despide", "config": {
         "mode": "accion", "accion": "registro",
-        "fuente": "tool registrar_demo → tabla demo_bookings",
-        "mensaje": "¡Listo! 🤍 Tu demo quedó registrada para el <día> a las "
-                   "<hora>. Te llega la confirmación a <correo> y un "
-                   "especialista te escribe para coordinar el enlace ✨"}},
+        "fuente": "tool registrar_demo (valida la franja) → demo_bookings",
+        "mensaje": "¡Listo! 🤍 Tu demo quedó agendada para el <día y fecha> a "
+                   "las <hora>. Te llega la confirmación a <correo> y el asesor "
+                   "te escribe para enviarte el enlace ✨"}},
 ]
 
 # Camino del router principal → posición del bloque que lo atiende.

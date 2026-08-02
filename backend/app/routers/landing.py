@@ -40,9 +40,26 @@ PHONE_RE = re.compile(r"^[+\d][\d\s\-()]{5,30}$")
 
 
 class LeadIn(BaseModel):
+    """Solicitud de contacto del form de la landing ("Quiero que me contacten").
+
+    #291: `nombre` es obligatorio — el equipo necesita a quién llamar cuando
+    hace el seguimiento desde `/citas`.
+    """
+
+    nombre: str = Field(..., min_length=2, max_length=120)
     email: EmailStr
     telefono: str = Field(..., min_length=6, max_length=32)
     source: str = Field(default="gloma_landing", max_length=64)
+
+    @field_validator("nombre")
+    @classmethod
+    def _clean_nombre(cls, v: str) -> str:
+        # Sin caracteres de control ni espacios de sobra; el largo lo acota Field.
+        v = re.sub(r"[\x00-\x1f\x7f]", " ", v or "")
+        v = re.sub(r"\s+", " ", v).strip()
+        if len(v) < 2:
+            raise ValueError("Nombre inválido")
+        return v
 
     @field_validator("telefono")
     @classmethod
@@ -87,14 +104,17 @@ def create_lead(
         )
 
     lead = models.Lead(
+        nombre=payload.nombre,
         email=str(payload.email).lower(),
         telefono=payload.telefono,
         source=payload.source,
         user_agent=ua,
         ip_address=ip,
+        estado="pendiente",
     )
     db.add(lead)
     db.commit()
+    # Sin PII en el log (regla de seguridad #1): solo id y origen.
     logger.info("lead creado id=%s source=%s", lead.id, lead.source)
     return LeadOut(ok=True)
 

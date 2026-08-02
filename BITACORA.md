@@ -1943,3 +1943,44 @@ ya tiene la landing).
 widget) a la paleta Deep Forest/Mint, que estaba en el árbol de trabajo sin commitear:
 sin él, producción quedaría con la app en verde y la landing en rosa. Revertible por
 archivo si se quiere separar.
+
+### 6. #291-#296 — Agenda real de demos (+3 días hábiles, L-V 10 a.m.-4 p.m.)
+
+**Pedido del CEO (2026-08-02):** el bot debe intentar agendar la demo **apenas
+resuelve la primera pregunta**, preguntar en qué horario le sirve y mostrar en bullets
+**las 4 franjas siguientes**. Horarios: lunes a viernes, cada hora, de 10:00 a.m. a
+4:00 p.m., pero ofreciendo solo lo que esté a **3 días hábiles** de la solicitud
+(ejemplo del CEO: quien escribe un jueves a las 2:30 p.m. recibe martes 3 y 4 p.m. y
+miércoles 10 y 11 a.m.). Al cerrar, el bot registra la cita en la BD.
+
+| # | Tarea | Agente | Resultado |
+|---|---|---|---|
+| #291 | Cálculo de franjas en el motor | `dev-plataforma` | `llm_engine.proximas_franjas()`: +3 días hábiles (los fines de semana no cuentan), y ese día se arranca en la hora en punto siguiente a la de la solicitud, acotada a 10:00-16:00; si ya cerró, salta al siguiente día hábil. El resultado se inyecta en el system prompt como bloque "Agenda de demostraciones" con las 4 opciones en texto legible **y** su equivalente `fecha=AAAA-MM-DD, hora=HH:MM` — **el modelo nunca calcula fechas**. Zona horaria fija UTC-5 (Colombia no tiene horario de verano; evita depender de tzdata en el contenedor). |
+| #292 | Tool con fecha real + validación | `dev-plataforma` | `registrar_demo` ahora recibe `fecha` y `hora` (24h). `franja_valida()` revalida en el servidor: día hábil, dentro del horario y no antes del mínimo. Si falla, la herramienta **no registra** y le explica al modelo qué corregir. |
+| #293 | `demo_bookings.fecha` | `experto-bd` | Columna `fecha DATE` + índice, `migrate_sprint21_demo_fecha.py` idempotente. Aplicada en local y RDS. `/citas` muestra la fecha real ("mié 5 ago · 3:00 p.m."), la edita con un date-picker y su selector de horas pasó a 10 a.m.-4 p.m. |
+| #294 | Instrucciones del bot | `dev-plataforma` | La invitación a la demo va **pegada al final de la respuesta a la primera pregunta**; la lista de 4 opciones se muestra una sola vez; para registrar bastan **correo + franja**. |
+| #295 | QA de 5 conversaciones | `qa` | Ver abajo. |
+| #296 | Deploy | `deploy-aws` | Imagen `:sprint21d`, task-def rev 18, migraciones y re-seed en RDS. |
+
+**#295 — Las 5 conversaciones y los 5 defectos que corrigieron las instrucciones.**
+Primera vuelta (bot real contra Bedrock, canal landing): (1) *"Muebles del Valle"* —
+el bot no propuso la demo al cerrar la primera respuesta; (2) *"Clínica Sonrisa"*
+(3 preguntas seguidas) — repitió la lista de 4 franjas en **cuatro** mensajes
+seguidos; (3) *"horario inválido"* (sábado 8 p.m.) — rechazó bien la franja, pero
+después **bloqueó el registro** exigiendo nombre y empresa; (4) *"todo de una"* — dijo
+"agendamos para el miércoles" **sin llamar la herramienta** (cita fantasma) y pidió
+teléfono para "completar"; (5) *"precio y demo"* — otra vez frenó pidiendo datos
+opcionales. Ninguno era un fallo del cálculo de franjas: las 4 opciones y los rechazos
+(sábado, 8 p.m., miércoles 11 a.m. cuando ese día ya iba en 3 p.m.) salieron correctos
+siempre.
+
+Correcciones aplicadas y **re-verificadas**: la invitación a la demo es obligatoria al
+cerrar la primera respuesta; la lista se muestra una sola vez; **para registrar solo se
+piden correo y franja** (nombre/empresa/teléfono opcionales, prohibido condicionar el
+registro a ellos — reforzado también en la *descripción de la tool*, que es lo que más
+pesa para el modelo); prohibido decir "quedó agendada" antes de que la herramienta
+responda; nada de confirmaciones redundantes; y `finalizar_conversacion` en el mismo
+turno de la despedida. Segunda vuelta: los 5 escenarios cierran bien y quedaron **5
+filas en `demo_bookings`** con fecha real (ids 4-8: 2026-08-05 3 p.m., 4 p.m. y
+2026-08-06 11 a.m., etc.). Tests: **42 passed**, incluido el ejemplo exacto del CEO
+(jueves 2:30 p.m. → martes 3 y 4 p.m. + miércoles 10 y 11 a.m.).

@@ -4,6 +4,7 @@ from sqlalchemy import (
     Integer,
     String,
     Boolean,
+    Date,
     DateTime,
     ForeignKey,
     Text,
@@ -459,21 +460,38 @@ class BotPendingAction(Base):
 
 # ===== Sprint 11: Landing Gloma - leads del form de contacto =====
 class Lead(Base):
-    """Contactos que llenan el form de la landing /gloma.
+    """Solicitudes de contacto que llenan el form de la landing /gloma.
 
     No tiene FK a users porque son prospects, no clientes aún.
     `source` permite distinguir orígenes cuando haya más de una landing.
+
+    Sprint 21 #291: el form pide `nombre` y el CEO gestiona las solicitudes
+    desde `/citas` → subsección "Solicitudes de contacto", así que la fila
+    dejó de ser solo un registro y ahora tiene ciclo de vida: `estado`
+    (`pendiente` | `contactado`), `notas` y `updated_at`. El booleano
+    `contacted` original quedó reemplazado por `estado` (migración #291).
+
+    Contiene PII de prospectos: nunca se loggea su contenido ni se expone en
+    endpoints públicos (regla de seguridad #1).
     """
 
     __tablename__ = "leads"
     id = Column(Integer, primary_key=True, index=True)
+    nombre = Column(String(120), nullable=True)
     email = Column(String(255), nullable=False, index=True)
     telefono = Column(String(32), nullable=False)
     source = Column(String(64), nullable=False, default="gloma_landing", index=True)
     user_agent = Column(String(512), nullable=True)
     ip_address = Column(String(64), nullable=True)
-    contacted = Column(Boolean, nullable=False, default=False)
+    estado = Column(String(16), nullable=False, default="pendiente", index=True)
+    notas = Column(String(500), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    updated_at = Column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=True
+    )
+
+    def __repr__(self) -> str:  # PII fuera de los logs (regla de seguridad #1)
+        return f"<Lead id={self.id} source={self.source} estado={self.estado}>"
 
 
 class DemoBooking(Base):
@@ -498,8 +516,12 @@ class DemoBooking(Base):
     empresa = Column(String(160), nullable=True)
     correo = Column(String(255), nullable=False, index=True)
     telefono = Column(String(32), nullable=True)
+    # Sprint 21 #293: la fecha real de la cita (el motor la calcula con la
+    # política de agenda: +3 días hábiles, L-V, 10:00-16:00). `dia` y `hora`
+    # quedan como etiquetas legibles de esa misma fecha.
+    fecha = Column(Date, nullable=True, index=True)
     dia = Column(String(16), nullable=True)        # lunes..viernes
-    hora = Column(String(16), nullable=True)       # 2:00 p.m. .. 6:00 p.m.
+    hora = Column(String(16), nullable=True)       # 10:00 a.m. .. 4:00 p.m.
     notas = Column(String(500), nullable=True)     # lo que el prospecto contó
     estado = Column(String(24), nullable=False, default="solicitada", index=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)

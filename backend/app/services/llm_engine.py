@@ -43,6 +43,7 @@ import logging
 import os
 import re
 import time
+from datetime import date, datetime, timedelta, timezone
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -124,8 +125,151 @@ def _media_catalog(cfg: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
     }
 
 
+# ---------------------------------------------------------------------------
+# Agenda de demos (#291): el modelo NO calcula fechas — el servidor le entrega
+# las franjas ya resueltas y luego valida la que eligió el prospecto.
+# ---------------------------------------------------------------------------
+
+_TZ_CO = timezone(timedelta(hours=-5))   # Colombia, sin horario de verano
+_DIAS_ES = ("lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo")
+_MESES_ES = (
+    "enero", "febrero", "marzo", "abril", "mayo", "junio",
+    "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre",
+)
+
+_AGENDA_DEFAULTS = {
+    "hora_inicio": 10,      # primera cita del día (hora local)
+    "hora_fin": 16,         # última cita del día
+    "dias_habiles_min": 3,  # anticipación mínima, en días hábiles
+    "opciones": 4,          # cuántas franjas se le ofrecen al prospecto
+}
+
+
+def _agenda_cfg(cfg: Dict[str, Any]) -> Dict[str, int]:
+    ag = cfg.get("agenda")
+    data = dict(_AGENDA_DEFAULTS)
+    if isinstance(ag, dict):
+        for k in data:
+            try:
+                if ag.get(k) is not None:
+                    data[k] = int(ag[k])
+            except (TypeError, ValueError):
+                pass
+    return data
+
+
+def _hora_label(h: int) -> str:
+    if h == 12:
+        return "12:00 m."
+    sufijo = "a.m." if h < 12 else "p.m."
+    h12 = h if h <= 12 else h - 12
+    return f"{h12}:00 {sufijo}"
+
+
+def _fecha_label(d: date) -> str:
+    return f"{_DIAS_ES[d.weekday()].capitalize()} {d.day} de {_MESES_ES[d.month - 1]}"
+
+
+def _sumar_dias_habiles(desde: date, habiles: int) -> date:
+    """Avanza `habiles` días hábiles (lunes a viernes) desde `desde`."""
+    d, sumados = desde, 0
+    while sumados < habiles:
+        d += timedelta(days=1)
+        if d.weekday() < 5:
+            sumados += 1
+    return d
+
+
+def _primera_franja(ahora: datetime, ag: Dict[str, int]) -> tuple[date, int]:
+    """Primer (fecha, hora) ofrecible: +N días hábiles y, ese día, la hora en
+    punto siguiente a la de la solicitud. Ej: jueves 2:30 p.m. → martes 3 p.m."""
+    dia = _sumar_dias_habiles(ahora.date(), ag["dias_habiles_min"])
+    hora = ahora.hour + (1 if ahora.minute > 0 else 0)
+    hora = max(hora, ag["hora_inicio"])
+    if hora > ag["hora_fin"]:
+        # Ya no cabe ninguna cita ese día: arranca el siguiente día hábil.
+        dia = _sumar_dias_habiles(dia, 1)
+        hora = ag["hora_inicio"]
+    return dia, hora
+
+
+def proximas_franjas(cfg: Dict[str, Any], ahora: Optional[datetime] = None) -> List[Dict[str, Any]]:
+    """Las próximas N franjas disponibles según la política de agenda."""
+    ag = _agenda_cfg(cfg)
+    ahora = ahora or datetime.now(_TZ_CO)
+    dia, hora = _primera_franja(ahora, ag)
+    franjas: List[Dict[str, Any]] = []
+    while len(franjas) < ag["opciones"]:
+        if dia.weekday() < 5:
+            while hora <= ag["hora_fin"] and len(franjas) < ag["opciones"]:
+                franjas.append({
+                    "fecha": dia.isoformat(),
+                    "hora": f"{hora:02d}:00",
+                    "dia": _DIAS_ES[dia.weekday()],
+                    "label": f"{_fecha_label(dia)}, {_hora_label(hora)}",
+                })
+                hora += 1
+        dia += timedelta(days=1)
+        hora = ag["hora_inicio"]
+    return franjas
+
+
+def franja_valida(fecha_iso: str, hora_str: str, cfg: Dict[str, Any],
+                  ahora: Optional[datetime] = None) -> tuple[bool, str]:
+    """¿La franja que eligió el prospecto cumple la política? (validación
+    server-side: el modelo puede equivocarse de fecha, el registro no)."""
+    ag = _agenda_cfg(cfg)
+    ahora = ahora or datetime.now(_TZ_CO)
+    try:
+        f = date.fromisoformat((fecha_iso or "").strip())
+        h = int((hora_str or "").strip().split(":")[0])
+    except (ValueError, IndexError):
+        return False, "la fecha debe venir como AAAA-MM-DD y la hora como HH:MM"
+    if f.weekday() >= 5:
+        return False, "solo atendemos de lunes a viernes"
+    if not (ag["hora_inicio"] <= h <= ag["hora_fin"]):
+        return False, (
+            f"el horario de demos es de {_hora_label(ag['hora_inicio'])} a "
+            f"{_hora_label(ag['hora_fin'])}"
+        )
+    minimo = _sumar_dias_habiles(ahora.date(), ag["dias_habiles_min"])
+    if f < minimo or (f == minimo and h < _primera_franja(ahora, ag)[1]):
+        return False, (
+            "esa franja ya no está disponible: ofrécele las opciones que "
+            "aparecen en tus instrucciones"
+        )
+    return True, ""
+
+
+def _bloque_agenda(cfg: Dict[str, Any]) -> str:
+    ahora = datetime.now(_TZ_CO)
+    franjas = proximas_franjas(cfg, ahora)
+    bullets = "\n".join(f"• {f['label']}" for f in franjas)
+    detalle = "\n".join(
+        f"- «{f['label']}» → fecha={f['fecha']}, hora={f['hora']}" for f in franjas
+    )
+    return (
+        "## Agenda de demostraciones (datos vivos del sistema)\n"
+        f"Ahora es {_fecha_label(ahora.date())} de {ahora.year}, "
+        f"{ahora.strftime('%I:%M %p').lstrip('0').lower()} (hora de Colombia).\n\n"
+        "Cuando ofrezcas la demo, muestra EXACTAMENTE estas 4 opciones en "
+        "bullets, tal cual están escritas, sin agregar ni inventar otras:\n"
+        f"{bullets}\n\n"
+        "Al llamar `registrar_demo`, traduce la opción que eligió el prospecto "
+        "a estos valores:\n"
+        f"{detalle}\n\n"
+        "Si pide una franja distinta: puedes aceptar cualquier otra hora en "
+        "punto de lunes a viernes entre 10:00 a.m. y 4:00 p.m. que sea "
+        "POSTERIOR a la primera opción de la lista; si pide algo antes de esa "
+        "fecha, explícale que necesitamos ese margen para preparar la demo con "
+        "su información y ofrécele de nuevo las opciones."
+    )
+
+
 def _system_prompt(bot, cfg: Dict[str, Any]) -> str:
     parts = [_load_context(cfg.get("context_key", ""))]
+    if cfg.get("agenda") is not None:
+        parts.append(_bloque_agenda(cfg))
     media = _media_catalog(cfg)
     if media:
         lines = [
@@ -210,10 +354,14 @@ def _tools_for(cfg: Dict[str, Any]) -> List[Dict[str, Any]]:
             {
                 "name": "registrar_demo",
                 "description": (
-                    "Registra la sesión de demostración que el prospecto acaba "
-                    "de agendar. Úsala SOLO cuando ya tengas su correo y la "
-                    "franja elegida (día de lunes a viernes y hora entre 2:00 "
-                    "p.m. y 6:00 p.m.). Después de usarla, despídete."
+                    "Registra la sesión de demostración del prospecto. "
+                    "LLÁMALA APENAS tengas dos datos: el correo y la franja "
+                    "elegida (fecha + hora de la lista de opciones del system "
+                    "prompt). `nombre`, `empresa`, `telefono` y `notas` son "
+                    "OPCIONALES: mándalos solo si ya los sabes por la "
+                    "conversación — NUNCA retrases ni condiciones el registro "
+                    "a pedirlos. Después de usarla, confirma la cita con su "
+                    "fecha y despídete."
                 ),
                 "input_schema": {
                     "type": "object",
@@ -231,13 +379,19 @@ def _tools_for(cfg: Dict[str, Any]) -> List[Dict[str, Any]]:
                             "type": "string",
                             "description": "Teléfono, solo si lo dio.",
                         },
-                        "dia": {
+                        "fecha": {
                             "type": "string",
-                            "description": "Día elegido: lunes, martes, miércoles, jueves o viernes.",
+                            "description": (
+                                "Fecha de la cita en formato AAAA-MM-DD, "
+                                "copiada de la opción que eligió el prospecto."
+                            ),
                         },
                         "hora": {
                             "type": "string",
-                            "description": "Hora elegida entre 2:00 p.m. y 6:00 p.m.",
+                            "description": (
+                                "Hora de la cita en formato 24h HH:MM (en "
+                                "punto), copiada de la opción elegida. Ej: 15:00"
+                            ),
                         },
                         "notas": {
                             "type": "string",
@@ -247,7 +401,7 @@ def _tools_for(cfg: Dict[str, Any]) -> List[Dict[str, Any]]:
                             ),
                         },
                     },
-                    "required": ["correo", "dia", "hora"],
+                    "required": ["correo", "fecha", "hora"],
                 },
             }
         )
@@ -317,14 +471,16 @@ def _tools_for(cfg: Dict[str, Any]) -> List[Dict[str, Any]]:
 
 
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s.]+\.[a-zA-Z]{2,}$")
-_DIAS_VALIDOS = ("lunes", "martes", "miércoles", "miercoles", "jueves", "viernes")
 
 
-def _clean_booking(tool_input: Dict[str, Any]) -> tuple[Optional[Dict[str, str]], str]:
+def _clean_booking(
+    tool_input: Dict[str, Any], cfg: Optional[Dict[str, Any]] = None
+) -> tuple[Optional[Dict[str, str]], str]:
     """Valida y normaliza los datos de una demo. Devuelve (booking|None, mensaje).
 
-    El mensaje va al MODELO (no al cliente): si algo falta o el correo no es
-    válido, se le dice para que lo vuelva a pedir con sus propias palabras.
+    El mensaje va al MODELO (no al cliente): si el correo no sirve o la franja
+    no cumple la política de agenda, se le explica para que lo corrija con el
+    prospecto y vuelva a llamar la herramienta.
     """
     def _s(key: str, limit: int) -> str:
         return str(tool_input.get(key) or "").strip()[:limit]
@@ -335,19 +491,23 @@ def _clean_booking(tool_input: Dict[str, Any]) -> tuple[Optional[Dict[str, str]]
             "el correo no parece válido: pídeselo de nuevo con amabilidad y "
             "vuelve a llamar la herramienta"
         )
-    dia = _s("dia", 16).lower()
-    if not any(dia.startswith(d[:4]) for d in _DIAS_VALIDOS):
-        return None, (
-            "el día debe ser de lunes a viernes: confirma la franja con el "
-            "prospecto y vuelve a llamar la herramienta"
-        )
+
+    fecha_iso, hora = _s("fecha", 10), _s("hora", 5)
+    ok, problema = franja_valida(fecha_iso, hora, cfg or {})
+    if not ok:
+        return None, f"no pude agendar esa franja: {problema}"
+
+    f = date.fromisoformat(fecha_iso)
+    h = int(hora.split(":")[0])
     return {
         "correo": correo,
         "nombre": _s("nombre", 120),
         "empresa": _s("empresa", 160),
         "telefono": _s("telefono", 32),
-        "dia": dia,
-        "hora": _s("hora", 16),
+        "fecha": fecha_iso,
+        "dia": _DIAS_ES[f.weekday()],
+        "hora": _hora_label(h),
+        "label": f"{_fecha_label(f)}, {_hora_label(h)}",
         "notas": _s("notas", 500),
     }, ""
 
@@ -362,7 +522,7 @@ def _run_tool(
 ) -> tuple[str, bool]:
     """Ejecuta una tool. Devuelve (tool_result_text, turno_terminado)."""
     if name == "registrar_demo":
-        booking, problema = _clean_booking(tool_input)
+        booking, problema = _clean_booking(tool_input, cfg)
         if booking is None:
             return problema, False
         # La reserva NO se persiste aquí (el motor no tiene sesión de BD):
@@ -370,8 +530,8 @@ def _run_tool(
         if bookings is not None:
             bookings.append(booking)
         return (
-            f"demo registrada para el {booking['dia']} a las "
-            f"{booking['hora'] or 'la hora acordada'}; ya puedes despedirte"
+            f"demo registrada para el {booking['label']}; confírmasela al "
+            "prospecto con esa misma fecha y despídete"
         ), False
 
     if name == "escalar_a_asesor":
@@ -535,6 +695,7 @@ def record_booking(
                     empresa=b.get("empresa") or None,
                     correo=b["correo"],
                     telefono=b.get("telefono") or None,
+                    fecha=date.fromisoformat(b["fecha"]) if b.get("fecha") else None,
                     dia=b.get("dia") or None,
                     hora=b.get("hora") or None,
                     notas=b.get("notas") or None,

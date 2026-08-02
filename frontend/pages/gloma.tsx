@@ -2,7 +2,7 @@ import Head from 'next/head';
 import Image from 'next/image';
 import { useEffect, useRef, useState } from 'react';
 
-import GlomaChatWidget from '../components/GlomaChatWidget';
+import GlomaChatWidget, { OPEN_CHAT_EVENT } from '../components/GlomaChatWidget';
 
 /**
  * Landing page de Gloma.
@@ -118,6 +118,16 @@ const WHATSAPP_URL =
  * Animación 1s con cubic ease-in-out + un pequeño offset para que el título
  * no quede pegado al borde superior.
  */
+/**
+ * Abre el chat con el bot institucional que vive en `GlomaChatWidget` (#292).
+ * El visitante prueba el agente en la misma página: no necesita tener el
+ * WhatsApp de Gloma ni salir de la landing.
+ */
+function abrirChatDelBot() {
+  if (typeof window === 'undefined') return;
+  window.dispatchEvent(new Event(OPEN_CHAT_EVENT));
+}
+
 function smoothScrollToContacto(e: React.MouseEvent<HTMLAnchorElement>) {
   e.preventDefault();
   if (typeof window === 'undefined') return;
@@ -432,6 +442,9 @@ function InteractiveHeader() {
 
 type FormStatus = 'idle' | 'sending' | 'ok' | 'error';
 
+/** Datos del form "Quiero que me contacten" (#291). */
+type ContactFormValues = { nombre: string; email: string; telefono: string };
+
 function ContactForm({
   form,
   setForm,
@@ -439,8 +452,8 @@ function ContactForm({
   message,
   onSubmit,
 }: {
-  form: { email: string; telefono: string };
-  setForm: (f: { email: string; telefono: string }) => void;
+  form: ContactFormValues;
+  setForm: (f: ContactFormValues) => void;
   status: FormStatus;
   message: string;
   onSubmit: (e: React.FormEvent) => void;
@@ -507,6 +520,25 @@ function ContactForm({
           }}
         >
           <label className="block text-sm font-medium mb-2" style={{ color: BRAND.textMuted }}>
+            Nombre
+          </label>
+          <input
+            type="text"
+            required
+            maxLength={120}
+            value={form.nombre}
+            onChange={(e) => setForm({ ...form, nombre: e.target.value })}
+            placeholder="¿Cómo te llamas?"
+            disabled={isSending}
+            className="gloma-input w-full px-4 py-3 border rounded-xl text-sm mb-5 focus:outline-none transition-colors disabled:opacity-60"
+            style={{
+              backgroundColor: 'rgba(255,255,255,0.02)',
+              borderColor: BRAND.cardBorder,
+              color: BRAND.text,
+              fontFamily: 'Inter, system-ui, sans-serif',
+            }}
+          />
+          <label className="block text-sm font-medium mb-2" style={{ color: BRAND.textMuted }}>
             Correo electrónico
           </label>
           <input
@@ -548,7 +580,7 @@ function ContactForm({
             className="w-full py-3 rounded-full font-semibold text-sm transition-all hover:opacity-90 disabled:opacity-70 disabled:cursor-not-allowed"
             style={{ backgroundColor: BRAND.mint, color: BRAND.bgBase }}
           >
-            {isSending ? 'Enviando…' : 'Hablar con un especialista'}
+            {isSending ? 'Enviando…' : 'Quiero que me contacten'}
           </button>
           {isError && message && (
             <p
@@ -710,7 +742,11 @@ function StatsSection() {
 // --- Página ----------------------------------------------------------------
 
 export default function GlomaLanding() {
-  const [form, setForm] = useState({ email: '', telefono: '' });
+  const [form, setForm] = useState<ContactFormValues>({
+    nombre: '',
+    email: '',
+    telefono: '',
+  });
   const [status, setStatus] = useState<'idle' | 'sending' | 'ok' | 'error'>('idle');
   const [message, setMessage] = useState('');
 
@@ -726,11 +762,17 @@ export default function GlomaLanding() {
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        throw new Error(data.detail || `HTTP ${res.status}`);
+        // `detail` es string en los errores de negocio (429) y una lista de
+        // objetos en los 422 de Pydantic: solo mostramos el string.
+        throw new Error(
+          typeof data.detail === 'string'
+            ? data.detail
+            : 'Revisa los datos e intenta de nuevo.'
+        );
       }
       setStatus('ok');
       setMessage('¡Gracias! Te contactaremos muy pronto.');
-      setForm({ email: '', telefono: '' });
+      setForm({ nombre: '', email: '', telefono: '' });
     } catch (err: any) {
       setStatus('error');
       setMessage(err.message || 'No pudimos enviar tu mensaje. Intenta de nuevo.');
@@ -923,15 +965,16 @@ export default function GlomaLanding() {
               >
                 Cuéntanos un poco de tu negocio y te contactamos para mostrarte cómo Gloma puede funcionar para ti.
               </p>
-              <a
-                href={WHATSAPP_URL}
-                target="_blank"
-                rel="noopener noreferrer"
+              {/* #292: abre la conversación con el bot de la landing en vez de
+                  mandar a wa.me — el visitante prueba el agente aquí mismo. */}
+              <button
+                type="button"
+                onClick={abrirChatDelBot}
                 className="inline-flex items-center px-5 py-3 rounded-full text-sm font-semibold transition-transform hover:-translate-y-0.5"
                 style={{ backgroundColor: BRAND.mint, color: BRAND.bgBase }}
               >
                 Escríbenos por WhatsApp
-              </a>
+              </button>
             </Reveal>
 
             <Reveal delay={120}>
