@@ -403,8 +403,7 @@ function InteractiveHeader() {
               middleware — así que el enlace es absoluto. */}
           <a
             href={`${APP_URL}/login`}
-            className="px-5 py-2 rounded-full text-sm font-medium border transition-colors hover:bg-white/10"
-            style={{ borderColor: BRAND.mint, color: BRAND.mint }}
+            className="px-5 py-2 rounded-full text-sm font-medium border border-white text-white transition-colors hover:bg-white/10"
           >
             Entrar a la app
           </a>
