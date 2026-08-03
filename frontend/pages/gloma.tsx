@@ -35,19 +35,19 @@ const PREVIEW_SECTIONS = [
   {
     title: 'Un agente de ventas personalizado',
     text: 'Atiende a tus clientes 24/7 con un tono alineado a tu marca y procesos. La cercanía humana, multiplicada por la disponibilidad de la tecnología.',
-    image: '/gloma/preview1.png',
+    image: '/gloma/preview4.png',
     reverse: false,
   },
   {
     title: 'Aumenta ventas con campañas por WhatsApp',
     text: 'Envía campañas segmentadas, con plantillas aprobadas y seguimiento automático. Convierte conversaciones en pedidos confirmados.',
-    image: '/gloma/preview2.png',
+    image: '/gloma/preview5.png',
     reverse: true,
   },
   {
     title: 'Reduce 80% del tiempo en servicio al cliente',
     text: 'Nuestros bots actúan como un primer filtro inteligente, resolviendo lo repetitivo y escalando a un humano solo cuando hace falta.',
-    image: '/gloma/preview3.png',
+    image: '/gloma/preview6.png',
     reverse: false,
   },
 ];
