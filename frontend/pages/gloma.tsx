@@ -33,19 +33,19 @@ const BRAND = {
 // --- Datos -----------------------------------------------------------------
 const PREVIEW_SECTIONS = [
   {
-    title: 'Un agente de ventas personalizado',
+    title: 'Un agente de ventas que trabaja sin parar',
     text: 'Atiende a tus clientes 24/7 con un tono alineado a tu marca y procesos. La cercanía humana, multiplicada por la disponibilidad de la tecnología.',
     image: '/gloma/preview4.png',
     reverse: false,
   },
   {
     title: 'Aumenta ventas con campañas por WhatsApp',
-    text: 'Envía campañas segmentadas, con plantillas aprobadas y seguimiento automático. Convierte conversaciones en pedidos confirmados.',
+    text: 'Campañas segmentadas por destino y fecha de viaje: reactiva cotizaciones frías y vende febrero mientras todos venden diciembre.',
     image: '/gloma/preview5.png',
     reverse: true,
   },
   {
-    title: 'Reduce 80% del tiempo en servicio al cliente',
+    title: 'Tu equipo entra a cerrar, no a saludar',
     text: 'Nuestros bots actúan como un primer filtro inteligente, resolviendo lo repetitivo y escalando a un humano solo cuando hace falta.',
     image: '/gloma/preview6.png',
     reverse: false,
@@ -61,12 +61,12 @@ const FEATURES = [
   {
     icon: '/gloma/ld_inegraciones.png',
     title: 'Integraciones fluidas',
-    text: 'Se conecta con tus fuentes de información y tu operación para que el sistema y tu equipo trabajen en sintonía.',
+    text: 'Se alimenta de tus tarifarios, itinerarios y políticas para cotizar con datos correctos, nunca inventados.',
   },
   {
     icon: '/gloma/ld_contexto.png',
-    title: 'Contexto a priori de tu empresa',
-    text: 'El agente conoce tu catálogo, políticas y procesos antes de hablar con el primer cliente.',
+    title: 'Conoce tus destinos antes del primer mensaje',
+    text: 'Sabe qué destinos vendes, a qué precio y con qué condiciones desde el primer día.',
   },
   {
     icon: '/gloma/ld_escalamiento.png',
@@ -91,14 +91,14 @@ const STATS = [
     value: 150000,
     prefix: '+',
     suffix: '',
-    label: 'mensajes enviados',
+    label: 'mensajes de viajeros gestionados',
   },
   {
     icon: '/gloma/ld_4meses.png',
     value: 4,
     prefix: '',
     suffix: ' meses',
-    label: 'retorno de inversión promedio',
+    label: 'de retorno de inversión promedio',
   },
   {
     icon: '/gloma/ld_horasai.png',
@@ -110,7 +110,10 @@ const STATS = [
 ];
 
 const WHATSAPP_URL =
-  'https://wa.me/573003187871?text=Hola%20Gloma%2C%20quiero%20más%20información';
+  'https://wa.me/573003187871?text=Hola%20Gloma%2C%20tengo%20una%20agencia%20de%20viajes%20y%20quiero%20ver%20una%20demo';
+
+/** La plataforma vive en su propio subdominio (#303). */
+const APP_URL = 'https://app.glomabeauty.com';
 
 /**
  * Scroll suave hacia la sección de contacto con un easing más agradable que
@@ -384,16 +387,28 @@ function InteractiveHeader() {
             className="object-contain h-28 md:h-40 w-auto"
           />
         </div>
-        {/* #302: en vez de bajar al formulario, le pide la demo al agente —
-            que responde con las franjas disponibles y la registra. */}
-        <button
-          type="button"
-          onClick={() => abrirChatDelBot(MENSAJE_AGENDAR_DEMO)}
-          className="hidden md:inline-block px-5 py-2 rounded-full text-sm font-medium transition-opacity hover:opacity-90"
-          style={{ backgroundColor: BRAND.mint, color: BRAND.bgBase }}
-        >
-          Agenda una demo
-        </button>
+        <div className="hidden md:flex items-center gap-3">
+          {/* #302: en vez de bajar al formulario, le pide la demo al agente —
+              que responde con las franjas disponibles y la registra. */}
+          <button
+            type="button"
+            onClick={() => abrirChatDelBot(MENSAJE_AGENDAR_DEMO)}
+            className="px-5 py-2 rounded-full text-sm font-medium transition-opacity hover:opacity-90"
+            style={{ backgroundColor: BRAND.mint, color: BRAND.bgBase }}
+          >
+            Agenda una demo
+          </button>
+          {/* #303: acceso de clientes actuales. La plataforma vive en otro
+              subdominio — bajo el apex, `/login` cae en el 404 brandeado del
+              middleware — así que el enlace es absoluto. */}
+          <a
+            href={`${APP_URL}/login`}
+            className="px-5 py-2 rounded-full text-sm font-medium border transition-colors hover:bg-white/10"
+            style={{ borderColor: BRAND.mint, color: BRAND.mint }}
+          >
+            Entrar a la app
+          </a>
+        </div>
       </nav>
 
       {/* Contenido principal (título + subtítulo + CTAs) */}
@@ -440,7 +455,7 @@ function InteractiveHeader() {
             className="inline-block px-6 py-3 rounded-full text-sm font-semibold text-center transition-opacity hover:opacity-90"
             style={{ backgroundColor: BRAND.mint, color: BRAND.bgBase }}
           >
-            Hablar con un asesor
+            Pruébalo ahora
           </button>
           <a
             href="#contacto"
@@ -561,7 +576,7 @@ function ContactForm({
             required
             value={form.email}
             onChange={(e) => setForm({ ...form, email: e.target.value })}
-            placeholder="tu@empresa.com"
+            placeholder="tu@agenciadeviajes.com"
             disabled={isSending}
             className="gloma-input w-full px-4 py-3 border rounded-xl text-sm mb-5 focus:outline-none transition-colors disabled:opacity-60"
             style={{
@@ -797,7 +812,7 @@ export default function GlomaLanding() {
   return (
     <>
       <Head>
-        <title>Gloma — Tecnología que resalta tu catálogo</title>
+        <title>Gloma — IA que vende viajes por WhatsApp</title>
         <meta
           name="description"
           content="Gloma: la forma elegante de automatizar ventas por WhatsApp sin perder el trato humano."
@@ -978,7 +993,7 @@ export default function GlomaLanding() {
                   color: BRAND.textMuted,
                 }}
               >
-                Cuéntanos un poco de tu negocio y te contactamos para mostrarte cómo Gloma puede funcionar para ti.
+                Cuéntanos de tu agencia y te mostramos cómo se vería el agente con tus destinos y tarifas reales.
               </p>
               {/* #299: abre la conversación con el bot de la landing en vez de
                   mandar a wa.me — el visitante prueba el agente aquí mismo. */}
@@ -988,7 +1003,7 @@ export default function GlomaLanding() {
                 className="inline-flex items-center px-5 py-3 rounded-full text-sm font-semibold transition-transform hover:-translate-y-0.5"
                 style={{ backgroundColor: BRAND.mint, color: BRAND.bgBase }}
               >
-                Escríbenos por WhatsApp
+                Prueba el agente aquí mismo
               </button>
             </Reveal>
 

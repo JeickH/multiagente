@@ -30,7 +30,8 @@ const BRAND = {
 };
 
 const WHATSAPP_URL =
-  'https://wa.me/573003187871?text=Hola%20Gloma%2C%20quiero%20más%20información';
+  // Mismo mensaje precargado que el enlace del footer de la landing.
+  'https://wa.me/573003187871?text=Hola%20Gloma%2C%20tengo%20una%20agencia%20de%20viajes%20y%20quiero%20ver%20una%20demo';
 
 /**
  * Evento global para abrir el chat desde cualquier parte de la landing
