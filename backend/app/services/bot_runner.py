@@ -142,10 +142,15 @@ def run_turn(
         if atype == "say":
             _send_text(db, conversation, bot, meta_account, payload.get("text", ""))
         elif atype == "say_media":
-            # MVP: enviamos un texto con el caption (sin subir media real).
-            # Cuando integremos upload de media real a Meta se reemplaza esto.
-            caption = payload.get("caption", "")
-            _send_text(db, conversation, bot, meta_account, caption or "[archivo multimedia]")
+            _send_media(
+                db,
+                conversation,
+                bot,
+                meta_account,
+                url=payload.get("url", ""),
+                caption=payload.get("caption", ""),
+                media_type=payload.get("media_type", "image"),
+            )
         elif atype == "say_catalog":
             # Sprint 19 #264: catálogo de WhatsApp. Si hay Content Template
             # (twilio/catalog) y la cuenta es Twilio, va como mensaje nativo;
@@ -259,6 +264,68 @@ def _send_text(
             status="failed",
             error_detail=str(exc)[:500],
         )
+
+
+def _send_media(
+    db: Session,
+    conversation: models.Conversation,
+    bot: models.Bot,
+    account: Optional[models.MetaAccount],
+    *,
+    url: str,
+    caption: str = "",
+    media_type: str = "image",
+) -> None:
+    """Envía un archivo (imagen/video/documento) + persiste el mensaje saliente.
+
+    Ambos proveedores envían por **link público**, así que no hay upload previo.
+    Si el envío del archivo falla, hacemos *fallback a texto* con el caption y
+    la URL: es preferible que el contacto reciba el enlace a que el turno del
+    bot se quede mudo. El mensaje persistido guarda la URL en `content` para
+    que quede trazable en el módulo de Mensajes.
+    """
+    url = (url or "").strip()
+    if not url:
+        # Sin URL no hay nada que enviar; si venía un caption, va como texto.
+        if caption.strip():
+            _send_text(db, conversation, bot, account, caption)
+        return
+
+    contenido = f"{caption}\n{url}".strip() if caption.strip() else url
+
+    if account is None or not crud.is_meta_account_usable(account):
+        crud.add_message(
+            db, conversation, direction="outbound", content=contenido,
+            message_type=media_type, sent_by_user_id=None, status="failed",
+            error_detail="MetaAccount no usable",
+        )
+        return
+
+    try:
+        meta_id, _ = messaging.send_media(
+            account,
+            conversation.contact_wa_id,
+            url,
+            caption=caption or None,
+            media_type=media_type,
+        )
+        crud.add_message(
+            db, conversation, direction="outbound", content=contenido,
+            message_type=media_type, meta_message_id=meta_id,
+            sent_by_user_id=None, status="sent",
+        )
+    except Exception as exc:
+        # No loggeamos el payload del proveedor completo (regla #6): sólo tipo y bot.
+        logger.exception(
+            "bot_runner: envío de media falló bot=%s tipo=%s", bot.id, media_type
+        )
+        crud.add_message(
+            db, conversation, direction="outbound", content=contenido,
+            message_type=media_type, sent_by_user_id=None, status="failed",
+            error_detail=str(exc)[:500],
+        )
+        # Fallback: que al menos le llegue el enlace.
+        _send_text(db, conversation, bot, account, contenido)
 
 
 def process_pending_action(

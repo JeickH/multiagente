@@ -142,6 +142,41 @@ def send_text_message(
     return message_id, data
 
 
+def send_media_message(
+    account: models.MetaAccount,
+    to_wa_id: str,
+    media_url: str,
+    caption: Optional[str] = None,
+    media_type: str = "image",
+) -> Tuple[str, Dict[str, Any]]:
+    """
+    Envía imagen / video / documento por **link público** (sin upload previo).
+    Sólo funciona dentro de la ventana de servicio de 24h, igual que el texto.
+    Devuelve (meta_message_id, payload_completo).
+    """
+    kind = (media_type or "image").lower()
+    if kind not in ("image", "video", "document", "audio"):
+        kind = "image"
+
+    media_obj: Dict[str, Any] = {"link": media_url}
+    # Meta no admite caption en audio.
+    if caption and caption.strip() and kind != "audio":
+        media_obj["caption"] = caption
+
+    payload = {
+        "messaging_product": "whatsapp",
+        "recipient_type": "individual",
+        "to": to_wa_id,
+        "type": kind,
+        kind: media_obj,
+    }
+    data = _post(account, payload)
+    message_id = (
+        data.get("messages", [{}])[0].get("id") if data.get("messages") else None
+    )
+    return message_id, data
+
+
 def send_template_message(
     account: models.MetaAccount,
     to_wa_id: str,

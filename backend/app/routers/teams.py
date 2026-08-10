@@ -28,6 +28,9 @@ def get_my_team(
             id=member.team.id,
             nombre=member.team.nombre,
             owner_user_id=member.team.owner_user_id,
+            # #318: sin esto gana el default 'demo' del schema y la API miente
+            # sobre el modo del tenant (el gate de envío sí lee el ORM directo).
+            modo=member.team.modo,
         ),
         member=_serialize_member(member),
     )

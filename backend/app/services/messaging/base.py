@@ -13,8 +13,34 @@ adaptador.
 """
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from typing import Any, Dict, Optional
+
+logger = logging.getLogger(__name__)
+
+
+def team_is_demo(account) -> bool:
+    """¿El tenant dueño de esta cuenta está en modo demostración? (#318)
+
+    Un team en `modo='demo'` nunca envía de verdad: los adaptadores lo tratan
+    como sandbox aunque las credenciales sean válidas y `TWILIO_SANDBOX=0`.
+    Evita que una cuenta de demostración le escriba a un número real o consuma
+    la cuota de conversaciones del WABA.
+
+    Si no se puede determinar el modo (relación no cargable), asumimos **demo**:
+    ante la duda es preferible no enviar que enviarle a alguien por error.
+    """
+    try:
+        team = getattr(account, "team", None)
+        if team is None:
+            return False  # cuentas sin team (tests, objetos sueltos) no se bloquean
+        return (getattr(team, "modo", None) or "demo").lower() != "produccion"
+    except Exception:
+        logger.error(
+            "messaging: no se pudo leer team.modo — se asume demo y NO se envía"
+        )
+        return True
 
 
 class MessagingError(Exception):

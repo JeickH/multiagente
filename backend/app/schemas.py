@@ -80,6 +80,12 @@ class TeamOut(BaseModel):
     id: int
     nombre: str
     owner_user_id: int
+    # #318: 'demo' | 'produccion'. En 'demo' los envíos a WhatsApp se simulan.
+    # El frontend lo usa para mostrar el distintivo de cuenta de demostración.
+    # SIN default a propósito: con uno, un call-site que olvide pasarlo reporta
+    # 'demo' para un tenant en producción y la API miente en silencio (pasó al
+    # construir TeamOut campo por campo en /teams/me). Requerido = falla ruidosa.
+    modo: str
 
     class Config:
         from_attributes = True

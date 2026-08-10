@@ -23,6 +23,7 @@ __all__ = [
     "provider_of",
     "is_sandbox",
     "send_text",
+    "send_media",
     "send_template",
 ]
 
@@ -47,6 +48,20 @@ def is_sandbox(account) -> bool:
 
 def send_text(account, to_wa_id: str, body: str) -> Tuple[str, Dict[str, Any]]:
     return _adapter(account).send_text(account, to_wa_id, body)
+
+
+def send_media(
+    account,
+    to_wa_id: str,
+    media_url: str,
+    caption: Optional[str] = None,
+    media_type: str = "image",
+) -> Tuple[str, Dict[str, Any]]:
+    """Envía un archivo por URL pública. Ambos proveedores lo hacen por link,
+    sin upload previo (Twilio descarga la URL; Meta acepta `link`)."""
+    return _adapter(account).send_media(
+        account, to_wa_id, media_url, caption=caption, media_type=media_type
+    )
 
 
 def send_template(

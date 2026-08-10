@@ -39,11 +39,27 @@ class User(Base):
     )
 
 
+# Sprint 22 #318: modo operativo de un tenant.
+#   'demo'       → cuenta de demostración. Los envíos a WhatsApp se SIMULAN
+#                  siempre, sin importar TWILIO_SANDBOX/META_SANDBOX. Así una
+#                  cuenta de demo nunca gasta cuota de Meta ni le escribe a un
+#                  número real por accidente.
+#   'produccion' → cliente operando de verdad; los envíos salen reales.
+# El default es 'demo' a propósito: un tenant nuevo no debe poder enviar hasta
+# que alguien lo promueva explícitamente.
+TEAM_MODO_DEMO = "demo"
+TEAM_MODO_PRODUCCION = "produccion"
+AVAILABLE_TEAM_MODOS = (TEAM_MODO_DEMO, TEAM_MODO_PRODUCCION)
+
+
 class Team(Base):
     __tablename__ = "teams"
     id = Column(Integer, primary_key=True, index=True)
     nombre = Column(String, nullable=False)
     owner_user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    modo = Column(
+        String(16), nullable=False, default=TEAM_MODO_DEMO, server_default=TEAM_MODO_DEMO
+    )
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
     owner = relationship("User", back_populates="owned_teams", foreign_keys=[owner_user_id])

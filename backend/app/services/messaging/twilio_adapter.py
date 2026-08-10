@@ -28,7 +28,7 @@ from typing import Any, Dict, Optional, Tuple
 
 import httpx
 
-from .base import MessagingError, NormalizedInbound, NormalizedStatus
+from .base import MessagingError, NormalizedInbound, NormalizedStatus, team_is_demo
 
 logger = logging.getLogger(__name__)
 
@@ -85,18 +85,29 @@ def _resolve_creds(account) -> _Creds:
 
 
 def is_sandbox(account) -> bool:
-    """Sandbox Twilio: `TWILIO_SANDBOX=1` (default) o credenciales incompletas."""
+    """Sandbox Twilio: team en modo demo (#318), `TWILIO_SANDBOX=1` (default)
+    o credenciales incompletas."""
+    if team_is_demo(account):
+        return True
     if os.getenv("TWILIO_SANDBOX", "1") == "1":
         return True
     return not _resolve_creds(account).complete
 
 
 def _as_whatsapp(number: str) -> str:
-    """Normaliza a `whatsapp:+<E164>` (acepta con/sin '+' y con/sin prefijo)."""
+    """Normaliza a `whatsapp:<destinatario>`.
+
+    El destinatario suele ser un E.164 (`573001234567` → `whatsapp:+573001234567`),
+    pero WhatsApp también entrega **identidades opacas** cuando el usuario no
+    comparte su número, con forma `CO.3371971396308694` (prefijo de país + id).
+    A esas NO se les puede anteponer '+': Twilio las rechaza con 21211. La regla
+    es simple — sólo lo puramente numérico se convierte a E.164; cualquier otra
+    cosa se reenvía tal cual llegó, que es lo que Twilio espera para responderle.
+    """
     n = (number or "").strip()
     if n.startswith("whatsapp:"):
         return n
-    if not n.startswith("+"):
+    if not n.startswith("+") and n.isdigit():
         n = "+" + n
     return f"whatsapp:{n}"
 
@@ -157,6 +168,43 @@ def send_text(account, to_wa_id: str, body: str) -> Tuple[str, Dict[str, Any]]:
     if is_sandbox(account):
         return f"SM.local-{uuid.uuid4().hex[:24]}", {"sandbox": True, "provider": "twilio"}
     return _post_message(account, {"To": _as_whatsapp(to_wa_id), "Body": body})
+
+
+def send_media(
+    account,
+    to_wa_id: str,
+    media_url: str,
+    caption: Optional[str] = None,
+    media_type: str = "image",
+) -> Tuple[str, Dict[str, Any]]:
+    """Imagen/video/documento por URL pública (dentro de la ventana de 24h).
+
+    Twilio descarga la URL y la sube a WhatsApp por nosotros, así que no hay
+    que hacer upload previo: basta con que la URL sea pública y estable. El
+    tipo real lo infiere Twilio del `Content-Type` de la respuesta; por eso
+    `media_type` aquí es informativo (lo usamos para persistir el mensaje).
+
+    Si hay `caption`, viaja como `Body` y WhatsApp lo muestra como pie del
+    archivo.
+    """
+    if is_sandbox(account):
+        return f"MM.local-{uuid.uuid4().hex[:24]}", {"sandbox": True, "provider": "twilio"}
+
+    url = (media_url or "").strip()
+    if not url.startswith("https://"):
+        # WhatsApp rechaza media no servida por HTTPS; fallamos temprano y con
+        # un error no-retryable para que el caller haga fallback a texto.
+        raise MessagingError(
+            "La URL del archivo debe ser https pública",
+            provider="twilio",
+            status_code=0,
+            retryable=False,
+        )
+
+    data: Dict[str, str] = {"To": _as_whatsapp(to_wa_id), "MediaUrl": url}
+    if caption and caption.strip():
+        data["Body"] = caption
+    return _post_message(account, data)
 
 
 def send_template(
