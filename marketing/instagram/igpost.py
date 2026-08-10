@@ -231,6 +231,18 @@ def cmd_schedule(args: argparse.Namespace) -> None:
     if when <= datetime.now(TZ):
         sys.exit(f"error: {when:%Y-%m-%d %H:%M} ya pasó. Para publicar ahora usa `post`.")
 
+    # Guarda anti-duplicados: una pieza ya en cola o ya publicada no se vuelve a
+    # agendar por accidente. La cola es el registro de qué salió y qué no.
+    previas = [p for p in queue.load() if p.slug == slug and p.status in ("pending", "published")]
+    if previas and not args.force:
+        ultima = previas[-1]
+        estado = "ya está programada" if ultima.status == "pending" else "ya se publicó"
+        sys.exit(
+            f"error: la pieza {slug} {estado} (id={ultima.id}"
+            + (f", {ultima.permalink}" if ultima.permalink else "")
+            + "). Usa --force si de verdad quieres repetirla."
+        )
+
     print(f"Pieza: {slug} — {len(slides)} slide(s) → {when:%Y-%m-%d %H:%M} (Bogotá)")
     keys = _upload_slides(slides, slug)
     post = queue.add(slug, caption, keys, when)
@@ -265,6 +277,8 @@ def cmd_cancel(args: argparse.Namespace) -> None:
 
 def cmd_run_due(args: argparse.Namespace) -> None:
     """Punto de entrada del cron: publica todo lo que ya venció."""
+    for rescatada in queue.rescue_stale():
+        print(f"rescatada de 'publishing' huérfano: {rescatada.id} {rescatada.slug}")
     pending = queue.due()
     if not pending:
         print("Nada por publicar.")
@@ -280,6 +294,11 @@ def cmd_run_due(args: argparse.Namespace) -> None:
     failures = 0
     for post in pending:
         print(f"\n→ {post.id} {post.slug}")
+        # Claim atómico: si el botón del panel (u otro tick del cron) la tomó
+        # entre nuestra lectura y ahora, la saltamos en vez de duplicarla.
+        if queue.claim(post.id) is None:
+            print("  ya la está publicando otro proceso; se salta")
+            continue
         try:
             media_id = _publish_keys(client, post.media_keys, post.caption)
             queue.update(
@@ -352,6 +371,10 @@ def build_parser() -> argparse.ArgumentParser:
         p.add_argument("--slug", help="nombre corto de la pieza (por defecto, el de la carpeta)")
         if name == "schedule":
             p.add_argument("--at", required=True, help="'YYYY-MM-DD HH:MM' hora de Bogotá")
+            p.add_argument(
+                "--force", action="store_true",
+                help="agenda aunque la pieza ya esté en cola o publicada",
+            )
         else:
             p.add_argument("--dry-run", action="store_true")
         p.set_defaults(func=fn)

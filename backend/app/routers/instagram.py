@@ -22,7 +22,7 @@ from pydantic import BaseModel
 
 from .. import models
 from ..dependencies import get_current_user, get_db, require_gloma_account
-from ..services import instagram_queue
+from ..services import instagram_publisher, instagram_queue
 
 logger = logging.getLogger(__name__)
 
@@ -118,4 +118,39 @@ def listar_cola(user: models.User = Depends(require_gloma_account)):
             fallidas=sum(1 for p in posts if p.status == "failed"),
             canceladas=sum(1 for p in posts if p.status == "cancelled"),
         ),
+    )
+
+
+class PublicarOut(BaseModel):
+    id: str
+    status: str
+    media_id: Optional[str] = None
+    permalink: Optional[str] = None
+    error: Optional[str] = None
+
+
+@router.post("/{post_id}/publish", response_model=PublicarOut)
+def publicar_ahora(
+    post_id: str,
+    user: models.User = Depends(require_gloma_account),
+):
+    """Publica AHORA una pieza pendiente (o fallida) de la cola, sin esperar su
+    hora programada. El claim con ETag garantiza que si el cron del Mac la está
+    publicando en este instante, aquí se responde 409 en vez de duplicarla."""
+    try:
+        actualizado = instagram_publisher.publish_now(post_id)
+    except instagram_publisher.AlreadyClaimed as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
+    except instagram_publisher.NotPublishable as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+    except instagram_publisher.PublishError as exc:
+        # El detalle técnico ya quedó en el log del servicio (regla #6).
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
+
+    return PublicarOut(
+        id=actualizado.get("id", post_id),
+        status=actualizado.get("status", "published"),
+        media_id=actualizado.get("media_id"),
+        permalink=actualizado.get("permalink"),
+        error=actualizado.get("error"),
     )

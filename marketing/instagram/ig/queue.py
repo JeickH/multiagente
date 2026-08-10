@@ -28,7 +28,9 @@ logger = logging.getLogger(__name__)
 
 QUEUE_KEY = "queue/schedule.json"
 
-Status = Literal["pending", "published", "failed", "cancelled"]
+# 'publishing' es un estado transitorio: alguien (el cron o el botón del panel)
+# reclamó la pieza y está llamando a la API. Evita la publicación doble.
+Status = Literal["pending", "publishing", "published", "failed", "cancelled"]
 
 
 class QueueConflict(RuntimeError):
@@ -49,6 +51,9 @@ class ScheduledPost:
     permalink: Optional[str] = None
     error: Optional[str] = None
     attempts: int = 0
+    # Cuándo se reclamó ('publishing'). Permite rescatar piezas que quedaron
+    # atascadas si el proceso murió a mitad de la publicación.
+    claimed_at: Optional[str] = None
 
     @property
     def due_at(self) -> datetime:
@@ -133,3 +138,43 @@ def update(post_id: str, **changes: Any) -> ScheduledPost:
 
 def due(now: Optional[datetime] = None) -> list[ScheduledPost]:
     return [p for p in load() if p.is_due(now)]
+
+
+def claim(post_id: str) -> Optional[ScheduledPost]:
+    """Reclama una pieza para publicarla: pending/failed → publishing.
+
+    Relee la cola y escribe con IfMatch, así que si otro proceso (el cron o el
+    botón del panel) la reclamó un instante antes, esta llamada devuelve None y
+    el llamador simplemente no publica. Es la barrera anti-duplicados.
+    """
+    raw, etag = _load_raw()
+    posts = [ScheduledPost(**item) for item in raw]
+    target = next((p for p in posts if p.id == post_id), None)
+    if target is None or target.status not in ("pending", "failed"):
+        return None
+    target.status = "publishing"
+    target.claimed_at = datetime.now(timezone.utc).astimezone().isoformat()
+    try:
+        _save(posts, etag)
+    except QueueConflict:
+        return None
+    return target
+
+
+# Una pieza 'publishing' más vieja que esto quedó huérfana (el proceso murió a
+# mitad de camino): run-due la devuelve a 'pending' para reintentarla.
+STALE_CLAIM_MINUTES = 30
+
+
+def rescue_stale(now: Optional[datetime] = None) -> list[ScheduledPost]:
+    from datetime import timedelta
+
+    now = now or datetime.now(timezone.utc)
+    rescued = []
+    for p in load():
+        if p.status != "publishing" or not p.claimed_at:
+            continue
+        edad = now - datetime.fromisoformat(p.claimed_at)
+        if edad > timedelta(minutes=STALE_CLAIM_MINUTES):
+            rescued.append(update(p.id, status="pending", claimed_at=None))
+    return rescued

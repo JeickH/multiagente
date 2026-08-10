@@ -2400,3 +2400,84 @@ otra sesión recibe 403 en `/instagram` aunque tenga JWT válido.
 - **#332 — `connect --token`.** Se añadió el camino corto: además del flujo OAuth
   (`auth-url` → `connect --code`), `connect --token` acepta el token que genera
   directamente la consola de Meta en "Instagram API setup with Instagram login".
+
+### 5. Segundo ajuste (misma sesión) — pieza fijada sin marca; el resto marcado
+
+**Pedido del CEO:** aplicar el cambio de nombre solo en la `25`; las demás menciones quedan
+marcadas para cambiarlas cuando se defina el nombre nuevo.
+
+- `25_esta_cuenta_no_es_para_viajeros` slide 1: kicker «Hola, somos Gloma» → **«Primera
+  publicación»**. Re-renderizado. El copy del plan también quedó sin la marca y el hashtag
+  `#Gloma` se quitó de esa pieza: la fijada del perfil ya es 100 % neutra.
+- `01_mensaje_1147pm` slide 5 y `15_cliente_mientras_espera` slide 5: comentario
+  **`REBRAND-PENDIENTE`** en `piezas.py` (líneas 34 y 404) para encontrarlas con un grep.
+  La tabla de estado y el procedimiento de cambio quedaron en el plan, Parte 3 →
+  «Exposición a un cambio de nombre de marca».
+
+### Avance #327 — app de Meta creada, credenciales en SSM (2026-08-09)
+
+El CEO creó la app (App ID `3255528234634515`) y se corrió `setup-app`: App ID y
+App Secret quedaron en SSM `/gloma/marketing/instagram/` (el secret como
+SecureString; nunca en `.env` ni en esta bitácora). Falta el último paso —
+vincular la cuenta de Instagram— bloqueado por un "Insufficient Developer Role"
+en la consola de Meta: la cuenta de IG debe agregarse como **Instagram Tester**
+en Roles de la app y aceptar la invitación desde Instagram. No es un problema
+del rol del CEO (ya es admin, que incluye developer).
+
+### 6. Tercer ajuste (2026-08-10) — la 28 no debe negar que el agente cierra ventas
+
+**Pedido del CEO:** corregir la `28` porque el bot puede que sí cierre la venta.
+
+- `28_que_hace_el_agente` slide 3: *«No cierra la venta por ti, no reemplaza a tu equipo y no
+  improvisa un precio»* → **«No improvisa un precio, no inventa disponibilidad y no reemplaza el
+  criterio de tu equipo. Lo que no sabe, lo escala. La venta sencilla, la cierra completa.»**
+  Re-renderizado y verificado.
+- Copy del plan alineado: la venta sencilla la cierra el agente de principio a fin; la que pide
+  criterio humano llega al equipo con el contexto recogido. El límite del producto es inventar
+  información, no vender.
+
+### Prueba end-to-end del flujo completo (2026-08-10) — EXITOSA
+
+Cuenta conectada: **@1000_exp** (Business, IG user id `27847761091553677`), token de
+larga duración en SSM, vence 2026-10-09 y se renueva solo (launchd semanal).
+
+**Pedido del CEO:** agendar las piezas 25-28 con 2 min de diferencia para probar
+todo el flujo, con registro de publicadas/no publicadas para evitar duplicados.
+
+| Pieza | Estado | Permalink |
+|---|---|---|
+| 25_esta_cuenta_no_es_para_viajeros (4 slides) | ✅ published | instagram.com/p/Db2P50tkYsA |
+| 26_que_vas_a_encontrar_aqui (6 slides) | ✅ published | instagram.com/p/Db2QGhTkS6q |
+| 27_el_viajero_cambio (6 slides) | ✅ published | instagram.com/p/Db2QTL1kZYQ |
+| 28_que_hace_el_agente (5 slides, slide 3 corregido) | ✅ published | instagram.com/p/Db2Qf7MEVPg |
+
+Los captions salieron del plan (`plan_contenido_instagram_gloma.md`), respetando el
+rebrand: 25 y 28 **sin** #Gloma, 26 y 27 con él. Markdown (`**`) removido porque
+Instagram no lo renderiza.
+
+**Bug encontrado y arreglado — el cron no arrancaba (TCC de macOS):** launchd no
+puede leer `~/Documents` (exit 127, `can't open input file`). El runner ahora se
+instala en `~/Library/Application Support/gloma-igpost/` con
+`marketing/instagram/launchd/install.sh` (correrlo tras cada cambio del publicador);
+logs en `~/Library/Logs/gloma-igpost/`. La primera pieza salió en el primer tick
+tras el arreglo; las otras 3 salieron a su hora exacta (00:21, 00:23, 00:25).
+
+**Registro anti-duplicados (pedido del CEO):** la cola en S3 es el registro — cada
+pieza guarda `status`/`media_id`/`permalink`, visible en `igpost.py list` y en la
+pestaña 📸 de la app. Doble barrera: (a) `schedule` rechaza re-agendar una pieza
+`pending`/`published` (probado: rechazó la 25 con su id); (b) claim atómico por
+ETag: pending→publishing→published, así el cron y el botón no pueden publicar la
+misma pieza dos veces (quien pierde la carrera recibe 409). Piezas huérfanas en
+`publishing` >30 min se rescatan a `pending` automáticamente.
+
+**#333 — Botón "Publicar ahora" en el panel (pedido del CEO):**
+`POST /instagram/{id}/publish` publica una pieza pendiente o fallida sin esperar su
+hora. Réplica server-side del publicador (`services/instagram_publisher.py`, el CLI
+no viaja en la imagen Docker) que comparte cola y claim con el cron. IAM: el task
+role ganó `ssm:GetParameter` sobre `/gloma/marketing/instagram/*` y `s3:PutObject`
+sobre `queue/*`. Frontend: botón 🚀 con confirmación en tarjetas pending/failed,
+badge "Publicando…". Tests: 20 del módulo (claims, carreras de ETag, 409), suite
+completa **103 passed**.
+
+Pendientes que siguen abiertos: #331 (cronogramar el resto de piezas con calendario
+real), #329→deploy de esta tanda, #330 (vida de URLs prefirmadas).

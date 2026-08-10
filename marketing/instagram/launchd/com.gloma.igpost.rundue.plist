@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.gloma.igpost.rundue</string>
+  <!-- OJO: todo apunta a ~/Library, NUNCA a ~/Documents — TCC le niega
+       Documents a launchd y el job muere con "can't open input file".
+       Tras cambiar el código del publicador, correr launchd/install.sh. -->
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/zsh</string>
+    <string>/Users/equipo/Library/Application Support/gloma-igpost/run_due.sh</string>
+  </array>
+  <key>StartInterval</key>
+  <integer>60</integer>
+  <key>StandardOutPath</key>
+  <string>/Users/equipo/Library/Logs/gloma-igpost/run_due.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/equipo/Library/Logs/gloma-igpost/run_due.log</string>
+</dict>
+</plist>

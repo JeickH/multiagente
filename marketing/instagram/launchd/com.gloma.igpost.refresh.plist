@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.gloma.igpost.refresh</string>
+  <!-- Renueva el token de larga duración (60 días) cada lunes a las 9:00.
+       Cada renovación reinicia el contador. Si el lunes el Mac estaba
+       apagado, launchd corre el job pendiente al despertar.
+       Corre desde ~/Library (TCC bloquea ~/Documents a launchd). -->
+  <key>ProgramArguments</key>
+  <array>
+    <string>/opt/anaconda3/envs/multiagente/bin/python</string>
+    <string>/Users/equipo/Library/Application Support/gloma-igpost/igpost.py</string>
+    <string>refresh-token</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>/Users/equipo/Library/Application Support/gloma-igpost</string>
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Weekday</key>
+    <integer>1</integer>
+    <key>Hour</key>
+    <integer>9</integer>
+    <key>Minute</key>
+    <integer>0</integer>
+  </dict>
+  <key>StandardOutPath</key>
+  <string>/Users/equipo/Library/Logs/gloma-igpost/refresh.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/equipo/Library/Logs/gloma-igpost/refresh.log</string>
+</dict>
+</plist>

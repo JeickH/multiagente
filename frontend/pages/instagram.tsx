@@ -49,6 +49,7 @@ type ColaResponse = {
 
 const ESTADO_STYLE: Record<string, { bg: string; color: string; label: string }> = {
   pending: { bg: '#FEF3C7', color: '#92400E', label: 'Programada' },
+  publishing: { bg: '#DBEAFE', color: '#1E40AF', label: 'Publicando…' },
   published: { bg: '#E0F2F1', color: '#004D40', label: 'Publicada' },
   failed: { bg: '#FEE2E2', color: '#991B1B', label: 'Falló' },
   cancelled: { bg: '#F3F4F6', color: '#4B5563', label: 'Cancelada' },
@@ -132,10 +133,37 @@ function Resumen({ resumen }: { resumen: ColaResponse['resumen'] }) {
   );
 }
 
-function TarjetaPublicacion({ pub }: { pub: Publicacion }) {
+function TarjetaPublicacion({
+  pub,
+  onRefresh,
+}: {
+  pub: Publicacion;
+  onRefresh: () => void;
+}) {
   const [abierto, setAbierto] = useState(false);
+  const [publicando, setPublicando] = useState(false);
+  const [errorPub, setErrorPub] = useState<string | null>(null);
   const esFutura = pub.status === 'pending';
   const fecha = esFutura ? pub.publish_at : pub.published_at ?? pub.publish_at;
+
+  const publicarAhora = async () => {
+    const ok = window.confirm(
+      `¿Publicar "${pub.slug}" en Instagram AHORA?\n\nEsto la sube de inmediato, sin esperar su hora programada. No se puede deshacer.`
+    );
+    if (!ok) return;
+    setPublicando(true);
+    setErrorPub(null);
+    try {
+      await authedFetch(`/instagram/${pub.id}/publish`, { method: 'POST' });
+      onRefresh();
+    } catch (e) {
+      setErrorPub(e instanceof Error ? e.message : 'No se pudo publicar.');
+      // El estado real (p.ej. la tomó el cron a la vez) lo trae el refresh.
+      onRefresh();
+    } finally {
+      setPublicando(false);
+    }
+  };
 
   return (
     <article className="bg-white border border-gloma-rose rounded-xl p-5">
@@ -156,17 +184,35 @@ function TarjetaPublicacion({ pub }: { pub: Publicacion }) {
           </p>
         </div>
 
-        {pub.permalink && (
-          <a
-            href={pub.permalink}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-sm px-3 py-1.5 rounded-lg border border-gloma-brown text-gloma-brown hover:bg-gloma-brown hover:text-white transition-colors whitespace-nowrap"
-          >
-            Ver en Instagram ↗
-          </a>
-        )}
+        <div className="flex items-center gap-2">
+          {(pub.status === 'pending' || pub.status === 'failed') && (
+            <button
+              type="button"
+              onClick={() => void publicarAhora()}
+              disabled={publicando}
+              className="text-sm px-3 py-1.5 rounded-lg bg-gloma-brown text-white hover:bg-gloma-brown-dark transition-colors whitespace-nowrap disabled:opacity-50"
+            >
+              {publicando ? 'Publicando…' : '🚀 Publicar ahora'}
+            </button>
+          )}
+          {pub.permalink && (
+            <a
+              href={pub.permalink}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-sm px-3 py-1.5 rounded-lg border border-gloma-brown text-gloma-brown hover:bg-gloma-brown hover:text-white transition-colors whitespace-nowrap"
+            >
+              Ver en Instagram ↗
+            </a>
+          )}
+        </div>
       </div>
+
+      {errorPub && (
+        <p className="mt-3 text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+          {errorPub}
+        </p>
+      )}
 
       {pub.error && (
         <p className="mt-3 text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
@@ -366,7 +412,7 @@ export default function InstagramPage() {
 
             <div className="space-y-4">
               {visibles.map((pub) => (
-                <TarjetaPublicacion key={pub.id} pub={pub} />
+                <TarjetaPublicacion key={pub.id} pub={pub} onRefresh={() => void cargar()} />
               ))}
             </div>
           </>

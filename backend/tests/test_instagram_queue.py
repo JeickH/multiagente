@@ -207,5 +207,123 @@ class TestRouter(unittest.TestCase):
         self.assertNotIn("AccessDenied", resp.json()["detail"])
 
 
+class _FakeQueueS3:
+    """Doble de S3 para el publicador: cola en memoria con ETag simulado."""
+
+    def __init__(self, items, conflict_on_put=False):
+        self.items = items
+        self.etag = "v1"
+        self.conflict_on_put = conflict_on_put
+        self.puts = 0
+
+    def get_object(self, **_kw):
+        body = json.dumps(self.items).encode()
+        return {"Body": mock.Mock(read=lambda: body), "ETag": self.etag}
+
+    def put_object(self, **kw):
+        if self.conflict_on_put:
+            raise _client_error("PreconditionFailed")
+        self.puts += 1
+        self.items = json.loads(kw["Body"])
+        self.etag = f"v{self.puts + 1}"
+        return {}
+
+    def generate_presigned_url(self, _op, Params, ExpiresIn):  # noqa: N803
+        return f"https://s3.test/{Params['Key']}"
+
+
+class TestPublisher(unittest.TestCase):
+    """Claim atómico y transiciones de estado del botón 'Publicar ahora'."""
+
+    def _patch_s3(self, fake):
+        from app.services import instagram_publisher as pub
+
+        return mock.patch.object(pub, "_s3", return_value=fake)
+
+    def test_claim_pieza_pendiente(self):
+        from app.services import instagram_publisher as pub
+
+        fake = _FakeQueueS3([_item()])
+        with self._patch_s3(fake):
+            claimed = pub._claim("abc123")
+        self.assertEqual(claimed["status"], "publishing")
+        self.assertEqual(fake.items[0]["status"], "publishing")
+
+    def test_claim_rechaza_ya_publicada(self):
+        from app.services import instagram_publisher as pub
+
+        with self._patch_s3(_FakeQueueS3([_item(status="published")])):
+            with self.assertRaises(pub.NotPublishable):
+                pub._claim("abc123")
+
+    def test_claim_rechaza_en_vuelo(self):
+        """Si el cron la está publicando ahora mismo → AlreadyClaimed (409)."""
+        from app.services import instagram_publisher as pub
+
+        with self._patch_s3(_FakeQueueS3([_item(status="publishing")])):
+            with self.assertRaises(pub.AlreadyClaimed):
+                pub._claim("abc123")
+
+    def test_claim_pierde_la_carrera_del_etag(self):
+        """El cron escribió entre nuestra lectura y escritura → AlreadyClaimed."""
+        from app.services import instagram_publisher as pub
+
+        with self._patch_s3(_FakeQueueS3([_item()], conflict_on_put=True)):
+            with self.assertRaises(pub.AlreadyClaimed):
+                pub._claim("abc123")
+
+    def test_publish_now_publica_y_marca(self):
+        from app.services import instagram_publisher as pub
+
+        fake = _FakeQueueS3([_item()])
+        with self._patch_s3(fake), mock.patch.object(
+            pub, "_credentials", return_value=("tok", "999")
+        ), mock.patch.object(pub, "_publish_media", return_value="MEDIA1"), mock.patch.object(
+            pub, "_graph", return_value={"permalink": "https://instagram.com/p/x"}
+        ):
+            resultado = pub.publish_now("abc123")
+
+        self.assertEqual(resultado["status"], "published")
+        self.assertEqual(resultado["media_id"], "MEDIA1")
+        self.assertEqual(fake.items[0]["status"], "published")
+
+    def test_publish_now_fallo_vuelve_a_pending(self):
+        from app.services import instagram_publisher as pub
+
+        fake = _FakeQueueS3([_item()])
+        with self._patch_s3(fake), mock.patch.object(
+            pub, "_credentials", return_value=("tok", "999")
+        ), mock.patch.object(
+            pub, "_publish_media", side_effect=pub.PublishError("Instagram rechazó")
+        ):
+            with self.assertRaises(pub.PublishError):
+                pub.publish_now("abc123")
+
+        self.assertEqual(fake.items[0]["status"], "pending")
+        self.assertEqual(fake.items[0]["attempts"], 1)
+
+    def test_endpoint_mapea_conflicto_a_409(self):
+        from app.services import instagram_publisher as pub
+
+        router_test = TestRouter()
+        app = router_test._app()
+        with mock.patch.object(
+            pub, "publish_now", side_effect=pub.AlreadyClaimed("en vuelo")
+        ):
+            resp = router_test._client(app).post("/instagram/abc123/publish")
+        self.assertEqual(resp.status_code, 409)
+
+    def test_endpoint_publica(self):
+        from app.services import instagram_publisher as pub
+
+        router_test = TestRouter()
+        app = router_test._app()
+        publicado = _item(status="published", media_id="M1", permalink="https://ig/p")
+        with mock.patch.object(pub, "publish_now", return_value=publicado):
+            resp = router_test._client(app).post("/instagram/abc123/publish")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.json()["media_id"], "M1")
+
+
 if __name__ == "__main__":
     unittest.main()
