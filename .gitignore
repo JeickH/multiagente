@@ -39,6 +39,12 @@ CREDENCIALES*.txt
 talulah bots/
 tallas talulah/
 demo_viajes/
-marketing/
+# `marketing/` guarda material crudo (piezas, briefs) que no va a git. La
+# excepción es el publicador de Instagram: es código sin secretos —las
+# credenciales viven en SSM— y necesita historia y respaldo.
+# Nota: hay que desexcluir el directorio padre (`marketing/*`) porque git no
+# desciende a un directorio excluido.
+marketing/*
+!marketing/instagram/
 
 BITACORA_*

@@ -2046,3 +2046,228 @@ hero pasó de **"Escríbenos por WhatsApp"** a **"Hablar con un asesor"** y abre
 mismo chat (sin mensaje previo: el bot saluda). Implementación: `OPEN_CHAT_EVENT`
 acepta `detail.message`; cuando llega, el widget lo pinta como mensaje del visitante,
 lo envía y se salta el turno de saludo. El enlace a WhatsApp del footer se mantiene.
+
+---
+
+## Sprint 22 — WABA real de "Arranquemos Pues" vía Twilio (2026-08-09)
+
+**Pedido del CEO (2026-08-09):** conectar una cuenta WABA real a la cuenta demo de
+la agencia de viajes, cambiándole el correo a `arranquemospues.contacto@gmail.com`
+con contraseña nueva, dejando el canal conectado por Twilio y capaz de enviar un
+**mensaje de marketing** al número de prueba **+57 315 076 4000**. Requisito
+adicional a mitad de sprint: la conexión debe vivir en una **subcuenta** de Twilio
+llamada "Arranquemos Pues", no en la cuenta principal, porque Gloma opera como
+agencia (modelo ISV).
+
+### 1. Tareas del Sprint 22
+
+| # | Tarea | Agente | Descripción |
+|---|---|---|---|
+| #303 | Reasignar correo + password de la cuenta demo | `dev-plataforma` | `migrate_sprint22_agencia_credenciales.py` idempotente, aplicado en local y RDS. |
+| #304 | Subcuenta Twilio del tenant | `deploy-aws` | Subcuenta "Arranquemos Pues" vía API; Auth Token en archivo git-ignorado 0600. |
+| #305 | Registro del sender WABA | CEO (navegador) | Embedded Signup con Meta: no es automatizable por API sin Tech Provider Program. |
+| #306 | Conectar credenciales al team | `dev-plataforma` | `connect_twilio_waba.py`: `meta_accounts.provider='twilio'` + Auth Token cifrado con Fernet. |
+| #307 | Webhooks de entrada y estado | `deploy-aws` | Senders API → `api.glomabeauty.com/twilio/webhook` y `/twilio/status`. |
+| #308 | Salida del sandbox de Twilio en prod | `deploy-aws` | `TWILIO_SANDBOX=0` en task-def; `META_SANDBOX` sin tocar. |
+| #309 | Plantilla de marketing + aprobación de Meta | `dev-plataforma` | Content API + ApprovalRequests, categoría MARKETING con opt-out. |
+
+### 2. Log de ejecución del Sprint 22
+
+| Fecha | Agente | Nota |
+|---|---|---|
+| 2026-08-09 | Dev Plataforma | **#303 credenciales de la cuenta demo.** `agencia@demo.com` → `arranquemospues.contacto@gmail.com` con password nueva. Script idempotente que busca primero por el correo nuevo (re-ejecutable sin efectos). Aplicado en **local** (user_id=9) y en **RDS** (user_id=7); login verificado contra `https://api.glomabeauty.com/login` → HTTP 200. Herramienta nueva `backend/scripts/rds_exec.sh`, hermano de `rds_query.sh`, para correr scripts que **todavía no están en la imagen de ECR** (van inline como `python -c`). Regla adoptada: por ahí **nunca viaja un secreto en claro** — los overrides de `ecs run-task` quedan en CloudTrail, así que se pasa el hash bcrypt ya calculado (`AGENCIA_PWD_HASH`) y, para el token de Twilio, el ciphertext Fernet ya cifrado (`TW_AUTH_TOKEN_ENC`). Se confirmó que la `APP_ENCRYPTION_KEY` local y la de SSM **son distintas**, así que cada entorno se cifra con la suya. |
+| 2026-08-09 | Deploy AWS | **#304 subcuenta Twilio.** Creada "Arranquemos Pues" `AC5330…` (SID completo en `CREDENCIALES_TWILIO_ARRANQUEMOS.txt`) bajo la matriz "Talulah". Auth Token en `CREDENCIALES_TWILIO_ARRANQUEMOS.txt`, permisos 0600, cubierto por el patrón `CREDENCIALES*.txt` del `.gitignore` (verificado con `git check-ignore`). |
+| 2026-08-09 | CEO | **#305 Embedded Signup.** Liberó su número del WABA anterior en Meta Business (se confirmó antes que Meta lo permitía: no había enviado mensajes pagos en 30 días) y corrió el Self Sign-up. Resultado: sender **`whatsapp:+573334324954`**, status **ONLINE**, WABA `1028327816859906`, nombre visible "Agencia de viajes Arranquemos Pues", límite 250 clientes/24h (normal para WABA sin verificación de negocio). |
+| 2026-08-09 | Deploy AWS | **#305b el sender quedó en la matriz, no en la subcuenta.** La consola de Twilio solo ofreció la cuenta principal para el Self Sign-up. Investigado y confirmado en la documentación: (a) mover un sender entre cuentas de Twilio **no es self-service**, requiere ticket a Support con número + WABA ID origen y destino; (b) **una cuenta/subcuenta de Twilio se mapea a un solo WABA**, relación 1:1 — apuntar la subcuenta al WABA de la matriz da error 63102; (c) registrar senders dentro de subcuentas exige estar en el **Tech Provider Program** de Meta e integrar el Embedded Signup en la propia app. Se descartó rehacer el signup: volvería a caer en la matriz y además reiniciaría la aprobación de la plantilla, que está atada al WABA. Decisión: operar hoy desde la matriz, dejar la subcuenta creada esperando, y abrir el follow-up. |
+| 2026-08-09 | Dev Plataforma | **#306 conexión del canal al tenant.** `connect_twilio_waba.py` escribe `meta_accounts` con `provider='twilio'`, `twilio_account_sid`, `encrypted_twilio_auth_token` (Fernet), `twilio_from='whatsapp:+573334324954'`, `waba_id` y `status='active'`. Aplicado en **local** (team 9 → meta_account 4) y **RDS** (team 5 → meta_account 3). Paridad local↔RDS cumplida (convención #1). El script redacta el token en su salida (regla #1). |
+| 2026-08-09 | Deploy AWS | **#307 webhooks.** Senders API → `callback_url=https://api.glomabeauty.com/twilio/webhook` y `status_callback_url=.../twilio/status`, ambos POST. La verificación HMAC de `twilio_webhook.py` usa el `TWILIO_AUTH_TOKEN` global (SSM), que hoy es el de la matriz — **coincide** con la cuenta que firma, así que valida bien. Cuando el sender se mueva a la subcuenta, Twilio firmará con el token de la subcuenta y esto se rompe: ver follow-up #311. |
+| 2026-08-09 | Deploy AWS | **#308 salida del sandbox.** Task-def **rev 20** con `TWILIO_SANDBOX=0` (imagen `:sprint21` sin cambios). `META_SANDBOX` se dejó en `1` a propósito: gobierna las cuentas `provider='meta'` y no debe moverse. El único tenant con `provider='twilio'` es la agencia, así que el cambio no expone a ningún otro cliente a envíos reales. |
+| 2026-08-09 | Dev Plataforma | **#314 BUG: el bot nunca envió multimedia.** Reportado por el CEO tras la primera conversación real por WhatsApp. Causa raíz: la acción `say_media` del `bot_runner` tenía un MVP de Sprint 8 que **solo enviaba el caption como texto** (`_send_text(..., caption or "[archivo multimedia]")`), y como el motor LLM emite los `say_media` con caption vacío (el texto va en un `say` aparte), lo que llegaba al contacto era el literal `[archivo multimedia]`. Evidencia en RDS, conversación 8: mensajes 28, 30, 34, 35 y 36 con `message_type='text'` y ese contenido. **Arreglo:** `send_media()` nuevo en `twilio_adapter` (parámetro `MediaUrl`; Twilio descarga la URL y la sube a WhatsApp, sin upload previo; el caption viaja como `Body`), `send_media_message()` en `meta_whatsapp` (por `link`, soporta image/video/document/audio y omite caption en audio), despacho `send_media()` en el puerto agnóstico, y `_send_media()` en el `bot_runner` que persiste el mensaje con su `message_type` real y la URL en `content` — con **fallback a texto con el enlace** si el proveedor falla, para que el turno del bot nunca quede mudo. Guarda temprana: si la URL no es `https://`, error no-retryable (WhatsApp rechaza media no-HTTPS). Verificado en local contra el número real con ventana de 24h abierta: imagen `MM45dcb432f490` y video `MMd1758bca2063`, ambos **delivered**. |
+| 2026-08-09 | Dev Plataforma | **#317 BUG CRÍTICO: el bot quedaba mudo con contactos sin número visible.** Reportado por el CEO al probar desde otro WhatsApp. Twilio devolvía `21211 Invalid 'To' Phone Number` en **todos** los envíos de esa conversación (texto y media), con el bot fallando en `_send_text`. Causa raíz: WhatsApp no siempre entrega un E.164 en el `From` — cuando el usuario no comparte su número llega una **identidad opaca** con forma `CO.3371971396308694` (prefijo de país + id). `_as_whatsapp()` le anteponía '+' a ciegas y producía `whatsapp:+CO.3371971396308694`, que Twilio rechaza. Evidencia: conversación 9 en RDS con `contact_wa_id='CO.3371971396308694'` y mensajes 44 y 46 en `status='failed'`. **Verificación empírica antes de codear:** se probó contra la API real que `To=whatsapp:CO.3371971396308694` (sin '+') es aceptado → `delivered`. **Arreglo:** `_as_whatsapp()` sólo convierte a E.164 lo que sea `isdigit()`; cualquier otra cosa se reenvía verbatim, que es lo que Twilio espera. Re-probado por el camino real de la app: texto `SM5286b2543035` **delivered** e imagen `MM904f85606c8d` **sent**. Tests nuevos en `backend/tests/test_twilio_adapter.py` (17 casos: E.164 en 4 variantes, 3 identidades opacas, sandbox de texto y media, guarda de URL no-HTTPS, mapeo de estados). Suite: **73 passed** (el error de colección de `test_meta_account_flow.py` es el preexistente de SQLite + JSONB del Sprint 15). |
+| 2026-08-09 | Experto BD + Dev Plataforma | **#318 modo operativo por tenant: `teams.modo`.** Pedido del CEO al pasar de demo a operación real: necesita distinguir qué cuentas son de demostración y cuáles están conectadas de verdad, porque conviven ambas. Columna `teams.modo VARCHAR(16) NOT NULL DEFAULT 'demo'` (+ índice), con valores `demo` \| `produccion`. **No es una etiqueta decorativa:** `messaging/base.team_is_demo()` se consulta desde `is_sandbox()` de **ambos** adaptadores, así que un team en `demo` se simula siempre — aunque tenga credenciales válidas y `TWILIO_SANDBOX=0`/`META_SANDBOX=0`. Objetivo: que una cuenta de demostración no le escriba nunca a un número real ni queme cuota del WABA. Decisiones de diseño: (a) default `demo`, para que un tenant nuevo no pueda enviar hasta ser promovido explícitamente; (b) cualquier valor distinto de `'produccion'` cuenta como demo (no hay forma de habilitar envíos por un typo); (c) si la relación `account.team` no se puede leer, se asume demo y se loggea error — ante la duda, no enviar. Migración idempotente `migrate_sprint22_team_modo.py` (`ADD COLUMN IF NOT EXISTS` + backfill + índice), aplicada en **local** (team 9 → produccion) y **RDS** (team 5 → produccion); Talulah, Gloma y el resto quedaron en `demo`. Expuesto en `schemas.TeamOut.modo` para que el frontend pinte el distintivo. Tests: `backend/tests/test_team_modo.py` (10 casos). Suite: **83 passed**. |
+| 2026-08-09 | QA + Dev Plataforma | **#318b la API mentía sobre el modo.** Al verificar #318 en producción, `GET /teams/me` devolvía `modo='demo'` para el team 5, que en RDS está en `produccion`. Causa: `routers/teams.py` construye `TeamOut` **campo por campo** y no pasaba `modo`, así que ganaba el default del schema. **El gate de envío NO estaba afectado** — lee `account.team.modo` directo del ORM, así que Arranquemos Pues sí enviaba real; el bug era de reporte, pero de los que confunden un diagnóstico. Arreglo doble: (a) el router pasa `modo=member.team.modo`; (b) se **quitó el default** de `TeamOut.modo` para que un call-site que lo olvide falle ruidosamente en vez de reportar 'demo' para un tenant en producción. Verificado que `TeamOut(...)` es el único punto de construcción. Suite: **83 passed**. Producción: imagen `:sprint25`. |
+| 2026-08-09 | Dev Plataforma | **#309 plantilla de marketing.** `arranquemos_pues_promo_viajes` (`HX0e607e9b09f36c6ec8c9b91c25344b9f`), tipo `twilio/quick-reply`, idioma `es`, variable `{{1}}`=nombre, con dos botones: "Ver los planes" y **"No enviar más"** — el opt-out es buena práctica y sube la probabilidad de aprobación en categoría MARKETING. Enviada a Meta vía `ApprovalRequests/whatsapp`, categoría MARKETING. |
+
+### 3. Entregables del Sprint 22
+
+| # | Entregable | Dónde |
+|---|---|---|
+| #303 | Migración de credenciales + runner de scripts en RDS | `backend/scripts/migrate_sprint22_agencia_credenciales.py`, `backend/scripts/rds_exec.sh` |
+| #304 | Subcuenta Twilio del tenant | `AC5330…` (SID completo en `CREDENCIALES_TWILIO_ARRANQUEMOS.txt`), `CREDENCIALES_TWILIO_ARRANQUEMOS.txt` |
+| #306 | Conexión WABA↔team | `backend/scripts/connect_twilio_waba.py` |
+| #308 | Producción | task-def rev 20 (`TWILIO_SANDBOX=0`) |
+| #309 | Plantilla de marketing | Content SID `HX0e607e9b09f36c6ec8c9b91c25344b9f` |
+| #314 | Envío real de multimedia (Twilio + Meta) | `services/messaging/twilio_adapter.py`, `services/messaging/meta_adapter.py`, `services/messaging/__init__.py`, `services/meta_whatsapp.py`, `services/bot_runner.py` |
+| #314 | Producción con el arreglo | imagen `:sprint22`, task-def rev 21 |
+| #317 | Identidades opacas de WhatsApp (no-E.164) | `services/messaging/twilio_adapter.py` (`_as_whatsapp`) |
+| #317 | Tests del adaptador Twilio (17 casos) | `backend/tests/test_twilio_adapter.py` |
+| #317 | Producción con el arreglo | imagen `:sprint23`, task-def rev 22 |
+| #318 | Modo por tenant (demo/producción) con gate real de envío | `models.py`, `services/messaging/base.py`, `twilio_adapter.py`, `meta_adapter.py`, `schemas.py`, `backend/scripts/migrate_sprint22_team_modo.py`, `backend/tests/test_team_modo.py` |
+| #318 | Producción | imagen `:sprint24`, task-def rev 23 |
+
+### 4. Follow-ups abiertos
+
+- **#310 — Migrar el sender a la subcuenta.** Ticket a Twilio Support: número
+  `+573334324954`, WABA `1028327816859906`, origen `AC448d…` (SID completo en `CREDENCIALES_TWILIO.txt`),
+  destino `AC5330…` (SID completo en `CREDENCIALES_TWILIO_ARRANQUEMOS.txt`). Al completarse, re-correr
+  `connect_twilio_waba.py` con el SID de la subcuenta y actualizar SSM.
+- **#311 — Verificación HMAC del webhook por tenant.** Hoy `twilio_webhook._verify_signature`
+  lee el `TWILIO_AUTH_TOKEN` global. Con senders en subcuentas cada tenant firma con
+  **su** token, así que hay que resolver el token desde `meta_accounts` del tenant
+  destinatario. Es bloqueante para el modelo multi-tenant real (y para #310).
+### 5. Auditoría de "listos para operar" (2026-08-09, pedido del CEO)
+
+Estado real medido contra AWS y la BD, no supuesto. Prioridad de mayor a menor:
+
+**Bloqueantes**
+
+- **#319 — Secretos en texto plano en la task-def.** `POSTGRES_PASSWORD` y `SECRET_KEY`
+  viajan como `environment` plano: visibles en la consola de ECS y en CloudTrail.
+  `APP_ENCRYPTION_KEY`, `INTERNAL_API_KEY` y los `TWILIO_*` sí están bien, como
+  `secrets` desde SSM. Viola la regla de seguridad #1 del proyecto. Arreglo: moverlos
+  a SSM SecureString y referenciarlos en `secrets`.
+- **#229/#320 — Las campañas no funcionan con Twilio.** `routers/templates.py` habla
+  **solo con Meta** (`meta_templates`, cero referencias a Twilio/ContentSid) y
+  `campaign_sender` le pasa `template.name` al adaptador, pero `twilio_adapter
+  .send_template` espera un **Content SID** (`HX...`). Resultado: hoy no se puede
+  lanzar una campaña desde la app para el único tenant real. Hace falta el mapeo
+  nombre→ContentSid y que el módulo de plantillas sepa de Twilio (crear y consultar
+  aprobaciones vía Content API, como se hizo a mano en #309).
+- **#321 — RDS sin red de seguridad.** `BackupRetentionPeriod=1`, `MultiAZ=false`,
+  `DeletionProtection=false`. Con datos de clientes reales esto no se sostiene:
+  subir retención a 7-14 días y activar deletion protection son dos comandos.
+- **#322 — Cero alarmas de CloudWatch** (`describe-alarms` → 0). No hay aviso si el
+  backend se cae, si la CPU se dispara o si los envíos empiezan a fallar.
+
+**Importantes para operar con clientes**
+
+- **#323 — Al asesor no le llega ningún aviso en el handoff.** El bot reasigna la
+  conversación pero no notifica por ningún canal. Combinado con #315 (no se puede
+  devolver al bot), un prospecto puede quedar esperando indefinidamente.
+- **#324 — Un solo task de ECS, sin circuit breaker ni health check grace**
+  (`desiredCount=1`, `deploymentCircuitBreaker.enable=false`,
+  `healthCheckGracePeriodSeconds=0`): un deploy malo no hace rollback solo.
+- **#325 — Cuentas de prueba en la BD de producción**: `ceo@test.com`,
+  `test_proxy@example.com`, `smoke1775830259@gmail.com`, `prueba@gmail.com`.
+- **#326 — Límite de 250 conversaciones/24h** hasta que Arranquemos Pues complete su
+  verificación de negocio con Meta (la del cliente, no la de Gloma — ver #312).
+
+**Deuda ya conocida**: Alembic (gotcha histórico), #311 HMAC por tenant, #313 UI para
+conectar canal, #315 reasignar conversación, #316 render de multimedia en la app.
+
+- **#310b — Descartado: la Senders API NO sirve para llevar el WABA a la subcuenta.**
+  Probado empíricamente el 2026-08-09 a pedido del CEO (a raíz del changelog de GA de
+  la Senders API). `POST /v2/Channels/Senders` desde la **subcuenta**, con
+  `configuration.waba_id` = `1028327816859906` (el WABA de la matriz) y el número
+  mágico de pruebas `+15005550006` como `sender_id`, responde:
+  **`63101 waba_id provided is not valid or unable to be used`**. La validación del
+  WABA ocurre **antes** de tocar el número, por eso la sonda se diseñó con un número
+  de prueba: riesgo cero para el sender vivo (verificado después — sigue ONLINE con
+  su límite intacto, y no quedó basura en la subcuenta).
+  **Conclusión:** la Senders API registra senders *dentro de un WABA que la cuenta ya
+  posee*; no crea el WABA ni permite prestarlo de otra cuenta. El huevo-y-la-gallina
+  sigue igual: para que la subcuenta tenga WABA hay que correr el Embedded Signup
+  **apuntando a esa subcuenta**, y eso es exactamente lo que exige #312.
+- **#312 — Tech Provider Program de Meta.** Es la vía correcta para que cada cliente
+  tenga su subcuenta + su WABA y se auto-onboardee. Gratis. Requiere: verificación de
+  negocio de Gloma con Meta, app de Meta nueva marcada "Independent Tech Provider",
+  App Review con grabaciones de pantalla, advanced access a `whatsapp_business_messaging`
+  y `whatsapp_business_management` (Meta: ~5 días hábiles), ticket a Twilio con el Meta
+  App ID para el Partner Solution (1-2 días hábiles) y, de nuestro lado, integrar el
+  Embedded Signup en la app (botón "Login with Facebook", capturar `phone_number_id` y
+  `waba_id`, crear la subcuenta y registrar el sender vía Senders API). Partes 1 y 2:
+  3-4 semanas.
+- **#315 — No se puede devolver una conversación del asesor al bot.** Cuando el bot
+  hace `handoff`, `conversations.assigned_to` pasa al asesor y `bot_router` deja de
+  intervenir para siempre en ese hilo (correcto: un humano no debe ser interrumpido).
+  Pero `routers/mensajes.py` sólo **lee** `assigned_to`: no hay endpoint ni botón para
+  reasignar. Hoy la única salida es un UPDATE en la BD. Con clientes reales esto va a
+  estorbar — hace falta un control de "devolver al bot" / "reasignar asesor" en el
+  módulo de Mensajes.
+- **#316 — El módulo de Mensajes no renderiza multimedia.** Tras el arreglo #314 los
+  mensajes se guardan con `message_type='image'|'video'` y la URL en `content`, pero
+  `frontend/pages/mensajes.tsx` pinta `m.content` como texto plano: el asesor ve el
+  enlace, no la imagen. Falta renderizar `<img>`/`<video>` según `message_type`.
+- **#313 — No hay UI para conectar un canal Twilio.** `crud.py` no tiene funciones de
+  Twilio y `schemas.py` no expone el proveedor: hoy la conexión de un tenant se hace
+  por script. Cuando exista #312, esto debe volverse un flujo de la app.
+
+---
+
+## Sprint 23 — Conexión de Instagram y panel de publicaciones (2026-08-09)
+
+**Pedido del CEO (2026-08-09):** conectar un Instagram para poder **programar
+publicaciones**, y luego, en la cuenta admin de Gloma, una ventana adicional que
+muestre las publicaciones en cola, cuándo se publican y un enlace para descargar
+el contenido ya cargado en AWS.
+
+### Hallazgo que definió la arquitectura
+
+Instagram **sí** tiene programación nativa (Planificador de Meta Business Suite,
+gratis, hasta 75 días), pero es **solo UI: no existe API para ella**. La Content
+Publishing API tampoco acepta fecha futura y sus contenedores de media **expiran
+a las 24 h**. Verificado contra la documentación de Meta, no de memoria.
+
+Decisión del CEO tras ver la comparación: **API + cola propia**, para que la
+programación sea autónoma en vez de manual.
+
+Otros hechos confirmados:
+- Con el flujo *Instagram Login* (2024) una cuenta **Creator no necesita Página de
+  Facebook**. Solo debe ser profesional, no personal.
+- **No hace falta App Review** en modo desarrollo publicando en cuentas con rol.
+- Instagram no acepta upload de archivos: descarga desde URL pública HTTPS.
+- Límite: 100 publicaciones/API por ventana móvil de 24 h; un carrusel cuenta 1.
+- `META_APP_SECRET` en `.env` está vacío — la app Meta legacy quedó inactiva tras
+  migrar a Twilio como BSP, así que no había nada que reutilizar. App nueva.
+
+### Grupo 1 — Herramienta de marketing (fuera del producto)
+
+`marketing/instagram/` — CLI `igpost.py` con `setup-app`, `auth-url`, `connect`,
+`whoami`, `refresh-token`, `post`, `schedule`, `list`, `cancel`, `run-due`.
+
+- `ig/client.py` — Graph API: contenedores, carruseles (2–10 slides), publicación,
+  OAuth y renovación del token de 60 días.
+- `ig/media.py` — normaliza a JPEG RGB ≤1440 px, valida aspect ratio (4:5–1.91:1)
+  y tope de 8 MB; sube a S3 y prefirma.
+- `ig/queue.py` — cola en S3 con locking optimista por ETag.
+- `ig/config.py` — credenciales en SSM SecureString, `__repr__` redactado.
+
+**Infra:** bucket `gloma-marketing-media-747456040509` (sa-east-1) — privado,
+AES256, bloqueo público total, expiración a 30 días.
+
+**Validación:** las 21 piezas de `identidad_gloma/redes sociales/` pasaron por el
+validador; 20 quedan publicables (2160×2700 → 1440×1800). `16_linkedin` es un
+banner 1128×191 de LinkedIn: correctamente rechazado.
+
+### Grupo 2 — Panel en la app (módulo interno de Gloma)
+
+- `dependencies.py`: se extrajo `require_gloma_account` + `GLOMA_EMAIL` desde
+  `citas.py` para compartir el portero entre los dos módulos internos. `citas.py`
+  ahora lo importa (sus 10 usos intactos).
+- `services/instagram_queue.py`: lee la cola de S3 y prefirma las descargas con
+  `ResponseContentDisposition: attachment`. Solo lectura.
+- `routers/instagram.py`: `GET /instagram/access` y `GET /instagram`.
+- `frontend/pages/instagram.tsx`: resumen, filtros por estado, tarjeta por pieza
+  con fecha absoluta + relativa ("en 3 días"), texto y descarga por slide.
+- `components/Sidebar.tsx`: se generalizó el gateo de módulos internos; ahora
+  consulta Citas e Instagram en paralelo.
+- IAM: policy inline `instagram-marketing-media-read` en `multiagente-ecs-task-role`
+  (`s3:GetObject` solo sobre ese bucket).
+
+**Pruebas:** `tests/test_instagram_queue.py` — 12 casos (parseo, orden, contrato
+del endpoint, 403 a cuenta ajena, 503 sanitizado). Suite completa: **92 pasan**.
+`next build` OK, `/instagram` en el listado de rutas.
+
+### Pendientes
+
+- **#327 — Conectar la cuenta.** Bloqueado esperando al CEO: convertir el Instagram
+  a Creator, crear la app de Meta y correr `setup-app` + `connect`. SSM
+  `/gloma/marketing/instagram/` está vacío. Hasta entonces el panel muestra la
+  cola vacía (estado válido, no error).
+- **#328 — Cron de `run-due`.** Sin credenciales no tiene qué publicar. Montar
+  cuando exista #327, junto con la renovación automática del token (60 días).
+- **#329 — Deploy.** El endpoint `/instagram` requiere redeploy del backend a ECS,
+  y Amplify **no auto-buildea** (hay que lanzar el job manual).
+- **#330 — Vida de las URLs prefirmadas en ECS.** Las credenciales del task role
+  rotan (~6 h); una URL firmada justo antes de la rotación puede caducar antes de
+  su TTL de 1 h. El panel las regenera en cada carga, así que el impacto es bajo.

@@ -17,7 +17,6 @@ recibe 403 aunque tenga sesión válida.
 from __future__ import annotations
 
 import logging
-import os
 import re
 from datetime import date as dt_date, datetime
 from typing import List, Optional
@@ -27,15 +26,19 @@ from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.orm import Session
 
 from .. import models
-from ..dependencies import get_current_user, get_db
+from ..dependencies import (
+    GLOMA_EMAIL,
+    get_current_user,
+    get_db,
+    require_gloma_account,
+)
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/citas", tags=["citas"])
 
-# Misma cuenta que sirve el chat público de la landing.
-GLOMA_EMAIL = os.getenv("GLOMA_LANDING_EMAIL", "gloma@glomabeauty.com").lower()
-
+# `GLOMA_EMAIL` y `require_gloma_account` viven en `dependencies.py`: los
+# comparte con `/instagram`, el otro módulo interno de la cuenta de Gloma.
 ESTADOS = ("solicitada", "confirmada", "realizada", "cancelada", "no_asistio")
 DIAS = ("lunes", "martes", "miércoles", "jueves", "viernes")
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s.]+\.[a-zA-Z]{2,}$")
@@ -43,37 +46,6 @@ EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s.]+\.[a-zA-Z]{2,}$")
 # Solicitudes de contacto (#298): el CEO solo necesita saber si ya se contactó
 # al prospecto o si sigue pendiente.
 ESTADOS_SOLICITUD = ("pendiente", "contactado")
-
-
-def require_gloma_account(
-    user: models.User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-) -> models.User:
-    """Deja pasar solo a la cuenta de Gloma (owner o miembro de su team)."""
-    if (user.correo or "").lower() == GLOMA_EMAIL:
-        return user
-
-    owner = (
-        db.query(models.User).filter(models.User.correo == GLOMA_EMAIL).first()
-    )
-    if owner is not None:
-        pertenece = (
-            db.query(models.TeamMember)
-            .join(models.Team, models.Team.id == models.TeamMember.team_id)
-            .filter(
-                models.TeamMember.user_id == user.id,
-                models.Team.owner_user_id == owner.id,
-            )
-            .first()
-        )
-        if pertenece is not None:
-            return user
-
-    # Sin detalle del porqué al cliente (regla de seguridad #6).
-    raise HTTPException(
-        status_code=status.HTTP_403_FORBIDDEN,
-        detail="No tienes acceso a este módulo",
-    )
 
 
 class CitaOut(BaseModel):

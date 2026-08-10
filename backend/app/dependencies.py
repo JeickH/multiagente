@@ -72,6 +72,46 @@ def require_permission(permission_key: str):
     return _checker
 
 
+# Cuenta oficial de Gloma: la misma que sirve el chat público de la landing.
+GLOMA_EMAIL = os.getenv("GLOMA_LANDING_EMAIL", "gloma@glomabeauty.com").lower()
+
+
+def require_gloma_account(
+    user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> models.User:
+    """Deja pasar solo a la cuenta de Gloma (owner o miembro de su team).
+
+    Portero de los módulos INTERNOS de Gloma (`/citas`, `/instagram`): no son
+    parte del producto que se le vende a los clientes, así que cualquier otra
+    cuenta recibe 403 aunque tenga sesión válida.
+    """
+    if (user.correo or "").lower() == GLOMA_EMAIL:
+        return user
+
+    owner = (
+        db.query(models.User).filter(models.User.correo == GLOMA_EMAIL).first()
+    )
+    if owner is not None:
+        pertenece = (
+            db.query(models.TeamMember)
+            .join(models.Team, models.Team.id == models.TeamMember.team_id)
+            .filter(
+                models.TeamMember.user_id == user.id,
+                models.Team.owner_user_id == owner.id,
+            )
+            .first()
+        )
+        if pertenece is not None:
+            return user
+
+    # Sin detalle del porqué al cliente (regla de seguridad #6).
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="No tienes acceso a este módulo",
+    )
+
+
 def get_current_owner_membership(
     db: Session = Depends(get_db),
     user: models.User = Depends(get_current_user),

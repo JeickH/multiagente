@@ -10,34 +10,43 @@ const menu = [
   { name: 'Mi Plan', path: '/usuario', icon: '👤' },
 ];
 
-// Sprint 21 #284/#288: "Citas" es un módulo interno de Gloma (las demos que
-// agenda su bot institucional). La pestaña se muestra solo si el backend dice
-// que ESTA sesión puede usarlo (`GET /citas/access`), no adivinando por el
-// correo: así el botón aparece únicamente en la cuenta donde funciona.
-const CITAS_ITEM = { name: 'Citas', path: '/citas', icon: '📅' };
+// Sprint 21 #284/#288: módulos INTERNOS de Gloma, no del producto. Cada uno se
+// muestra solo si el backend dice que ESTA sesión puede usarlo
+// (`GET /<modulo>/access`), no adivinando por el correo: así el botón aparece
+// únicamente en la cuenta donde funciona.
+const MODULOS_INTERNOS = [
+  { name: 'Citas', path: '/citas', icon: '📅', access: '/api/citas/access' },
+  { name: 'Instagram', path: '/instagram', icon: '📸', access: '/api/instagram/access' },
+];
 
 export default function Sidebar() {
   const router = useRouter();
-  const [puedeCitas, setPuedeCitas] = useState(false);
+  const [internos, setInternos] = useState<typeof MODULOS_INTERNOS>([]);
 
   useEffect(() => {
     let cancelado = false;
     const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
     if (!token) return;
-    fetch('/api/citas/access', { headers: { Authorization: `Bearer ${token}` } })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((res) => {
-        if (!cancelado) setPuedeCitas(Boolean(res?.allowed));
-      })
-      .catch(() => {
-        /* no-op: si falla, simplemente no se muestra el módulo interno */
-      });
+
+    const headers = { Authorization: `Bearer ${token}` };
+    Promise.all(
+      MODULOS_INTERNOS.map((m) =>
+        fetch(m.access, { headers })
+          .then((r) => (r.ok ? r.json() : null))
+          .then((res) => Boolean(res?.allowed))
+          // no-op: si falla, simplemente no se muestra ese módulo interno
+          .catch(() => false)
+      )
+    ).then((permisos) => {
+      if (!cancelado) setInternos(MODULOS_INTERNOS.filter((_, i) => permisos[i]));
+    });
+
     return () => {
       cancelado = true;
     };
   }, []);
 
-  const items = puedeCitas ? [...menu, CITAS_ITEM] : menu;
+  const items = [...menu, ...internos];
 
   return (
     <aside className="bg-gloma-brown text-white w-24 flex flex-col justify-between items-center py-6 min-h-screen font-body">
