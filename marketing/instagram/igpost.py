@@ -104,18 +104,39 @@ def cmd_auth_url(args: argparse.Namespace) -> None:
 
 
 def cmd_connect(args: argparse.Namespace) -> None:
+    """Guarda el token. Dos caminos:
+
+    --code   el del flujo OAuth (`auth-url`).
+    --token  el que genera directamente la consola de Meta en el panel
+             "Instagram API setup with Instagram login". Es el camino corto.
+    """
     app_id, app_secret = config.load_app()
-    code = args.code.split("#")[0]
 
-    short = ig_client.exchange_code(app_id, app_secret, code, args.redirect_uri)
-    long_lived = ig_client.to_long_lived(app_secret, short["access_token"])
+    if args.token:
+        token = args.token.strip()
+        expires_in = 60 * 24 * 3600
+        # El de la consola suele venir ya de larga duración. Si es de corta, el
+        # canje lo convierte; si ya era largo, Meta responde error y seguimos
+        # con el original, que es válido igual.
+        try:
+            canjeado = ig_client.to_long_lived(app_secret, token)
+            token = canjeado["access_token"]
+            expires_in = int(canjeado.get("expires_in", expires_in))
+            print("Token canjeado a larga duración (60 días).")
+        except ig_client.IGError:
+            print("El token ya era de larga duración; se usa tal cual.")
+    else:
+        code = args.code.split("#")[0]
+        short = ig_client.exchange_code(app_id, app_secret, code, args.redirect_uri)
+        long_lived = ig_client.to_long_lived(app_secret, short["access_token"])
+        token = long_lived["access_token"]
+        expires_in = int(long_lived.get("expires_in", 60 * 24 * 3600))
 
-    token = long_lived["access_token"]
-    probe = ig_client.InstagramClient(token, str(short.get("user_id", "me")))
+    probe = ig_client.InstagramClient(token, "me")
     account = probe.me()
 
     expires_at = config.save_token(
-        token, int(long_lived.get("expires_in", 60 * 24 * 3600)), account["id"], account["username"]
+        token, expires_in, account["id"], account["username"]
     )
     print(f"Conectado a @{account['username']} ({account.get('account_type')})")
     print(f"IG user id: {account['id']}")
@@ -304,8 +325,12 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--redirect-uri", default=DEFAULT_REDIRECT)
     p.set_defaults(func=cmd_auth_url)
 
-    p = sub.add_parser("connect", help="canjea el code y guarda el token")
-    p.add_argument("--code", required=True)
+    p = sub.add_parser("connect", help="guarda el token de la cuenta")
+    origen = p.add_mutually_exclusive_group(required=True)
+    origen.add_argument("--code", help="el code que devuelve `auth-url`")
+    origen.add_argument(
+        "--token", help="token generado directamente en la consola de Meta (camino corto)"
+    )
     p.add_argument("--redirect-uri", default=DEFAULT_REDIRECT)
     p.set_defaults(func=cmd_connect)
 

@@ -2271,3 +2271,132 @@ del endpoint, 403 a cuenta ajena, 503 sanitizado). Suite completa: **92 pasan**.
 - **#330 — Vida de las URLs prefirmadas en ECS.** Las credenciales del task role
   rotan (~6 h); una URL firmada justo antes de la rotación puede caducar antes de
   su TTL de 1 h. El panel las regenera en cada carga, así que el impacto es bajo.
+
+---
+
+## Sprint 23 — Contenido de marca: Instagram (Sprints de contenido 3 y 4) — 2026-08-09
+
+**Pedido del CEO (2026-08-09):** dos tandas de 5 publicaciones estáticas para la cuenta de
+Instagram de Gloma —primero «mejores destinos de LatAm con playa», después «temas para las
+primeras publicaciones de la cuenta»— con el copy y todo el detalle documentado, y las piezas
+gráficas en carpetas. Requisito añadido a mitad: **seguir fielmente el Brand Book**.
+
+> El plan editorial vive en `identidad_gloma/plan_contenido_instagram_gloma.md`. Esta entrada es
+> solo el índice desde la bitácora; el detalle (pieza por pieza, slide por slide, copy, CTA,
+> hashtags y fuentes) está allá.
+
+### 1. Entregado
+
+| # | Tarea | Dónde quedó |
+|---|---|---|
+| #331 | Sprint de contenido 3 — serie «playa LatAm», 5 piezas / 31 slides | Plan Parte 1C · `identidad_gloma/redes sociales/20_…` a `24_…` |
+| #332 | Sprint de contenido 4 — set de lanzamiento de la cuenta, 5 piezas / 25 slides | Plan Parte 1D · `redes sociales/25_…` a `29_…` |
+| #333 | Auditoría contra el Brand Book v3 y corrección del set de lanzamiento | Plan Parte 3 → «Alineación con el Brand Book v3» |
+
+Formato de todas: JPG 2160 × 2700 (1080 × 1350 a 2x), calidad 92, generadas con la skill
+`/post-redes` (Chrome headless + Syne/Inter instaladas localmente) desde
+`redes sociales/_generador/piezas.py`. **Total acumulado: 149 imágenes.**
+
+### 2. Datos verificados con fuente (serie de playa)
+
+Sargazo abril–octubre con récord en 2026 · requisitos e inadmisiones de colombianos en México
+(prerregistro del INM) · e-Ticket migratorio dominicano obligatorio, dos por viaje, hasta 72 h
+antes · Nordeste brasileño 5,8 M de pasajeros en el Q1 2026 (+12,86 %) y Maceió / Porto de
+Galinhas entre los destinos líderes según Braztoa · aeropuerto de Liberia 793.075 pasajeros en
+el Q1 2026 (+12 %). Todas las URLs quedaron en «Fuentes consultadas» del plan.
+
+### 3. Hallazgos de la auditoría de marca
+
+- **#334 — Los sets `01`–`24` no respetan el reparto de color del manual.** El Brand Book v3
+  §4.2 define Deep Forest como color primario (~45 %) y Technical Black como minoría (~15 %);
+  las piezas están al revés (~50 % negro). El set de lanzamiento `25`–`29` ya salió con el
+  reparto correcto (64 / 20 / 16). Regenerar el bloque anterior es editar el primer campo de
+  cada tupla en `piezas.py` y re-renderizar. **Decisión pendiente del CEO.**
+- **#335 — El claim principal no aparecía en ninguna pieza.** «Cada viaje empieza con una
+  conversación» ya quedó en el cierre de la `25`, la pieza fijada del perfil.
+- **#336 — Contraste del micro-acento Golden Hour sobre Soft Mint.** En los slides de objeción
+  (`17`–`24`) el remate `#F5C24B` sobre `#E0F2F1` queda en ~2:1. Se lee, pero es flojo. Si se
+  cambia hay que tocar `_objecion()` y regenerar las 8 piezas juntas.
+- **#337 — Fotos pendientes: 16 slides.** Ver la tabla de pendientes del plan. Las piezas se
+  generan igual, con el recuadro `PENDIENTE · FOTO` reservando el espacio exacto.
+
+### 4. Ajuste posterior (misma sesión) — pieza de producto sin nombre de marca
+
+**Pedido del CEO:** el nombre de la marca posiblemente cambie, así que la publicación que explica
+el producto no puede llevarlo escrito.
+
+- La pieza `28_que_es_gloma` pasó a **`28_que_hace_el_agente`**. El titular
+  «Qué es Gloma» se reemplazó por «Qué hace un agente de IA en tu WhatsApp», el copy dice «lo que
+  hacemos es un agente de IA…» y se quitó el hashtag `#Gloma`. Los 5 slides se re-renderizaron y
+  la carpeta vieja se eliminó.
+- **#338 — Inventario de exposición a un rebrand.** El símbolo de la ventanilla no lleva wordmark,
+  así que solo **3 slides de 149** tienen la marca escrita dentro de la imagen: `01` slide 5,
+  `15` slide 5 y `25` slide 1 (kicker). Tabla completa en el plan, Parte 3 → «Exposición a un
+  cambio de nombre de marca».
+- **Regla nueva:** las piezas de producto se escriben describiendo el producto, no la empresa.
+
+### Flujo de funcionamiento (cron + visualización en la app)
+
+Referencia permanente de cómo opera el módulo, porque la responsabilidad está
+repartida entre tres piezas y no es evidente cuál hace qué.
+
+**Por qué hay un cron nuestro.** Instagram no expone API de programación (el
+Planificador de Meta Business Suite es solo UI) y los contenedores de media de la
+Content Publishing API **expiran a las 24 h**. No se puede "dejar cargado" un post
+para dentro de una semana: alguien tiene que llamar a publicar en el minuto exacto.
+Ese alguien es `run-due`.
+
+**1. Programar** — `igpost.py schedule <carpeta> --caption-file x.txt --at "2026-08-20 09:00"`
+
+| Paso | Qué pasa |
+|---|---|
+| Normaliza | Cada slide → JPEG RGB ≤1440 px, valida proporción 4:5–1.91:1 y tope 8 MB |
+| Sube | `s3://gloma-marketing-media-747456040509/posts/<slug>/NN-<hash>.jpg` |
+| Encola | Añade la entrada a `queue/schedule.json` en el mismo bucket, con `status='pending'` |
+
+Las imágenes se suben **al programar, no al publicar**: así el runner no depende de
+que el Mac tenga los archivos ni esté encendido.
+
+**2. Publicar** — `igpost.py run-due` (lo dispara el cron)
+
+Lee la cola, toma lo que tenga `publish_at <= ahora` y `status='pending'`, y por cada
+pieza: prefirma las slides (1 h) → crea un contenedor por slide
+(`is_carousel_item=true`) → espera `status_code=FINISHED` de cada uno → crea el
+contenedor padre `media_type=CAROUSEL` con el caption → espera → `media_publish`.
+Con una sola imagen se salta el paso de carrusel.
+
+Al terminar reescribe la entrada: `status='published'` + `media_id` + `permalink`.
+Si falla, guarda el error y suma `attempts`; a los **3 intentos** pasa a `failed`
+para no reintentar en bucle. La escritura de la cola usa locking optimista por ETag,
+así que dos procesos simultáneos no se pisan.
+
+**3. Visualizar** — pestaña 📸 Instagram en la app
+
+```
+igpost.py schedule ──► S3 ──┬─► queue/schedule.json ──► GET /instagram ──► /instagram
+                            └─► posts/<slug>/*.jpg  ──► URL prefirmada ──► botón ⬇
+cron ──► igpost.py run-due ──► Graph API ──► actualiza la cola ──► se refleja en la app
+```
+
+La app **solo lee**: no programa ni publica. Muestra el resumen
+(programadas/publicadas/fallidas/total), filtros por estado y una tarjeta por pieza
+con fecha absoluta + relativa ("se publica jue 20 ago, 9:00 a. m. — en 11 días"),
+el texto completo y un enlace de descarga por slide con
+`Content-Disposition: attachment` (descarga, no abre). Los enlaces caducan en 1 h y
+se regeneran en cada carga de la página.
+
+La pestaña aparece **solo en la cuenta de Gloma**: el Sidebar consulta
+`GET /instagram/access` y la pinta únicamente si responde `allowed=true`. Cualquier
+otra sesión recibe 403 en `/instagram` aunque tenga JWT válido.
+
+### Pendientes (continuación)
+
+- **#331 — Subir las publicaciones y cronogramar las primeras.** Las 20 piezas
+  válidas de `identidad_gloma/redes sociales/` **todavía no están cargadas en S3 ni
+  programadas**: la cola está vacía y por eso el panel se ve sin contenido. Falta
+  (a) redactar el caption de cada pieza, (b) definir el calendario (fechas y horas
+  de publicación), (c) correr `igpost.py schedule` por pieza. Depende de #327: sin
+  cuenta conectada no tiene sentido encolar.
+- **#332 — `connect --token`.** Se añadió el camino corto: además del flujo OAuth
+  (`auth-url` → `connect --code`), `connect --token` acepta el token que genera
+  directamente la consola de Meta en "Instagram API setup with Instagram login".
