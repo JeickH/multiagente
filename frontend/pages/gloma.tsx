@@ -35,7 +35,7 @@ const PREVIEW_SECTIONS = [
   {
     title: 'Un agente de ventas que trabaja sin parar',
     text: 'Atiende a tus clientes 24/7 con un tono alineado a tu marca y procesos. La cercanía humana, multiplicada por la disponibilidad de la tecnología.',
-    image: '/gloma/preview4.png',
+    image: '/gloma/preview_chat_agente.png',
     reverse: false,
   },
   {
