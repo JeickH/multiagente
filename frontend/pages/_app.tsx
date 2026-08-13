@@ -25,15 +25,27 @@ const TITULOS: Record<string, string> = {
   '/campanas/plantillas/nueva': 'Nueva plantilla · Gloma',
   '/citas': 'Citas · Gloma',
   '/usuario': 'Mi plan · Gloma',
+  '/mascotas-panel': 'Mascotas · Gloma',
 };
 
-// Rutas públicas de la plataforma que no requieren token
-const PUBLIC_PAGES = ['/login', '/register', '/gloma', '/automatas', '/elecol', '/404'];
+// Rutas públicas de la plataforma que no requieren token.
+// `/mascotas` es el chat ciudadano de "Recupera Tu Mascota": quien llega ahí
+// no tiene cuenta ni debe tenerla. (`/mascotas-panel` NO va aquí: ese es el
+// panel privado de la cuenta y sí exige sesión.)
+const PUBLIC_PAGES = [
+  '/login', '/register', '/gloma', '/automatas', '/elecol', '/404', '/mascotas',
+];
 
-// Hosts donde vive SOLO la landing pública — no hay plataforma que proteger.
+// Hosts donde vive SOLO contenido público — no hay plataforma que proteger.
 // app.glomabeauty.com NO va aquí: es la URL bonita de la plataforma y debe
 // pasar por el guard de autenticación normal.
-const PUBLIC_HOSTS = ['glomabeauty.com', 'www.glomabeauty.com'];
+const PUBLIC_HOSTS = [
+  'glomabeauty.com',
+  'www.glomabeauty.com',
+  'mascotasperdidascolombia.com',
+  'www.mascotasperdidascolombia.com',
+  'mascotasperdidascali.glomabeauty.com',
+];
 
 function hostIsPublicLanding(): boolean {
   if (typeof window === 'undefined') return false;

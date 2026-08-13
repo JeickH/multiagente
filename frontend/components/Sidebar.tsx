@@ -17,6 +17,9 @@ const menu = [
 const MODULOS_INTERNOS = [
   { name: 'Citas', path: '/citas', icon: '📅', access: '/api/citas/access' },
   { name: 'Instagram', path: '/instagram', icon: '📸', access: '/api/instagram/access' },
+  // Sprint "Ayuda a Cali": panel de la cuenta `recuperatumascota@gmail.com`.
+  // No es de Gloma sino de esa cuenta, y su `/access` lo resuelve así.
+  { name: 'Mascotas', path: '/mascotas-panel', icon: '🐾', access: '/api/mascotas/access' },
 ];
 
 export default function Sidebar() {

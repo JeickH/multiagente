@@ -112,6 +112,45 @@ def require_gloma_account(
     )
 
 
+def _require_account(user: models.User, db: Session, email: str) -> models.User:
+    """Deja pasar al owner de `email` y a los miembros de su team; 403 al resto."""
+    if (user.correo or "").lower() == email:
+        return user
+
+    owner = db.query(models.User).filter(models.User.correo == email).first()
+    if owner is not None:
+        pertenece = (
+            db.query(models.TeamMember)
+            .join(models.Team, models.Team.id == models.TeamMember.team_id)
+            .filter(
+                models.TeamMember.user_id == user.id,
+                models.Team.owner_user_id == owner.id,
+            )
+            .first()
+        )
+        if pertenece is not None:
+            return user
+
+    # Sin detalle del porqué al cliente (regla de seguridad #6).
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="No tienes acceso a este módulo",
+    )
+
+
+# Sprint "Ayuda a Cali": cuenta dueña del bot de mascotas perdidas. Su panel
+# (`/mascotas/panel`) es exclusivo de esta cuenta — ninguna otra lo ve.
+MASCOTAS_EMAIL = os.getenv("MASCOTAS_ACCOUNT_EMAIL", "recuperatumascota@gmail.com").lower()
+
+
+def require_mascotas_account(
+    user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> models.User:
+    """Portero del panel de mascotas perdidas: solo la cuenta de la iniciativa."""
+    return _require_account(user, db, MASCOTAS_EMAIL)
+
+
 def get_current_owner_membership(
     db: Session = Depends(get_db),
     user: models.User = Depends(get_current_user),

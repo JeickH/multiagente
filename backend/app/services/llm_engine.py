@@ -49,6 +49,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from . import shopify_client
+from .crypto import encrypt_secret
 
 logger = logging.getLogger(__name__)
 
@@ -266,10 +267,85 @@ def _bloque_agenda(cfg: Dict[str, Any]) -> str:
     )
 
 
-def _system_prompt(bot, cfg: Dict[str, Any]) -> str:
+def _telefono_dicho(textos: List[str]) -> Optional[str]:
+    """Primer teléfono que aparece en lo que escribió la persona.
+
+    Sirve de recordatorio determinista: si ya dio un número y el reporte sigue
+    sin registrarse, el modelo recibe el aviso explícito en el system prompt en
+    vez de depender de que se acuerde solo.
+    """
+    for texto in textos:
+        for candidato in _TELEFONO_EN_TEXTO_RE.findall(texto or ""):
+            digitos = re.sub(r"\D", "", candidato)
+            if 7 <= len(digitos) <= 15:
+                return digitos
+    return None
+
+
+def _bloque_mascotas(
+    cfg: Dict[str, Any],
+    history: Optional[List[Dict[str, str]]] = None,
+    user_text: Optional[str] = None,
+) -> str:
+    """Datos vivos del turno para el bot de mascotas: la fecha de hoy (para
+    interpretar "ayer" o "el sábado"), las fotos que la persona ya adjuntó y los
+    recordatorios de lo que falta hacer — así el bot no vuelve a pedir lo que ya
+    tiene ni deja un caso sin registrar."""
+    runtime = cfg.get("_runtime") or {}
+    hoy = datetime.now(_TZ_CO).date()
+    lineas = [
+        "## Datos vivos del sistema",
+        f"Hoy es {_fecha_label(hoy)} de {hoy.year} (fecha ISO: {hoy.isoformat()}). "
+        "Úsala para traducir «ayer», «el sábado» o «hace tres días» a AAAA-MM-DD.",
+    ]
+
+    # Recordatorio duro: la persona ya dio un teléfono y el caso sigue sin
+    # registrar. Es el olvido más caro del flujo, así que no se deja al criterio
+    # del modelo.
+    dichos = [m.get("content", "") for m in (history or []) if m.get("role") == "user"]
+    if user_text:
+        dichos.append(user_text)
+    telefono = _telefono_dicho(dichos)
+    if telefono and not runtime.get("reporte_codigo"):
+        lineas.append(
+            f"⚠️ La persona YA te dio un teléfono de contacto ({telefono}) y el "
+            "caso TODAVÍA no está registrado. Si ya sabes qué animal es y dónde "
+            "se perdió o dónde está, llama `registrar_reporte` en ESTE turno, "
+            "sin hacer más preguntas. Lo que falte lo completas después con "
+            "`completar_reporte`."
+        )
+    fotos = int(runtime.get("fotos_pendientes") or 0)
+    if fotos:
+        lineas.append(
+            f"La persona YA adjuntó {fotos} foto(s) en este chat: se guardarán "
+            "solas con el reporte cuando lo registres. No se las pidas de nuevo "
+            "ni le pidas que las reenvíe."
+        )
+    else:
+        lineas.append(
+            "La persona aún no ha adjuntado fotos. Puede hacerlo con el clip 📎 "
+            "del chat; pídeselas una sola vez, sin condicionar el reporte a ello."
+        )
+    codigo = runtime.get("reporte_codigo")
+    if codigo:
+        lineas.append(
+            f"En este chat ya se creó el reporte {codigo}: si la persona aporta "
+            "datos nuevos usa `completar_reporte` con ese código, NO crees otro."
+        )
+    return "\n".join(lineas)
+
+
+def _system_prompt(
+    bot,
+    cfg: Dict[str, Any],
+    history: Optional[List[Dict[str, str]]] = None,
+    user_text: Optional[str] = None,
+) -> str:
     parts = [_load_context(cfg.get("context_key", ""))]
     if cfg.get("agenda") is not None:
         parts.append(_bloque_agenda(cfg))
+    if cfg.get("mascotas") is not None:
+        parts.append(_bloque_mascotas(cfg, history, user_text))
     media = _media_catalog(cfg)
     if media:
         lines = [
@@ -432,6 +508,8 @@ def _tools_for(cfg: Dict[str, Any]) -> List[Dict[str, Any]]:
                 },
             }
         )
+    if cfg.get("mascotas") is not None:
+        tools.extend(_tools_mascotas())
     shopify_cfg = cfg.get("shopify")
     if isinstance(shopify_cfg, dict) and shopify_cfg.get("shop"):
         tools.append(
@@ -468,6 +546,498 @@ def _tools_for(cfg: Dict[str, Any]) -> List[Dict[str, Any]]:
             }
         )
     return tools
+
+
+# ---------------------------------------------------------------------------
+# Tools del bot de mascotas perdidas (sprint "Ayuda a Cali")
+# ---------------------------------------------------------------------------
+
+# Campos descriptivos compartidos por la búsqueda y el reporte. Ninguno es
+# obligatorio: quien perdió a su mascota rara vez recuerda raza, edad y color
+# a la vez, y exigirlos haría que abandone la conversación.
+_MASCOTA_CAMPOS: Dict[str, Dict[str, str]] = {
+    "especie": {"type": "string", "description": "perro, gato u otra especie"},
+    "raza": {"type": "string", "description": "Raza o mezcla, tal como la describió"},
+    "color": {"type": "string", "description": "Color o combinación de colores"},
+    # El nombre se guarda, pero pesa muy poco al cruzar: quien encuentra un
+    # animal en la calle no sabe cómo se llama.
+    "nombre": {
+        "type": "string",
+        "description": (
+            "Nombre al que responde. Solo de referencia: la búsqueda se hace "
+            "con las características físicas y la zona, no con el nombre"
+        ),
+    },
+    "sexo": {"type": "string", "description": "macho, hembra o desconocido"},
+    "edad": {"type": "string", "description": "Edad aproximada: '2 años', 'cachorro'"},
+    "tamano": {"type": "string", "description": "pequeño, mediano o grande"},
+}
+
+
+def _props_mascota(extra: Dict[str, Dict[str, str]]) -> Dict[str, Any]:
+    return {**_MASCOTA_CAMPOS, **extra}
+
+
+def _tools_mascotas() -> List[Dict[str, Any]]:
+    return [
+        {
+            "name": "buscar_mascota",
+            "description": (
+                "Busca coincidencias en la base de datos de mascotas con TODOS "
+                "los datos que la persona te haya dado (aunque sean pocos). "
+                "Úsala cuando alguien busca a su mascota perdida (busca en las "
+                "'encontradas') o cuando alguien halló una y quiere ubicar al "
+                "dueño (busca en las 'perdidas'). No exijas datos que la "
+                "persona no sabe: manda solo los que tengas."
+            ),
+            "input_schema": {
+                "type": "object",
+                "properties": _props_mascota({
+                    "zona": {
+                        "type": "string",
+                        "description": "Barrio, sector o dirección donde se perdió o fue vista",
+                    },
+                    "descripcion": {
+                        "type": "string",
+                        "description": (
+                            "Señas particulares y comentarios adicionales, tal "
+                            "cual los contó la persona: 'collar azul y verde', "
+                            "'mancha blanca en la pata de atrás', 'cojea de "
+                            "atrás'. Manda aquí TODO detalle suelto que te haya "
+                            "dado: es lo que más discrimina en la búsqueda"
+                        ),
+                    },
+                    "buscar_en": {
+                        "type": "string",
+                        "enum": ["encontradas", "perdidas", "todas"],
+                        "description": (
+                            "'encontradas' si la persona busca a SU mascota; "
+                            "'perdidas' si la persona encontró una mascota ajena"
+                        ),
+                    },
+                }),
+                "required": ["buscar_en"],
+            },
+        },
+        {
+            "name": "ver_ficha",
+            "description": (
+                "Envía a la persona la FOTO y la ficha de un reporte concreto "
+                "(usa el código que te devolvió `buscar_mascota`). Después de "
+                "enviarla, pregúntale si es su mascota. No entrega datos de "
+                "contacto."
+            ),
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "codigo": {"type": "string", "description": "Código del reporte, ej: MC-00012"},
+                },
+                "required": ["codigo"],
+            },
+        },
+        {
+            "name": "entregar_contacto",
+            "description": (
+                "Entrega la ubicación exacta y el teléfono de quien reportó. "
+                "Úsala SOLO cuando la persona confirmó que esa es su mascota "
+                "(o que quiere contactar a quien la busca). Comparte con ella "
+                "la ubicación, el enlace de Maps si existe y el teléfono."
+            ),
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "codigo": {"type": "string", "description": "Código del reporte"},
+                },
+                "required": ["codigo"],
+            },
+        },
+        {
+            "name": "registrar_reporte",
+            "description": (
+                "Registra el caso en la base de datos. Dos usos: "
+                "tipo_registro='perdida' cuando la persona BUSCA a su mascota "
+                "(regístralo siempre que la búsqueda no dé coincidencias, para "
+                "avisarle si aparece), y tipo_registro='encontrada' cuando la "
+                "persona HALLÓ una mascota. Obligatorios: ubicación y teléfono "
+                "de contacto. El resto va solo si la persona lo sabe. "
+                "Llámala UNA sola vez por caso, cuando ya tengas los datos "
+                "reunidos de todos sus mensajes."
+            ),
+            "input_schema": {
+                "type": "object",
+                "properties": _props_mascota({
+                    "tipo_registro": {
+                        "type": "string",
+                        "enum": ["perdida", "encontrada"],
+                        "description": "'perdida' = la buscan; 'encontrada' = la hallaron",
+                    },
+                    "ubicacion": {
+                        "type": "string",
+                        "description": (
+                            "OBLIGATORIO. Dónde se perdió o dónde está ahora: "
+                            "barrio, dirección o punto de referencia"
+                        ),
+                    },
+                    "barrio": {"type": "string", "description": "Barrio o comuna"},
+                    "maps_url": {
+                        "type": "string",
+                        "description": "Enlace de Google Maps, si la persona lo compartió",
+                    },
+                    "contacto_telefono": {
+                        "type": "string",
+                        "description": "OBLIGATORIO. Teléfono de quien reporta",
+                    },
+                    "contacto_nombre": {"type": "string", "description": "Nombre de quien reporta"},
+                    "senas": {
+                        "type": "string",
+                        "description": (
+                            "Comentarios y señas particulares, TAL CUAL los "
+                            "contó la persona. Es el campo que más ayuda a "
+                            "reconocerla: 'la encontré con un collar azul y "
+                            "verde', 'tiene una mancha blanca en la pata de "
+                            "atrás', 'está esterilizada', 'le falta un colmillo'"
+                        ),
+                    },
+                    "especie_otra": {
+                        "type": "string",
+                        "description": "Qué animal es, si no es perro ni gato",
+                    },
+                    "fecha_evento": {
+                        "type": "string",
+                        "description": "Fecha en que se perdió o fue encontrada (AAAA-MM-DD)",
+                    },
+                    "notas": {"type": "string", "description": "Cualquier detalle adicional"},
+                }),
+                "required": ["tipo_registro", "especie", "ubicacion", "contacto_telefono"],
+            },
+        },
+        {
+            "name": "completar_reporte",
+            "description": (
+                "Agrega o corrige datos de un reporte YA creado en esta "
+                "conversación. Úsala cuando la persona recuerde algo después "
+                "(el color exacto, el nombre, un teléfono adicional)."
+            ),
+            "input_schema": {
+                "type": "object",
+                "properties": _props_mascota({
+                    "codigo": {"type": "string", "description": "Código del reporte a completar"},
+                    "ubicacion": {"type": "string", "description": "Ubicación corregida"},
+                    "barrio": {"type": "string", "description": "Barrio o comuna"},
+                    "maps_url": {"type": "string", "description": "Enlace de Google Maps"},
+                    "contacto_telefono": {"type": "string", "description": "Teléfono de contacto"},
+                    "contacto_nombre": {"type": "string", "description": "Nombre de quien reporta"},
+                    "senas": {"type": "string", "description": "Señas particulares"},
+                    "fecha_evento": {"type": "string", "description": "Fecha (AAAA-MM-DD)"},
+                    "notas": {"type": "string", "description": "Detalles adicionales"},
+                }),
+                "required": ["codigo"],
+            },
+        },
+        {
+            "name": "finalizar_fuera_de_alcance",
+            "description": (
+                "Cierra la conversación cuando la persona NO quiere ninguno de "
+                "los tres casos de uso (buscar una mascota, reportar una "
+                "encontrada o descargar el listado) y ya se lo aclaraste una "
+                "vez. Deja el chat en pausa 20 minutos, así que NO la uses con "
+                "alguien que esté buscando o reportando una mascota, por "
+                "confusa que venga la conversación. Despídete con amabilidad "
+                "en texto ANTES de llamarla."
+            ),
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "motivo": {
+                        "type": "string",
+                        "description": "Por qué queda fuera de alcance (interno).",
+                    },
+                },
+                "required": ["motivo"],
+            },
+        },
+        {
+            "name": "descargar_listado",
+            "description": (
+                "Entrega el enlace para descargar en Excel el listado "
+                "actualizado de mascotas reportadas. Úsala cuando la persona "
+                "pida la lista, el listado, el archivo o el Excel. Comparte el "
+                "enlace tal cual te lo devuelva la herramienta."
+            ),
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "tipo": {
+                        "type": "string",
+                        "enum": ["perdidas", "encontradas", "todas"],
+                        "description": "Qué reportes incluir (por defecto todas)",
+                    },
+                },
+            },
+        },
+    ]
+
+
+# Cualquier cosa que parezca un teléfono colombiano: 7 dígitos o más seguidos,
+# tolerando espacios, guiones y paréntesis entre ellos (3012458967,
+# 301 245 8967, (602) 555-3311, +57 315 802 4471).
+_TELEFONO_EN_TEXTO_RE = re.compile(r"(?:\+?\d[\d\s\-().]{5,}\d)")
+
+_MAX_CORRECCIONES = 2
+
+_CORRECCION_CONTACTO = (
+    "ALTO: acabas de escribir un número de teléfono que NO te entregó ninguna "
+    "herramienta. Los datos de contacto no están en tu memoria ni puedes "
+    "deducirlos — solo existen dentro del resultado de `entregar_contacto`. Ese "
+    "mensaje NO se le envió a la persona. Vuelve a responder: si ya confirmó que "
+    "reconoce a la mascota, llama `entregar_contacto` con el código del reporte "
+    "y usa TEXTUALMENTE la ubicación y el teléfono que te devuelva. Si aún no lo "
+    "ha confirmado, pregúntaselo sin dar ningún dato de contacto."
+)
+
+
+def _viola_contacto(
+    cfg: Dict[str, Any],
+    textos_de_la_ronda: List[str],
+    tools_called: List[Dict[str, Any]],
+) -> bool:
+    """¿El bot escribió un teléfono que nadie le dio?
+
+    Guardarraíl duro del bot de mascotas: los modelos pequeños a veces
+    "recuerdan" un teléfono plausible en vez de pedirlo, y aquí eso significa
+    mandar a una familia angustiada a marcar un número equivocado. Solo se
+    permiten números en el turno donde `entregar_contacto` los entregó de verdad.
+    """
+    if cfg.get("mascotas") is None or not textos_de_la_ronda:
+        return False
+    if any(t.get("tool") == "entregar_contacto" for t in tools_called):
+        return False
+    for texto in textos_de_la_ronda:
+        for candidato in _TELEFONO_EN_TEXTO_RE.findall(texto):
+            digitos = re.sub(r"\D", "", candidato)
+            # 7 dígitos = fijo sin indicativo; por debajo son fechas, horas,
+            # códigos de reporte (MC-00012) o cantidades.
+            if len(digitos) >= 7:
+                return True
+    return False
+
+
+_MASCOTAS_TOOLS = frozenset({
+    "buscar_mascota", "ver_ficha", "entregar_contacto", "registrar_reporte",
+    "completar_reporte", "descargar_listado", "finalizar_fuera_de_alcance",
+})
+
+# Pausa que se le aplica a un canal (hoy la IP del chat web; mañana el número de
+# WhatsApp) cuando la conversación no es de ninguno de los tres casos de uso.
+COOLDOWN_MINUTOS = 20
+
+
+def _mascotas_db():
+    """Sesión propia para las tools de mascotas.
+
+    El motor no recibe la sesión del request (contrato `advance(bot, state,
+    input)` compartido con el motor de flujos), así que abre la suya y la
+    cierra en el mismo turno.
+    """
+    from ..database import SessionLocal
+
+    return SessionLocal()
+
+
+def _foto_url(codigo: str, foto_id: int) -> str:
+    """URL de una foto. Relativa por defecto (el canal web la reescribe a
+    `/api/...`); absoluta si `MASCOTAS_PUBLIC_BASE` está definida, que es lo
+    que necesitará WhatsApp cuando se conecte."""
+    base = (os.getenv("MASCOTAS_PUBLIC_BASE") or "").rstrip("/")
+    return f"{base}/mascotas/foto/{codigo}/{foto_id}"
+
+
+def _resumen_ficha(ficha: Dict[str, Any]) -> str:
+    """Una línea legible de un reporte, para que el modelo la lea y la cuente."""
+    partes = [ficha.get("codigo") or ""]
+    for campo in ("especie", "raza", "color", "sexo", "tamano", "edad"):
+        if ficha.get(campo):
+            partes.append(str(ficha[campo]))
+    if ficha.get("nombre"):
+        partes.append(f"responde a {ficha['nombre']}")
+    if ficha.get("senas"):
+        partes.append(str(ficha["senas"]))
+    if ficha.get("zona"):
+        partes.append(f"zona: {ficha['zona']}")
+    if ficha.get("fecha"):
+        partes.append(f"fecha: {ficha['fecha']}")
+    partes.append(f"{ficha.get('fotos') or 0} foto(s)")
+    return " · ".join(p for p in partes if p)
+
+
+def _run_tool_mascotas(
+    name: str,
+    tool_input: Dict[str, Any],
+    cfg: Dict[str, Any],
+    actions: List[Dict[str, Any]],
+    notas: Optional[List[str]] = None,
+) -> tuple[str, bool]:
+    """Ejecuta una tool de mascotas. Devuelve (tool_result_text, terminado).
+
+    `notas` recoge marcas para el historial aplanado. Sin ellas el bot pierde
+    los códigos que vio (el historial solo guarda el texto que dijo), y en el
+    turno siguiente no sabe de qué reporte hablaba la persona.
+    """
+    from . import mascotas as svc
+
+    runtime = cfg.get("_runtime") or {}
+    apuntar = notas.append if notas is not None else (lambda _s: None)
+    db = _mascotas_db()
+    try:
+        if name == "buscar_mascota":
+            buscar_en = str(tool_input.get("buscar_en") or "encontradas")
+            resultados = svc.buscar(db, tool_input, buscar_en=buscar_en)
+            if resultados:
+                apuntar(
+                    "candidatos de la búsqueda: "
+                    + ", ".join(r["codigo"] for r in resultados)
+                )
+            else:
+                apuntar("buscaste y no hubo coincidencias")
+            if not resultados:
+                return json.dumps({
+                    "coincidencias": [],
+                    "instruccion": (
+                        "No hay coincidencias todavía. Explícaselo con empatía, "
+                        "dile que la lista se actualiza todos los días y que su "
+                        "caso queda guardado en la base de datos, y pídele "
+                        "teléfono de contacto y la zona para registrarlo con "
+                        "`registrar_reporte` y avisarle apenas aparezca algo."
+                    ),
+                }, ensure_ascii=False), False
+            return json.dumps({
+                "coincidencias": [
+                    {**r, "resumen": _resumen_ficha(r)} for r in resultados
+                ],
+                "instruccion": (
+                    "Cuéntale cuántas coincidencias hay y muéstrale la más "
+                    "parecida con `ver_ficha` (una a la vez). Nunca des el "
+                    "teléfono todavía."
+                ),
+            }, ensure_ascii=False), False
+
+        if name == "ver_ficha":
+            codigo = str(tool_input.get("codigo") or "").strip().upper()
+            mascota = svc.obtener(db, codigo)
+            if mascota is None:
+                return f"no existe el reporte {codigo}", False
+            ficha = svc.ficha_publica(mascota, db)
+            apuntar(f"le mostraste la ficha del reporte {mascota.codigo}")
+            fotos = list(mascota.fotos or [])
+            if fotos:
+                actions.append({
+                    "type": "say_media",
+                    "payload": {
+                        "caption": "",
+                        "media_type": "image",
+                        "url": _foto_url(mascota.codigo, fotos[0].id),
+                    },
+                })
+            return json.dumps({
+                "ficha": ficha,
+                "resumen": _resumen_ficha(ficha),
+                "foto_enviada": bool(fotos),
+                "instruccion": (
+                    "Descríbesela en tus palabras y pregúntale si es su "
+                    "mascota. Si dice que sí, usa `entregar_contacto`."
+                ),
+            }, ensure_ascii=False), False
+
+        if name == "entregar_contacto":
+            codigo = str(tool_input.get("codigo") or "").strip().upper()
+            datos = svc.datos_de_contacto(db, codigo)
+            if datos is None:
+                return f"no existe el reporte {codigo}", False
+            apuntar(f"entregaste el contacto del reporte {codigo}")
+            logger.info("mascotas: contacto entregado codigo=%s", codigo)
+            return json.dumps({
+                "contacto": datos,
+                "instruccion": (
+                    "Compártele la ubicación, el enlace de Maps si existe y el "
+                    "teléfono. Recomiéndale llevar fotos o algo que acredite "
+                    "que es su mascota, y despídete deseándole suerte."
+                ),
+            }, ensure_ascii=False), False
+
+        if name == "registrar_reporte":
+            mascota, problema = svc.crear_reporte(
+                db, tool_input,
+                bot_id=runtime.get("bot_id"),
+                source=runtime.get("source", "web"),
+                upload_session=runtime.get("upload_session"),
+            )
+            if mascota is None:
+                return problema, False
+            fotos = len(mascota.fotos or [])
+            # `runtime` es de ida y vuelta: el caller lee los códigos creados
+            # para recordarlos en la sesión (y no crear dos reportes del mismo
+            # caso) y para que el chat sepa a qué reporte pegar fotos nuevas.
+            runtime.setdefault("reportes_creados", []).append(mascota.codigo)
+            apuntar(f"registraste el reporte {mascota.codigo}")
+            return json.dumps({
+                "codigo": mascota.codigo,
+                "fotos_guardadas": fotos,
+                "instruccion": (
+                    f"Reporte guardado con el código {mascota.codigo}. "
+                    "Confírmaselo, dile que lo anote, cuéntale cuántas fotos "
+                    "quedaron guardadas y, si no envió ninguna, invítala a "
+                    "adjuntarlas por el clip 📎 — con foto las probabilidades "
+                    "suben muchísimo."
+                ),
+            }, ensure_ascii=False), False
+
+        if name == "finalizar_fuera_de_alcance":
+            motivo = str(tool_input.get("motivo", ""))[:300]
+            actions.append({"type": "end", "payload": {
+                "text": "",
+                "cooldown_minutos": COOLDOWN_MINUTOS,
+                "motivo": motivo,
+            }})
+            apuntar("cerraste la conversación por estar fuera de alcance")
+            logger.info("mascotas: cierre fuera de alcance (motivo=%r)", motivo)
+            return "conversación cerrada; el canal queda en pausa", True
+
+        if name == "completar_reporte":
+            codigo = str(tool_input.get("codigo") or "")
+            mascota, problema = svc.actualizar_reporte(db, codigo, tool_input)
+            if mascota is None:
+                return problema, False
+            return f"reporte {mascota.codigo} actualizado; confírmaselo brevemente", False
+
+        if name == "descargar_listado":
+            tipo = str(tool_input.get("tipo") or "todas")
+            mapa = {"perdidas": "perdida", "encontradas": "encontrada"}
+            token = encrypt_secret(json.dumps({
+                "t": mapa.get(tipo, ""), "exp": "listado",
+            }))
+            base = (os.getenv("MASCOTAS_PUBLIC_BASE") or "").rstrip("/")
+            url = f"{base}/mascotas/listado.xlsx?token={token}"
+            actions.append({"type": "say_file", "payload": {
+                "url": url,
+                "filename": "mascotas_reportadas.xlsx",
+                "label": "Listado de mascotas (Excel)",
+            }})
+            return json.dumps({
+                "enlace_enviado": True,
+                "instruccion": (
+                    "Ya le apareció el botón de descarga en el chat. Dile que "
+                    "el archivo se actualiza cada vez que alguien reporta y "
+                    "que puede volver a pedirlo cuando quiera."
+                ),
+            }, ensure_ascii=False), False
+
+        return f"herramienta de mascotas desconocida: {name}", False
+    except Exception:
+        # Detalle solo server-side (regla #6): el modelo recibe un error genérico.
+        logger.exception("llm_engine: tool de mascotas %r falló", name)
+        return json.dumps({"error": "la consulta no está disponible ahora mismo"}), False
+    finally:
+        db.close()
 
 
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s.]+\.[a-zA-Z]{2,}$")
@@ -519,6 +1089,7 @@ def _run_tool(
     actions: List[Dict[str, Any]],
     sent_media_log: List[str],
     bookings: Optional[List[Dict[str, str]]] = None,
+    notas: Optional[List[str]] = None,
 ) -> tuple[str, bool]:
     """Ejecuta una tool. Devuelve (tool_result_text, turno_terminado)."""
     if name == "registrar_demo":
@@ -593,6 +1164,9 @@ def _run_tool(
         sent_media_log.append("catalogo_whatsapp")
         return "catálogo enviado al cliente", False
 
+    if name in _MASCOTAS_TOOLS:
+        return _run_tool_mascotas(name, tool_input, cfg, actions, notas)
+
     if name == "consultar_pedido_shopify":
         shopify_cfg = cfg.get("shopify") or {}
         try:
@@ -638,6 +1212,16 @@ def _classify_camino(
     tool_names = {t.get("tool") for t in tools_called}
     if "registrar_demo" in tool_names:
         return "demo_agendada"
+    if "entregar_contacto" in tool_names:
+        return "mascota_reconocida"
+    if "registrar_reporte" in tool_names:
+        return "reporte_registrado"
+    if "buscar_mascota" in tool_names:
+        return "busqueda_mascota"
+    if "ver_ficha" in tool_names:
+        return "ficha_mascota"
+    if "descargar_listado" in tool_names:
+        return "descarga_listado"
     if "escalar_a_asesor" in tool_names:
         return "escalar_a_asesor"
     if "consultar_pedido_shopify" in tool_names:
@@ -831,12 +1415,20 @@ def advance(
     bot,
     state: Optional[Dict[str, Any]],
     user_input: Optional[str] = None,
+    runtime: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Un turno de conversación LLM. Mismo contrato que `bot_engine.advance`,
     más una clave extra `telemetry` (#255) que el caller persiste con
     `record_decision()`. Los flow-bots no la emiten y nadie la requiere.
+
+    `runtime` (opcional) son datos del canal que las tools necesitan y que no
+    viven en la config del bot: el `upload_session` de las fotos que el
+    ciudadano adjuntó en el chat, el `source` y el `bot_id`. Los callers que no
+    lo pasan (webhooks, simulador) siguen funcionando igual.
     """
     cfg = _parse_llm_config(bot)
+    if runtime:
+        cfg = {**cfg, "_runtime": runtime}
     actions: List[Dict[str, Any]] = []
     t0 = time.monotonic()
     try:
@@ -900,11 +1492,10 @@ def _advance_inner(
     t0: float,
 ) -> Dict[str, Any]:
     history = _load_history(state)
-    system = _system_prompt(bot, cfg)
+    user_text = (user_input or "").strip() or _FIRST_TURN_PROMPT
+    system = _system_prompt(bot, cfg, history, user_text)
     tools = _tools_for(cfg)
     model_id = cfg.get("model_id") or _env_model_id()
-
-    user_text = (user_input or "").strip() or _FIRST_TURN_PROMPT
 
     # Mensajes de trabajo del turno (el historial persistido queda aplanado).
     working: List[Dict[str, Any]] = [
@@ -914,16 +1505,24 @@ def _advance_inner(
 
     say_texts: List[str] = []
     sent_media_log: List[str] = []
+    # Marcas de lo que hicieron las tools (códigos vistos, reportes creados).
+    # Van al historial aplanado: sin ellas el bot pierde de qué reporte hablaba.
+    notas_historial: List[str] = []
     bookings: List[Dict[str, str]] = []
     tools_called: List[Dict[str, Any]] = []
     escalated_to: Optional[str] = None
     finished = False
     rounds = 0
+    correcciones = 0
 
     for _ in range(_MAX_TOOL_ROUNDS):
         data = _invoke_model(model_id, system, working, tools)
         rounds += 1
         content = data.get("content") or []
+        # Marca de agua para poder deshacer lo dicho en ESTA ronda si el
+        # guardarraíl la rechaza (ver `_viola_contacto`).
+        acciones_previas = len(actions)
+        textos_previos = len(say_texts)
 
         tool_results: List[Dict[str, Any]] = []
         for block in content:
@@ -938,6 +1537,7 @@ def _advance_inner(
                 tool_input = block.get("input") or {}
                 result_text, ended = _run_tool(
                     name, tool_input, cfg, actions, sent_media_log, bookings,
+                    notas_historial,
                 )
                 # #255: cada tool llamada es una decisión — queda registrada.
                 tools_called.append(
@@ -958,6 +1558,24 @@ def _advance_inner(
                     }
                 )
 
+        # Guardarraíl anti-invención de datos de contacto: si el modelo escribió
+        # un teléfono sin haberlo pedido a `entregar_contacto`, se descarta lo
+        # que dijo en esta ronda y se le exige que use la herramienta.
+        if (
+            correcciones < _MAX_CORRECCIONES
+            and _viola_contacto(cfg, say_texts[textos_previos:], tools_called)
+        ):
+            correcciones += 1
+            del actions[acciones_previas:]
+            del say_texts[textos_previos:]
+            logger.warning(
+                "llm_engine: contacto inventado bloqueado (bot=%s, corrección %s)",
+                getattr(bot, "id", "?"), correcciones,
+            )
+            working.append({"role": "assistant", "content": content})
+            working.append({"role": "user", "content": _CORRECCION_CONTACTO})
+            continue
+
         if finished or data.get("stop_reason") != "tool_use" or not tool_results:
             break
 
@@ -968,6 +1586,8 @@ def _advance_inner(
     assistant_summary = "\n\n".join(say_texts)
     if sent_media_log:
         assistant_summary += f"\n[enviaste: {', '.join(sent_media_log)}]"
+    if notas_historial:
+        assistant_summary += f"\n[{'; '.join(notas_historial)}]"
     history.append({"role": "user", "content": user_text})
     history.append({"role": "assistant", "content": assistant_summary or "(sin texto)"})
     history = history[-_MAX_HISTORY_MESSAGES:]

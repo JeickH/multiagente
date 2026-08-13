@@ -54,6 +54,14 @@ services:
       TWILIO_WHATSAPP_FROM: ${TWILIO_WHATSAPP_FROM:-}
       TWILIO_MESSAGING_SERVICE_SID: ${TWILIO_MESSAGING_SERVICE_SID:-}
       TWILIO_WEBHOOK_BASE_URL: ${TWILIO_WEBHOOK_BASE_URL:-}
+      # Sprint "Ayuda a Cali": fotos de las mascotas reportadas. En producción
+      # va el bucket (MASCOTAS_BUCKET) y en local el disco del contenedor, que
+      # se persiste con el volumen de abajo — sin él, cada rebuild borraba las
+      # fotos y los reportes quedaban apuntando a archivos inexistentes.
+      MASCOTAS_BUCKET: ${MASCOTAS_BUCKET:-}
+      MASCOTAS_MEDIA_DIR: /app/media
+    volumes:
+      - mascotas_media:/app/media
     depends_on:
       - db
 
@@ -75,3 +83,4 @@ services:
 
 volumes:
   postgres_data:
+  mascotas_media:

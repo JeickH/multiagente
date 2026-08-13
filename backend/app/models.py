@@ -984,3 +984,204 @@ class CampaignEvent(Base):
         )
 
     __str__ = __repr__
+
+
+# ===== Sprint "Ayuda a Cali": mascotas perdidas =====
+# Dos naturalezas de registro en la MISMA tabla, distinguidas por
+# `tipo_registro`, porque el cruce que hace el bot es justamente entre ambas:
+#   'perdida'    → alguien BUSCA a su mascota (la perdió).
+#   'encontrada' → alguien HALLÓ una mascota y la reporta para devolverla.
+# Casi todos los campos descriptivos son NULL-ables a propósito: quien reporta
+# rara vez conoce raza, edad y nombre a la vez. Los dos únicos obligatorios son
+# `ubicacion` (dónde se perdió / dónde está) y `contacto_telefono` (sin eso el
+# reporte no sirve para reunir a nadie).
+MASCOTA_TIPO_PERDIDA = "perdida"
+MASCOTA_TIPO_ENCONTRADA = "encontrada"
+AVAILABLE_MASCOTA_TIPOS = (MASCOTA_TIPO_PERDIDA, MASCOTA_TIPO_ENCONTRADA)
+
+MASCOTA_ESTADO_ACTIVO = "activo"
+MASCOTA_ESTADO_REUNIDA = "reunida"     # la mascota volvió con su familia
+MASCOTA_ESTADO_CERRADO = "cerrado"     # reporte descartado / duplicado
+AVAILABLE_MASCOTA_ESTADOS = (
+    MASCOTA_ESTADO_ACTIVO, MASCOTA_ESTADO_REUNIDA, MASCOTA_ESTADO_CERRADO,
+)
+
+
+class Mascota(Base):
+    """Un reporte de mascota perdida o encontrada.
+
+    Contiene PII de quien reporta (nombre y teléfono de contacto): `__repr__`
+    la redacta (regla 1) y el listado público del bot nunca entrega el teléfono
+    hasta que la persona confirma que la mascota es suya.
+    """
+
+    __tablename__ = "mascotas"
+
+    id = Column(Integer, primary_key=True, index=True)
+    # Identificador legible que ve el ciudadano y que nombra la carpeta de
+    # fotos en el storage (`mascotas/<codigo>/`). Se deriva del id al crear.
+    codigo = Column(String(16), unique=True, nullable=False, index=True)
+    tipo_registro = Column(String(16), nullable=False, index=True)
+
+    especie = Column(String(24), nullable=False, index=True)  # perro|gato|otra
+    especie_otra = Column(String(60), nullable=True)          # si especie='otra'
+    raza = Column(String(80), nullable=True)
+    color = Column(String(80), nullable=True)
+    nombre = Column(String(80), nullable=True)   # nombre al que responde
+    sexo = Column(String(16), nullable=True)     # macho|hembra|desconocido
+    edad = Column(String(40), nullable=True)     # texto libre: "2 años", "cachorro"
+    tamano = Column(String(24), nullable=True)   # pequeño|mediano|grande
+    senas = Column(Text, nullable=True)          # señas particulares
+
+    # Obligatorio: dónde se perdió (tipo 'perdida') o dónde está / se encontró
+    # (tipo 'encontrada'). El link de Maps es opcional a propósito: mucha gente
+    # sabe dar la dirección pero no compartir una ubicación.
+    ubicacion = Column(String(255), nullable=False)
+    maps_url = Column(String(500), nullable=True)
+    barrio = Column(String(120), nullable=True, index=True)
+
+    contacto_nombre = Column(String(120), nullable=True)
+    contacto_telefono = Column(String(32), nullable=False)
+
+    fecha_evento = Column(Date, nullable=True)   # cuándo se perdió / encontró
+    estado = Column(
+        String(24), nullable=False, default=MASCOTA_ESTADO_ACTIVO,
+        server_default=MASCOTA_ESTADO_ACTIVO, index=True,
+    )
+    notas = Column(Text, nullable=True)
+
+    bot_id = Column(
+        Integer, ForeignKey("bots.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    source = Column(String(24), nullable=False, default="web", index=True)
+
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    updated_at = Column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "tipo_registro IN ('perdida','encontrada')", name="ck_mascotas_tipo"
+        ),
+        CheckConstraint(
+            "estado IN ('activo','reunida','cerrado')", name="ck_mascotas_estado"
+        ),
+        Index("ix_mascotas_tipo_estado", "tipo_registro", "estado"),
+    )
+
+    fotos = relationship(
+        "MascotaFoto",
+        back_populates="mascota",
+        cascade="all, delete-orphan",
+        order_by="MascotaFoto.id",
+    )
+
+    def __repr__(self) -> str:  # PII fuera de los logs (regla de seguridad #1)
+        return (
+            f"<Mascota id={self.id} codigo={self.codigo} "
+            f"tipo={self.tipo_registro} especie={self.especie} "
+            f"estado={self.estado} contacto=<REDACTED>>"
+        )
+
+    __str__ = __repr__
+
+
+MATCH_ESTADO_NUEVA = "nueva"
+MATCH_ESTADO_REVISADA = "revisada"
+MATCH_ESTADO_CONFIRMADA = "confirmada"
+MATCH_ESTADO_DESCARTADA = "descartada"
+AVAILABLE_MATCH_ESTADOS = (
+    MATCH_ESTADO_NUEVA, MATCH_ESTADO_REVISADA,
+    MATCH_ESTADO_CONFIRMADA, MATCH_ESTADO_DESCARTADA,
+)
+
+
+class MascotaCoincidencia(Base):
+    """Posible cruce entre una mascota que buscan y una que encontraron.
+
+    Las escribe el job diario (`scripts/job_coincidencias_mascotas.py`, 12:00
+    hora Colombia), que compara cada reporte 'perdida' activo contra cada
+    'encontrada' activo con el mismo scoring que usa el bot en vivo. Sirve para
+    lo que la conversación no alcanza a ver: la mascota que reportaron *después*
+    de que la familia ya había escrito.
+
+    Una fila por par (única): si el job vuelve a encontrarlo, actualiza el
+    puntaje en vez de duplicar, y respeta el estado que le puso el equipo.
+    """
+
+    __tablename__ = "mascota_coincidencias"
+
+    id = Column(Integer, primary_key=True, index=True)
+    perdida_id = Column(
+        Integer, ForeignKey("mascotas.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    encontrada_id = Column(
+        Integer, ForeignKey("mascotas.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    score = Column(Integer, nullable=False, default=0, index=True)
+    # Qué campos coincidieron y cuánto sumó cada uno: el equipo necesita ver el
+    # porqué antes de llamar a una familia.
+    detalle = Column(JSONB, nullable=True)
+    estado = Column(
+        String(16), nullable=False, default=MATCH_ESTADO_NUEVA,
+        server_default=MATCH_ESTADO_NUEVA, index=True,
+    )
+    notas = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    updated_at = Column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+    )
+
+    __table_args__ = (
+        UniqueConstraint("perdida_id", "encontrada_id", name="uq_mascota_par"),
+        CheckConstraint(
+            "estado IN ('nueva','revisada','confirmada','descartada')",
+            name="ck_match_estado",
+        ),
+        Index("ix_match_estado_score", "estado", "score"),
+    )
+
+    perdida = relationship("Mascota", foreign_keys=[perdida_id])
+    encontrada = relationship("Mascota", foreign_keys=[encontrada_id])
+
+    def __repr__(self) -> str:
+        return (
+            f"<MascotaCoincidencia id={self.id} perdida={self.perdida_id} "
+            f"encontrada={self.encontrada_id} score={self.score} "
+            f"estado={self.estado}>"
+        )
+
+    __str__ = __repr__
+
+
+class MascotaFoto(Base):
+    """Foto de un reporte, guardada en el storage bajo `mascotas/<codigo>/`.
+
+    `mascota_id` es NULL mientras la foto está en el limbo: el ciudadano suele
+    mandar las fotos ANTES de que el bot termine de recoger los datos, así que
+    se suben contra `upload_session` (uuid efímero del chat) y se adoptan
+    cuando el reporte se crea.
+    """
+
+    __tablename__ = "mascota_fotos"
+
+    id = Column(Integer, primary_key=True, index=True)
+    mascota_id = Column(
+        Integer, ForeignKey("mascotas.id", ondelete="CASCADE"), nullable=True, index=True
+    )
+    upload_session = Column(String(64), nullable=True, index=True)
+    storage_key = Column(String(400), nullable=False)
+    content_type = Column(String(60), nullable=False, default="image/jpeg")
+    bytes_size = Column(Integer, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    mascota = relationship("Mascota", back_populates="fotos")
+
+    def __repr__(self) -> str:
+        return (
+            f"<MascotaFoto id={self.id} mascota_id={self.mascota_id} "
+            f"key={self.storage_key!r}>"
+        )
+
+    __str__ = __repr__

@@ -12,3 +12,8 @@ cryptography>=46.0.0,<48.0.0
 python-multipart>=0.0.20,<0.1
 tenacity>=8.5,<9
 boto3>=1.34,<2
+# Sprint 23: `services/instagram_publisher` lo usa contra la API de Meta. Venía
+# faltando en el archivo (la imagen lo tenía por una instalación manual), así
+# que un rebuild limpio dejaba el backend sin arrancar.
+requests>=2.31,<3
+openpyxl>=3.1,<4
