@@ -29,7 +29,7 @@ import re
 import time
 import uuid
 from datetime import datetime
-from threading import Lock
+from threading import Lock, Thread
 from typing import Any, Dict, List, Optional
 
 from fastapi import (
@@ -699,6 +699,116 @@ def actualizar_coincidencia(
         coincidencia.id, coincidencia.estado,
     )
     return _fila_coincidencia(coincidencia)
+
+
+# ---------------------------------------------------------------------------
+# Sincronización con plataformas hermanas (mascotasporcolombia.com)
+# ---------------------------------------------------------------------------
+
+# Estado de la sincronización en curso. Vive en memoria del proceso porque es
+# efímero por naturaleza (dura lo que dura la corrida) y el backend es una sola
+# task ECS. Si algún día escala horizontalmente, el botón podría no ver el
+# progreso de otra task — ahí tocaría moverlo a la BD.
+_sync_estado: Dict[str, Any] = {"estado": "idle"}
+_sync_lock = Lock()
+
+
+class SyncOut(BaseModel):
+    """Progreso de la importación. `estado`: idle | corriendo | ok | error."""
+
+    estado: str
+    mensaje: Optional[str] = None
+    iniciada: Optional[datetime] = None
+    terminada: Optional[datetime] = None
+    contadores: Dict[str, int] = {}
+
+
+def _correr_sincronizacion() -> None:
+    """Importa en segundo plano. Lo lanza `POST /panel/sincronizar`.
+
+    Va en un hilo porque recorrer ~300 fichas con pausa entre requests toma
+    minutos y no cabe en el timeout de API Gateway (30 s). El panel consulta el
+    avance con `GET /panel/sincronizacion`.
+    """
+    db = None
+    try:
+        # Los imports van DENTRO del try: si el módulo del importador falta o
+        # falla al cargar, el estado tiene que quedar en 'error' — si el fallo
+        # escapa, el botón se queda en 'corriendo' para siempre y no se puede
+        # reintentar sin reiniciar el backend.
+        from ..database import SessionLocal
+        from ..services import mascotasporcolombia
+
+        def _avance(parciales: Dict[str, int]) -> None:
+            with _sync_lock:
+                _sync_estado["contadores"] = dict(parciales)
+
+        db = SessionLocal()
+        contadores = mascotasporcolombia.sincronizar(db, progreso=_avance)
+        with _sync_lock:
+            _sync_estado.update({
+                "estado": "ok",
+                "mensaje": None,
+                "terminada": datetime.utcnow(),
+                "contadores": dict(contadores),
+            })
+        logger.info("mascotas sync: terminada %s", contadores)
+    except BaseException:
+        # Detalle solo server-side (regla de seguridad #6).
+        logger.exception("mascotas sync: la importación falló")
+        with _sync_lock:
+            _sync_estado.update({
+                "estado": "error",
+                "mensaje": "No pudimos completar la sincronización. Intenta más tarde.",
+                "terminada": datetime.utcnow(),
+            })
+    finally:
+        if db is not None:
+            db.close()
+        # Red de seguridad: pase lo que pase, el estado no puede quedar en
+        # 'corriendo', porque bloquearía todos los intentos siguientes.
+        with _sync_lock:
+            if _sync_estado.get("estado") == "corriendo":
+                _sync_estado.update({
+                    "estado": "error",
+                    "mensaje": "La sincronización terminó de forma inesperada.",
+                    "terminada": datetime.utcnow(),
+                })
+
+
+@router.post("/panel/sincronizar", response_model=SyncOut)
+def sincronizar_panel(
+    _: models.User = Depends(require_mascotas_account),
+):
+    """Trae los reportes nuevos de las plataformas hermanas.
+
+    Responde de inmediato con `corriendo`: la importación sigue en segundo
+    plano y el panel la consulta con `GET /panel/sincronizacion`. Si ya hay una
+    corriendo, no lanza otra.
+    """
+    with _sync_lock:
+        if _sync_estado.get("estado") == "corriendo":
+            return SyncOut(**{k: v for k, v in _sync_estado.items()})
+        _sync_estado.clear()
+        _sync_estado.update({
+            "estado": "corriendo",
+            "iniciada": datetime.utcnow(),
+            "contadores": {},
+        })
+
+    Thread(target=_correr_sincronizacion, name="mascotas-sync", daemon=True).start()
+    logger.info("mascotas sync: importación lanzada")
+    with _sync_lock:
+        return SyncOut(**{k: v for k, v in _sync_estado.items()})
+
+
+@router.get("/panel/sincronizacion", response_model=SyncOut)
+def estado_sincronizacion(
+    _: models.User = Depends(require_mascotas_account),
+):
+    """Avance de la última importación (o `idle` si nunca se corrió)."""
+    with _sync_lock:
+        return SyncOut(**{k: v for k, v in _sync_estado.items()})
 
 
 @router.post("/panel/cruzar", response_model=Dict[str, int])

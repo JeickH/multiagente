@@ -65,6 +65,14 @@ type Coincidencia = {
   encontrada: Reporte;
 };
 
+type Sync = {
+  estado: string;
+  mensaje: string | null;
+  iniciada: string | null;
+  terminada: string | null;
+  contadores: Record<string, number>;
+};
+
 type PanelResponse = {
   resumen: {
     total: number;
@@ -602,6 +610,10 @@ export default function MascotasPanel() {
   const [seccion, setSeccion] = useState<Seccion>('coincidencias');
   const [filtroEstado, setFiltroEstado] = useState<string>('');
   const [cruzando, setCruzando] = useState(false);
+  // Las coincidencias descartadas se archivan: siguen guardadas (el cruce las
+  // respeta y no las vuelve a proponer), pero no estorban la revisión diaria.
+  const [verDescartadas, setVerDescartadas] = useState(false);
+  const [sync, setSync] = useState<Sync | null>(null);
   // Filtros por campo: el equipo busca "los perros negros de Meléndez", no una
   // fila puntual, así que se combinan entre sí y con el filtro de estado.
   const [busqueda, setBusqueda] = useState('');
@@ -722,6 +734,41 @@ export default function MascotasPanel() {
     }
   };
 
+  /**
+   * Trae los reportes nuevos de las plataformas hermanas. Corre en el servidor
+   * en segundo plano (recorrer cientos de fichas toma minutos), así que aquí
+   * solo se dispara y se consulta el avance hasta que termina.
+   */
+  const sincronizar = async () => {
+    try {
+      const inicial = await authedFetch<Sync>('/mascotas/panel/sincronizar', {
+        method: 'POST',
+      });
+      setSync(inicial);
+      setError(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'No se pudo iniciar la sincronización');
+    }
+  };
+
+  // Consulta el avance mientras la importación esté corriendo.
+  useEffect(() => {
+    if (sync?.estado !== 'corriendo') return;
+    const id = setInterval(async () => {
+      try {
+        const estado = await authedFetch<Sync>('/mascotas/panel/sincronizacion');
+        setSync(estado);
+        if (estado.estado !== 'corriendo') {
+          clearInterval(id);
+          await cargar();
+        }
+      } catch {
+        clearInterval(id);
+      }
+    }, 3000);
+    return () => clearInterval(id);
+  }, [sync?.estado, cargar]);
+
   const cruzarAhora = async () => {
     setCruzando(true);
     try {
@@ -733,6 +780,20 @@ export default function MascotasPanel() {
       setCruzando(false);
     }
   };
+
+  /** Coincidencias a la vista: las descartadas quedan archivadas por defecto. */
+  const coincidencias = useMemo(
+    () =>
+      (data?.coincidencias || []).filter(
+        (c) => verDescartadas || c.estado !== 'descartada'
+      ),
+    [data, verDescartadas]
+  );
+
+  const descartadas = useMemo(
+    () => (data?.coincidencias || []).filter((c) => c.estado === 'descartada').length,
+    [data]
+  );
 
   /** ¿Queda algún reporte de prueba? El botón de purga solo aparece si sí. */
   const hayDemo = useMemo(
@@ -834,13 +895,23 @@ export default function MascotasPanel() {
           <div className="flex gap-2">
             <button
               type="button"
+              onClick={sincronizar}
+              disabled={sync?.estado === 'corriendo'}
+              className="px-4 py-2 rounded-lg text-sm font-semibold text-white transition-opacity disabled:opacity-50"
+              style={{ backgroundColor: '#008069' }}
+              title="Trae los reportes nuevos de Mascotas por Colombia"
+            >
+              {sync?.estado === 'corriendo' ? 'Sincronizando…' : '🔄 Sincronizar lista'}
+            </button>
+            <button
+              type="button"
               onClick={cruzarAhora}
               disabled={cruzando}
               className="px-4 py-2 rounded-lg text-sm font-semibold text-white transition-opacity disabled:opacity-50"
               style={{ backgroundColor: '#004D40' }}
               title="El cruce corre solo todos los días a las 12:00"
             >
-              {cruzando ? 'Cruzando…' : '🔄 Cruzar ahora'}
+              {cruzando ? 'Cruzando…' : '🔗 Cruzar ahora'}
             </button>
             <a
               href="/api/mascotas/panel/export.xlsx"
@@ -869,6 +940,34 @@ export default function MascotasPanel() {
           </p>
         )}
 
+        {sync && sync.estado !== 'idle' && (
+          <p
+            className="my-3 text-sm px-4 py-2 rounded-lg"
+            style={
+              sync.estado === 'error'
+                ? { backgroundColor: '#FDECEA', color: '#8A1C12' }
+                : { backgroundColor: '#E0F2F1', color: '#004D40' }
+            }
+          >
+            {sync.estado === 'corriendo' && (
+              <>
+                🔄 Trayendo reportes de Mascotas por Colombia…{' '}
+                {sync.contadores.vistas
+                  ? `${sync.contadores.vistas} fichas revisadas, ${sync.contadores.creadas ?? 0} nuevas`
+                  : 'leyendo el listado del sitio'}
+              </>
+            )}
+            {sync.estado === 'ok' && (
+              <>
+                ✅ Sincronización lista: {sync.contadores.creadas ?? 0} reportes nuevos,{' '}
+                {sync.contadores.actualizadas ?? 0} actualizados
+                {sync.contadores.fallidas ? `, ${sync.contadores.fallidas} con error` : ''}.
+              </>
+            )}
+            {sync.estado === 'error' && <>⚠️ {sync.mensaje}</>}
+          </p>
+        )}
+
         {/* ===== Contadores ===== */}
         {resumen && (
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 my-5">
@@ -888,7 +987,7 @@ export default function MascotasPanel() {
         {/* ===== Pestañas ===== */}
         <div className="flex flex-wrap gap-2 mb-4 border-b border-gray-200 pb-3">
           {([
-            ['coincidencias', `🔗 Coincidencias (${data?.coincidencias.length ?? 0})`],
+            ['coincidencias', `🔗 Coincidencias (${coincidencias.length})`],
             ['perdida', `🔎 Se buscan (${resumen?.perdidas ?? 0})`],
             ['encontrada', `🐾 Encontradas (${resumen?.encontradas ?? 0})`],
           ] as [Seccion, string][]).map(([valor, label]) => (
@@ -909,19 +1008,40 @@ export default function MascotasPanel() {
         {/* ===== Coincidencias ===== */}
         {seccion === 'coincidencias' && (
           <>
-            <p className="text-sm text-gray-500 mb-4">
-              El sistema compara todas las noches —y todos los días a las 12:00— cada
-              mascota que se busca contra cada mascota encontrada. Estos son los pares
-              que más se parecen: revísalos y llama a las dos personas si cuadran.
+            <p className="text-sm text-gray-500 mb-3">
+              El sistema compara todos los días a las 12:00 cada mascota que se busca
+              contra cada mascota encontrada. Estos son los pares que más se parecen:
+              revísalos y llama a las dos personas si cuadran.
             </p>
-            {(data?.coincidencias.length ?? 0) === 0 && (
+
+            {descartadas > 0 && (
+              <div className="flex items-center gap-2 mb-4">
+                <button
+                  type="button"
+                  onClick={() => setVerDescartadas((v) => !v)}
+                  className="px-3 py-1.5 rounded-full text-xs font-medium border transition-colors hover:bg-gray-50"
+                  style={{ borderColor: '#D1D5DB', color: '#6B7280' }}
+                >
+                  {verDescartadas
+                    ? '🙈 Ocultar descartadas'
+                    : `📁 Ver ${descartadas} descartada${descartadas > 1 ? 's' : ''}`}
+                </button>
+                <span className="text-xs text-gray-400">
+                  Las que marcas como “no es” quedan archivadas y el cruce diario no
+                  las vuelve a proponer.
+                </span>
+              </div>
+            )}
+
+            {coincidencias.length === 0 && (
               <p className="text-sm text-gray-400 py-8 text-center">
-                Todavía no hay coincidencias. Aparecerán aquí en cuanto un reporte nuevo
-                se parezca a uno existente.
+                {descartadas > 0
+                  ? 'No quedan coincidencias por revisar. 🎉'
+                  : 'Todavía no hay coincidencias. Aparecerán aquí en cuanto un reporte nuevo se parezca a uno existente.'}
               </p>
             )}
             <div className="flex flex-col gap-3">
-              {data?.coincidencias.map((c) => (
+              {coincidencias.map((c) => (
                 <div
                   key={c.id}
                   className="rounded-xl border bg-white p-4"
