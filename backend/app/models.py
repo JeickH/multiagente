@@ -431,10 +431,18 @@ class BotLlmDecision(Base):
     finished = Column(Boolean, nullable=False, default=False)
     escalated_to = Column(String(64), nullable=True)  # handle del asesor si hubo handoff
     failsafe = Column(Boolean, nullable=False, default=False)
+    # Sprint "Ayuda a Cali": agrupa los turnos de una misma conversación en los
+    # canales sin `conversation_id` (el chat web es anónimo). Hoy es un uuid de
+    # la sesión; cuando el bot se conecte a WhatsApp será el número, que es
+    # justamente como el equipo identifica a la persona.
+    chat_ref = Column(String(64), nullable=True, index=True)
+    # Nombre o teléfono que la persona dio durante la conversación, si lo dio.
+    chat_contacto = Column(String(120), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
     __table_args__ = (
         Index("ix_llm_decisions_bot_created", "bot_id", "created_at"),
+        Index("ix_llm_decisions_chat_ref", "chat_ref", "created_at"),
     )
 
     bot = relationship("Bot")

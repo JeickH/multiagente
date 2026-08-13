@@ -287,7 +287,12 @@ def _load_session(token: Optional[str]) -> Dict[str, Any]:
     cifrados con Fernet (AEAD), así que no puede inyectar turnos falsos ni
     adueñarse de las fotos de otra conversación.
     """
-    nueva = {"history": [], "turns": 0, "upload": uuid.uuid4().hex, "codigo": None}
+    nueva = {
+        "history": [], "turns": 0, "upload": uuid.uuid4().hex, "codigo": None,
+        # Identificador del hilo, para agrupar los turnos en el registro de
+        # conversaciones del panel. Corto porque solo tiene que ser único.
+        "chat": uuid.uuid4().hex[:16],
+    }
     if not token:
         return nueva
     try:
@@ -302,6 +307,7 @@ def _load_session(token: Optional[str]) -> Dict[str, Any]:
         "turns": int(data.get("n") or 0),
         "upload": str(data.get("u") or "") or nueva["upload"],
         "codigo": data.get("c") or None,
+        "chat": str(data.get("r") or "") or nueva["chat"],
     }
 
 
@@ -312,6 +318,7 @@ def _dump_session(sess: Dict[str, Any], history: List[Dict[str, str]]) -> str:
             "n": sess["turns"] + 1,
             "u": sess["upload"],
             "c": sess.get("codigo"),
+            "r": sess.get("chat"),
         },
         ensure_ascii=False,
     ))
@@ -399,12 +406,23 @@ def chat(payload: ChatIn, request: Request, db: Session = Depends(get_db)):
         payload.message,
         runtime=runtime,
     )
-    llm_engine.record_decision(db, bot, result.get("telemetry"), source="mascotas")
 
     # `runtime` es de ida y vuelta: el motor deja ahí los reportes que creó.
     creados = runtime.get("reportes_creados") or []
     if creados:
         sess["codigo"] = creados[-1]
+
+    # Si en este chat ya se registró un caso, el panel puede mostrar a quién
+    # corresponde el hilo (nombre o teléfono que dio la persona).
+    contacto = None
+    if sess.get("codigo"):
+        reporte = svc.obtener(db, sess["codigo"])
+        if reporte is not None:
+            contacto = reporte.contacto_nombre or reporte.contacto_telefono
+    llm_engine.record_decision(
+        db, bot, result.get("telemetry"), source="mascotas",
+        chat_ref=sess.get("chat"), chat_contacto=contacto,
+    )
 
     actions: List[ChatAction] = []
     for act in result.get("actions") or []:
@@ -910,6 +928,157 @@ def purgar_panel(
             detail="Solo se pueden purgar los reportes de prueba (demo)",
         )
     return BorradoOut(eliminados=svc.purgar(db, source))
+
+
+# Cómo se le nombra a cada camino del bot en el panel. Son los que importan
+# para el CEO: qué vino a hacer la persona.
+CAMINO_ETIQUETAS = {
+    "busqueda_mascota": "🔎 Buscó su mascota",
+    "ficha_mascota": "🐾 Vio una ficha",
+    "mascota_reconocida": "🎉 Reconoció a su mascota",
+    "reporte_registrado": "📝 Registró un caso",
+    "descarga_listado": "📊 Descargó el listado",
+    "saludo": "👋 Saludo",
+    "fin": "👋 Cierre",
+    "failsafe": "⚠️ Error del motor",
+    "respuesta_libre": "💬 Conversación",
+}
+
+# Caminos que cuentan como "lo que vino a hacer". El resto (saludo, cierre,
+# conversación suelta) es relleno y no se destaca en el resumen.
+CAMINOS_UTILES = (
+    "busqueda_mascota", "ficha_mascota", "mascota_reconocida",
+    "reporte_registrado", "descarga_listado",
+)
+
+
+class TurnoOut(BaseModel):
+    """Un turno de la conversación. Solo se ve al desplegar el hilo."""
+
+    id: int
+    created_at: datetime
+    camino: str
+    camino_label: str
+    user_input: Optional[str] = None
+    reply_preview: Optional[str] = None
+    herramientas: List[str] = []
+    finished: bool = False
+
+
+class ConversacionOut(BaseModel):
+    """Un hilo completo, resumido para la lista del panel."""
+
+    chat_ref: str
+    contacto: Optional[str] = None
+    inicio: datetime
+    fin: datetime
+    turnos: int
+    caminos: List[str] = []          # etiquetas legibles, sin repetir
+    reportes: List[str] = []         # códigos MC-xxxxx creados en el hilo
+    source: str
+
+
+class ConversacionesOut(BaseModel):
+    conversaciones: List[ConversacionOut]
+    total: int
+
+
+@router.get("/panel/conversaciones", response_model=ConversacionesOut)
+def listar_conversaciones(
+    limite: int = 200,
+    _: models.User = Depends(require_mascotas_account),
+    db: Session = Depends(get_db),
+):
+    """Conversaciones del bot, una fila por hilo.
+
+    Solo el resumen: con quién fue, cuántos turnos y **qué caminos tomó** (si
+    vino a buscar, a reportar o a descargar el listado). Los mensajes se piden
+    aparte, al desplegar un hilo.
+    """
+    bot = _bot(db)
+    if bot is None:
+        return ConversacionesOut(conversaciones=[], total=0)
+
+    filas = (
+        db.query(models.BotLlmDecision)
+        .filter(
+            models.BotLlmDecision.bot_id == bot.id,
+            models.BotLlmDecision.chat_ref.isnot(None),
+        )
+        .order_by(models.BotLlmDecision.created_at.desc())
+        .limit(5000)
+        .all()
+    )
+
+    hilos: Dict[str, Dict[str, Any]] = {}
+    for fila in filas:
+        hilo = hilos.setdefault(fila.chat_ref, {
+            "chat_ref": fila.chat_ref,
+            "contacto": None,
+            "inicio": fila.created_at,
+            "fin": fila.created_at,
+            "turnos": 0,
+            "caminos": [],
+            "reportes": [],
+            "source": fila.source,
+        })
+        hilo["turnos"] += 1
+        hilo["inicio"] = min(hilo["inicio"], fila.created_at)
+        hilo["fin"] = max(hilo["fin"], fila.created_at)
+        if fila.chat_contacto and not hilo["contacto"]:
+            hilo["contacto"] = fila.chat_contacto
+        if fila.camino in CAMINOS_UTILES:
+            etiqueta = CAMINO_ETIQUETAS.get(fila.camino, fila.camino)
+            if etiqueta not in hilo["caminos"]:
+                hilo["caminos"].append(etiqueta)
+        # Los códigos de reporte quedan en el resultado de la herramienta.
+        for codigo in re.findall(r"MC-\d{5}", fila.tools_called or ""):
+            if codigo not in hilo["reportes"]:
+                hilo["reportes"].append(codigo)
+
+    ordenados = sorted(hilos.values(), key=lambda h: h["fin"], reverse=True)
+    return ConversacionesOut(
+        conversaciones=[ConversacionOut(**h) for h in ordenados[:limite]],
+        total=len(ordenados),
+    )
+
+
+@router.get("/panel/conversaciones/{chat_ref}", response_model=List[TurnoOut])
+def detalle_conversacion(
+    chat_ref: str,
+    _: models.User = Depends(require_mascotas_account),
+    db: Session = Depends(get_db),
+):
+    """Los mensajes de un hilo. Se pide solo al desplegarlo en el panel."""
+    filas = (
+        db.query(models.BotLlmDecision)
+        .filter(models.BotLlmDecision.chat_ref == chat_ref)
+        .order_by(models.BotLlmDecision.created_at)
+        .limit(200)
+        .all()
+    )
+    if not filas:
+        raise HTTPException(status_code=404, detail="Conversación no encontrada")
+
+    turnos = []
+    for fila in filas:
+        try:
+            herramientas = [
+                t.get("tool", "") for t in json.loads(fila.tools_called or "[]")
+            ]
+        except (ValueError, TypeError):
+            herramientas = []
+        turnos.append(TurnoOut(
+            id=fila.id,
+            created_at=fila.created_at,
+            camino=fila.camino,
+            camino_label=CAMINO_ETIQUETAS.get(fila.camino, fila.camino),
+            user_input=fila.user_input,
+            reply_preview=fila.reply_preview,
+            herramientas=[h for h in herramientas if h],
+            finished=bool(fila.finished),
+        ))
+    return turnos
 
 
 @router.get("/panel/export.json")

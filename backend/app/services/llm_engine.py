@@ -1334,8 +1334,15 @@ def record_decision(
     source: str,
     conversation_id: Optional[int] = None,
     session_id: Optional[int] = None,
+    chat_ref: Optional[str] = None,
+    chat_contacto: Optional[str] = None,
 ) -> None:
     """Persiste la decisión del turno en `bot_llm_decisions`.
+
+    `chat_ref` agrupa los turnos de una misma conversación en canales donde no
+    hay `conversation_id` (el chat web anónimo); cuando el bot se conecte a
+    WhatsApp será el número. `chat_contacto` es el nombre o teléfono que la
+    persona haya dado, para que el panel muestre a quién corresponde el hilo.
 
     Nunca debe romper el turno: cualquier error queda solo en el log.
     """
@@ -1360,6 +1367,8 @@ def record_decision(
             finished=bool(telemetry.get("finished")),
             escalated_to=telemetry.get("escalated_to"),
             failsafe=bool(telemetry.get("failsafe")),
+            chat_ref=chat_ref,
+            chat_contacto=chat_contacto,
         )
         db.add(row)
         db.commit()

@@ -131,7 +131,29 @@ const SOURCE_LABEL: Record<string, string> = {
   patitasacasa: '🤝 Patitas a Casa',
 };
 
-type Seccion = 'coincidencias' | 'perdida' | 'encontrada';
+type Conversacion = {
+  chat_ref: string;
+  contacto: string | null;
+  inicio: string;
+  fin: string;
+  turnos: number;
+  caminos: string[];
+  reportes: string[];
+  source: string;
+};
+
+type Turno = {
+  id: number;
+  created_at: string;
+  camino: string;
+  camino_label: string;
+  user_input: string | null;
+  reply_preview: string | null;
+  herramientas: string[];
+  finished: boolean;
+};
+
+type Seccion = 'coincidencias' | 'perdida' | 'encontrada' | 'conversaciones';
 
 function fechaCorta(iso: string): string {
   const d = new Date(iso);
@@ -623,6 +645,12 @@ export default function MascotasPanel() {
   const [filtroConFoto, setFiltroConFoto] = useState(false);
   const [visor, setVisor] = useState<{ reporte: Reporte; indice: number } | null>(null);
   const [editando, setEditando] = useState<Reporte | null>(null);
+  // Registro de conversaciones: la lista trae solo el resumen; los mensajes se
+  // piden al desplegar un hilo, para no traer miles de turnos sin que nadie
+  // los mire.
+  const [conversaciones, setConversaciones] = useState<Conversacion[]>([]);
+  const [hiloAbierto, setHiloAbierto] = useState<string | null>(null);
+  const [turnos, setTurnos] = useState<Record<string, Turno[]>>({});
 
   const cargar = useCallback(async () => {
     setCargando(true);
@@ -691,6 +719,41 @@ export default function MascotasPanel() {
       setError(e instanceof Error ? e.message : 'No se pudo eliminar el reporte');
     }
   };
+
+  const cargarConversaciones = useCallback(async () => {
+    try {
+      const res = await authedFetch<{ conversaciones: Conversacion[] }>(
+        '/mascotas/panel/conversaciones'
+      );
+      setConversaciones(res.conversaciones || []);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'No pudimos cargar las conversaciones');
+    }
+  }, []);
+
+  /** Abre o cierra un hilo; la primera vez trae sus mensajes. */
+  const alternarHilo = async (chatRef: string) => {
+    if (hiloAbierto === chatRef) {
+      setHiloAbierto(null);
+      return;
+    }
+    setHiloAbierto(chatRef);
+    if (turnos[chatRef]) return;
+    try {
+      const res = await authedFetch<Turno[]>(
+        `/mascotas/panel/conversaciones/${chatRef}`
+      );
+      setTurnos((prev) => ({ ...prev, [chatRef]: res }));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'No pudimos cargar la conversación');
+    }
+  };
+
+  useEffect(() => {
+    if (seccion === 'conversaciones' && conversaciones.length === 0) {
+      void cargarConversaciones();
+    }
+  }, [seccion, conversaciones.length, cargarConversaciones]);
 
   const eliminarFoto = async (r: Reporte, fotoId: number) => {
     if (!window.confirm('¿Eliminar esta foto? No se puede deshacer.')) return;
@@ -1009,6 +1072,7 @@ export default function MascotasPanel() {
             ['coincidencias', `🔗 Coincidencias (${coincidencias.length})`],
             ['perdida', `🔎 Se buscan (${resumen?.perdidas ?? 0})`],
             ['encontrada', `🐾 Encontradas (${resumen?.encontradas ?? 0})`],
+            ['conversaciones', '💬 Conversaciones'],
           ] as [Seccion, string][]).map(([valor, label]) => (
             <button
               key={valor}
@@ -1156,8 +1220,116 @@ export default function MascotasPanel() {
           </>
         )}
 
+        {/* ===== Registro de conversaciones ===== */}
+        {seccion === 'conversaciones' && (
+          <>
+            <p className="text-sm text-gray-500 mb-4">
+              Cada conversación que atendió el bot, con los caminos que tomó: si la
+              persona vino a buscar su mascota, a reportar una encontrada o a
+              descargar el listado. Toca una fila para ver los mensajes.
+            </p>
+            {conversaciones.length === 0 && (
+              <p className="text-sm text-gray-400 py-8 text-center">
+                Todavía no hay conversaciones registradas.
+              </p>
+            )}
+            <div className="flex flex-col gap-2">
+              {conversaciones.map((c) => (
+                <div
+                  key={c.chat_ref}
+                  className="rounded-xl border bg-white"
+                  style={{ borderColor: '#E5E7EB' }}
+                >
+                  <button
+                    type="button"
+                    onClick={() => void alternarHilo(c.chat_ref)}
+                    className="w-full flex flex-wrap items-center gap-3 px-4 py-3 text-left"
+                  >
+                    <span className="text-gray-400 text-xs">
+                      {hiloAbierto === c.chat_ref ? '▾' : '▸'}
+                    </span>
+                    <span className="font-semibold text-gray-800 text-sm">
+                      {c.contacto || 'Visitante anónimo'}
+                    </span>
+                    <span className="text-xs text-gray-400 font-mono">{c.chat_ref}</span>
+                    <span className="flex flex-wrap gap-1.5">
+                      {c.caminos.length > 0 ? (
+                        c.caminos.map((camino) => (
+                          <span
+                            key={camino}
+                            className="text-[11px] px-2 py-0.5 rounded-full"
+                            style={{ backgroundColor: '#E0F2F1', color: '#004D40' }}
+                          >
+                            {camino}
+                          </span>
+                        ))
+                      ) : (
+                        <span className="text-[11px] text-gray-400">
+                          sin acciones · solo conversó
+                        </span>
+                      )}
+                      {c.reportes.map((codigo) => (
+                        <span
+                          key={codigo}
+                          className="text-[11px] px-2 py-0.5 rounded-full font-mono"
+                          style={{ backgroundColor: '#FEF3C7', color: '#92400E' }}
+                        >
+                          {codigo}
+                        </span>
+                      ))}
+                    </span>
+                    <span className="ml-auto text-xs text-gray-400 whitespace-nowrap">
+                      {c.turnos} turno{c.turnos === 1 ? '' : 's'} · {fechaCorta(c.fin)}
+                    </span>
+                  </button>
+
+                  {hiloAbierto === c.chat_ref && (
+                    <div className="px-4 pb-4 border-t" style={{ borderColor: '#F3F4F6' }}>
+                      {!turnos[c.chat_ref] && (
+                        <p className="text-xs text-gray-400 pt-3">Cargando mensajes…</p>
+                      )}
+                      {turnos[c.chat_ref]?.map((t) => (
+                        <div key={t.id} className="pt-3 text-sm">
+                          <div className="flex items-center gap-2 mb-1">
+                            <span
+                              className="text-[11px] px-2 py-0.5 rounded-full"
+                              style={{ backgroundColor: '#F3F4F6', color: '#374151' }}
+                            >
+                              {t.camino_label}
+                            </span>
+                            {t.herramientas.map((h) => (
+                              <span key={h} className="text-[10px] font-mono text-gray-400">
+                                {h}
+                              </span>
+                            ))}
+                            <span className="ml-auto text-[11px] text-gray-300">
+                              {fechaCorta(t.created_at)}
+                            </span>
+                          </div>
+                          {t.user_input && (
+                            <p className="text-gray-700">
+                              <span className="text-gray-400">👤 </span>
+                              {t.user_input}
+                            </p>
+                          )}
+                          {t.reply_preview && (
+                            <p className="text-gray-500 text-xs mt-0.5">
+                              <span className="text-gray-400">🐾 </span>
+                              {t.reply_preview}
+                            </p>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+
         {/* ===== Tablas de reportes ===== */}
-        {seccion !== 'coincidencias' && (
+        {(seccion === 'perdida' || seccion === 'encontrada') && (
           <>
             {/* ===== Filtros ===== */}
             <div className="rounded-xl border bg-white p-3 mb-4" style={{ borderColor: '#E5E7EB' }}>
