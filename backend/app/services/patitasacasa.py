@@ -207,6 +207,7 @@ def sincronizar(
     ciudades: Optional[List[str]] = None,
     pausa: float = PAUSA_DEFAULT,
     sin_fotos: bool = False,
+    solo_encontradas: bool = True,
 ) -> Dict[str, int]:
     """Trae los reportes del origen. Mismo contrato que `mascotasporcolombia`.
 
@@ -264,6 +265,15 @@ def sincronizar(
                 campos = _mapear(pet)
                 if campos is None or not campos.get("origen_id"):
                     conteo["fallidas"] += 1
+                    continue
+
+                # Decisión del CEO (2026-08-13): de las plataformas hermanas
+                # solo traemos las mascotas ENCONTRADAS. Son las que esperan
+                # dueño y las que le sirven a quien llega buscando; las
+                # perdidas de allá ya las está atendiendo esa plataforma.
+                # Para traerlas también, `solo_encontradas=False`.
+                if solo_encontradas and campos["tipo_registro"] != models.MASCOTA_TIPO_ENCONTRADA:
+                    conteo["filtradas"] += 1
                     continue
 
                 # `status='reunited'` en el origen = ya volvió a casa.

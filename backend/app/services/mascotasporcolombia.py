@@ -642,6 +642,7 @@ def importar(
     limite: Optional[int],
     pausa: float,
     progreso: Optional[Callable[[Dict[str, int]], None]] = None,
+    solo_encontradas: bool = True,
 ) -> Dict[str, int]:
     """Recorre el origen y da de alta/actualiza los reportes.
 
@@ -688,6 +689,14 @@ def importar(
         for ficha in fichas:
             if limite is not None and conteo["bajadas"] >= limite:
                 break
+            # Decisión del CEO (2026-08-13): de las plataformas hermanas solo
+            # traemos las mascotas ENCONTRADAS. Son las que esperan dueño y las
+            # que le sirven a quien llega buscando; las perdidas de allá ya las
+            # está atendiendo esa plataforma. Se descarta antes de bajar la
+            # página: nos ahorra ~260 requests a un sitio ajeno.
+            if solo_encontradas and SECCIONES[ficha["seccion"]] != models.MASCOTA_TIPO_ENCONTRADA:
+                conteo["omitidas"] += 1
+                continue
             if ficha["lastmod"] and (svc._parse_fecha(ficha["lastmod"][:10]) or desde) < desde:
                 conteo["viejas_por_lastmod"] += 1
                 continue
@@ -778,6 +787,7 @@ def sincronizar(
     progreso: Optional[Callable[[Dict[str, int]], None]] = None,
     limite: Optional[int] = None,
     pausa: float = PAUSA_DEFAULT,
+    solo_encontradas: bool = True,
 ) -> Dict[str, int]:
     """Importa los reportes nuevos del origen. Contadores normalizados.
 
@@ -792,7 +802,10 @@ def sincronizar(
     if desde is None:
         desde = svc._parse_fecha(os.getenv("MPC_DESDE") or DESDE_DEFAULT) or date(2026, 8, 10)
 
-    conteo = importar(desde, dry_run, limite, max(0.5, pausa), progreso=progreso)
+    conteo = importar(
+        desde, dry_run, limite, max(0.5, pausa),
+        progreso=progreso, solo_encontradas=solo_encontradas,
+    )
 
     # Los contadores internos son más detallados que los que espera el panel;
     # se traducen aquí para no atar la UI a la mecánica del scraper.
