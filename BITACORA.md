@@ -2673,3 +2673,50 @@ diseñados para coincidir: Canela↔MC-00002 (24 pts), Rocky↔MC-00006 (19), Mi
 | #352 | **Búsqueda visual por foto** | Hoy el cruce es textual. Comparar embeddings de las fotos subiría muchísimo la tasa de acierto — es lo que más ayudaría cuando la descripción es pobre. |
 | #353 | **Subir el bot a Sonnet** | Bloqueado por `INVALID_PAYMENT_INSTRUMENT` (#253). Cambiar `model_id` en `seed_bot_mascotas.py` y re-sembrar cuando se resuelva. |
 | #354 | **Pausa por canal en almacenamiento compartido** | La pausa de 20 minutos vive en memoria del proceso: si el backend reinicia, se levanta. Aceptable hoy (una sola task ECS); si escala horizontalmente, moverla a la BD. |
+
+### Ronda 2 del sprint (2026-08-13, mismo día) — ajustes pedidos por el CEO
+
+**#355 — Editar y borrar desde el panel.** El CEO necesitaba poder probar sin quedarse
+con datos falsos. `PATCH /mascotas/panel/{codigo}` pasó de tocar solo estado y notas a
+editar cualquier campo; `DELETE` para un reporte (con sus fotos y coincidencias), para
+una foto suelta, y purga en bloque de los reportes de prueba. Los archivos se borran del
+storage, no solo la fila, para no dejar objetos huérfanos pagando espacio. La purga
+**solo acepta `demo`**: los reportes reales se borran de a uno, a propósito. El panel
+ganó formulario de edición, botones por fila y un botón de limpieza que solo aparece si
+quedan datos de prueba.
+
+Regla que se hizo explícita a pedido del CEO: **todo registro debe tener teléfono de
+contacto y ubicación**. Se pueden corregir, nunca vaciar — el servicio rechaza el cambio
+y el formulario los marca con `*`.
+
+**#356 — Aviso de uso de datos.** El bot lo dice en el saludo y la interfaz lo muestra
+bajo el banner: los datos se usan únicamente para reunir a las mascotas con sus dueños, y
+el teléfono no se comparte hasta que alguien reconozca a la mascota. Cubre parte de #350
+(habeas data), que sigue abierto para el aviso de privacidad formal.
+
+**#357 — El Excel entrega solo las mascotas encontradas.** Es la lista que le sirve a
+quien busca a la suya. Los reportes de familias buscando llevan datos de contacto y no se
+reparten en un archivo descargable; si alguien los pide, el bot lo explica y ofrece
+buscar su mascota.
+
+**#358 — Reportes importados de plataformas hermanas.** `mascotas.origen_url` y
+`origen_id`, con índice único parcial `(source, origen_id) WHERE origen_id IS NOT NULL`
+para que el importador re-corra sin duplicar. `contacto_telefono` pasó a **nullable**:
+los reportes importados no publican teléfono. La regla "teléfono **o** ficha de origen"
+se valida en `services/mascotas`, no en la BD, porque el motivo es de negocio y no de
+integridad referencial. El bot detecta el reporte externo y entrega el **enlace a la
+ficha original** en vez de un teléfono, con instrucción explícita de no inventarlo;
+panel y Excel muestran el origen. Migración `migrate_ayuda_cali_origen.py` aplicada en
+local y en RDS (esta vez vía `rds_exec.sh`, que ejecuta inline: ojo, el script del repo
+usa `__file__` y por eso se corrió una variante sin esa dependencia).
+
+**Hallazgo del CEO sobre el sitio de origen:** el sitemap de mascotasporcolombia.com
+tiene **dos** secciones de fichas, no una — `/mascotas/<slug>` (261, mascotas perdidas) y
+`/found-pets/<slug>` (47, encontradas), más páginas índice por departamento que no son
+fichas. El análisis inicial solo cubría la primera. Además, algunas fichas reportan
+**varias mascotas juntas en una sola foto** y hay que separarlas en un registro por
+animal (comparten foto; `origen_id` lleva sufijo `#1`, `#2` para no romper la
+idempotencia).
+
+Despliegues de la ronda: imágenes `:ayudacali2` a `:ayudacali5`, task-defs rev 28 a 31.
+Amplify jobs 59, 60 y 61 SUCCEED.
