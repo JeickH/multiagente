@@ -128,6 +128,7 @@ const SOURCE_LABEL: Record<string, string> = {
   demo: '🧪 Demo',
   // Reportes traídos de plataformas hermanas: el contacto vive en su ficha.
   mascotasporcolombia: '🤝 Mascotas por Colombia',
+  patitasacasa: '🤝 Patitas a Casa',
 };
 
 type Seccion = 'coincidencias' | 'perdida' | 'encontrada';
@@ -918,7 +919,25 @@ export default function MascotasPanel() {
               className="px-4 py-2 rounded-lg text-sm font-semibold border transition-colors hover:bg-gray-50"
               style={{ borderColor: '#D1D5DB', color: '#374151' }}
             >
-              📊 Descargar Excel
+              📊 Excel
+            </a>
+            {/* Paquete para compartir con otra plataforma: casos + fotos. Sin
+                teléfonos — son datos de ciudadanos, no material de reparto. */}
+            <a
+              href="/api/mascotas/panel/export.zip"
+              className="px-4 py-2 rounded-lg text-sm font-semibold border transition-colors hover:bg-gray-50"
+              style={{ borderColor: '#D1D5DB', color: '#374151' }}
+              title="casos.json + fotos, para enviarle a una app amiga (sin teléfonos)"
+            >
+              📦 ZIP para app amiga
+            </a>
+            <a
+              href="/api/mascotas/panel/export.json"
+              className="px-4 py-2 rounded-lg text-sm font-semibold border transition-colors hover:bg-gray-50"
+              style={{ borderColor: '#D1D5DB', color: '#374151' }}
+              title="Solo los datos, sin fotos ni teléfonos"
+            >
+              🧾 JSON
             </a>
             {hayDemo && (
               <button

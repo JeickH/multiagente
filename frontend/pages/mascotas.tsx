@@ -257,7 +257,7 @@ export default function MascotasChat() {
   return (
     <>
       <Head>
-        <title>Recupera Tu Mascota · Cali</title>
+        <title>Recupera Tu Mascota · Colombia</title>
         <meta
           name="description"
           content="Servicio gratuito para reunir mascotas perdidas con sus familias tras el terremoto en Colombia."
@@ -503,10 +503,7 @@ export default function MascotasChat() {
         <form
           onSubmit={enviarTexto}
           className="flex items-end gap-2 px-3 py-2.5 shrink-0"
-          style={{
-            backgroundColor: WA.composerLight,
-            paddingBottom: 'calc(0.625rem + env(safe-area-inset-bottom))',
-          }}
+          style={{ backgroundColor: WA.composerLight }}
         >
           <input
             ref={fileRef}
@@ -559,6 +556,19 @@ export default function MascotasChat() {
             </svg>
           </button>
         </form>
+
+        {/* Firma de la tecnología. Vive SOLO en este sitio: la plataforma y la
+            landing conservan su marca sin cambios. */}
+        <footer
+          className="text-center text-[11px] py-2 shrink-0"
+          style={{
+            backgroundColor: WA.composerLight,
+            color: WA.textoTenueLight,
+            paddingBottom: 'calc(0.5rem + env(safe-area-inset-bottom))',
+          }}
+        >
+          Tecnología de <strong style={{ color: WA.headerLight }}>+1000 Exp</strong>
+        </footer>
       </div>
     </>
   );

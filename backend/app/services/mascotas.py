@@ -21,6 +21,7 @@ incluyen.
 from __future__ import annotations
 
 import io
+import json
 import logging
 import os
 import re
@@ -53,6 +54,7 @@ _LOCAL_MEDIA_ROOT = Path(os.getenv("MASCOTAS_MEDIA_DIR", "/app/media"))
 # de la fila; el valor, cómo se le nombra a la persona en el chat y el panel.
 ORIGEN_NOMBRES = {
     "mascotasporcolombia": "Mascotas por Colombia",
+    "patitasacasa": "Patitas a Casa",
 }
 
 
@@ -257,23 +259,83 @@ def normalizar(texto: Optional[str]) -> str:
 
 
 def _tokens(texto: Optional[str]) -> set:
+    """Palabras con contenido, ya canonizadas (criollo/mestizo → criollo)."""
     return {
-        t for t in normalizar(texto).split()
+        _CANONICO.get(t, t)
+        for t in normalizar(texto).split()
         if len(t) > 2 and t not in _PALABRAS_VACIAS
     }
 
 
-def _score_texto(consulta: Optional[str], valor: Optional[str], peso: int) -> int:
+# Palabras distintas que la gente usa para lo mismo. Cada grupo se colapsa a su
+# primer término antes de comparar, así "criollo" y "mestizo" hacen match — que
+# es como se describe a la mayoría de los animales de la calle.
+_SINONIMOS = (
+    ("criollo", "mestizo", "mestiza", "criolla", "callejero", "callejera",
+     "sin raza", "corriente", "comun", "chandoso", "chanda"),
+    ("cafe", "marron", "chocolate", "carmelito", "carmelita"),
+    ("dorado", "amarillo", "beige", "crema", "mostaza", "rubio"),
+    ("gris", "plateado", "azul"),
+    ("atigrado", "rayado", "tigrillo", "tigre"),
+    ("manchado", "pintado", "moteado"),
+    ("pequeno", "chico", "chiquito", "small", "mini"),
+    ("grande", "big", "gigante"),
+    ("cachorro", "cachorra", "bebe", "puppy", "joven"),
+)
+
+# Índice palabra → término canónico del grupo.
+_CANONICO = {
+    palabra: grupo[0] for grupo in _SINONIMOS for palabra in grupo
+}
+
+
+def _canonizar(texto: str) -> str:
+    """Reemplaza sinónimos por su término canónico. Recibe texto ya normalizado."""
+    if not texto:
+        return texto
+    # Primero las expresiones de varias palabras ("sin raza"), luego palabra a
+    # palabra: si no se hace en ese orden, "sin raza" nunca coincide.
+    for palabra, canonico in _CANONICO.items():
+        if " " in palabra and palabra in texto:
+            texto = texto.replace(palabra, canonico)
+    return " ".join(_CANONICO.get(p, p) for p in texto.split())
+
+
+# Ciudades y regiones que comparte casi toda la base: que dos reportes digan
+# "Cali" no acerca en nada, porque lo dicen todos. Solo el barrio discrimina.
+_ZONAS_GENERICAS = frozenset({
+    "cali", "valle", "cauca", "colombia", "palmira", "medellin", "bogota",
+    "pereira", "armenia", "manizales", "sin", "ubicacion", "precisa",
+})
+
+
+def _score_texto(
+    consulta: Optional[str],
+    valor: Optional[str],
+    peso: int,
+    vacios: frozenset = frozenset(),
+) -> int:
     """Puntaje de un campo de texto libre: exacto vale el peso completo,
-    contenido o tokens compartidos valen menos. Sin dato no resta."""
-    a, b = normalizar(consulta), normalizar(valor)
+    contenido o tokens compartidos valen menos. Sin dato no resta.
+
+    `vacios` son términos que no discriminan (la ciudad, en la zona): si lo
+    único que comparten los dos textos está en esa lista, el puntaje es 0.
+    """
+    a, b = _canonizar(normalizar(consulta)), _canonizar(normalizar(valor))
     if not a or not b:
         return 0
+
+    if vacios:
+        # Si al quitar los términos genéricos no queda nada en común, no suma.
+        utiles_a, utiles_b = _tokens(a) - vacios, _tokens(b) - vacios
+        if not (utiles_a & utiles_b):
+            return 0
+
     if a == b:
         return peso
     if a in b or b in a:
         return max(1, peso - 1)
-    comunes = _tokens(consulta) & _tokens(valor)
+    comunes = (_tokens(consulta) & _tokens(valor)) - vacios
     if comunes:
         return max(1, peso - 2)
     return 0
@@ -336,16 +398,20 @@ def _evaluar(criterios: Dict[str, Any], m: models.Mascota) -> Tuple[int, Dict[st
     _sumar("edad", _score_texto(criterios.get("edad"), m.edad, 2))
     _sumar("nombre", _score_texto(criterios.get("nombre"), m.nombre, 1))
 
+    # "desconocido" es el valor por defecto de las plataformas de origen: que
+    # dos reportes lo compartan no dice absolutamente nada, así que no puntúa.
     sexo = normalizar_sexo(criterios.get("sexo"))
-    if sexo and m.sexo and sexo == normalizar_sexo(m.sexo):
+    if sexo and sexo != "desconocido" and sexo == normalizar_sexo(m.sexo):
         _sumar("sexo", 2)
 
-    # La zona se compara contra ubicación y barrio: "por el sur", "Ciudad
-    # Jardín", "cerca del Parque del Perro".
+    # La zona SUMA cuando coincide, pero nunca descarta: un animal perdido en
+    # San Fernando aparece a los tres días en Meléndez, y quien lo encontró
+    # reporta dónde está, no dónde se perdió. Por eso pesa menos que el color o
+    # la raza y jamás actúa como filtro.
     zona = criterios.get("zona")
     _sumar("zona", max(
-        _score_texto(zona, m.ubicacion, 4),
-        _score_texto(zona, m.barrio, 4),
+        _score_texto(zona, m.ubicacion, 2, vacios=_ZONAS_GENERICAS),
+        _score_texto(zona, m.barrio, 2, vacios=_ZONAS_GENERICAS),
     ))
 
     # Señas particulares / descripción libre contra todo el texto del reporte.
@@ -777,10 +843,17 @@ def obtener(db: Session, codigo: str) -> Optional[models.Mascota]:
 # Cruce diario perdidas ↔ encontradas
 # ---------------------------------------------------------------------------
 
-# Umbral del job. Más alto que el de la búsqueda en vivo (3) a propósito: aquí
-# nadie está confirmando datos al otro lado del chat, así que una coincidencia
-# floja solo genera trabajo inútil para el equipo.
-UMBRAL_COINCIDENCIA = 6
+# Umbral del job. Mucho más alto que el de la búsqueda en vivo (3) a propósito:
+# aquí nadie confirma datos al otro lado del chat, así que una coincidencia
+# floja solo genera trabajo inútil. Con ~250 perdidas y ~50 encontradas hay
+# 12.500 pares posibles; con umbral 6 pasaban 5.284 (todo perro negro parecido
+# a todo perro negro) y el panel se volvía inservible. Con 12 solo pasan los
+# pares que comparten varias señas concretas.
+UMBRAL_COINCIDENCIA = 12
+
+# Cuántas candidatas se guardan por cada mascota buscada. El equipo llama de a
+# una: más de tres por caso es ruido, y las mejores están siempre arriba.
+MAX_COINCIDENCIAS_POR_PERDIDA = 3
 
 
 def _criterios_de(m: models.Mascota) -> Dict[str, Any]:
@@ -832,11 +905,19 @@ def cruzar_reportes(db: Session, umbral: int = UMBRAL_COINCIDENCIA) -> Dict[str,
     nuevas = actualizadas = evaluados = 0
     for perdida in perdidas:
         criterios = _criterios_de(perdida)
+
+        # Se evalúan todas las candidatas y solo se guardan las mejores: sin
+        # este recorte, una descripción genérica ("perro negro") generaba
+        # decenas de pares por caso y enterraba a los que sí valen la pena.
+        candidatas = []
         for encontrada in encontradas:
             evaluados += 1
             score, detalle = _evaluar(criterios, encontrada)
-            if score < umbral:
-                continue
+            if score >= umbral:
+                candidatas.append((score, encontrada, detalle))
+        candidatas.sort(key=lambda c: (-c[0], -(c[1].id or 0)))
+
+        for score, encontrada, detalle in candidatas[:MAX_COINCIDENCIAS_POR_PERDIDA]:
             clave = (perdida.id, encontrada.id)
             existente = existentes.get(clave)
             if existente is None:
@@ -982,6 +1063,143 @@ def exportar_excel(db: Session, tipo: Optional[str] = None) -> bytes:
     buffer = io.BytesIO()
     wb.save(buffer)
     return buffer.getvalue()
+
+
+# ---------------------------------------------------------------------------
+# Export para plataformas aliadas
+# ---------------------------------------------------------------------------
+
+# Versión del formato de intercambio. Si cambia la forma de los registros, sube
+# el número: quien consuma el archivo puede así saber qué esperar.
+EXPORT_VERSION = "1.0"
+
+
+def exportar_json(db: Session, incluir_contacto: bool = False) -> Dict[str, Any]:
+    """Todos los casos en un JSON pensado para compartir con otra plataforma.
+
+    Por defecto **sin datos de contacto**: los teléfonos son de ciudadanos que
+    los dieron para que los llamen por su mascota, no para redistribuirlos. Cada
+    registro lleva `origen_url` (si vino de otra plataforma) o el enlace a
+    nuestro chat, para que quien reconozca al animal sepa dónde escribir.
+    """
+    registros = []
+    for m in listar(db, limite=100000):
+        registro = {
+            "codigo": m.codigo,
+            "tipo": m.tipo_registro,
+            "estado": m.estado,
+            "especie": m.especie,
+            "especie_otra": m.especie_otra,
+            "raza": m.raza,
+            "color": m.color,
+            "nombre": m.nombre,
+            "sexo": m.sexo,
+            "edad": m.edad,
+            "tamano": m.tamano,
+            "senas": m.senas,
+            "ubicacion": m.ubicacion,
+            "barrio": m.barrio,
+            "maps_url": m.maps_url,
+            "fecha_evento": m.fecha_evento.isoformat() if m.fecha_evento else None,
+            "reportado_el": m.created_at.isoformat() if m.created_at else None,
+            "origen": ORIGEN_NOMBRES.get(m.source, "Recupera Tu Mascota"),
+            "origen_url": m.origen_url,
+            "fotos": [f"fotos/{m.codigo}/{f.id}.jpg" for f in (m.fotos or [])],
+            "contacto_url": m.origen_url or "https://mascotasperdidascolombia.com",
+        }
+        if incluir_contacto:
+            registro["contacto_nombre"] = m.contacto_nombre
+            registro["contacto_telefono"] = m.contacto_telefono
+        registros.append(registro)
+
+    return {
+        "formato": "recupera-tu-mascota/export",
+        "version": EXPORT_VERSION,
+        "generado": datetime.utcnow().isoformat() + "Z",
+        "fuente": "https://mascotasperdidascolombia.com",
+        "licencia": (
+            "Datos compartidos para reunir mascotas perdidas con sus familias. "
+            "No usar con fines comerciales ni de contacto masivo."
+        ),
+        "contacto_incluido": incluir_contacto,
+        "total": len(registros),
+        "casos": registros,
+    }
+
+
+def exportar_zip(db: Session, incluir_contacto: bool = False,
+                 incluir_fotos: bool = True) -> bytes:
+    """Paquete para la app amiga: el JSON de casos + las fotos que tengamos.
+
+    Estructura del archivo:
+        casos.json                 → todos los registros
+        LEEME.txt                  → qué es esto y cómo leerlo
+        fotos/<codigo>/<id>.jpg    → las fotos de cada caso
+
+    Solo se empaquetan las fotos que viven en NUESTRO storage. Las de reportes
+    importados no están: viven en la plataforma de origen y el JSON lleva su
+    `origen_url`.
+    """
+    import zipfile
+
+    datos = exportar_json(db, incluir_contacto=incluir_contacto)
+    buffer = io.BytesIO()
+
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr(
+            "casos.json", json.dumps(datos, ensure_ascii=False, indent=1)
+        )
+        zf.writestr("LEEME.txt", _texto_leeme(datos, incluir_fotos))
+
+        if incluir_fotos:
+            for m in listar(db, limite=100000):
+                for foto in (m.fotos or []):
+                    contenido = _get_object(foto.storage_key)
+                    if contenido is None:
+                        continue
+                    extension = ALLOWED_IMAGE_TYPES.get(
+                        foto.content_type or "image/jpeg", ".jpg"
+                    )
+                    zf.writestr(f"fotos/{m.codigo}/{foto.id}{extension}", contenido)
+
+    return buffer.getvalue()
+
+
+def _texto_leeme(datos: Dict[str, Any], incluir_fotos: bool) -> str:
+    return "\n".join([
+        "Recupera Tu Mascota — export de casos",
+        "=" * 38,
+        "",
+        f"Generado: {datos['generado']}",
+        f"Casos: {datos['total']}",
+        f"Formato: {datos['formato']} v{datos['version']}",
+        "",
+        "Contenido",
+        "---------",
+        "casos.json  Todos los reportes: mascotas perdidas (las busca su",
+        "            familia) y encontradas (alguien las halló). El campo",
+        "            'tipo' distingue unas de otras.",
+        "fotos/      Fotos de cada caso, en una carpeta por código." if incluir_fotos
+        else "            (Este paquete se generó sin fotos.)",
+        "",
+        "Datos de contacto",
+        "-----------------",
+        ("Este paquete INCLUYE teléfonos de contacto. Trátalos como datos "
+         "personales: son de ciudadanos que los dieron para que los llamen por "
+         "su mascota."
+         if datos["contacto_incluido"] else
+         "Este paquete NO incluye teléfonos. Cada caso trae 'contacto_url' con "
+         "el sitio donde escribir para llegar a quien reportó."),
+        "",
+        "Casos importados",
+        "----------------",
+        "Los que traen 'origen_url' vienen de otra plataforma solidaria; ese",
+        "enlace es la ficha original, con sus propios datos de contacto.",
+        "",
+        datos["licencia"],
+        "",
+        f"Fuente: {datos['fuente']}",
+    ])
 
 
 def resumen(db: Session) -> Dict[str, Any]:

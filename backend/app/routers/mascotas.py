@@ -30,7 +30,7 @@ import time
 import uuid
 from datetime import datetime
 from threading import Lock, Thread
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from fastapi import (
     APIRouter, Depends, File, Form, HTTPException, Request, Response, UploadFile, status,
@@ -737,22 +737,42 @@ def _correr_sincronizacion() -> None:
         # escapa, el botón se queda en 'corriendo' para siempre y no se puede
         # reintentar sin reiniciar el backend.
         from ..database import SessionLocal
-        from ..services import mascotasporcolombia
+        from ..services import mascotasporcolombia, patitasacasa
 
-        def _avance(parciales: Dict[str, int]) -> None:
-            with _sync_lock:
-                _sync_estado["contadores"] = dict(parciales)
+        # Acumulado entre orígenes: la persona ve un solo avance, no dos.
+        total: Dict[str, int] = {}
+
+        def _sumar(parciales: Dict[str, int], base: Dict[str, int]) -> Dict[str, int]:
+            return {k: base.get(k, 0) + v for k, v in parciales.items()}
+
+        def _avance_de(base: Dict[str, int]) -> Callable[[Dict[str, int]], None]:
+            def _avance(parciales: Dict[str, int]) -> None:
+                with _sync_lock:
+                    _sync_estado["contadores"] = _sumar(parciales, base)
+            return _avance
 
         db = SessionLocal()
-        contadores = mascotasporcolombia.sincronizar(db, progreso=_avance)
+        # Cada plataforma hermana por separado: si una falla o cambia su sitio,
+        # la otra igual entra.
+        for modulo in (mascotasporcolombia, patitasacasa):
+            base = dict(total)
+            try:
+                contadores = modulo.sincronizar(db, progreso=_avance_de(base))
+                total = _sumar(contadores, base)
+            except Exception:
+                logger.exception("mascotas sync: falló el origen %s", modulo.SOURCE)
+                total = _sumar({"fallidas": 1}, base)
+            with _sync_lock:
+                _sync_estado["contadores"] = dict(total)
+
         with _sync_lock:
             _sync_estado.update({
                 "estado": "ok",
                 "mensaje": None,
                 "terminada": datetime.utcnow(),
-                "contadores": dict(contadores),
+                "contadores": dict(total),
             })
-        logger.info("mascotas sync: terminada %s", contadores)
+        logger.info("mascotas sync: terminada %s", total)
     except BaseException:
         # Detalle solo server-side (regla de seguridad #6).
         logger.exception("mascotas sync: la importación falló")
@@ -890,6 +910,54 @@ def purgar_panel(
             detail="Solo se pueden purgar los reportes de prueba (demo)",
         )
     return BorradoOut(eliminados=svc.purgar(db, source))
+
+
+@router.get("/panel/export.json")
+def exportar_json_panel(
+    contacto: bool = False,
+    _: models.User = Depends(require_mascotas_account),
+    db: Session = Depends(get_db),
+):
+    """Todos los casos en JSON, para compartir con una plataforma aliada.
+
+    `contacto=true` incluye los teléfonos: solo para un acuerdo explícito con
+    la otra parte, porque son datos de ciudadanos que los dieron para que los
+    llamen por su mascota, no para redistribuirlos.
+    """
+    datos = svc.exportar_json(db, incluir_contacto=contacto)
+    hoy = datetime.utcnow().strftime("%Y-%m-%d")
+    logger.info("mascotas export: JSON de %s casos (contacto=%s)",
+                datos["total"], contacto)
+    return Response(
+        content=json.dumps(datos, ensure_ascii=False, indent=1),
+        media_type="application/json",
+        headers={
+            "Content-Disposition": f'attachment; filename="mascotas_{hoy}.json"',
+            "Cache-Control": "no-store",
+        },
+    )
+
+
+@router.get("/panel/export.zip")
+def exportar_zip_panel(
+    contacto: bool = False,
+    fotos: bool = True,
+    _: models.User = Depends(require_mascotas_account),
+    db: Session = Depends(get_db),
+):
+    """Paquete completo (casos.json + fotos) para enviarle a una app amiga."""
+    contenido = svc.exportar_zip(db, incluir_contacto=contacto, incluir_fotos=fotos)
+    hoy = datetime.utcnow().strftime("%Y-%m-%d")
+    logger.info("mascotas export: ZIP de %s bytes (contacto=%s fotos=%s)",
+                len(contenido), contacto, fotos)
+    return Response(
+        content=contenido,
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": f'attachment; filename="mascotas_{hoy}.zip"',
+            "Cache-Control": "no-store",
+        },
+    )
 
 
 @router.get("/panel/export.xlsx")
