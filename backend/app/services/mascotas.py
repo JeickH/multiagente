@@ -102,6 +102,21 @@ def _get_object(key: str) -> Optional[bytes]:
         return None
 
 
+def _delete_object(key: str) -> bool:
+    """Borra un archivo del storage. False si no se pudo (la fila se borra
+    igual: un objeto huérfano molesta menos que un registro fantasma)."""
+    bucket = _bucket()
+    try:
+        if bucket:
+            _s3().delete_object(Bucket=bucket, Key=key)
+            return True
+        (_LOCAL_MEDIA_ROOT / key).unlink(missing_ok=True)
+        return True
+    except Exception:
+        logger.exception("mascotas: no se pudo borrar %s del storage", key)
+        return False
+
+
 def _move_object(src_key: str, dst_key: str) -> bool:
     """Mueve un objeto dentro del storage. False si no se pudo (el llamador
     conserva la clave vieja: perder la foto es peor que tenerla mal ubicada)."""
@@ -523,6 +538,8 @@ _LIMITES = {
     "raza": 80, "color": 80, "nombre": 80, "sexo": 16, "edad": 40, "tamano": 24,
     "senas": 2000, "ubicacion": 255, "maps_url": 500, "barrio": 120,
     "contacto_nombre": 120, "contacto_telefono": 32, "notas": 2000,
+    # Solo editables desde el panel, no por el bot.
+    "especie_otra": 60, "especie": 24, "tipo_registro": 16, "estado": 24,
 }
 
 
@@ -562,6 +579,139 @@ def actualizar_reporte(
     logger.info("mascota reporte actualizado codigo=%s campos=%s",
                 mascota.codigo, ",".join(cambios))
     return mascota, ""
+
+
+# Campos que el equipo puede corregir desde el panel. Incluye los dos que el
+# bot exige al crear (`ubicacion` y `contacto_telefono`): se pueden corregir,
+# nunca dejar vacíos — un reporte sin dónde ni a quién llamar no sirve para
+# reunir a nadie.
+_CAMPOS_PANEL = (
+    "tipo_registro", "especie", "especie_otra", "raza", "color", "nombre",
+    "sexo", "edad", "tamano", "senas", "ubicacion", "maps_url", "barrio",
+    "contacto_nombre", "contacto_telefono", "fecha_evento", "estado", "notas",
+)
+
+
+def editar_desde_panel(
+    db: Session, codigo: str, datos: Dict[str, Any]
+) -> Tuple[Optional[models.Mascota], str]:
+    """Edición manual de un reporte. Devuelve (mascota, problema).
+
+    A diferencia de `actualizar_reporte` (que usa el bot y solo agrega datos),
+    aquí se puede **corregir y vaciar** campos opcionales, y cambiar el tipo o
+    el estado. Los obligatorios se validan explícitamente.
+    """
+    mascota = obtener(db, codigo)
+    if mascota is None:
+        return None, "El reporte no existe"
+
+    cambios = []
+    for campo in _CAMPOS_PANEL:
+        if campo not in datos:
+            continue
+
+        if campo == "fecha_evento":
+            valor = _parse_fecha(datos[campo])
+            if datos[campo] and valor is None:
+                return None, "La fecha debe tener el formato AAAA-MM-DD"
+        elif campo == "tipo_registro":
+            valor = normalizar(datos[campo])
+            if valor not in models.AVAILABLE_MASCOTA_TIPOS:
+                return None, "El tipo de reporte debe ser 'perdida' o 'encontrada'"
+        elif campo == "estado":
+            valor = normalizar(datos[campo])
+            if valor not in models.AVAILABLE_MASCOTA_ESTADOS:
+                return None, "Estado inválido"
+        elif campo == "especie":
+            valor = normalizar_especie(datos[campo])
+            if not valor:
+                return None, "La especie es obligatoria (perro, gato u otra)"
+        elif campo == "sexo":
+            valor = normalizar_sexo(datos[campo])
+        else:
+            valor = _limpiar(datos[campo], _LIMITES.get(campo, 255))
+
+        if campo == "ubicacion" and not valor:
+            return None, (
+                "La ubicación es obligatoria: dónde se perdió, dónde se "
+                "encontró o dónde está ahora la mascota"
+            )
+        if campo == "contacto_telefono":
+            if not valor:
+                return None, "El teléfono de contacto es obligatorio"
+            if not _TELEFONO_RE.match(valor):
+                return None, "El teléfono no parece válido"
+
+        if getattr(mascota, campo) != valor:
+            setattr(mascota, campo, valor)
+            cambios.append(campo)
+
+    if not cambios:
+        return mascota, ""
+    mascota.updated_at = datetime.utcnow()
+    db.commit()
+    db.refresh(mascota)
+    # Sin PII en el log (regla #1): solo el código y qué campos cambiaron.
+    logger.info("mascotas panel: %s editado campos=%s", mascota.codigo, ",".join(cambios))
+    return mascota, ""
+
+
+def eliminar_reporte(db: Session, codigo: str) -> bool:
+    """Borra un reporte, sus fotos (fila y archivo) y sus coincidencias.
+
+    Las coincidencias y las filas de fotos caen por `ON DELETE CASCADE`; los
+    archivos del storage hay que borrarlos a mano o quedan huérfanos pagando
+    almacenamiento.
+    """
+    mascota = obtener(db, codigo)
+    if mascota is None:
+        return False
+    for foto in list(mascota.fotos or []):
+        _delete_object(foto.storage_key)
+    db.delete(mascota)
+    db.commit()
+    logger.info("mascotas panel: reporte %s eliminado", codigo)
+    return True
+
+
+def eliminar_foto(db: Session, codigo: str, foto_id: int) -> bool:
+    """Borra una sola foto de un reporte (la fila y el archivo)."""
+    foto = (
+        db.query(models.MascotaFoto)
+        .join(models.Mascota, models.MascotaFoto.mascota_id == models.Mascota.id)
+        .filter(
+            models.MascotaFoto.id == foto_id,
+            models.Mascota.codigo == (codigo or "").strip().upper(),
+        )
+        .first()
+    )
+    if foto is None:
+        return False
+    _delete_object(foto.storage_key)
+    db.delete(foto)
+    db.commit()
+    logger.info("mascotas panel: foto %s de %s eliminada", foto_id, codigo)
+    return True
+
+
+def purgar(db: Session, source: str) -> int:
+    """Borra de un golpe todos los reportes de un origen.
+
+    Pensado para dejar la base limpia de datos de prueba (`source='demo'`)
+    antes de abrir al público, sin tocar los reportes reales.
+    """
+    reportes = (
+        db.query(models.Mascota).filter(models.Mascota.source == source).all()
+    )
+    for mascota in reportes:
+        for foto in list(mascota.fotos or []):
+            _delete_object(foto.storage_key)
+        db.delete(mascota)
+    if reportes:
+        db.commit()
+    logger.info("mascotas panel: %s reportes de origen %r eliminados",
+                len(reportes), source)
+    return len(reportes)
 
 
 def datos_de_contacto(db: Session, codigo: str) -> Optional[Dict[str, Any]]:

@@ -237,8 +237,37 @@ class CoincidenciaUpdate(BaseModel):
 
 
 class PanelUpdate(BaseModel):
+    """Edición manual de un reporte. Todos los campos son opcionales (PATCH
+    parcial); solo se toca lo que venga en el cuerpo.
+
+    `ubicacion` y `contacto_telefono` se pueden **corregir pero no vaciar**: el
+    servicio rechaza el cambio si llegan en blanco. Un reporte sin dónde ni a
+    quién llamar no sirve para reunir a nadie.
+    """
+
+    tipo_registro: Optional[str] = Field(default=None, max_length=16)
+    especie: Optional[str] = Field(default=None, max_length=24)
+    especie_otra: Optional[str] = Field(default=None, max_length=60)
+    raza: Optional[str] = Field(default=None, max_length=80)
+    color: Optional[str] = Field(default=None, max_length=80)
+    nombre: Optional[str] = Field(default=None, max_length=80)
+    sexo: Optional[str] = Field(default=None, max_length=16)
+    edad: Optional[str] = Field(default=None, max_length=40)
+    tamano: Optional[str] = Field(default=None, max_length=24)
+    senas: Optional[str] = Field(default=None, max_length=2000)
+    ubicacion: Optional[str] = Field(default=None, max_length=255)
+    maps_url: Optional[str] = Field(default=None, max_length=500)
+    barrio: Optional[str] = Field(default=None, max_length=120)
+    contacto_nombre: Optional[str] = Field(default=None, max_length=120)
+    contacto_telefono: Optional[str] = Field(default=None, max_length=32)
+    fecha_evento: Optional[str] = Field(default=None, max_length=10)
     estado: Optional[str] = Field(default=None, max_length=24)
     notas: Optional[str] = Field(default=None, max_length=2000)
+
+
+class BorradoOut(BaseModel):
+    ok: bool = True
+    eliminados: int = 1
 
 
 class AccesoOut(BaseModel):
@@ -685,22 +714,65 @@ def actualizar_panel(
     _: models.User = Depends(require_mascotas_account),
     db: Session = Depends(get_db),
 ):
-    """Marca un caso como reunido/cerrado o le agrega una nota de seguimiento."""
-    mascota = svc.obtener(db, codigo)
-    if mascota is None:
-        raise HTTPException(status_code=404, detail="Reporte no encontrado")
+    """Edita un reporte: corrige cualquier dato, cambia el tipo o el estado.
 
-    if payload.estado is not None:
-        if payload.estado not in models.AVAILABLE_MASCOTA_ESTADOS:
-            raise HTTPException(status_code=400, detail="Estado inválido")
-        mascota.estado = payload.estado
-    if payload.notas is not None:
-        mascota.notas = payload.notas.strip() or None
-    mascota.updated_at = datetime.utcnow()
-    db.commit()
-    db.refresh(mascota)
-    logger.info("mascotas panel: %s actualizado estado=%s", mascota.codigo, mascota.estado)
+    Solo se toca lo que venga en el cuerpo (PATCH parcial), así que el mismo
+    endpoint sirve para el selector de estado de la tabla y para el formulario
+    completo de edición.
+    """
+    mascota, problema = svc.editar_desde_panel(
+        db, codigo, payload.model_dump(exclude_unset=True)
+    )
+    if mascota is None:
+        if problema == "El reporte no existe":
+            raise HTTPException(status_code=404, detail=problema)
+        raise HTTPException(status_code=400, detail=problema)
     return _fila_panel(mascota)
+
+
+@router.delete("/panel/{codigo}", response_model=BorradoOut)
+def eliminar_panel(
+    codigo: str,
+    _: models.User = Depends(require_mascotas_account),
+    db: Session = Depends(get_db),
+):
+    """Borra un reporte con sus fotos y sus coincidencias. No se puede deshacer."""
+    if not svc.eliminar_reporte(db, codigo):
+        raise HTTPException(status_code=404, detail="Reporte no encontrado")
+    return BorradoOut()
+
+
+@router.delete("/panel/{codigo}/fotos/{foto_id}", response_model=BorradoOut)
+def eliminar_foto_panel(
+    codigo: str,
+    foto_id: int,
+    _: models.User = Depends(require_mascotas_account),
+    db: Session = Depends(get_db),
+):
+    """Borra una sola foto de un reporte (por ejemplo, una que salió movida)."""
+    if not svc.eliminar_foto(db, codigo, foto_id):
+        raise HTTPException(status_code=404, detail="Foto no encontrada")
+    return BorradoOut()
+
+
+@router.delete("/panel/purgar/{source}", response_model=BorradoOut)
+def purgar_panel(
+    source: str,
+    _: models.User = Depends(require_mascotas_account),
+    db: Session = Depends(get_db),
+):
+    """Borra de un golpe todos los reportes de un origen.
+
+    Existe para dejar la base limpia de datos de prueba (`demo`) antes de abrir
+    al público. Los reportes que entraron por el chat (`web`) o por WhatsApp no
+    se pueden purgar así: esos se borran de a uno, a propósito.
+    """
+    if source not in ("demo",):
+        raise HTTPException(
+            status_code=400,
+            detail="Solo se pueden purgar los reportes de prueba (demo)",
+        )
+    return BorradoOut(eliminados=svc.purgar(db, source))
 
 
 @router.get("/panel/export.xlsx")

@@ -369,6 +369,17 @@ export default function MascotasChat() {
               listado actualizado.
             </p>
           </div>
+          <div className="flex justify-center mb-4">
+            <p
+              className="text-[11px] text-center max-w-md px-4 leading-relaxed"
+              style={{ color: WA.textoTenueLight }}
+            >
+              Al continuar con la conversación aceptas que usemos los datos que
+              compartas <strong>únicamente</strong> con el fin de reunir a las mascotas
+              perdidas con sus dueños. Tu teléfono no se comparte con nadie hasta que
+              alguien reconozca a la mascota.
+            </p>
+          </div>
 
           {msgs.map((m) => (
             <div

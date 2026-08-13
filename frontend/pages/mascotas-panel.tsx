@@ -207,11 +207,13 @@ function Visor({
   indice,
   onCerrar,
   onMover,
+  onEliminarFoto,
 }: {
   reporte: Reporte;
   indice: number;
   onCerrar: () => void;
   onMover: (delta: number) => void;
+  onEliminarFoto: (fotoId: number) => void;
 }) {
   const foto = reporte.fotos[indice];
 
@@ -288,6 +290,14 @@ function Visor({
               {foto.bytes_size ? ` · ${pesoLegible(foto.bytes_size)}` : ''}
             </div>
           </div>
+          <button
+            type="button"
+            onClick={() => onEliminarFoto(foto.id)}
+            className="mt-2 px-3 py-1.5 rounded-lg text-xs font-semibold"
+            style={{ backgroundColor: '#FEE2E2', color: '#991B1B' }}
+          >
+            🗑 Eliminar esta foto
+          </button>
         </div>
 
         <button
@@ -350,6 +360,199 @@ function descripcion(r: Reporte): string {
     .join(' · ');
 }
 
+/** Campos editables del formulario, en el orden en que se muestran. */
+type CampoForm = {
+  campo: keyof Reporte;
+  label: string;
+  tipo?: 'texto' | 'area' | 'select' | 'fecha';
+  opciones?: [string, string][];
+  ancho?: 'full' | 'medio';
+  obligatorio?: boolean;
+  ayuda?: string;
+};
+
+const CAMPOS_FORM: CampoForm[] = [
+  { campo: 'tipo_registro', label: 'Tipo de reporte', tipo: 'select', ancho: 'medio',
+    opciones: [['perdida', 'La están buscando (perdida)'], ['encontrada', 'La encontraron']] },
+  { campo: 'estado', label: 'Estado', tipo: 'select', ancho: 'medio',
+    opciones: [['activo', 'Activo'], ['reunida', 'Reunida 🎉'], ['cerrado', 'Cerrado']] },
+  { campo: 'especie', label: 'Especie', tipo: 'select', ancho: 'medio', obligatorio: true,
+    opciones: [['perro', '🐶 Perro'], ['gato', '🐱 Gato'], ['otra', '🐾 Otra']] },
+  { campo: 'especie_otra', label: 'Qué animal es', ancho: 'medio',
+    ayuda: 'Solo si la especie es "otra": conejo, loro…' },
+  { campo: 'nombre', label: 'Nombre', ancho: 'medio' },
+  { campo: 'raza', label: 'Raza', ancho: 'medio' },
+  { campo: 'color', label: 'Color', ancho: 'medio' },
+  { campo: 'tamano', label: 'Tamaño', tipo: 'select', ancho: 'medio',
+    opciones: [['', 'Sin dato'], ['pequeño', 'Pequeño'], ['mediano', 'Mediano'], ['grande', 'Grande']] },
+  { campo: 'sexo', label: 'Sexo', tipo: 'select', ancho: 'medio',
+    opciones: [['', 'Sin dato'], ['macho', 'Macho'], ['hembra', 'Hembra'], ['desconocido', 'Desconocido']] },
+  { campo: 'edad', label: 'Edad', ancho: 'medio', ayuda: '"2 años", "cachorro"…' },
+  { campo: 'senas', label: 'Señas particulares y comentarios', tipo: 'area', ancho: 'full',
+    ayuda: 'Collar y su color, manchas y dónde, cicatrices, si cojea…' },
+  { campo: 'ubicacion', label: 'Ubicación', ancho: 'full', obligatorio: true,
+    ayuda: 'Dónde se perdió, dónde se encontró o dónde está ahora la mascota' },
+  { campo: 'barrio', label: 'Barrio o zona', ancho: 'medio' },
+  { campo: 'fecha_evento', label: 'Fecha del hecho', tipo: 'fecha', ancho: 'medio' },
+  { campo: 'maps_url', label: 'Enlace de Google Maps', ancho: 'full' },
+  { campo: 'contacto_telefono', label: 'Teléfono de contacto', ancho: 'medio', obligatorio: true,
+    ayuda: 'A quién llamar por esta mascota' },
+  { campo: 'contacto_nombre', label: 'Nombre de contacto', ancho: 'medio' },
+  { campo: 'notas', label: 'Notas internas', tipo: 'area', ancho: 'full' },
+];
+
+/**
+ * Formulario de edición de un reporte. El equipo corrige lo que el bot
+ * entendió mal y completa lo que faltó — y de paso deja limpiar los datos de
+ * prueba antes de abrir al público.
+ */
+function FormularioEdicion({
+  reporte,
+  onGuardar,
+  onCerrar,
+  onEliminar,
+}: {
+  reporte: Reporte;
+  onGuardar: (cambios: Record<string, string>) => Promise<void>;
+  onCerrar: () => void;
+  onEliminar: () => void;
+}) {
+  const [valores, setValores] = useState<Record<string, string>>(() => {
+    const inicial: Record<string, string> = {};
+    CAMPOS_FORM.forEach(({ campo }) => {
+      const v = reporte[campo];
+      inicial[campo] = v === null || v === undefined ? '' : String(v);
+    });
+    return inicial;
+  });
+  const [guardando, setGuardando] = useState(false);
+  const [errorForm, setErrorForm] = useState<string | null>(null);
+
+  const faltantes = CAMPOS_FORM.filter(
+    (c) => c.obligatorio && !valores[c.campo]?.trim()
+  );
+
+  const enviar = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (faltantes.length > 0) {
+      setErrorForm(`Falta ${faltantes.map((c) => c.label.toLowerCase()).join(' y ')}.`);
+      return;
+    }
+    setGuardando(true);
+    setErrorForm(null);
+    try {
+      await onGuardar(valores);
+    } catch (err) {
+      setErrorForm(err instanceof Error ? err.message : 'No se pudo guardar');
+    } finally {
+      setGuardando(false);
+    }
+  };
+
+  return (
+    <div
+      role="dialog"
+      aria-label={`Editar ${reporte.codigo}`}
+      className="fixed inset-0 z-50 flex items-start justify-center p-4 overflow-y-auto"
+      style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}
+      onClick={onCerrar}
+    >
+      <form
+        onSubmit={enviar}
+        onClick={(e) => e.stopPropagation()}
+        className="bg-white rounded-xl w-full max-w-2xl my-8 p-5"
+      >
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-bold text-gray-800">
+            Editar {reporte.codigo}{' '}
+            <span className="text-sm font-normal text-gray-400">
+              · {reporte.fotos.length} foto{reporte.fotos.length === 1 ? '' : 's'}
+            </span>
+          </h2>
+          <button type="button" onClick={onCerrar} aria-label="Cerrar" className="text-xl text-gray-400">
+            ✕
+          </button>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          {CAMPOS_FORM.map((c) => (
+            <div key={c.campo} className={c.ancho === 'full' ? 'col-span-2' : 'col-span-2 sm:col-span-1'}>
+              <label className="block text-xs font-semibold text-gray-600 mb-1">
+                {c.label}
+                {c.obligatorio && <span style={{ color: '#B91C1C' }}> *</span>}
+              </label>
+              {c.tipo === 'select' ? (
+                <select
+                  value={valores[c.campo]}
+                  onChange={(e) => setValores((v) => ({ ...v, [c.campo]: e.target.value }))}
+                  className="w-full px-3 py-2 text-sm rounded-lg border bg-white"
+                  style={{ borderColor: '#D1D5DB' }}
+                >
+                  {c.opciones?.map(([valor, label]) => (
+                    <option key={valor} value={valor}>
+                      {label}
+                    </option>
+                  ))}
+                </select>
+              ) : c.tipo === 'area' ? (
+                <textarea
+                  value={valores[c.campo]}
+                  onChange={(e) => setValores((v) => ({ ...v, [c.campo]: e.target.value }))}
+                  rows={2}
+                  className="w-full px-3 py-2 text-sm rounded-lg border"
+                  style={{ borderColor: '#D1D5DB' }}
+                />
+              ) : (
+                <input
+                  type={c.tipo === 'fecha' ? 'date' : 'text'}
+                  value={valores[c.campo]}
+                  onChange={(e) => setValores((v) => ({ ...v, [c.campo]: e.target.value }))}
+                  className="w-full px-3 py-2 text-sm rounded-lg border"
+                  style={{ borderColor: '#D1D5DB' }}
+                />
+              )}
+              {c.ayuda && <p className="text-[11px] text-gray-400 mt-0.5">{c.ayuda}</p>}
+            </div>
+          ))}
+        </div>
+
+        {errorForm && (
+          <p className="mt-3 text-sm px-3 py-2 rounded-lg" style={{ backgroundColor: '#FDECEA', color: '#8A1C12' }}>
+            {errorForm}
+          </p>
+        )}
+
+        <div className="flex flex-wrap items-center gap-2 mt-5 pt-4 border-t border-gray-100">
+          <button
+            type="submit"
+            disabled={guardando}
+            className="px-4 py-2 rounded-lg text-sm font-semibold text-white disabled:opacity-50"
+            style={{ backgroundColor: '#008069' }}
+          >
+            {guardando ? 'Guardando…' : 'Guardar cambios'}
+          </button>
+          <button
+            type="button"
+            onClick={onCerrar}
+            className="px-4 py-2 rounded-lg text-sm font-semibold border"
+            style={{ borderColor: '#D1D5DB', color: '#374151' }}
+          >
+            Cancelar
+          </button>
+          <button
+            type="button"
+            onClick={onEliminar}
+            className="px-4 py-2 rounded-lg text-sm font-semibold ml-auto"
+            style={{ backgroundColor: '#FEE2E2', color: '#991B1B' }}
+          >
+            🗑 Eliminar reporte
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
 export default function MascotasPanel() {
   const [permitido, setPermitido] = useState<boolean | null>(null);
   const [data, setData] = useState<PanelResponse | null>(null);
@@ -365,6 +568,7 @@ export default function MascotasPanel() {
   const [filtroBarrio, setFiltroBarrio] = useState('');
   const [filtroConFoto, setFiltroConFoto] = useState(false);
   const [visor, setVisor] = useState<{ reporte: Reporte; indice: number } | null>(null);
+  const [editando, setEditando] = useState<Reporte | null>(null);
 
   const cargar = useCallback(async () => {
     setCargando(true);
@@ -411,6 +615,60 @@ export default function MascotasPanel() {
     }
   };
 
+  const guardarEdicion = async (codigo: string, cambios: Record<string, string>) => {
+    await authedFetch(`/mascotas/panel/${codigo}`, {
+      method: 'PATCH',
+      body: JSON.stringify(cambios),
+    });
+    setEditando(null);
+    await cargar();
+  };
+
+  const eliminarReporte = async (r: Reporte) => {
+    const etiqueta = r.nombre ? `${r.nombre} (${r.codigo})` : r.codigo;
+    if (!window.confirm(`¿Eliminar el reporte de ${etiqueta}? Se borran también sus fotos. Esto no se puede deshacer.`)) {
+      return;
+    }
+    try {
+      await authedFetch(`/mascotas/panel/${r.codigo}`, { method: 'DELETE' });
+      setEditando(null);
+      await cargar();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'No se pudo eliminar el reporte');
+    }
+  };
+
+  const eliminarFoto = async (r: Reporte, fotoId: number) => {
+    if (!window.confirm('¿Eliminar esta foto? No se puede deshacer.')) return;
+    try {
+      await authedFetch(`/mascotas/panel/${r.codigo}/fotos/${fotoId}`, { method: 'DELETE' });
+      setVisor(null);
+      await cargar();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'No se pudo eliminar la foto');
+    }
+  };
+
+  /** Deja la base sin datos de prueba, sin tocar los reportes reales. */
+  const purgarDemo = async () => {
+    if (!window.confirm(
+      'Se borrarán TODOS los reportes de prueba (los marcados como 🧪 Demo) con sus fotos.\n\n' +
+      'Los reportes que entraron por el chat NO se tocan. ¿Continuar?'
+    )) {
+      return;
+    }
+    try {
+      const res = await authedFetch<{ eliminados: number }>('/mascotas/panel/purgar/demo', {
+        method: 'DELETE',
+      });
+      setError(null);
+      await cargar();
+      window.alert(`Listo: ${res.eliminados} reporte(s) de prueba eliminados.`);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'No se pudieron borrar los datos de prueba');
+    }
+  };
+
   const actualizarCoincidencia = async (id: number, estado: string) => {
     try {
       await authedFetch(`/mascotas/panel/coincidencias/${id}`, {
@@ -434,6 +692,12 @@ export default function MascotasPanel() {
       setCruzando(false);
     }
   };
+
+  /** ¿Queda algún reporte de prueba? El botón de purga solo aparece si sí. */
+  const hayDemo = useMemo(
+    () => (data?.reportes || []).some((r) => r.source === 'demo'),
+    [data]
+  );
 
   /** Zonas presentes en los datos, para ofrecerlas como filtro. */
   const barrios = useMemo(() => {
@@ -544,6 +808,17 @@ export default function MascotasPanel() {
             >
               📊 Descargar Excel
             </a>
+            {hayDemo && (
+              <button
+                type="button"
+                onClick={purgarDemo}
+                className="px-4 py-2 rounded-lg text-sm font-semibold transition-opacity hover:opacity-80"
+                style={{ backgroundColor: '#FEE2E2', color: '#991B1B' }}
+                title="Borra los reportes de prueba sin tocar los reales"
+              >
+                🧪 Borrar datos de prueba
+              </button>
+            )}
           </div>
         </div>
 
@@ -778,12 +1053,13 @@ export default function MascotasPanel() {
                     <th className="px-4 py-3">Contacto</th>
                     <th className="px-4 py-3">Origen</th>
                     <th className="px-4 py-3">Estado</th>
+                    <th className="px-4 py-3">Acciones</th>
                   </tr>
                 </thead>
                 <tbody>
                   {reportes.length === 0 && (
                     <tr>
-                      <td colSpan={8} className="px-4 py-10 text-center text-gray-400">
+                      <td colSpan={9} className="px-4 py-10 text-center text-gray-400">
                         {filtrosActivos
                           ? 'Ningún reporte coincide con los filtros.'
                           : 'No hay reportes en esta vista.'}
@@ -860,12 +1136,41 @@ export default function MascotasPanel() {
                           <Badge estado={r.estado} styles={ESTADO_STYLE} />
                         </div>
                       </td>
+                      <td className="px-4 py-3">
+                        <div className="flex flex-col gap-1">
+                          <button
+                            type="button"
+                            onClick={() => setEditando(r)}
+                            className="px-2.5 py-1.5 rounded-lg text-xs font-semibold border transition-colors hover:bg-gray-50 whitespace-nowrap"
+                            style={{ borderColor: '#D1D5DB', color: '#374151' }}
+                          >
+                            ✏️ Editar
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void eliminarReporte(r)}
+                            className="px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-opacity hover:opacity-80 whitespace-nowrap"
+                            style={{ backgroundColor: '#FEE2E2', color: '#991B1B' }}
+                          >
+                            🗑 Eliminar
+                          </button>
+                        </div>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
           </>
+        )}
+
+        {editando && (
+          <FormularioEdicion
+            reporte={editando}
+            onGuardar={(cambios) => guardarEdicion(editando.codigo, cambios)}
+            onCerrar={() => setEditando(null)}
+            onEliminar={() => void eliminarReporte(editando)}
+          />
         )}
 
         {visor && (
@@ -880,6 +1185,7 @@ export default function MascotasPanel() {
                 return { ...v, indice: (v.indice + delta + total) % total };
               })
             }
+            onEliminarFoto={(fotoId) => void eliminarFoto(visor.reporte, fotoId)}
           />
         )}
       </div>
