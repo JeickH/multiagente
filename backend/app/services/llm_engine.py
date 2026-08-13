@@ -928,6 +928,19 @@ def _run_tool_mascotas(
                 return f"no existe el reporte {codigo}", False
             ficha = svc.ficha_publica(mascota, db)
             apuntar(f"le mostraste la ficha del reporte {mascota.codigo}")
+            if ficha.get("externo"):
+                # Sus fotos viven en el sitio de origen; se comparte el enlace.
+                return json.dumps({
+                    "ficha": ficha,
+                    "resumen": _resumen_ficha(ficha),
+                    "instruccion": (
+                        f"Este reporte viene de {ficha['origen']}. Descríbeselo "
+                        "en tus palabras, pásale el enlace TAL CUAL "
+                        f"({ficha['origen_url']}) para que vea las fotos allá, "
+                        "y pregúntale si es su mascota. Si dice que sí, usa "
+                        "`entregar_contacto`."
+                    ),
+                }, ensure_ascii=False), False
             fotos = list(mascota.fotos or [])
             if fotos:
                 actions.append({
@@ -955,13 +968,28 @@ def _run_tool_mascotas(
                 return f"no existe el reporte {codigo}", False
             apuntar(f"entregaste el contacto del reporte {codigo}")
             logger.info("mascotas: contacto entregado codigo=%s", codigo)
-            return json.dumps({
-                "contacto": datos,
-                "instruccion": (
+            if datos.get("origen_url"):
+                # Reporte importado de una plataforma hermana: no tenemos el
+                # teléfono de quien reportó, así que la vía de contacto es su
+                # ficha original.
+                instruccion = (
+                    f"Este reporte NO es nuestro: viene de {datos['origen']}. "
+                    "NO tienes teléfono de contacto y no debes inventar "
+                    "ninguno. Explícale que el reporte está publicado en esa "
+                    "plataforma, pásale el enlace TAL CUAL "
+                    f"({datos['origen_url']}) y dile que ahí encuentra los "
+                    "datos de quien la reportó. Menciónale también la zona que "
+                    "aparece en el reporte, y deséale suerte."
+                )
+            else:
+                instruccion = (
                     "Compártele la ubicación, el enlace de Maps si existe y el "
                     "teléfono. Recomiéndale llevar fotos o algo que acredite "
                     "que es su mascota, y despídete deseándole suerte."
-                ),
+                )
+            return json.dumps({
+                "contacto": datos,
+                "instruccion": instruccion,
             }, ensure_ascii=False), False
 
         if name == "registrar_reporte":

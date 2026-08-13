@@ -43,7 +43,9 @@ type Reporte = {
   maps_url: string | null;
   barrio: string | null;
   contacto_nombre: string | null;
-  contacto_telefono: string;
+  contacto_telefono: string | null;
+  origen_url: string | null;
+  origen_nombre: string | null;
   fecha_evento: string | null;
   estado: string;
   notas: string | null;
@@ -116,6 +118,8 @@ const SOURCE_LABEL: Record<string, string> = {
   web: '🌐 Chat web',
   whatsapp: '💬 WhatsApp',
   demo: '🧪 Demo',
+  // Reportes traídos de plataformas hermanas: el contacto vive en su ficha.
+  mascotasporcolombia: '🤝 Mascotas por Colombia',
 };
 
 type Seccion = 'coincidencias' | 'perdida' | 'encontrada';
@@ -270,10 +274,22 @@ function Visor({
           </div>
           {reporte.senas && <div className="text-gray-600 mb-1">{reporte.senas}</div>}
           <div className="text-gray-600">📍 {reporte.ubicacion}</div>
-          <div className="text-gray-800 font-medium">
-            📞 {reporte.contacto_telefono}
-            {reporte.contacto_nombre ? ` · ${reporte.contacto_nombre}` : ''}
-          </div>
+          {reporte.contacto_telefono ? (
+            <div className="text-gray-800 font-medium">
+              📞 {reporte.contacto_telefono}
+              {reporte.contacto_nombre ? ` · ${reporte.contacto_nombre}` : ''}
+            </div>
+          ) : reporte.origen_url ? (
+            <a
+              href={reporte.origen_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="underline font-medium"
+              style={{ color: '#008069' }}
+            >
+              🤝 Ficha en {reporte.origen_nombre} ↗
+            </a>
+          ) : null}
           <div className="mt-2 pt-2 border-t border-gray-100">
             <div className="text-gray-400 mb-0.5">Recurso guardado en:</div>
             <a
@@ -428,8 +444,14 @@ function FormularioEdicion({
   const [guardando, setGuardando] = useState(false);
   const [errorForm, setErrorForm] = useState<string | null>(null);
 
+  // En los reportes importados de otra plataforma el teléfono no existe: el
+  // contacto se resuelve con el enlace a su ficha original.
+  const esImportado = Boolean(reporte.origen_url);
   const faltantes = CAMPOS_FORM.filter(
-    (c) => c.obligatorio && !valores[c.campo]?.trim()
+    (c) =>
+      c.obligatorio &&
+      !(esImportado && c.campo === 'contacto_telefono') &&
+      !valores[c.campo]?.trim()
   );
 
   const enviar = async (e: React.FormEvent) => {
@@ -463,12 +485,29 @@ function FormularioEdicion({
         className="bg-white rounded-xl w-full max-w-2xl my-8 p-5"
       >
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-bold text-gray-800">
-            Editar {reporte.codigo}{' '}
-            <span className="text-sm font-normal text-gray-400">
-              · {reporte.fotos.length} foto{reporte.fotos.length === 1 ? '' : 's'}
-            </span>
-          </h2>
+          <div>
+            <h2 className="text-lg font-bold text-gray-800">
+              Editar {reporte.codigo}{' '}
+              <span className="text-sm font-normal text-gray-400">
+                · {reporte.fotos.length} foto{reporte.fotos.length === 1 ? '' : 's'}
+              </span>
+            </h2>
+            {esImportado && (
+              <p className="text-xs text-gray-500 mt-0.5">
+                Importado de{' '}
+                <a
+                  href={reporte.origen_url ?? '#'}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="underline"
+                  style={{ color: '#008069' }}
+                >
+                  {reporte.origen_nombre} ↗
+                </a>{' '}
+                · el contacto vive en su ficha original
+              </p>
+            )}
+          </div>
           <button type="button" onClick={onCerrar} aria-label="Cerrar" className="text-xl text-gray-400">
             ✕
           </button>
@@ -479,7 +518,9 @@ function FormularioEdicion({
             <div key={c.campo} className={c.ancho === 'full' ? 'col-span-2' : 'col-span-2 sm:col-span-1'}>
               <label className="block text-xs font-semibold text-gray-600 mb-1">
                 {c.label}
-                {c.obligatorio && <span style={{ color: '#B91C1C' }}> *</span>}
+                {c.obligatorio && !(esImportado && c.campo === 'contacto_telefono') && (
+                  <span style={{ color: '#B91C1C' }}> *</span>
+                )}
               </label>
               {c.tipo === 'select' ? (
                 <select
@@ -931,10 +972,22 @@ export default function MascotasPanel() {
                           {r.nombre && <div className="text-gray-600">{descripcion(r)}</div>}
                           {r.senas && <div className="text-gray-500 text-xs mt-0.5">{r.senas}</div>}
                           <div className="text-gray-600 mt-1">📍 {r.ubicacion}</div>
-                          <div className="text-gray-800 font-medium mt-0.5">
-                            📞 {r.contacto_telefono}
-                            {r.contacto_nombre ? ` · ${r.contacto_nombre}` : ''}
-                          </div>
+                          {r.contacto_telefono ? (
+                            <div className="text-gray-800 font-medium mt-0.5">
+                              📞 {r.contacto_telefono}
+                              {r.contacto_nombre ? ` · ${r.contacto_nombre}` : ''}
+                            </div>
+                          ) : r.origen_url ? (
+                            <a
+                              href={r.origen_url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="block mt-0.5 underline font-medium"
+                              style={{ color: '#008069' }}
+                            >
+                              🤝 Ficha en {r.origen_nombre} ↗
+                            </a>
+                          ) : null}
                         </div>
                       </div>
                     ))}
@@ -1114,8 +1167,27 @@ export default function MascotasPanel() {
                         )}
                       </td>
                       <td className="px-4 py-3 text-xs">
-                        <div className="font-semibold text-gray-800">{r.contacto_telefono}</div>
-                        {r.contacto_nombre && <div className="text-gray-500">{r.contacto_nombre}</div>}
+                        {r.contacto_telefono ? (
+                          <>
+                            <div className="font-semibold text-gray-800">{r.contacto_telefono}</div>
+                            {r.contacto_nombre && <div className="text-gray-500">{r.contacto_nombre}</div>}
+                          </>
+                        ) : r.origen_url ? (
+                          <>
+                            <a
+                              href={r.origen_url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="font-semibold underline"
+                              style={{ color: '#008069' }}
+                            >
+                              Ver ficha original ↗
+                            </a>
+                            <div className="text-gray-400">{r.origen_nombre}</div>
+                          </>
+                        ) : (
+                          <span className="text-gray-300">—</span>
+                        )}
                       </td>
                       <td className="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">
                         {SOURCE_LABEL[r.source] || r.source}

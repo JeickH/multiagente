@@ -49,6 +49,12 @@ MAX_FOTOS_POR_REPORTE = 6
 
 _LOCAL_MEDIA_ROOT = Path(os.getenv("MASCOTAS_MEDIA_DIR", "/app/media"))
 
+# Plataformas hermanas de las que importamos reportes. La clave es el `source`
+# de la fila; el valor, cómo se le nombra a la persona en el chat y el panel.
+ORIGEN_NOMBRES = {
+    "mascotasporcolombia": "Mascotas por Colombia",
+}
+
 
 # ---------------------------------------------------------------------------
 # Storage
@@ -365,8 +371,13 @@ def ficha_publica(m: models.Mascota, db: Optional[Session] = None) -> Dict[str, 
     confirma que reconoce a la mascota (`datos_de_contacto`).
     """
     fotos = [f.id for f in (m.fotos or [])]
+    externo = bool(m.origen_url)
     return {
         "codigo": m.codigo,
+        # De dónde salió el reporte. El bot lo necesita para saber si el
+        # contacto se entrega como teléfono (propio) o como link (importado).
+        "externo": externo,
+        "origen": ORIGEN_NOMBRES.get(m.source, m.source) if externo else None,
         "tipo": m.tipo_registro,
         "especie": m.especie_otra if m.especie == "otra" and m.especie_otra else m.especie,
         "raza": m.raza,
@@ -379,7 +390,10 @@ def ficha_publica(m: models.Mascota, db: Optional[Session] = None) -> Dict[str, 
         "zona": m.barrio or m.ubicacion,
         "fecha": m.fecha_evento.isoformat() if m.fecha_evento else None,
         "fotos": len(fotos),
+        # Las fotos de un reporte importado viven en el sitio de origen: no las
+        # copiamos, así que su ficha se muestra con el enlace en vez de imagen.
         "foto_url": f"/mascotas/foto/{m.codigo}/{fotos[0]}" if fotos else None,
+        "origen_url": m.origen_url,
         "reportado": m.created_at.strftime("%Y-%m-%d") if m.created_at else None,
     }
 
@@ -483,10 +497,18 @@ def crear_reporte(
         )
 
     telefono = _limpiar(datos.get("contacto_telefono"), 32)
-    if not telefono or not _TELEFONO_RE.match(telefono):
+    origen_url = _limpiar(datos.get("origen_url"), 500)
+    if not telefono and not origen_url:
+        # Un reporte necesita una vía de contacto. Los que entran por el bot
+        # traen teléfono; los importados de otra plataforma no lo publican y
+        # se resuelven mandando a su ficha original.
         return None, (
             "falta un teléfono de contacto válido (con indicativo si es fijo): "
             "pídeselo, sin eso nadie puede avisarle"
+        )
+    if telefono and not _TELEFONO_RE.match(telefono):
+        return None, (
+            "ese teléfono no parece válido: pídeselo de nuevo con amabilidad"
         )
 
     mascota = models.Mascota(
@@ -508,6 +530,8 @@ def crear_reporte(
         contacto_telefono=telefono,
         fecha_evento=_parse_fecha(datos.get("fecha_evento")),
         notas=_limpiar(datos.get("notas"), 2000),
+        origen_url=origen_url,
+        origen_id=_limpiar(datos.get("origen_id"), 120),
         bot_id=bot_id,
         source=source[:24],
         estado=models.MASCOTA_ESTADO_ACTIVO,
@@ -724,7 +748,7 @@ def datos_de_contacto(db: Session, codigo: str) -> Optional[Dict[str, Any]]:
     )
     if mascota is None:
         return None
-    return {
+    datos = {
         "codigo": mascota.codigo,
         "tipo": mascota.tipo_registro,
         "ubicacion": mascota.ubicacion,
@@ -733,6 +757,12 @@ def datos_de_contacto(db: Session, codigo: str) -> Optional[Dict[str, Any]]:
         "contacto_nombre": mascota.contacto_nombre,
         "contacto_telefono": mascota.contacto_telefono,
     }
+    if mascota.origen_url:
+        # Reporte importado de otra plataforma: no tenemos su teléfono, y el
+        # contacto se resuelve mandando a la ficha original.
+        datos["origen_url"] = mascota.origen_url
+        datos["origen"] = ORIGEN_NOMBRES.get(mascota.source, mascota.source)
+    return datos
 
 
 def obtener(db: Session, codigo: str) -> Optional[models.Mascota]:
@@ -878,6 +908,8 @@ COLUMNAS_EXCEL = [
     ("contacto_telefono", "Teléfono"),
     ("estado", "Estado"),
     ("fotos", "Fotos"),
+    ("origen", "Origen"),
+    ("origen_url", "Ficha original"),
     ("created_at", "Reportado el"),
 ]
 
@@ -899,6 +931,8 @@ def listar(
 def _valor_excel(m: models.Mascota, campo: str) -> Any:
     if campo == "fotos":
         return len(m.fotos or [])
+    if campo == "origen":
+        return ORIGEN_NOMBRES.get(m.source, "Recupera Tu Mascota")
     if campo == "tipo_registro":
         return "Mascota encontrada" if m.tipo_registro == "encontrada" else "Mascota perdida"
     if campo == "especie":

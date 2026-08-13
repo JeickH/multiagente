@@ -20,7 +20,7 @@
 
 | # | Paso | Resultado esperado |
 |---|---|---|
-| 1.1 | Abre https://mascotasperdidascolombia.com | Ventana estilo WhatsApp. Header "Huella · Recupera Tu Mascota". Aviso amarillo que dice que es **gratuito** y que es por el **terremoto**. Saludo del bot con **los 3 casos de uso**. |
+| 1.1 | Abre https://mascotasperdidascolombia.com | Ventana estilo WhatsApp. Header "Huella · Recupera Tu Mascota". Aviso amarillo que dice que es **gratuito** y que es por el **terremoto**, y debajo el **aviso de uso de datos**. Saludo del bot con **los 3 casos de uso** y, al final, la línea de aceptación de datos. |
 | 1.2 | Verifica los 3 botones de acceso rápido | "Buscar a mi mascota", "Reporté una que encontré", "Descargar el listado". |
 | 1.3 | Escribe: `se me perdió mi perrita labrador café clarita en San Fernando, tiene una mancha blanca en el pecho` | El bot responde con empatía y **busca de inmediato** (no te hace 4 preguntas antes). |
 | 1.4 | Observa el resultado | Dice cuántas coincidencias hay y muestra **una ficha con foto**: labrador café, hembra, San Fernando, mancha blanca en el pecho. Termina preguntando "¿es esta tu mascota?". |
@@ -74,6 +74,23 @@ y abre **🐾 Mascotas** en el menú lateral.
 | 5.7 | Clic en una **miniatura** | Se abre el **visor a pantalla completa**: foto grande, flechas ‹ › si hay varias, datos de contacto y **la ruta donde quedó guardado el recurso** (`s3://gloma-mascotas-747456040509/mascotas/MC-000xx/…`). `Esc` cierra. |
 | 5.8 | Cambia el estado de un reporte a **Reunida 🎉** | Se guarda y el contador "Reunidas" sube. |
 | 5.9 | Botón **📊 Descargar Excel** | Mismo archivo del bloque 4, ya autenticado. |
+
+## Bloque 5b — Editar y borrar (para dejar la base limpia tras probar)
+
+| # | Paso | Resultado esperado |
+|---|---|---|
+| 5b.1 | En una fila, botón **✏️ Editar** | Se abre el formulario con todos los campos del reporte. **Ubicación**, **teléfono de contacto** y **especie** están marcados con `*`. |
+| 5b.2 | Cambia el color y las señas, y guarda | Se guarda y la tabla se actualiza. |
+| 5b.3 | Borra el contenido de **Ubicación** y guarda | No deja: avisa que es obligatoria. Lo mismo con el **teléfono**. |
+| 5b.4 | Escribe un teléfono inválido (`abc`) y guarda | Lo rechaza con un mensaje claro. |
+| 5b.5 | Cambia el **estado** a *Reunida 🎉* desde el formulario o el selector de la fila | Se refleja en el contador de arriba. |
+| 5b.6 | Abre el visor de fotos y usa **🗑 Eliminar esta foto** | La foto desaparece del reporte (y del almacenamiento). |
+| 5b.7 | Botón **🗑 Eliminar** de una fila | Pide confirmación y borra el reporte con sus fotos y coincidencias. |
+| 5b.8 | Botón **🧪 Borrar datos de prueba** (arriba a la derecha) | Pide confirmación, borra **solo** los reportes marcados 🧪 Demo y dice cuántos eliminó. Los que entraron por el chat **no se tocan**. |
+| 5b.9 | Tras purgar, revisa la pestaña de coincidencias | Las coincidencias de los reportes borrados desaparecen solas. |
+
+> El botón de purga solo aparece si quedan datos de prueba. Úsalo cuando termines de
+> probar, antes de abrir el sitio al público.
 
 ## Bloque 6 — Seguridad y aislamiento
 

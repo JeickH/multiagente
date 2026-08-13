@@ -191,7 +191,9 @@ class MascotaPanelOut(BaseModel):
     maps_url: Optional[str] = None
     barrio: Optional[str] = None
     contacto_nombre: Optional[str] = None
-    contacto_telefono: str
+    contacto_telefono: Optional[str] = None   # NULL en los reportes importados
+    origen_url: Optional[str] = None
+    origen_nombre: Optional[str] = None
     fecha_evento: Optional[str] = None
     estado: str
     notas: Optional[str] = None
@@ -607,6 +609,8 @@ def _fila_panel(m: models.Mascota) -> MascotaPanelOut:
         barrio=m.barrio,
         contacto_nombre=m.contacto_nombre,
         contacto_telefono=m.contacto_telefono,
+        origen_url=m.origen_url,
+        origen_nombre=svc.ORIGEN_NOMBRES.get(m.source) if m.origen_url else None,
         fecha_evento=m.fecha_evento.isoformat() if m.fecha_evento else None,
         estado=m.estado,
         notas=m.notas,

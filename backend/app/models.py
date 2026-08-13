@@ -1041,7 +1041,18 @@ class Mascota(Base):
     barrio = Column(String(120), nullable=True, index=True)
 
     contacto_nombre = Column(String(120), nullable=True)
-    contacto_telefono = Column(String(32), nullable=False)
+    # Obligatorio para los reportes que entran por nuestro bot; NULL solo en
+    # los importados de otras plataformas, donde el contacto se resuelve
+    # mandando a la ficha original (`origen_url`). La regla "teléfono u
+    # origen_url" se valida en `services/mascotas`, no en la BD, porque el
+    # motivo es de negocio y no de integridad referencial.
+    contacto_telefono = Column(String(32), nullable=True)
+
+    # Sprint "Ayuda a Cali": reportes importados de plataformas hermanas
+    # (mascotasporcolombia.com). `origen_id` es el identificador del sitio de
+    # origen y sirve para deduplicar entre corridas del importador.
+    origen_url = Column(String(500), nullable=True)
+    origen_id = Column(String(120), nullable=True, index=True)
 
     fecha_evento = Column(Date, nullable=True)   # cuándo se perdió / encontró
     estado = Column(
@@ -1068,6 +1079,8 @@ class Mascota(Base):
             "estado IN ('activo','reunida','cerrado')", name="ck_mascotas_estado"
         ),
         Index("ix_mascotas_tipo_estado", "tipo_registro", "estado"),
+        # Un reporte por ficha de origen: el importador re-corre sin duplicar.
+        UniqueConstraint("source", "origen_id", name="uq_mascota_origen"),
     )
 
     fotos = relationship(
