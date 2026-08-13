@@ -759,21 +759,12 @@ def _tools_mascotas() -> List[Dict[str, Any]]:
         {
             "name": "descargar_listado",
             "description": (
-                "Entrega el enlace para descargar en Excel el listado "
-                "actualizado de mascotas reportadas. Úsala cuando la persona "
-                "pida la lista, el listado, el archivo o el Excel. Comparte el "
-                "enlace tal cual te lo devuelva la herramienta."
+                "Entrega el botón para descargar en Excel el listado "
+                "actualizado de las **mascotas encontradas** que están "
+                "esperando a su familia. Úsala cuando la persona pida la "
+                "lista, el listado, el archivo o el Excel."
             ),
-            "input_schema": {
-                "type": "object",
-                "properties": {
-                    "tipo": {
-                        "type": "string",
-                        "enum": ["perdidas", "encontradas", "todas"],
-                        "description": "Qué reportes incluir (por defecto todas)",
-                    },
-                },
-            },
+            "input_schema": {"type": "object", "properties": {}},
         },
     ]
 
@@ -1038,24 +1029,28 @@ def _run_tool_mascotas(
             return f"reporte {mascota.codigo} actualizado; confírmaselo brevemente", False
 
         if name == "descargar_listado":
-            tipo = str(tool_input.get("tipo") or "todas")
-            mapa = {"perdidas": "perdida", "encontradas": "encontrada"}
+            # El listado público es solo de las mascotas ENCONTRADAS: es la
+            # lista útil para quien busca a la suya. Los reportes de quienes
+            # están buscando contienen datos de contacto de familias y no se
+            # reparten en un archivo.
             token = encrypt_secret(json.dumps({
-                "t": mapa.get(tipo, ""), "exp": "listado",
+                "t": "encontrada", "exp": "listado",
             }))
             base = (os.getenv("MASCOTAS_PUBLIC_BASE") or "").rstrip("/")
             url = f"{base}/mascotas/listado.xlsx?token={token}"
             actions.append({"type": "say_file", "payload": {
                 "url": url,
-                "filename": "mascotas_reportadas.xlsx",
-                "label": "Listado de mascotas (Excel)",
+                "filename": "mascotas_encontradas.xlsx",
+                "label": "Mascotas encontradas (Excel)",
             }})
+            apuntar("le enviaste el listado de mascotas encontradas")
             return json.dumps({
                 "enlace_enviado": True,
                 "instruccion": (
                     "Ya le apareció el botón de descarga en el chat. Dile que "
-                    "el archivo se actualiza cada vez que alguien reporta y "
-                    "que puede volver a pedirlo cuando quiera."
+                    "es la lista de las mascotas que otras personas han "
+                    "encontrado, que se actualiza cada vez que alguien reporta "
+                    "y que puede volver a pedirla cuando quiera."
                 ),
             }, ensure_ascii=False), False
 

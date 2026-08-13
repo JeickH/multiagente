@@ -559,14 +559,17 @@ def descargar_listado(token: str, db: Session = Depends(get_db)):
     if not isinstance(data, dict) or data.get("exp") != "listado":
         raise HTTPException(status_code=403, detail="Enlace inválido")
 
-    tipo = data.get("t") or None
+    # El listado público es el de las mascotas ENCONTRADAS (el token lo trae,
+    # pero se fija aquí también: es la lista útil para quien busca a la suya, y
+    # los reportes de familias buscando no se reparten en un archivo).
+    tipo = data.get("t") or models.MASCOTA_TIPO_ENCONTRADA
     contenido = svc.exportar_excel(db, tipo=tipo)
     hoy = datetime.utcnow().strftime("%Y-%m-%d")
     return Response(
         content=contenido,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={
-            "Content-Disposition": f'attachment; filename="mascotas_{hoy}.xlsx"',
+            "Content-Disposition": f'attachment; filename="mascotas_encontradas_{hoy}.xlsx"',
             "Cache-Control": "no-store",
         },
     )
