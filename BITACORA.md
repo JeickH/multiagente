@@ -2481,3 +2481,195 @@ completa **103 passed**.
 
 Pendientes que siguen abiertos: #331 (cronogramar el resto de piezas con calendario
 real), #329→deploy de esta tanda, #330 (vida de URLs prefirmadas).
+
+### 7. Sprint de contenido 5 (2026-08-10) — Historias destacadas del perfil
+
+**Pedido del CEO:** carruseles de historias (1080×1920) para destacadas, con historia de portada
+con icono, sobre: métricas de la landing · conversaciones de ejemplo · paso a paso para crear el
+agente (reunión inicial → configuración → 15 días funcionando) · funcionalidades clave.
+
+- **#339 — 4 destacadas generadas (23 historias):** `hist_01_metricas` (5), `hist_02_conversaciones`
+  (5, mockups con `chat()`, nunca capturas reales), `hist_03_como_empezamos` (5) y
+  `hist_04_funcionalidades` (8). Planeadas en el plan de contenido, Parte 1E. Métricas literales
+  de `STATS` y funcionalidades de `FEATURES` en `frontend/pages/gloma.tsx`. Sin nombre de marca
+  en ninguna slide (regla del rebrand). Portadas con icono de línea mint centrado para el
+  recorte circular del perfil.
+- **#340 — Generador extendido al formato historia:** `base.py` ganó `pagina(..., story=True)`
+  (1080×1920 con zonas seguras de UI: 240 px arriba, 300 px abajo, logo/paginación
+  reposicionados) y `generar.py` renderiza la lista `HISTORIAS` de `piezas.py` con sufijo
+  `_storyN`. Los formatos de feed no se tocaron.
+- Al publicar: sticker de enlace a WhatsApp sobre la última slide de cada set. El compromiso de
+  «15 días» en H3 es del CEO (2026-08-10); si el plazo comercial cambia, esa slide se regenera.
+
+### 8. Ajuste a H2 «Conversaciones» (2026-08-10) — chats con multimedia
+
+**Pedido del CEO:** conversaciones más profundas, que se vean envíos de imágenes, videos y notas
+de voz.
+
+- `hist_02_conversaciones` v2: el generador ganó burbujas multimedia (`_voz` con onda y duración,
+  `_media` con miniatura ilustrada de destino y overlay de play para video, `_contexto` con la
+  tarjeta que recibe la asesora al escalar). Las miniaturas son CSS/SVG en la paleta —cielo/mar,
+  sol Golden Hour, velero—, nunca fotos reales.
+- Nuevas conversaciones: (2) cotización de las 11:47 p.m. donde el cliente responde con nota de
+  voz y el agente la entiende; (3) propuesta con foto del catálogo + video de la habitación
+  (0:38); (4) pregunta de visa resuelta + escalamiento con la tarjeta de contexto. Los 3 slides
+  re-renderizados y verificados; portada y cierre sin cambios.
+
+---
+
+## Sprint "Ayuda a Cali" — Bot de mascotas perdidas por el terremoto (2026-08-13)
+
+**Pedido del CEO:** una cuenta de demostración con su propio bot y una interfaz nueva,
+tipo WhatsApp, donde la gente afectada por el terremoto en Colombia pueda **buscar** su
+mascota perdida, **reportar** una que encontró y **descargar** el listado en Excel. Todo
+guardado en base de datos con fotos, y un dashboard exclusivo de esa cuenta.
+
+**Enlaces**
+- Chat ciudadano (público): **https://mascotasperdidascolombia.com** (y `www.`)
+- Panel: **https://app.glomabeauty.com** → menú **🐾 Mascotas**
+- Credenciales: `recuperatumascota@gmail.com` / `Mascotas2026*`
+- Plan de pruebas manuales: `PRUEBAS_AYUDA_CALI.md`
+
+### Modelo de datos (#341)
+`mascotas` — un reporte por fila, con `tipo_registro` distinguiendo las dos naturalezas
+que el sistema cruza entre sí: `perdida` (una familia la busca) y `encontrada` (alguien
+la halló). Casi todo el detalle descriptivo es NULL-able a propósito: quien reporta rara
+vez sabe raza, edad y nombre a la vez, y exigirlos hace que abandone. Los dos únicos
+obligatorios son `ubicacion` y `contacto_telefono` — sin eso el reporte no sirve para
+reunir a nadie. `maps_url` es opcional: mucha gente sabe dar la dirección pero no
+compartir una ubicación.
+
+`mascota_fotos` — el archivo vive en `mascotas/<codigo>/`, la carpeta con el
+identificador del reporte que pidió el CEO. `mascota_id` es NULL mientras la foto está
+en el limbo: la gente manda las fotos **antes** de que el bot termine de recoger los
+datos, así que se suben contra un `upload_session` y se adoptan al crear el reporte.
+
+`mascota_coincidencias` — un par (perdida, encontrada) por fila, con el puntaje y el
+desglose de qué campos coincidieron.
+
+Migración `backend/scripts/migrate_ayuda_cali_mascotas.py`, idempotente. **Local
+(docker-compose):** 2 corridas, la 2ª sin cambios ✅. **RDS (`ecs run-task` rev 27):**
+exit 0, las 3 tablas verificadas ✅. Paridad local↔RDS cumplida (convención #1).
+
+### Motor (#342)
+`services/mascotas.py` concentra storage, búsqueda y exportación. Dos backends de
+storage intercambiables: **S3 en producción** (bucket `gloma-mascotas-747456040509`,
+privado y cifrado) y **disco en local**. Las fotos nunca se sirven desde el bucket: el
+backend hace de proxy en `GET /mascotas/foto/...`, así no hay que abrir acceso público.
+
+**Búsqueda por scoring campo a campo**, no por coincidencia exacta: cada dato que cuadra
+suma, y lo que la persona no sabe simplemente no puntúa. La especie es el único filtro
+duro. **A pedido del CEO el peso está en lo físico y la zona, no en el nombre**: quien
+encuentra un animal en la calle no sabe cómo se llama, así que raza y color valen 5,
+señas hasta 5, zona 4, tamaño 3 y el nombre apenas 1 (desempate).
+
+Herramientas nuevas del motor LLM, habilitadas por `llm_config.mascotas`:
+`buscar_mascota`, `ver_ficha`, `entregar_contacto`, `registrar_reporte`,
+`completar_reporte`, `descargar_listado` y `finalizar_fuera_de_alcance`.
+
+### Dos guardarraíles que salieron de las pruebas
+1. **El bot inventó un teléfono.** En una prueba entregó un número que no existía en la
+   base — mandar a una familia angustiada a llamar a un desconocido. Ahora el motor
+   descarta el turno y le exige la herramienta si aparece un número que no vino de
+   `entregar_contacto` (`_viola_contacto`, máximo 2 correcciones por turno).
+2. **El historial aplanado perdía los códigos.** El bot mostraba la ficha `MC-00012` y
+   al turno siguiente no sabía de qué reporte hablaba, porque el historial solo guarda
+   el texto que dijo. Las tools ahora dejan marcas (`[le mostraste la ficha MC-00012]`).
+
+Además, un recordatorio determinista en el system prompt: si la persona ya dio un
+teléfono y el caso sigue sin registrar, el modelo lo ve escrito en cada turno. Se probó
+subir el bot a Sonnet 4.6 (encadena más reglas que los demás), pero Bedrock lo rechaza
+en esta cuenta con `INVALID_PAYMENT_INSTRUMENT` — **el mismo blocker abierto desde el
+Sprint 19 (#253)**. Queda en Haiku; cuando se resuelva el medio de pago basta cambiar
+`model_id` en el seed y re-sembrar.
+
+### Comportamiento del bot (#343)
+Contexto `backend/app/bot_contexts/mascotas_cali.md`. Menciona que el servicio es
+gratuito y que nació **para ayudar a los afectados por el terremoto**. Tres caminos, una
+pregunta por mensaje, y reglas que salieron de las pruebas con el CEO:
+- Busca apenas tiene especie + 2 datos; pedir cuatro cosas antes de la primera búsqueda
+  era el peor error posible con alguien angustiado.
+- **Sin coincidencias**: explica que la lista se actualiza todos los días, que el caso
+  queda en la base de datos y que lo contactan apenas aparezca algo — y ahí pide el
+  teléfono para registrarlo.
+- Registra apenas tiene ubicación y teléfono; lo demás lo completa después.
+- Tras registrar una perdida, **pregunta si hay otra mascota que registrar** (mucha
+  gente perdió más de un animal).
+- Si la conversación no es de ninguno de los 3 casos: lo aclara una vez y, si insiste,
+  cierra y deja **el canal en pausa 20 minutos**.
+
+### Job diario de coincidencias (#344)
+`scripts/job_coincidencias_mascotas.py` cruza cada perdida activa contra cada encontrada
+activa. Existe porque la conversación no ve el futuro: cuando una familia escribe, su
+mascota puede no estar reportada todavía. Idempotente y **respeta el estado del equipo**
+(lo descartado no vuelve a "nueva"). Umbral 6, más alto que el de la búsqueda en vivo
+(3), porque aquí nadie confirma al otro lado del chat.
+
+Programado con **EventBridge Scheduler `mascotas-cruce-diario`**:
+`cron(0 12 * * ? *)` en `America/Bogota` → ECS RunTask. Rol
+`multiagente-scheduler-role` (RunTask + PassRole acotados al cluster). Probado a mano en
+producción: exit 0.
+
+### Frontend (#345)
+- `pages/mascotas.tsx` — ventana de WhatsApp a pantalla completa. Quien llega está
+  angustiado y no debe aprender una interfaz nueva. Los **3 casos de uso** están
+  visibles como accesos rápidos desde el primer momento, y el aviso del terremoto va
+  fijo arriba. Adjuntar fotos con el clip 📎 en cualquier momento.
+- `pages/mascotas-panel.tsx` — coincidencias lado a lado con el desglose del puntaje,
+  tablas con **filtros por campo** (texto libre, especie, zona, estado, solo con foto) y
+  **visor de fotos a pantalla completa** con la ruta `s3://` de cada recurso. La
+  miniatura de la tabla se mantiene chica para que la lista no crezca de alto.
+- `middleware.ts` — el dominio nuevo sirve **solo** el chat; cualquier otra ruta es 404.
+  El resto de la app quedó intacta.
+- `_app.tsx` — `/mascotas` y los hosts del dominio nuevo entran a las listas públicas.
+  Sin esto el guard de sesión mandaba el chat ciudadano a `/login`.
+
+### Dominio (#346)
+`mascotasperdidascolombia.com`, comprado por el CEO en Hostinger. **DNS delegado a Route
+53** (hosted zone `Z064081920UXTWRHTCDT7`): el CEO pegó los 4 nameservers en Hostinger y
+el resto quedó automático — Amplify creó el ALIAS A del apex, el CNAME de `www` y el
+registro de validación del certificado. Estado `AVAILABLE`.
+
+`mascotasperdidascali.glomabeauty.com` (el subdominio del pedido original) sigue
+soportado en el middleware, pero **no tiene DNS**: se descartó al comprar el dominio
+propio. Si algún día se quiere, basta un CNAME a CloudFront.
+
+### Despliegue
+Imagen `multiagente-backend:ayudacali` (linux/amd64) → ECR. Task-def **rev 27** (env
+nuevas `MASCOTAS_BUCKET`, `MASCOTAS_PUBLIC_BASE`, `AWS_REGION`). Migración, seed de la
+cuenta y datos de demostración en RDS vía `ecs run-task` rev 27 (exit 0 los tres).
+`update-service --force-new-deployment` → `services-stable`. Frontend: commit `15966ac` →
+Amplify **job 57 SUCCEED**.
+
+IAM: policy `mascotas-s3-fotos` en `multiagente-ecs-task-role`, acotada a los prefijos
+`mascotas/*` y `pendientes/*` del bucket.
+
+**Smoke en producción:** conversación completa contra
+`https://mascotasperdidascolombia.com/api/mascotas/chat` — busca, muestra la ficha con
+foto servida desde S3 y entrega el contacto **real** de la base (`+57 315 802 4471`,
+idéntico a `MC-00002`). `/login` y `/mascotas-panel` dan 404 en ese dominio.
+`app.glomabeauty.com` y `glomabeauty.com` sin cambios.
+
+### Arreglo de paso
+`requests` no estaba en `backend/requirements.txt` aunque
+`services/instagram_publisher` (Sprint 23) lo importa: la imagen lo tenía por una
+instalación manual y **cualquier rebuild limpio dejaba el backend sin arrancar**. Se
+agregó al archivo.
+
+### Datos de demostración en producción
+10 reportes `source='demo'` con fotos reales (placedog.net / cataas.com) y 3 pares
+diseñados para coincidir: Canela↔MC-00002 (24 pts), Rocky↔MC-00006 (19), Michi↔MC-00004
+(15). Detalle en `PRUEBAS_AYUDA_CALI.md`. Se borran re-corriendo `seed_mascotas_demo.py`.
+
+### Pendientes del sprint "Ayuda a Cali"
+
+| # | Pendiente | Notas |
+|---|---|---|
+| #347 | **Conectar el bot a un WhatsApp Business** | Es el pendiente grande y explícito del CEO. El bot ya corre en el motor compartido, así que técnicamente es: conseguir el número, darlo de alta como sender (Twilio o Meta), crear el `MetaAccount`/credenciales del tenant y apuntar el webhook. El `bot_runner` lo atiende sin cambios. Ojo con `MASCOTAS_PUBLIC_BASE`: las fotos que envía el bot ya salen con URL absoluta, que es lo que WhatsApp necesita. |
+| #348 | **Avisar a quien busca cuando aparece una coincidencia** | Hoy el cruce diario deja el par en el panel y alguien del equipo llama. Con WhatsApp conectado (#347) se puede mandar el aviso automático a la familia. Requiere plantilla aprobada por Meta. |
+| #349 | **Borrar los datos de demostración antes de abrir al público** | `source='demo'`, 10 reportes con teléfonos ficticios. Si quedan cuando entren reportes reales, el bot los ofrecerá como coincidencias. |
+| #350 | **Retención y borrado de datos** | Los reportes tienen PII (teléfonos de ciudadanos). Falta definir cuánto se guardan y cómo se borra un caso cerrado. Habeas data (Ley 1581): falta aviso de privacidad en el chat. |
+| #351 | **Moderación de fotos** | Cualquiera puede subir 6 imágenes de hasta 8 MB sin revisión. Hoy lo contiene el rate-limit por IP; falta una revisión mínima antes de que el volumen crezca. |
+| #352 | **Búsqueda visual por foto** | Hoy el cruce es textual. Comparar embeddings de las fotos subiría muchísimo la tasa de acierto — es lo que más ayudaría cuando la descripción es pobre. |
+| #353 | **Subir el bot a Sonnet** | Bloqueado por `INVALID_PAYMENT_INSTRUMENT` (#253). Cambiar `model_id` en `seed_bot_mascotas.py` y re-sembrar cuando se resuelva. |
+| #354 | **Pausa por canal en almacenamiento compartido** | La pausa de 20 minutos vive en memoria del proceso: si el backend reinicia, se levanta. Aceptable hoy (una sola task ECS); si escala horizontalmente, moverla a la BD. |
