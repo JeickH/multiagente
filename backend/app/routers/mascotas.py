@@ -1079,8 +1079,14 @@ def listar_conversaciones(
             "caminos": [],
             "reportes": [],
             "source": fila.source,
+            # Se descartan los hilos donde la persona nunca escribió: son
+            # visitas que abrieron el chat, recibieron el saludo automático y
+            # se fueron. No aportan nada al registro y esconden las reales.
+            "hablo": False,
         })
         hilo["turnos"] += 1
+        if (fila.user_input or "").strip():
+            hilo["hablo"] = True
         hilo["inicio"] = min(hilo["inicio"], fila.created_at)
         hilo["fin"] = max(hilo["fin"], fila.created_at)
         if fila.chat_contacto and not hilo["contacto"]:
@@ -1094,7 +1100,8 @@ def listar_conversaciones(
             if codigo not in hilo["reportes"]:
                 hilo["reportes"].append(codigo)
 
-    ordenados = sorted(hilos.values(), key=lambda h: h["fin"], reverse=True)
+    conversados = [h for h in hilos.values() if h.pop("hablo")]
+    ordenados = sorted(conversados, key=lambda h: h["fin"], reverse=True)
     return ConversacionesOut(
         conversaciones=[ConversacionOut(**h) for h in ordenados[:limite]],
         total=len(ordenados),
