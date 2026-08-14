@@ -567,7 +567,17 @@ export default function MascotasChat() {
             paddingBottom: 'calc(0.5rem + env(safe-area-inset-bottom))',
           }}
         >
-          Tecnología de <strong style={{ color: WA.headerLight }}>+1000 Exp</strong>
+          Tecnología de{' '}
+          <a
+            href="https://www.instagram.com/1000_exp/"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="font-bold hover:underline"
+            style={{ color: WA.headerLight }}
+            title="Ver @1000_exp en Instagram"
+          >
+            +1000 Exp
+          </a>
         </footer>
       </div>
     </>
