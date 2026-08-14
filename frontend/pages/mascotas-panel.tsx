@@ -65,14 +65,6 @@ type Coincidencia = {
   encontrada: Reporte;
 };
 
-type Sync = {
-  estado: string;
-  mensaje: string | null;
-  iniciada: string | null;
-  terminada: string | null;
-  contadores: Record<string, number>;
-};
-
 type PanelResponse = {
   resumen: {
     total: number;
@@ -671,7 +663,6 @@ export default function MascotasPanel() {
   // Las coincidencias descartadas se archivan: siguen guardadas (el cruce las
   // respeta y no las vuelve a proponer), pero no estorban la revisión diaria.
   const [verDescartadas, setVerDescartadas] = useState(false);
-  const [sync, setSync] = useState<Sync | null>(null);
   // Filtros por campo: el equipo busca "los perros negros de Meléndez", no una
   // fila puntual, así que se combinan entre sí y con el filtro de estado.
   const [busqueda, setBusqueda] = useState('');
@@ -859,41 +850,6 @@ export default function MascotasPanel() {
     }
   };
 
-  /**
-   * Trae los reportes nuevos de las plataformas hermanas. Corre en el servidor
-   * en segundo plano (recorrer cientos de fichas toma minutos), así que aquí
-   * solo se dispara y se consulta el avance hasta que termina.
-   */
-  const sincronizar = async () => {
-    try {
-      const inicial = await authedFetch<Sync>('/mascotas/panel/sincronizar', {
-        method: 'POST',
-      });
-      setSync(inicial);
-      setError(null);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'No se pudo iniciar la sincronización');
-    }
-  };
-
-  // Consulta el avance mientras la importación esté corriendo.
-  useEffect(() => {
-    if (sync?.estado !== 'corriendo') return;
-    const id = setInterval(async () => {
-      try {
-        const estado = await authedFetch<Sync>('/mascotas/panel/sincronizacion');
-        setSync(estado);
-        if (estado.estado !== 'corriendo') {
-          clearInterval(id);
-          await cargar();
-        }
-      } catch {
-        clearInterval(id);
-      }
-    }, 3000);
-    return () => clearInterval(id);
-  }, [sync?.estado, cargar]);
-
   const cruzarAhora = async () => {
     setCruzando(true);
     try {
@@ -1020,13 +976,13 @@ export default function MascotasPanel() {
           <div className="flex gap-2">
             <button
               type="button"
-              onClick={sincronizar}
-              disabled={sync?.estado === 'corriendo'}
+              onClick={() => void cargar()}
+              disabled={cargando}
               className="px-4 py-2 rounded-lg text-sm font-semibold text-white transition-opacity disabled:opacity-50"
               style={{ backgroundColor: '#008069' }}
-              title="Trae los reportes nuevos de Mascotas por Colombia"
+              title="Vuelve a leer la tabla desde la base de datos"
             >
-              {sync?.estado === 'corriendo' ? 'Sincronizando…' : '🔄 Sincronizar lista'}
+              {cargando ? 'Actualizando…' : '🔄 Actualizar tabla'}
             </button>
             <button
               type="button"
@@ -1034,9 +990,9 @@ export default function MascotasPanel() {
               disabled={cruzando}
               className="px-4 py-2 rounded-lg text-sm font-semibold text-white transition-opacity disabled:opacity-50"
               style={{ backgroundColor: '#004D40' }}
-              title="El cruce corre solo todos los días a las 12:00"
+              title="Compara las mascotas que se buscan contra las encontradas"
             >
-              {cruzando ? 'Cruzando…' : '🔗 Cruzar ahora'}
+              {cruzando ? 'Buscando…' : '🔗 Buscar coincidencias'}
             </button>
             <a
               href="/api/mascotas/panel/export.xlsx"
@@ -1083,33 +1039,6 @@ export default function MascotasPanel() {
           </p>
         )}
 
-        {sync && sync.estado !== 'idle' && (
-          <p
-            className="my-3 text-sm px-4 py-2 rounded-lg"
-            style={
-              sync.estado === 'error'
-                ? { backgroundColor: '#FDECEA', color: '#8A1C12' }
-                : { backgroundColor: '#E0F2F1', color: '#004D40' }
-            }
-          >
-            {sync.estado === 'corriendo' && (
-              <>
-                🔄 Trayendo reportes de Mascotas por Colombia…{' '}
-                {sync.contadores.vistas
-                  ? `${sync.contadores.vistas} fichas revisadas, ${sync.contadores.creadas ?? 0} nuevas`
-                  : 'leyendo el listado del sitio'}
-              </>
-            )}
-            {sync.estado === 'ok' && (
-              <>
-                ✅ Sincronización lista: {sync.contadores.creadas ?? 0} reportes nuevos,{' '}
-                {sync.contadores.actualizadas ?? 0} actualizados
-                {sync.contadores.fallidas ? `, ${sync.contadores.fallidas} con error` : ''}.
-              </>
-            )}
-            {sync.estado === 'error' && <>⚠️ {sync.mensaje}</>}
-          </p>
-        )}
 
         {/* ===== Contadores ===== */}
         {resumen && (
