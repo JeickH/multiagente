@@ -18,7 +18,7 @@ al equipo revisar y gestionar los casos.
 | Panel privado | https://app.glomabeauty.com → menú **🐾 Mascotas** |
 | Cuenta | `recuperatumascota@gmail.com` / `Mascotas2026*` |
 | API | `https://api.glomabeauty.com` |
-| Marca del sitio público | **"+1000 Exp"** (solo ahí; la app y la landing de Gloma NO se tocan) |
+| Firma del sitio público | Footer **"Tecnología de Gloma App"** → [@gloma_app](https://www.instagram.com/gloma_app/). Solo ahí; la app y la landing de Gloma no se tocan sin aviso |
 
 ---
 

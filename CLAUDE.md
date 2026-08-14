@@ -164,8 +164,8 @@ Las tres que más duelen si se olvidan:
    irrecuperables por un borrado hecho sobre una interpretación.
 2. **El bot jamás inventa un teléfono**: solo sale de `entregar_contacto`, y hay un
    guardarraíl que lo hace cumplir.
-3. La marca **"+1000 Exp"** vive solo en ese sitio; la app y la landing de Gloma no se
-   tocan.
+3. Los cambios de marca de ese sitio (hoy el footer "Tecnología de **Gloma App**") viven
+   solo ahí; la app y la landing de Gloma no se tocan sin aviso.
 
 ---
 

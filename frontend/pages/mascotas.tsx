@@ -569,14 +569,14 @@ export default function MascotasChat() {
         >
           Tecnología de{' '}
           <a
-            href="https://www.instagram.com/1000_exp/"
+            href="https://www.instagram.com/gloma_app/"
             target="_blank"
             rel="noopener noreferrer"
             className="font-bold hover:underline"
             style={{ color: WA.headerLight }}
-            title="Ver @1000_exp en Instagram"
+            title="Ver @gloma_app en Instagram"
           >
-            +1000 Exp
+            Gloma App
           </a>
         </footer>
       </div>
