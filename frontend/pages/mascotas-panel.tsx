@@ -147,10 +147,19 @@ type Turno = {
 
 type Seccion = 'coincidencias' | 'perdida' | 'encontrada' | 'conversaciones';
 
+/** Zona del equipo que opera el panel. Colombia no tiene horario de verano. */
+const ZONA = 'America/Bogota';
+
 function fechaCorta(iso: string): string {
-  const d = new Date(iso);
+  // El backend guarda en UTC pero serializa sin marcar la zona
+  // ("2026-08-13T22:07:11"), así que el navegador lo tomaría como hora local y
+  // las conversaciones aparecían 5 horas adelantadas. Se marca como UTC y se
+  // muestra en hora de Colombia.
+  const texto = /[Zz]$|[+-]\d{2}:?\d{2}$/.test(iso) ? iso : `${iso}Z`;
+  const d = new Date(texto);
   if (Number.isNaN(d.getTime())) return iso;
   return d.toLocaleString('es-CO', {
+    timeZone: ZONA,
     day: '2-digit',
     month: 'short',
     hour: '2-digit',
