@@ -147,6 +147,28 @@ Reglas permanentes que debe respetar todo el equipo. Violaciones de estas reglas
 
 ---
 
+---
+
+## Recupera Tu Mascota (cuenta `recuperatumascota@gmail.com`)
+
+Iniciativa solidaria por el terremoto en Colombia, con su propio sitio público
+(`mascotasperdidascolombia.com`), su bot y su panel privado.
+
+> **Antes de tocar cualquier cosa de este módulo, lee
+> [`MANUAL_RECUPERA_TU_MASCOTA.md`](MANUAL_RECUPERA_TU_MASCOTA.md).** Está al inicio de
+> cada sesión por una razón: concentra las reglas del módulo, cómo funciona el matching,
+> los importadores y el procedimiento de recuperación ante desastre.
+
+Las tres que más duelen si se olvidan:
+1. **Nunca borrar datos sin confirmación explícita del CEO** — ya se perdieron fotos
+   irrecuperables por un borrado hecho sobre una interpretación.
+2. **El bot jamás inventa un teléfono**: solo sale de `entregar_contacto`, y hay un
+   guardarraíl que lo hace cumplir.
+3. La marca **"+1000 Exp"** vive solo en ese sitio; la app y la landing de Gloma no se
+   tocan.
+
+---
+
 ## Convenciones de operación
 
 1. **Paridad BD local ↔ AWS (regla permanente del CEO)**: la base de datos
