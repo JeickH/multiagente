@@ -897,6 +897,64 @@ def eliminar_panel(
     return BorradoOut()
 
 
+@router.post("/panel/{codigo}/fotos", response_model=FotoPanelOut)
+async def subir_foto_panel(
+    codigo: str,
+    file: UploadFile = File(...),
+    _: models.User = Depends(require_mascotas_account),
+    db: Session = Depends(get_db),
+):
+    """Agrega una foto a un reporte desde el panel.
+
+    Sirve para completar casos que llegaron sin foto (o que la perdieron) sin
+    tener que pedirle nada a la persona que reportó.
+    """
+    mascota = svc.obtener(db, codigo)
+    if mascota is None:
+        raise HTTPException(status_code=404, detail="Reporte no encontrado")
+    if len(mascota.fotos or []) >= svc.MAX_FOTOS_POR_REPORTE:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Este reporte ya tiene {svc.MAX_FOTOS_POR_REPORTE} fotos.",
+        )
+
+    content_type = (file.content_type or "").lower().split(";")[0].strip()
+    if content_type not in svc.ALLOWED_IMAGE_TYPES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Solo se aceptan imágenes (JPG, PNG, WEBP o HEIC).",
+        )
+
+    data = await file.read(svc.MAX_PHOTO_BYTES + 1)
+    if not data:
+        raise HTTPException(status_code=400, detail="El archivo llegó vacío.")
+    if len(data) > svc.MAX_PHOTO_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail="La imagen pesa más de 8 MB.",
+        )
+
+    try:
+        foto = svc.guardar_foto(db, data, content_type, mascota=mascota)
+    except Exception:
+        # Detalle solo server-side (regla de seguridad #6).
+        logger.exception("mascotas panel: no se pudo guardar la foto de %s", codigo)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="No pudimos guardar la imagen. Intenta de nuevo.",
+        )
+
+    logger.info("mascotas panel: foto agregada a %s", mascota.codigo)
+    return FotoPanelOut(
+        id=foto.id,
+        url=f"/api/mascotas/foto/{mascota.codigo}/{foto.id}",
+        storage_key=foto.storage_key,
+        storage_uri=svc.storage_uri(foto.storage_key),
+        content_type=foto.content_type or "image/jpeg",
+        bytes_size=foto.bytes_size,
+    )
+
+
 @router.delete("/panel/{codigo}/fotos/{foto_id}", response_model=BorradoOut)
 def eliminar_foto_panel(
     codigo: str,

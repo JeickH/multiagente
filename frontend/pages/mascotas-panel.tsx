@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Layout from '../components/Layout';
 import { authedFetch } from '../lib/api';
 
@@ -368,34 +368,69 @@ function Visor({
 function CeldaFotos({
   reporte,
   onAmpliar,
+  onSubir,
+  subiendo,
 }: {
   reporte: Reporte;
   onAmpliar: () => void;
+  onSubir: (file: File) => void;
+  subiendo: boolean;
 }) {
-  if (reporte.fotos.length === 0) return <SinFoto reporte={reporte} size={52} />;
+  const inputRef = useRef<HTMLInputElement>(null);
+
   return (
-    <button
-      type="button"
-      onClick={onAmpliar}
-      className="relative block rounded-lg overflow-hidden transition-transform hover:scale-105"
-      style={{ width: 52, height: 52 }}
-      title={`Ver ${reporte.fotos.length} foto(s) de ${reporte.codigo}`}
-    >
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
-        src={reporte.fotos[0].url}
-        alt={`Foto de ${reporte.codigo}`}
-        className="object-cover w-full h-full"
-      />
-      {reporte.fotos.length > 1 && (
-        <span
-          className="absolute bottom-0 right-0 text-[10px] font-bold px-1 rounded-tl"
-          style={{ backgroundColor: 'rgba(0,0,0,0.65)', color: '#FFFFFF' }}
+    <div className="flex flex-col items-start gap-1">
+      {reporte.fotos.length === 0 ? (
+        <SinFoto reporte={reporte} size={52} />
+      ) : (
+        <button
+          type="button"
+          onClick={onAmpliar}
+          className="relative block rounded-lg overflow-hidden transition-transform hover:scale-105"
+          style={{ width: 52, height: 52 }}
+          title={`Ver ${reporte.fotos.length} foto(s) de ${reporte.codigo}`}
         >
-          +{reporte.fotos.length - 1}
-        </span>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={reporte.fotos[0].url}
+            alt={`Foto de ${reporte.codigo}`}
+            className="object-cover w-full h-full"
+          />
+          {reporte.fotos.length > 1 && (
+            <span
+              className="absolute bottom-0 right-0 text-[10px] font-bold px-1 rounded-tl"
+              style={{ backgroundColor: 'rgba(0,0,0,0.65)', color: '#FFFFFF' }}
+            >
+              +{reporte.fotos.length - 1}
+            </span>
+          )}
+        </button>
       )}
-    </button>
+
+      {/* Agregar fotos desde el panel: sirve para completar los casos que
+          llegaron sin imagen, sin tener que pedirle nada a quien reportó. */}
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/jpeg,image/png,image/webp,image/heic"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) onSubir(file);
+          e.target.value = '';
+        }}
+      />
+      <button
+        type="button"
+        onClick={() => inputRef.current?.click()}
+        disabled={subiendo}
+        className="text-[10px] underline disabled:opacity-50"
+        style={{ color: '#008069' }}
+        title="Agregar una foto a este caso"
+      >
+        {subiendo ? 'subiendo…' : '+ foto'}
+      </button>
+    </div>
   );
 }
 
@@ -651,6 +686,7 @@ export default function MascotasPanel() {
   const [conversaciones, setConversaciones] = useState<Conversacion[]>([]);
   const [hiloAbierto, setHiloAbierto] = useState<string | null>(null);
   const [turnos, setTurnos] = useState<Record<string, Turno[]>>({});
+  const [subiendoEn, setSubiendoEn] = useState<string | null>(null);
 
   const cargar = useCallback(async () => {
     setCargando(true);
@@ -754,6 +790,31 @@ export default function MascotasPanel() {
       void cargarConversaciones();
     }
   }, [seccion, conversaciones.length, cargarConversaciones]);
+
+  /** Sube una foto a un caso desde el panel (multipart, no JSON). */
+  const subirFoto = async (r: Reporte, file: File) => {
+    setSubiendoEn(r.codigo);
+    try {
+      const token = localStorage.getItem('token');
+      const form = new FormData();
+      form.append('file', file);
+      const res = await fetch(`/api/mascotas/panel/${r.codigo}/fotos`, {
+        method: 'POST',
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        body: form,
+      });
+      if (!res.ok) {
+        const cuerpo = await res.json().catch(() => null);
+        throw new Error(cuerpo?.detail || 'No se pudo subir la foto');
+      }
+      await cargar();
+      setError(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'No se pudo subir la foto');
+    } finally {
+      setSubiendoEn(null);
+    }
+  };
 
   const eliminarFoto = async (r: Reporte, fotoId: number) => {
     if (!window.confirm('¿Eliminar esta foto? No se puede deshacer.')) return;
@@ -1436,6 +1497,8 @@ export default function MascotasPanel() {
                         <CeldaFotos
                           reporte={r}
                           onAmpliar={() => setVisor({ reporte: r, indice: 0 })}
+                          onSubir={(file) => void subirFoto(r, file)}
+                          subiendo={subiendoEn === r.codigo}
                         />
                       </td>
                       <td className="px-4 py-3">
