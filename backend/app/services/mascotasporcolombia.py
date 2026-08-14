@@ -33,13 +33,13 @@ Decisiones que conviene conocer antes de tocar este script
   de esas familias no es nuestro para redistribuirlo: `contacto_telefono` queda
   NULL y quien reconozca a la mascota se va a `origen_url` (`crear_reporte` ya
   acepta reportes sin teléfono cuando traen origen).
-* **No importamos las fotos.** `mascota_fotos.storage_key` es una clave de
-  NUESTRO storage (S3 o disco) que el backend lee y sirve por
-  `GET /mascotas/foto/...`; meter ahí una URL remota rompería ese contrato
-  (imágenes rotas en el panel y en el bot, borrados fallidos). Guardamos la URL
-  de la primera foto dentro de `notas` y listo. Si algún día queremos
-  mostrarlas, lo limpio es una columna `foto_url_externa` en `mascotas` (o un
-  `remote_url` opcional en `mascota_fotos`), no forzar `storage_key`.
+* **Las fotos SÍ se copian a nuestro storage** (decisión del CEO, 2026-08-14).
+  No se guarda la URL remota en `storage_key`: esa columna es una clave de
+  NUESTRO bucket que el backend lee y sirve por `GET /mascotas/foto/...`, y
+  meter ahí una URL ajena rompería el contrato. Se descarga la imagen y se
+  guarda como cualquier otra. El motivo es que el bot muestra la foto DENTRO
+  del chat: sin copiarla, la persona recibía un enlace en vez de ver al animal,
+  que es justo lo que se lo hace reconocer.
 * **Una ficha puede traer varias mascotas** (un grupo encontrado junto). Se
   crea un registro por animal cuando el texto dice cuántos son ("dos perros",
   "3 cachorros"), con `origen_id` sufijado (`…#1`, `…#2`), la misma foto y una
@@ -107,6 +107,8 @@ USER_AGENT = "GlomaMascotasBot/1.0 (+https://mascotasperdidascolombia.com)"
 TIMEOUT = 25
 INTENTOS = 3          # 1 intento + 2 reintentos suaves
 ESPERA_REINTENTO = 4  # segundos, fijo: no vale la pena un backoff sofisticado
+
+MAX_FOTO_BYTES = 8 * 1024 * 1024
 
 DESDE_DEFAULT = "2026-08-10"
 PAUSA_DEFAULT = 1.0
@@ -568,7 +570,46 @@ def _existente(db, origen_id: str) -> Optional[models.Mascota]:
     )
 
 
-def _guardar(db, campos: Dict[str, Any], dry_run: bool) -> Tuple[str, str]:
+def _bajar_foto(sesion: requests.Session, url: str) -> Optional[Tuple[bytes, str]]:
+    """Descarga una foto del origen. Devuelve (bytes, content_type) o None."""
+    try:
+        resp = sesion.get(url, timeout=TIMEOUT)
+        resp.raise_for_status()
+    except Exception:
+        logger.warning("no se pudo bajar la foto %s", url)
+        return None
+    if len(resp.content) > MAX_FOTO_BYTES:
+        logger.warning("foto demasiado grande, se omite: %s", url)
+        return None
+    tipo = (resp.headers.get("content-type") or "").split(";")[0].strip().lower()
+    if tipo not in svc.ALLOWED_IMAGE_TYPES:
+        tipo = "image/jpeg"
+    return resp.content, tipo
+
+
+def _copiar_fotos(db, sesion, mascota, urls: List[str], pausa: float) -> int:
+    """Trae las fotos del origen a nuestro storage.
+
+    Se copian (en vez de enlazarlas) porque el bot muestra la imagen dentro del
+    chat: si solo guardáramos la URL remota, la persona recibiría un enlace en
+    vez de ver al animal, que es justo lo que hace que lo reconozca.
+    """
+    guardadas = 0
+    for url in urls[:svc.MAX_FOTOS_POR_REPORTE]:
+        time.sleep(pausa)
+        bajada = _bajar_foto(sesion, url)
+        if bajada is None:
+            continue
+        datos, tipo = bajada
+        try:
+            svc.guardar_foto(db, datos, tipo, mascota=mascota)
+            guardadas += 1
+        except Exception:
+            logger.exception("no se pudo guardar la foto de %s", mascota.codigo)
+    return guardadas
+
+
+def _guardar(db, campos: Dict[str, Any], dry_run: bool) -> Tuple[str, str, Any]:
     """Crea o actualiza el reporte.
 
     Devuelve (resultado, problema) con resultado en 'creada' | 'actualizada' |
@@ -581,16 +622,16 @@ def _guardar(db, campos: Dict[str, Any], dry_run: bool) -> Tuple[str, str]:
 
     if existente is None:
         if dry_run:
-            return "creada", ""
+            return "creada", "", None
         mascota, problema = svc.crear_reporte(db, campos, source=SOURCE)
         if mascota is None:
-            return "rechazada", problema
+            return "rechazada", problema, None
         # `crear_reporte` siempre nace 'activo' (es lo correcto para el bot);
         # si en el origen ya apareció, lo corregimos acá.
         if campos["estado"] != mascota.estado:
             mascota.estado = campos["estado"]
             db.commit()
-        return "creada", ""
+        return "creada", "", mascota
 
     cambios = []
     for campo, valor in campos.items():
@@ -603,17 +644,17 @@ def _guardar(db, campos: Dict[str, Any], dry_run: bool) -> Tuple[str, str]:
         if getattr(existente, campo) != valor:
             cambios.append((campo, valor))
     if not cambios:
-        return "igual", ""
+        return "igual", "", existente
     if dry_run:
         logger.info("%s cambiaría: %s", origen_id, ",".join(c for c, _ in cambios))
-        return "actualizada", ""
+        return "actualizada", "", existente
     for campo, valor in cambios:
         setattr(existente, campo, valor)
     existente.updated_at = datetime.utcnow()
     db.commit()
     logger.info("%s actualizada (%s): %s",
                 existente.codigo, origen_id, ",".join(c for c, _ in cambios))
-    return "actualizada", ""
+    return "actualizada", "", existente
 
 
 # ---------------------------------------------------------------------------
@@ -654,7 +695,7 @@ def importar(
         "sitemap": 0, "viejas_por_lastmod": 0, "bajadas": 0,
         "viejas_por_publicacion": 0, "creadas": 0, "actualizadas": 0,
         "sin_cambios": 0, "omitidas": 0, "rechazadas": 0, "fallidas": 0,
-        "fotos_en_origen": 0,
+        "fotos_en_origen": 0, "fotos_guardadas": 0,
         # Por sección, contando FICHAS (no registros) que pasan el filtro.
         "perdidas": 0, "encontradas": 0,
         # Fichas que describían un grupo y se separaron en varios registros.
@@ -748,7 +789,13 @@ def importar(
                                 "%s registros", origen_id, len(registros), len(registros))
 
                 for campos in registros:
-                    resultado, problema = _guardar(db, campos, dry_run)
+                    resultado, problema, mascota = _guardar(db, campos, dry_run)
+                    # Las fotos se copian solo al crear: en una actualización ya
+                    # están, y volver a bajarlas castigaría al sitio de origen.
+                    if resultado == "creada" and not dry_run and mascota is not None:
+                        conteo["fotos_guardadas"] += _copiar_fotos(
+                            db, sesion, mascota, extraido["fotos"], pausa
+                        )
                     if resultado == "rechazada":
                         logger.warning("%s rechazada: %s", campos["origen_id"], problema)
                         conteo["rechazadas"] += 1

@@ -71,6 +71,7 @@ type PanelResponse = {
     perdidas: number;
     encontradas: number;
     activas: number;
+    reconocidas: number;
     reunidas: number;
     cerradas: number;
     fotos: number;
@@ -83,7 +84,10 @@ type PanelResponse = {
 
 const ESTADO_STYLE: Record<string, { bg: string; color: string; label: string }> = {
   activo: { bg: '#FEF3C7', color: '#92400E', label: 'Activo' },
-  reunida: { bg: '#DCFCE7', color: '#166534', label: 'Reunida 🎉' },
+  // El bot lo marca solo cuando alguien dice "esa es mi mascota": es una
+  // afirmación sin verificar, y el equipo tiene que llamar para confirmarla.
+  reconocida: { bg: '#FFEDD5', color: '#9A3412', label: '🔔 Por confirmar' },
+  reunida: { bg: '#DCFCE7', color: '#166534', label: '✅ Reencuentro confirmado' },
   cerrado: { bg: '#F3F4F6', color: '#4B5563', label: 'Cerrado' },
 };
 
@@ -458,7 +462,8 @@ const CAMPOS_FORM: CampoForm[] = [
   { campo: 'tipo_registro', label: 'Tipo de reporte', tipo: 'select', ancho: 'medio',
     opciones: [['perdida', 'La están buscando (perdida)'], ['encontrada', 'La encontraron']] },
   { campo: 'estado', label: 'Estado', tipo: 'select', ancho: 'medio',
-    opciones: [['activo', 'Activo'], ['reunida', 'Reunida 🎉'], ['cerrado', 'Cerrado']] },
+    opciones: [['activo', 'Activo'], ['reconocida', '🔔 Reconocida · por confirmar'],
+               ['reunida', '✅ Reencuentro confirmado'], ['cerrado', 'Cerrado']] },
   { campo: 'especie', label: 'Especie', tipo: 'select', ancho: 'medio', obligatorio: true,
     opciones: [['perro', '🐶 Perro'], ['gato', '🐱 Gato'], ['otra', '🐾 Otra']] },
   { campo: 'especie_otra', label: 'Qué animal es', ancho: 'medio',
@@ -1051,11 +1056,16 @@ export default function MascotasPanel() {
 
         {/* ===== Contadores ===== */}
         {resumen && (
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 my-5">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-3 my-5">
             <Tarjeta titulo="Reportes totales" valor={resumen.total} tono="#111827" />
             <Tarjeta titulo="Se están buscando" valor={resumen.perdidas} tono="#92400E" />
             <Tarjeta titulo="Fueron encontradas" valor={resumen.encontradas} tono="#1E40AF" />
-            <Tarjeta titulo="Reunidas 🎉" valor={resumen.reunidas} tono="#166534" />
+            <Tarjeta
+              titulo="🔔 Por confirmar"
+              valor={resumen.reconocidas ?? 0}
+              tono="#9A3412"
+            />
+            <Tarjeta titulo="✅ Reencuentros" valor={resumen.reunidas} tono="#166534" />
             <Tarjeta
               titulo="Coincidencias sin revisar"
               valor={data?.coincidencias_nuevas ?? 0}
@@ -1376,7 +1386,8 @@ export default function MascotasPanel() {
                 >
                   <option value="">Todos los estados</option>
                   <option value="activo">Activos</option>
-                  <option value="reunida">Reunidas 🎉</option>
+                  <option value="reconocida">🔔 Por confirmar</option>
+                  <option value="reunida">✅ Confirmados</option>
                   <option value="cerrado">Cerrados</option>
                 </select>
                 <label className="flex items-center gap-1.5 text-sm text-gray-600 px-2">
@@ -1513,7 +1524,8 @@ export default function MascotasPanel() {
                           aria-label={`Estado de ${r.codigo}`}
                         >
                           <option value="activo">Activo</option>
-                          <option value="reunida">Reunida 🎉</option>
+                          <option value="reconocida">🔔 Reconocida · por confirmar</option>
+                          <option value="reunida">✅ Reencuentro confirmado</option>
                           <option value="cerrado">Cerrado</option>
                         </select>
                         <div className="mt-1">

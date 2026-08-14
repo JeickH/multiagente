@@ -306,13 +306,32 @@ def _bloque_mascotas(
     if user_text:
         dichos.append(user_text)
     telefono = _telefono_dicho(dichos)
+
+    # Ya buscó y el caso sigue sin registrar ni teléfono: hay que pedir los
+    # datos de contacto, o la familia no se entera el día que aparezca su
+    # mascota (y aparecen días o semanas después, con el chat ya cerrado).
+    if not telefono and not runtime.get("reporte_codigo"):
+        rastro = " ".join(
+            m.get("content", "") for m in (history or []) if m.get("role") == "assistant"
+        )
+        if "candidatos de la búsqueda" in rastro or "no hubo coincidencias" in rastro:
+            lineas.append(
+                "⚠️ Ya hiciste una búsqueda y todavía no tienes los datos de "
+                "contacto de esta persona. Antes de cerrar, pídele su NOMBRE y "
+                "su TELÉFONO explicándole que es para avisarle apenas aparezca "
+                "su mascota, y registra el caso con `registrar_reporte` "
+                "(`tipo_registro='perdida'`). Sáltatelo solo si ya reconoció a "
+                "su mascota en una ficha y le entregaste el contacto."
+            )
+
     if telefono and not runtime.get("reporte_codigo"):
         lineas.append(
             f"⚠️ La persona YA te dio un teléfono de contacto ({telefono}) y el "
             "caso TODAVÍA no está registrado. Si ya sabes qué animal es y dónde "
             "se perdió o dónde está, llama `registrar_reporte` en ESTE turno, "
-            "sin hacer más preguntas. Lo que falte lo completas después con "
-            "`completar_reporte`."
+            "sin hacer más preguntas — incluye `contacto_telefono` y "
+            "`contacto_nombre` si te dio el nombre. Lo que falte lo completas "
+            "después con `completar_reporte`."
         )
     fotos = int(runtime.get("fotos_pendientes") or 0)
     if fotos:
@@ -685,9 +704,16 @@ def _tools_mascotas() -> List[Dict[str, Any]]:
                     },
                     "contacto_telefono": {
                         "type": "string",
-                        "description": "OBLIGATORIO. Teléfono de quien reporta",
+                        "description": (
+                            "OBLIGATORIO. Teléfono de quien reporta. También en "
+                            "los casos 'perdida': es como se le avisa a la "
+                            "familia el día que aparezca su mascota"
+                        ),
                     },
-                    "contacto_nombre": {"type": "string", "description": "Nombre de quien reporta"},
+                    "contacto_nombre": {
+                        "type": "string",
+                        "description": "Nombre de quien reporta. Pídeselo siempre.",
+                    },
                     "senas": {
                         "type": "string",
                         "description": (
@@ -776,6 +802,16 @@ _TELEFONO_EN_TEXTO_RE = re.compile(r"(?:\+?\d[\d\s\-().]{5,}\d)")
 
 _MAX_CORRECCIONES = 2
 
+_CORRECCION_FICHA = (
+    "ALTO: acabas de describir una mascota sin haber consultado su ficha en "
+    "este turno, así que los datos que escribiste no salieron de la base — los "
+    "estás rellenando con lo que dijo la persona. Ese mensaje NO se le envió. "
+    "Vuelve a responder llamando `ver_ficha` con el código del reporte que "
+    "quieres mostrarle, y describe la mascota SOLO con lo que te devuelva la "
+    "herramienta (raza, color, tamaño, señas y el lugar donde la encontraron). "
+    "Si no te quedan códigos por mostrar, dilo y sigue con el registro del caso."
+)
+
 _CORRECCION_CONTACTO = (
     "ALTO: acabas de escribir un número de teléfono que NO te entregó ninguna "
     "herramienta. Los datos de contacto no están en tu memoria ni puedes "
@@ -785,6 +821,47 @@ _CORRECCION_CONTACTO = (
     "y usa TEXTUALMENTE la ubicación y el teléfono que te devuelva. Si aún no lo "
     "ha confirmado, pregúntaselo sin dar ningún dato de contacto."
 )
+
+
+# Frases con las que el bot PRESENTA una mascota concreta. Si aparecen sin que
+# haya consultado la ficha en ese mismo turno, está describiendo de memoria — y
+# lo que rellena suele ser lo que dijo la propia persona, así que le devuelve su
+# descripción como si fuera la del reporte.
+_PRESENTA_MASCOTA_RE = re.compile(
+    r"(?:"
+    r"es\s+est[ea]\s+tu\b"           # "¿es este tu perro?"
+    r"|mira\s+est[ea]\b"             # "mira esta otra"
+    r"|est[ea]\s+otr[ao]\b"
+    r"|l[oa]\s+encontraron\b"
+    r"|fue\s+encontrad[oa]\b"
+    r"|l[oa]\s+hallaron\b"
+    r")",
+    re.IGNORECASE,
+)
+
+# Herramientas que traen datos reales de un reporte. Si el turno llamó alguna,
+# el modelo tiene de dónde sacar la descripción.
+_TOOLS_CON_DATOS = {"ver_ficha", "buscar_mascota", "entregar_contacto"}
+
+
+def _viola_ficha(
+    cfg: Dict[str, Any],
+    textos_de_la_ronda: List[str],
+    tools_called: List[Dict[str, Any]],
+) -> bool:
+    """¿El bot describió una mascota sin haber consultado su ficha?
+
+    Pasó en producción: alguien buscaba un salchicha café perdido en Valle del
+    Lili y el bot le presentó un reporte —que en la base era un mestizo hallado
+    en Guadalupe— como "salchicha café encontrado en Valle del Lili". Describir
+    de memoria acaba devolviéndole a la persona su propia descripción, y puede
+    mandarla a buscar un animal que no es el suyo.
+    """
+    if cfg.get("mascotas") is None or not textos_de_la_ronda:
+        return False
+    if any(t.get("tool") in _TOOLS_CON_DATOS for t in tools_called):
+        return False
+    return any(_PRESENTA_MASCOTA_RE.search(t or "") for t in textos_de_la_ronda)
 
 
 def _viola_contacto(
@@ -919,19 +996,11 @@ def _run_tool_mascotas(
                 return f"no existe el reporte {codigo}", False
             ficha = svc.ficha_publica(mascota, db)
             apuntar(f"le mostraste la ficha del reporte {mascota.codigo}")
-            if ficha.get("externo"):
-                # Sus fotos viven en el sitio de origen; se comparte el enlace.
-                return json.dumps({
-                    "ficha": ficha,
-                    "resumen": _resumen_ficha(ficha),
-                    "instruccion": (
-                        f"Este reporte viene de {ficha['origen']}. Descríbeselo "
-                        "en tus palabras, pásale el enlace TAL CUAL "
-                        f"({ficha['origen_url']}) para que vea las fotos allá, "
-                        "y pregúntale si es su mascota. Si dice que sí, usa "
-                        "`entregar_contacto`."
-                    ),
-                }, ensure_ascii=False), False
+
+            # La foto va SIEMPRE que la tengamos, venga el reporte de donde
+            # venga. Antes los importados salían por otra rama y nunca la
+            # enviaban, aunque su imagen estuviera guardada en nuestro storage:
+            # la persona recibía un enlace en vez de ver al animal.
             fotos = list(mascota.fotos or [])
             if fotos:
                 actions.append({
@@ -942,14 +1011,35 @@ def _run_tool_mascotas(
                         "url": _foto_url(mascota.codigo, fotos[0].id),
                     },
                 })
+
+            if ficha.get("externo"):
+                if fotos:
+                    instruccion = (
+                        "Ya le enviaste la foto de esta mascota. Descríbesela en "
+                        "tus palabras y pregúntale si es la suya. Este reporte "
+                        f"llegó de {ficha['origen']}: menciónalo, pero NO le "
+                        "pidas que vaya a otro sitio a ver la foto — ya la tiene. "
+                        "Si dice que sí es, usa `entregar_contacto`."
+                    )
+                else:
+                    instruccion = (
+                        f"Este reporte viene de {ficha['origen']} y no tenemos "
+                        "su foto. Descríbeselo en tus palabras, pásale el enlace "
+                        f"TAL CUAL ({ficha['origen_url']}) para que vea las fotos "
+                        "allá, y pregúntale si es su mascota. Si dice que sí, usa "
+                        "`entregar_contacto`."
+                    )
+            else:
+                instruccion = (
+                    "Descríbesela en tus palabras y pregúntale si es su "
+                    "mascota. Si dice que sí, usa `entregar_contacto`."
+                )
+
             return json.dumps({
                 "ficha": ficha,
                 "resumen": _resumen_ficha(ficha),
                 "foto_enviada": bool(fotos),
-                "instruccion": (
-                    "Descríbesela en tus palabras y pregúntale si es su "
-                    "mascota. Si dice que sí, usa `entregar_contacto`."
-                ),
+                "instruccion": instruccion,
             }, ensure_ascii=False), False
 
         if name == "entregar_contacto":
@@ -958,6 +1048,9 @@ def _run_tool_mascotas(
             if datos is None:
                 return f"no existe el reporte {codigo}", False
             apuntar(f"entregaste el contacto del reporte {codigo}")
+            # Queda marcado como "reconocido, por confirmar": el equipo llama a
+            # las dos partes y confirma el reencuentro desde el panel.
+            svc.marcar_reconocida(db, codigo, runtime.get("chat_ref"))
             logger.info("mascotas: contacto entregado codigo=%s", codigo)
             if datos.get("origen_url"):
                 # Reporte importado de una plataforma hermana: no tenemos el
@@ -1593,19 +1686,22 @@ def _advance_inner(
         # Guardarraíl anti-invención de datos de contacto: si el modelo escribió
         # un teléfono sin haberlo pedido a `entregar_contacto`, se descarta lo
         # que dijo en esta ronda y se le exige que use la herramienta.
-        if (
-            correcciones < _MAX_CORRECCIONES
-            and _viola_contacto(cfg, say_texts[textos_previos:], tools_called)
-        ):
+        correccion = None
+        if correcciones < _MAX_CORRECCIONES:
+            if _viola_contacto(cfg, say_texts[textos_previos:], tools_called):
+                correccion, motivo = _CORRECCION_CONTACTO, "contacto inventado"
+            elif _viola_ficha(cfg, say_texts[textos_previos:], tools_called):
+                correccion, motivo = _CORRECCION_FICHA, "ficha descrita sin consultarla"
+        if correccion is not None:
             correcciones += 1
             del actions[acciones_previas:]
             del say_texts[textos_previos:]
             logger.warning(
-                "llm_engine: contacto inventado bloqueado (bot=%s, corrección %s)",
-                getattr(bot, "id", "?"), correcciones,
+                "llm_engine: %s bloqueado (bot=%s, corrección %s)",
+                motivo, getattr(bot, "id", "?"), correcciones,
             )
             working.append({"role": "assistant", "content": content})
-            working.append({"role": "user", "content": _CORRECCION_CONTACTO})
+            working.append({"role": "user", "content": correccion})
             continue
 
         if finished or data.get("stop_reason") != "tool_use" or not tool_results:

@@ -207,6 +207,7 @@ class ResumenOut(BaseModel):
     perdidas: int
     encontradas: int
     activas: int
+    reconocidas: int = 0
     reunidas: int
     cerradas: int
     fotos: int

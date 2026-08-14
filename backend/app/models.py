@@ -1008,10 +1008,14 @@ MASCOTA_TIPO_ENCONTRADA = "encontrada"
 AVAILABLE_MASCOTA_TIPOS = (MASCOTA_TIPO_PERDIDA, MASCOTA_TIPO_ENCONTRADA)
 
 MASCOTA_ESTADO_ACTIVO = "activo"
-MASCOTA_ESTADO_REUNIDA = "reunida"     # la mascota volvió con su familia
+# Alguien dijo en el chat "esa es mi mascota" y el bot le entregó el contacto.
+# Es una afirmación sin verificar: el equipo llama y recién ahí se confirma.
+MASCOTA_ESTADO_RECONOCIDA = "reconocida"
+MASCOTA_ESTADO_REUNIDA = "reunida"     # reencuentro confirmado por el equipo
 MASCOTA_ESTADO_CERRADO = "cerrado"     # reporte descartado / duplicado
 AVAILABLE_MASCOTA_ESTADOS = (
-    MASCOTA_ESTADO_ACTIVO, MASCOTA_ESTADO_REUNIDA, MASCOTA_ESTADO_CERRADO,
+    MASCOTA_ESTADO_ACTIVO, MASCOTA_ESTADO_RECONOCIDA,
+    MASCOTA_ESTADO_REUNIDA, MASCOTA_ESTADO_CERRADO,
 )
 
 
@@ -1074,6 +1078,12 @@ class Mascota(Base):
     )
     source = Column(String(24), nullable=False, default="web", index=True)
 
+    # Cuándo alguien dijo en el chat que reconocía a esta mascota (el momento
+    # en que el bot le entregó el contacto) y desde qué conversación. Sirve para
+    # que el equipo sepa a quién llamar para confirmar el reencuentro.
+    reconocida_at = Column(DateTime, nullable=True)
+    reconocida_chat = Column(String(64), nullable=True)
+
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
     updated_at = Column(
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
@@ -1084,7 +1094,8 @@ class Mascota(Base):
             "tipo_registro IN ('perdida','encontrada')", name="ck_mascotas_tipo"
         ),
         CheckConstraint(
-            "estado IN ('activo','reunida','cerrado')", name="ck_mascotas_estado"
+            "estado IN ('activo','reconocida','reunida','cerrado')",
+            name="ck_mascotas_estado",
         ),
         Index("ix_mascotas_tipo_estado", "tipo_registro", "estado"),
         # Un reporte por ficha de origen: el importador re-corre sin duplicar.

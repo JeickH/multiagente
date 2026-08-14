@@ -804,6 +804,30 @@ def purgar(db: Session, source: str) -> int:
     return len(reportes)
 
 
+def marcar_reconocida(
+    db: Session, codigo: str, chat_ref: Optional[str] = None
+) -> bool:
+    """Deja constancia de que alguien dijo reconocer a esta mascota.
+
+    Es una afirmación sin verificar: pasa el reporte a `reconocida` ("por
+    confirmar"), no a `reunida`. El equipo llama a las dos partes y recién
+    entonces confirma el reencuentro desde el panel.
+
+    No toca los casos que ya están cerrados, reunidos o reconocidos: el estado
+    solo avanza, nunca retrocede por una conversación nueva.
+    """
+    mascota = obtener(db, codigo)
+    if mascota is None or mascota.estado != models.MASCOTA_ESTADO_ACTIVO:
+        return False
+    mascota.estado = models.MASCOTA_ESTADO_RECONOCIDA
+    mascota.reconocida_at = datetime.utcnow()
+    mascota.reconocida_chat = (chat_ref or "")[:64] or None
+    mascota.updated_at = datetime.utcnow()
+    db.commit()
+    logger.info("mascotas: %s marcada como reconocida (por confirmar)", mascota.codigo)
+    return True
+
+
 def datos_de_contacto(db: Session, codigo: str) -> Optional[Dict[str, Any]]:
     """Ubicación exacta + teléfono. Solo cuando la persona reconoce a la
     mascota — es el único momento en que se entrega PII de quien reportó."""
@@ -1228,6 +1252,7 @@ def resumen(db: Session) -> Dict[str, Any]:
         "perdidas": por_tipo.get(models.MASCOTA_TIPO_PERDIDA, 0),
         "encontradas": por_tipo.get(models.MASCOTA_TIPO_ENCONTRADA, 0),
         "activas": por_estado.get(models.MASCOTA_ESTADO_ACTIVO, 0),
+        "reconocidas": por_estado.get(models.MASCOTA_ESTADO_RECONOCIDA, 0),
         "reunidas": por_estado.get(models.MASCOTA_ESTADO_REUNIDA, 0),
         "cerradas": por_estado.get(models.MASCOTA_ESTADO_CERRADO, 0),
         "por_especie": por_especie,
