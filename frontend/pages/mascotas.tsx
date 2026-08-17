@@ -438,8 +438,11 @@ export default function MascotasChat() {
         }
         .rt-campo[aria-invalid='true'] { border-color: #C6362B; }
         .rt-campo::placeholder { color: #9AA6AD; }
+        /* El fieldset trae min-inline-size: min-content del navegador y no se
+           deja encoger; sin esto ensancha la tarjeta en pantallas angostas. */
+        .rt-grupo { min-width: 0; }
         .rt-opcion {
-          display: flex; align-items: center; gap: 0.75rem; width: 100%;
+          display: flex; align-items: center; gap: 0.75rem; width: 100%; min-width: 0;
           text-align: left; padding: 0.7rem 0.85rem;
           border: 1.5px solid #DDE3E7; border-radius: 12px; background: #FFFFFF;
           transition: border-color 140ms ease, background-color 140ms ease, transform 140ms ease;
@@ -465,13 +468,17 @@ export default function MascotasChat() {
       <div className="flex flex-col" style={{ height: '100dvh' }}>
         {enAntesala ? (
           /* ================= Antesala: quién eres y a qué vienes ================= */
-          <div className="rt-fondo flex-1 overflow-y-auto flex items-center justify-center px-4 py-6">
+          /* Columna, no fila: centrando con `items-center` en un flex de fila la
+             tarjeta no podía encogerse por debajo de su min-content y se salía
+             de la pantalla en el celular. Aquí el ancho lo manda el contenedor
+             y `mx-auto` la centra. */
+          <div className="rt-fondo flex-1 overflow-y-auto flex flex-col justify-center px-4 py-6">
             <form
               onSubmit={(e) => {
                 e.preventDefault();
                 abrirChat(motivo ?? 'buscar');
               }}
-              className={`w-full max-w-[430px] rounded-2xl px-5 py-6 sm:px-7 ${
+              className={`w-full max-w-[430px] mx-auto rounded-2xl px-5 py-6 sm:px-7 ${
                 fase === 'abriendo' ? 'rt-tarjeta-sale' : 'rt-tarjeta'
               }`}
               style={{
@@ -581,7 +588,10 @@ export default function MascotasChat() {
                 )}
               </div>
 
-              <fieldset className="mb-5" aria-describedby={errores.motivo ? 'rt-motivo-error' : undefined}>
+              <fieldset
+                className="rt-grupo mb-5"
+                aria-describedby={errores.motivo ? 'rt-motivo-error' : undefined}
+              >
                 <legend
                   className="text-[13px] font-semibold mb-2"
                   style={{ color: WA.textoLight }}

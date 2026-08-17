@@ -2830,3 +2830,22 @@ guarda todo sin comprimir.
 **Prueba local end-to-end** (`POST /mascotas/foto` contra el contenedor):
 `4183 KB → 376 KB (91%)` un JPEG, y un PNG de 2 MB entró como `.jpg` de 276 KB con
 `content_type` corregido. Basura de entrada devuelve `None` y guarda el original.
+
+### Despliegue (coordinado con el otro frente del sprint)
+
+Iba en paralelo otro trabajo sobre el mismo módulo —formulario de nombre/teléfono antes
+de abrir el chat, el freno para que el bot no registre inventando especie o ubicación, el
+importador de RoyiPets y los teléfonos dobles— y el CEO pidió desplegarlo junto. Se
+verificó antes de mezclar: `tsc --noEmit` y `next build` limpios, y el contenedor local
+levantó con ambos cambios.
+
+Commit `1b2af54`. Imagen `multiagente-backend:fotos-livianas` → ECR, **task-def rev 39**,
+`update-service --force-new-deployment` → `services-stable`. Amplify **job 77 SUCCEED**.
+
+**Smoke en producción:** se subió una foto de 4.28 MB a `POST /mascotas/foto` y quedó
+guardada en **384 KB** con `optimizada=TRUE` y `bytes_original` registrado (fila 152, 3.7 s
+de ida y vuelta contando la subida del archivo original). Las fotos ya optimizadas se
+siguen sirviendo 200 `image/jpeg`, y `mascotasperdidascolombia.com` responde 200.
+
+Queda en `pendientes/e84aa1e3.../` la foto de esa prueba, huérfana a propósito: no se
+borró nada sin autorización.
