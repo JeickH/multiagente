@@ -3171,3 +3171,69 @@ limpió después de cada carga.
 - Cuatro fotos de `MC-00035` y `MC-00036` (locales, de 2026-08-13) están referenciadas en
   la BD pero **no existen en `media_local/` ni en el volumen viejo**. Son anteriores al
   cambio de montaje. No se borró nada.
+
+---
+
+## #363 — El prompt se repagaba entero en cada llamada (2026-08-17)
+
+El CEO preguntó si convenía subir el bot de mascotas a un modelo más inteligente que
+Haiku. La respuesta corta resultó ser "no, pero estabas pagando de más".
+
+### Lo que se creía y no era
+
+`seed_bot_mascotas.py` decía que este bot no podía usar Sonnet porque Bedrock lo rechaza
+con `INVALID_PAYMENT_INSTRUMENT` (#253). Probando la cuenta modelo por modelo con
+invocaciones reales, eso sólo aplica a **Sonnet 4.6**. Sí responden hoy, sin tocar el
+medio de pago: **Sonnet 4.5**, **Opus 4.5** y **Opus 4.6**. No están habilitados
+Sonnet 5, Opus 4.7/4.8 ni Fable 5.
+
+### La medición
+
+Stack Docker aparte (proyecto `pruebamodelo`, sin publicar puertos, corpus congelado con
+restore de un `pg_dump` antes de cada corrida) para no tocar el stack `wati` ni RDS.
+153 turnos: 8 casos guionados + réplica de 6 conversaciones reales de producción. Los
+tokens se leyeron del `usage` de cada respuesta de Bedrock. Gasto: US$ 5,62.
+
+Uso real medido: 75 conversaciones en 5 días (~450/mes), 5,73 turnos por conversación y
+**~15.600 tokens de entrada por turno** — el system prompt son 6.130; el resto son
+resultados de tools que se reenvían íntegros en cada ronda.
+
+| escenario | por conversación | al mes |
+|---|---|---|
+| Haiku sin caché (lo que había) | US$ 0,094 | US$ 42 |
+| **Haiku con caché** | **US$ 0,031** | **US$ 14** |
+| Sonnet 4.5 sin caché | US$ 0,291 | US$ 131 |
+| Sonnet 4.5 con caché | US$ 0,105 | US$ 47 |
+
+En capacidad funcional empataron: los dos aprobaron los 8 casos. Sonnet resultó **más
+prudente al entregar contactos** (ante un "sí, puede ser" ambiguo pide confirmar señas;
+Haiku entrega el teléfono de una) y **menos disciplinado al esperar el resultado de la
+tool**: en un turno escribió un teléfono inventado y se autocorrigió en el mensaje
+siguiente — el usuario ve los dos. Latencia mediana 2,5 s vs 4,7 s. Decisión del CEO:
+**se queda Haiku, se activa el caché**.
+
+### El cambio
+
+`llm_engine._invoke_model` mandaba el `system` como string plano. Ahora va como bloque
+con `cache_control`; como el prefijo se renderiza `tools` → `system` → `messages`, el
+marcador cachea las herramientas y el contexto del cliente juntos. Verificado sobre el
+código de producción: **91 % de la entrada servida desde caché**, sin una sola respuesta
+distinta. Aplica igual a Talulah y al demo de viajes.
+
+Se agregó además una línea de log por invocación con `in/out/cache_read/cache_write` (sin
+contenido, reglas #1/#6): si `cache_read` se va a cero de forma sostenida, es que el
+prefijo dejó de ser estable y el ahorro se perdió.
+
+Informes: `PLAN_PRUEBAS_MODELO_MASCOTAS.html` y `RESULTADOS_PRUEBAS_MODELO_MASCOTAS.html`.
+
+### Pendientes
+
+- **Brecha en `_viola_contacto`** (la que dejó pasar el teléfono inventado de Sonnet):
+  devuelve `False` apenas `entregar_contacto` aparece en `tools_called`, **sin comparar
+  el número escrito contra el que la herramienta devolvió**. Si el modelo escribe el
+  teléfono y llama la tool en la misma ronda, el número inventado llega al usuario.
+  Haiku no lo activó en 77 turnos, pero la protección depende de suerte, no de diseño.
+- **Datos personales en el repo, que es público**: `backend/scripts/fuentes/proteccionanimal.py`
+  y `documentacion_bd/mapeo_fuentes.md` traen teléfonos reales de anuncios (`3193566690`,
+  `315 2129670`) como ejemplos en docstrings. Ya están en el historial de GitHub. Sacarlos
+  hacia adelante es fácil; limpiar el historial requiere reescritura y decisión del CEO.

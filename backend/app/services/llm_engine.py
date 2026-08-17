@@ -1560,14 +1560,43 @@ def _invoke_model(
     body = {
         "anthropic_version": "bedrock-2023-05-31",
         "max_tokens": _env_max_tokens(),
-        "system": system,
+        # El system va como bloque con `cache_control` en vez de texto plano:
+        # el prefijo se renderiza `tools` -> `system` -> `messages`, así que el
+        # marcador en el system cachea las herramientas y el contexto del cliente
+        # juntos. Son ~6k tokens que antes se repagaban íntegros en cada ronda y
+        # en cada turno. Medido el 2026-08-17 sobre 18 turnos: −70% del costo de
+        # entrada en Haiku 4.5 y −67% en Sonnet 4.5, sin una sola respuesta
+        # distinta (ver RESULTADOS_PRUEBAS_MODELO_MASCOTAS.html).
+        #
+        # Si el prefijo de un bot queda por debajo del mínimo cacheable del
+        # modelo, Bedrock simplemente no cachea y cobra normal: no es un error
+        # y no hay que tratarlo como tal.
+        "system": [
+            {
+                "type": "text",
+                "text": system,
+                "cache_control": {"type": "ephemeral"},
+            }
+        ],
         "messages": messages,
         "tools": tools,
     }
     resp = _bedrock_client().invoke_model(
         modelId=model_id, body=json.dumps(body, ensure_ascii=False)
     )
-    return json.loads(resp["body"].read())
+    data = json.loads(resp["body"].read())
+    # Métrica de caché sin contenido (reglas #1/#6): si `cache_read` sale en 0
+    # de forma sostenida, el prefijo dejó de ser estable y el ahorro se perdió.
+    uso = data.get("usage") or {}
+    logger.info(
+        "llm_invoke model=%s in=%s out=%s cache_read=%s cache_write=%s",
+        model_id,
+        uso.get("input_tokens"),
+        uso.get("output_tokens"),
+        uso.get("cache_read_input_tokens"),
+        uso.get("cache_creation_input_tokens"),
+    )
+    return data
 
 
 # ---------------------------------------------------------------------------
