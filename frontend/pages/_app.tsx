@@ -3,7 +3,7 @@ import type { AppProps } from 'next/app';
 import Head from 'next/head';
 import { useRouter } from 'next/router';
 import { useCallback, useEffect, useState } from 'react';
-import { haySesion } from '../lib/session';
+import { haySesion, msParaVencer } from '../lib/session';
 
 /**
  * Título de la pestaña por ruta. Convención: `Sección · Gloma` — el nombre de
@@ -55,11 +55,17 @@ function hostIsPublicLanding(): boolean {
 
 export default function App({ Component, pageProps }: AppProps) {
   const router = useRouter();
-  const [autorizado, setAutorizado] = useState(false);
+  // Ruta que YA pasó el guard, no un simple booleano: al navegar entre
+  // pantallas privadas el estado sobrevive al cambio de ruta, y un `true`
+  // heredado alcanzaría a pintar la pantalla nueva antes de que el guard
+  // vuelva a correr. Atándolo a la ruta, la autorización de una no sirve
+  // para la siguiente.
+  const [autorizadaEn, setAutorizadaEn] = useState<string | null>(null);
 
   // Rutas que se pintan sin sesión. Se evalúa igual en servidor y en cliente,
   // así que las landings salen en el HTML inicial (importa para buscadores).
   const rutaPublica = PUBLIC_PAGES.includes(router.pathname);
+  const ruta = router.pathname;
 
   /**
    * El guard. `haySesion()` valida el `exp` del JWT, no solo que exista la
@@ -71,40 +77,55 @@ export default function App({ Component, pageProps }: AppProps) {
     // En el dominio público de la landing nunca redirigimos a /login —
     // la plataforma vive bajo otro dominio.
     if (rutaPublica || hostIsPublicLanding()) {
-      setAutorizado(true);
+      setAutorizadaEn(ruta);
       return;
     }
     if (haySesion()) {
-      setAutorizado(true);
+      setAutorizadaEn(ruta);
       return;
     }
     // Se apaga primero para que no quede pintada la pantalla anterior
     // mientras el router hace el cambio.
-    setAutorizado(false);
+    setAutorizadaEn(null);
     router.replace('/login');
-  }, [router, rutaPublica]);
+  }, [router, ruta, rutaPublica]);
 
   useEffect(() => {
     revisarSesion();
   }, [revisarSesion]);
 
-  // El token puede vencerse con la pestaña abierta y quieta. Volver a ella es
-  // justo el momento en que el usuario espera encontrarse el login.
+  // El token puede vencerse con la pestaña abierta y quieta. Estos son los
+  // momentos en que hay que volver a mirar:
+  //  - `focus` / `visibilitychange`: el usuario vuelve a la pestaña, que es
+  //    justo cuando espera encontrarse el login.
+  //  - `pageshow`: vuelve con el botón "atrás" y el navegador restaura la
+  //    página desde el bfcache, ya pintada y sin remontar nada.
+  //  - el temporizador: la pestaña sigue enfocada y quieta en una pantalla que
+  //    no llama al backend (`/` es exactamente ese caso), así que nadie más se
+  //    enteraría de que la sesión venció.
   useEffect(() => {
     const alVolver = () => {
       if (document.visibilityState === 'visible') revisarSesion();
     };
     window.addEventListener('focus', revisarSesion);
+    window.addEventListener('pageshow', revisarSesion);
     document.addEventListener('visibilitychange', alVolver);
+
+    const restante = msParaVencer();
+    const temporizador =
+      restante === null ? null : window.setTimeout(revisarSesion, restante + 500);
+
     return () => {
       window.removeEventListener('focus', revisarSesion);
+      window.removeEventListener('pageshow', revisarSesion);
       document.removeEventListener('visibilitychange', alVolver);
+      if (temporizador !== null) window.clearTimeout(temporizador);
     };
   }, [revisarSesion]);
 
   // Mientras se resuelve el guard de sesión no se pinta la página, pero el
   // título sí: si no, la pestaña muestra la URL cruda hasta que carga.
-  const mostrarPagina = rutaPublica || autorizado;
+  const mostrarPagina = rutaPublica || autorizadaEn === ruta;
 
   return (
     <>

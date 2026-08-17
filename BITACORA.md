@@ -2907,3 +2907,62 @@ volver a `/` sigue mandando al login; `/mascotas` y `/gloma` siguen abiertas sin
 Solo frontend, sin tocar backend ni base de datos — no había nada que desplegar en ECS
 ni migración que aplicar, así que este cambio no interfiere con los otros frentes en
 curso.
+
+### Auditoría de seguridad (regla 4 del CLAUDE.md) y endurecimiento
+
+El agente `seguridad` revisó el commit `234300c` antes del push: **cero hallazgos
+Críticos y cero Altos**. Confirmó lo que importaba — el payload del JWT se usa
+únicamente para leer `exp` (ningún rol, correo ni permiso sale de ahí; los módulos
+internos del sidebar los sigue autorizando el backend vía `/api/*/access`), el parseo
+no puede lanzar excepción sin capturar, `/mascotas-panel` sigue protegido por tres
+capas (guard, middleware del borde y `Depends(require_mascotas_account)`), y no hay
+nada que loggee el token. Dejó 1 Medio y 4 Bajos, todos corregidos en el commit
+siguiente:
+
+- **Reloj desajustado (Medio).** Comparar el `exp` del servidor contra el reloj del
+  navegador tenía un modo de falla nuevo y peor que el bug original: con el
+  computador 30 minutos adelantado, el token recién emitido nacía "vencido", el guard
+  lo borraba y el usuario quedaba rebotando entre el login y el dashboard sin poder
+  entrar nunca. Ahora el login calibra el desfase con el header `Date` de la respuesta
+  y hay 60 s de margen. Ante la duda se deja pasar el token: el 401 del backend es una
+  red de seguridad, quedar trancado afuera no tiene ninguna.
+- **Autorización heredada entre rutas (Bajo).** El booleano `autorizado` sobrevivía al
+  cambio de ruta, así que al navegar entre pantallas privadas la nueva alcanzaba a
+  montarse antes de que el guard corriera. Ahora se guarda *en qué ruta* se autorizó.
+- **Botón "atrás" tras salir (Bajo).** `location.assign` dejaba la pantalla privada en
+  el historial y el bfcache la repintaba. Pasó a `location.replace`, más un listener
+  de `pageshow`. Importa en un computador compartido.
+- **Pestaña quieta (Bajo).** `/` no llama al backend, así que nadie se enteraba de que
+  la sesión venció. Se programa un temporizador al `exp`.
+- **Respuesta de login sin `access_token` (Bajo).** Se guardaba la cadena `"undefined"`
+  y el usuario rebotaba sin explicación; ahora se valida y se muestra el error.
+
+Queda anotado, sin acción: el logout es solo del navegador. El JWT sigue siendo válido
+server-side hasta que vence (no hay `jti` ni denylist). Es el comportamiento normal de
+JWT stateless y con 30 minutos de vida la ventana es corta, pero conviene tenerlo
+escrito por si algún día hace falta revocar de verdad.
+
+### Pruebas (46/46)
+
+`tsc --noEmit` y `next build` limpios. Sobre el build de producción local, 46 pruebas
+end-to-end manejando Chrome por CDP (`scratchpad/guard-test.mjs`):
+
+- **Las 14 pantallas privadas, entradas directo por URL** (`/`, `/bots`, `/bots/1`,
+  `/campanas`, `/campanas/1`, `/campanas/contactos`, `/campanas/nueva`,
+  `/campanas/plantillas`, `/campanas/plantillas/nueva`, `/citas`, `/instagram`,
+  `/mascotas-panel`, `/mensajes`, `/usuario`), en dos escenarios: sin token y con token
+  vencido. Las 28 mandan al login, y en las 28 el token vencido queda borrado.
+- Token vigente: el dashboard y `/usuario` abren normal, y navegar entre pantallas no
+  rebota.
+- "Salir" borra el token; después el botón "atrás" no devuelve a la plataforma.
+- La pestaña quieta en `/` se va sola al login cuando la sesión vence (el escenario del
+  reporte).
+- Con el reloj del navegador 30 minutos adelantado la sesión recién abierta sirve.
+- Tokens basura (`no-es-un-jwt`, `a.b.c`, `...`, `null`) → login, sin excepciones.
+- Las 6 rutas públicas (`/login`, `/register`, `/mascotas`, `/gloma`, `/automatas`,
+  `/elecol`) siguen abiertas sin sesión.
+
+Dos pruebas usan la red bloqueada hacia `/api/*` a propósito: el token de la batería es
+de mentiras y el backend local lo rechaza con 401 — que dispara el logout del helper y
+tapaba lo que se quería medir. Ese camino (401 real → cierra sesión) se verificó aparte
+contra el backend vivo, y funciona.

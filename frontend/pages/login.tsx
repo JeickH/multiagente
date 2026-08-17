@@ -28,7 +28,13 @@ export default function Login() {
       }
 
       const data = await res.json();
-      guardarToken(data.access_token);
+      if (typeof data.access_token !== 'string' || !data.access_token) {
+        // Sin token no hay sesión que guardar; guardar basura mandaría al
+        // usuario de vuelta al login sin explicación.
+        throw new Error('Respuesta inesperada del servidor. Intenta de nuevo.');
+      }
+      // El header `Date` calibra el reloj del navegador (ver lib/session.ts).
+      guardarToken(data.access_token, res.headers.get('Date'));
       router.push('/');
     } catch (err: any) {
       setError(err.message);
