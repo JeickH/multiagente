@@ -56,6 +56,10 @@ _LOCAL_MEDIA_ROOT = Path(os.getenv("MASCOTAS_MEDIA_DIR", "/app/media"))
 ORIGEN_NOMBRES = {
     "mascotasporcolombia": "Mascotas por Colombia",
     "patitasacasa": "Patitas a Casa",
+    "petsearch": "PetSearch Colombia",
+    "encontradogs": "encontradogs",
+    "proteccionanimal": "Protección y Bienestar Animal del Valle del Cauca",
+    "royipets": "RoyiPets",
 }
 
 
@@ -73,10 +77,15 @@ def _s3():
     return boto3.client("s3", region_name=os.getenv("AWS_REGION", "sa-east-1"))
 
 
-def _put_object(key: str, data: bytes, content_type: str) -> None:
+def _put_object(
+    key: str, data: bytes, content_type: str, metadata: Optional[Dict[str, str]] = None
+) -> None:
     bucket = _bucket()
     if bucket:
-        _s3().put_object(Bucket=bucket, Key=key, Body=data, ContentType=content_type)
+        _s3().put_object(
+            Bucket=bucket, Key=key, Body=data, ContentType=content_type,
+            Metadata=metadata or {},
+        )
         return
     path = _LOCAL_MEDIA_ROOT / key
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -174,7 +183,13 @@ def guardar_foto(
     nombre = f"{uuid.uuid4().hex}{ext}"
     carpeta = f"mascotas/{mascota.codigo}" if mascota else f"pendientes/{upload_session}"
     key = f"{carpeta}/{nombre}"
-    _put_object(key, data, content_type)
+    # La marca en el objeto es lo que hace que el barrido del bucket ni siquiera
+    # se moleste en bajar esta foto: ya viene comprimida de aquí.
+    _put_object(
+        key, data, content_type,
+        metadata={"optimizado": imagenes.MARCA, "bytes-original": str(bytes_original)}
+        if comprimida is not None else None,
+    )
     if comprimida is not None:
         logger.info(
             "mascotas: foto comprimida %d -> %d bytes (%.0f%% menos)",
@@ -553,6 +568,50 @@ def _parse_fecha(valor: Any) -> Optional[date]:
         return None
 
 
+def _parse_datetime(valor: Any) -> Optional[datetime]:
+    """ISO 8601 con o sin zona. Las fuentes lo mandan de las dos formas."""
+    if isinstance(valor, datetime):
+        return valor
+    texto = _limpiar(valor, 40)
+    if not texto:
+        return None
+    try:
+        # `fromisoformat` de 3.11 acepta la Z, pero guardamos naive en UTC
+        # para que sea consistente con el resto de las columnas de la tabla.
+        parsed = datetime.fromisoformat(texto.replace("Z", "+00:00"))
+        return parsed.replace(tzinfo=None) if parsed.tzinfo else parsed
+    except ValueError:
+        return None
+
+
+def _booleano(valor: Any) -> Optional[bool]:
+    """Tri-estado: None cuando la fuente no dice nada.
+
+    Es la diferencia entre "no sabemos si está esterilizada" y "nos dijeron que
+    no lo está", y en una ficha de adopción esa diferencia importa.
+    """
+    if valor is None or valor == "":
+        return None
+    if isinstance(valor, bool):
+        return valor
+    texto = normalizar(str(valor))
+    if texto in ("si", "s", "true", "1", "yes", "y"):
+        return True
+    if texto in ("no", "n", "false", "0"):
+        return False
+    return None          # "NO SE SABE", "AUN NO SE SABE", cualquier otra cosa
+
+
+def _decimal(valor: Any) -> Optional[float]:
+    try:
+        numero = float(str(valor).replace(",", "."))
+    except (TypeError, ValueError):
+        return None
+    # Las fuentes mandan 0 cuando el campo está sin usar (Protección Animal
+    # tiene peso_animal=0 en todas sus fichas), y un animal de 0 kg no existe.
+    return round(numero, 2) if 0 < numero < 999 else None
+
+
 def crear_reporte(
     db: Session,
     datos: Dict[str, Any],
@@ -623,6 +682,24 @@ def crear_reporte(
         bot_id=bot_id,
         source=source[:24],
         estado=models.MASCOTA_ESTADO_ACTIVO,
+        # Campos multi-fuente: los llenan los importadores con lo que publica
+        # cada plataforma. El bot no los pide — nadie que esté buscando a su
+        # perro sabe si lo desparasitaron.
+        ciudad=_limpiar(datos.get("ciudad"), 120),
+        departamento=_limpiar(datos.get("departamento"), 120),
+        esterilizado=_booleano(datos.get("esterilizado")),
+        vacunado=_booleano(datos.get("vacunado")),
+        desparasitado=_booleano(datos.get("desparasitado")),
+        peso_kg=_decimal(datos.get("peso_kg")),
+        salud=_limpiar(datos.get("salud"), 255),
+        resguardo=_limpiar(datos.get("resguardo"), 40),
+        resguardo_nombre=_limpiar(datos.get("resguardo_nombre"), 120),
+        rescatado_por=_limpiar(datos.get("rescatado_por"), 120),
+        rescatado_por_telefono=_limpiar(datos.get("rescatado_por_telefono"), 32),
+        recompensa=_booleano(datos.get("recompensa")),
+        estado_origen=_limpiar(datos.get("estado_origen"), 60),
+        publicado_origen_at=_parse_datetime(datos.get("publicado_origen_at")),
+        sincronizado_at=datetime.utcnow() if origen_url else None,
     )
     db.add(mascota)
     db.flush()   # necesitamos el id para derivar el código de la carpeta
@@ -652,7 +729,14 @@ _LIMITES = {
     "contacto_nombre": 120, "contacto_telefono": 32, "notas": 2000,
     # Solo editables desde el panel, no por el bot.
     "especie_otra": 60, "especie": 24, "tipo_registro": 16, "estado": 24,
+    # Multi-fuente: los llenan los importadores y el equipo los corrige a mano.
+    "ciudad": 120, "departamento": 120, "salud": 255, "resguardo": 40,
+    "resguardo_nombre": 120, "rescatado_por": 120, "rescatado_por_telefono": 32,
+    "estado_origen": 60,
 }
+# Los tri-estado del panel van por su propio camino: `_limpiar` los volvería
+# la cadena "False", que en SQL es tan verdadera como "True".
+_CAMPOS_BOOLEANOS = ("esterilizado", "vacunado", "desparasitado", "recompensa")
 
 
 def actualizar_reporte(
@@ -701,6 +785,11 @@ _CAMPOS_PANEL = (
     "tipo_registro", "especie", "especie_otra", "raza", "color", "nombre",
     "sexo", "edad", "tamano", "senas", "ubicacion", "maps_url", "barrio",
     "contacto_nombre", "contacto_telefono", "fecha_evento", "estado", "notas",
+    # Multi-fuente. `peso_kg` y las fechas de origen no se editan a mano: son
+    # datos de la fuente, y corregirlos a dedo rompería la trazabilidad.
+    "ciudad", "departamento", "salud", "resguardo", "resguardo_nombre",
+    "rescatado_por", "rescatado_por_telefono", "estado_origen",
+    "esterilizado", "vacunado", "desparasitado", "recompensa",
 )
 
 
@@ -740,6 +829,11 @@ def editar_desde_panel(
                 return None, "La especie es obligatoria (perro, gato u otra)"
         elif campo == "sexo":
             valor = normalizar_sexo(datos[campo])
+        elif campo in _CAMPOS_BOOLEANOS:
+            # Se puede volver a "no sabemos" mandando null o cadena vacía: que
+            # el equipo pueda deshacer un dato mal puesto importa más que
+            # forzarlo a elegir entre sí y no.
+            valor = _booleano(datos[campo])
         else:
             valor = _limpiar(datos[campo], _LIMITES.get(campo, 255))
 

@@ -65,7 +65,7 @@ REGISTRO = Path(__file__).resolve().parent / "registro_optimizacion_fotos.csv"
 PENDIENTES_BD = Path(__file__).resolve().parent / "registro_optimizacion_pendientes_bd.json"
 RESPALDOS = RAIZ / "respaldos_fotos_mascotas"
 
-MARCA = "v1"  # versión del proceso; subirla fuerza reproceso de todo
+MARCA = imagenes.MARCA  # la misma marca que pone el backend al comprimir al subir
 
 # Calidades, umbral de SSIM y tamaño máximo salen del servicio compartido: son
 # los mismos que aplica el backend cuando alguien sube una foto por el chat.

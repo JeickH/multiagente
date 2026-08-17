@@ -2854,6 +2854,45 @@ borró nada sin autorización.
 
 ---
 
+## #361 — Los 218 casos nuevos, y la limpieza del residuo (2026-08-17)
+
+Entraron 218 casos de los importadores nuevos y el CEO pidió alivianarlos y **borrar el
+residuo** — la autorización explícita que faltaba desde #359.
+
+### Segunda corrida del barrido
+
+354 fotos sin procesar. De ellas **302 se comprimieron: 118.4 MB → 43.5 MB (63%)**, y
+**152 se dejaron como estaban**. Esas 152 no eran un problema: son las que entraron
+*después* del despliegue de #360 y ya venían comprimidas desde la subida. En la BD,
+`454/454 optimizadas`.
+
+Eso destapó un hueco: `guardar_foto()` comprimía pero **no dejaba la marca `optimizado`
+en el objeto de S3**, así que el barrido se bajaba las 152 para descubrir que no había
+nada que ganar. Ahora la pone (`imagenes.MARCA`, compartida por los dos caminos) y el
+barrido las saltea sin descargarlas.
+
+### Limpieza del residuo
+
+`backend/scripts/limpiar_residuo_fotos.py`. Define residuo como **objeto del bucket que
+ninguna fila de `mascota_fotos` referencia** — nada de listas escritas a mano. Contra la
+regla 1 del módulo, tres frenos: pide las claves vivas a la BD y **aborta si llegan menos
+de 50** (sin esa lista, todo parecería residuo); **baja una copia de cada objeto** antes
+de borrarlo; y sin `--borrar` solo enumera.
+
+Se borraron **37 objetos, 30.1 MB**: los 36 PNG que quedaron cuando se convirtieron a
+JPG —cada uno verificado uno a uno contra la existencia de su `.jpg` vivo en la BD— y la
+copia `comparacion/MC-00127-ORIGINAL.jpg` de la comparación que revisó el CEO.
+
+Aparte, la foto del smoke de #360 (fila 152, huérfana en `pendientes/`). Se borró con un
+script que verificaba id **y** clave **y** que no estuviera asociada a ningún reporte.
+**Las otras 7 fotos huérfanas de `pendientes/` no se tocaron**: son de chats reales del
+13 y 14 de agosto, no residuo nuestro.
+
+**Bucket: 491 objetos / 99.7 MB → 453 objetos / 64.3 MB**, y 453 objetos contra 453 filas
+en la BD: cuadra exacto, sin huérfanos de ningún lado.
+
+---
+
 ## #361 — La plataforma se abría sin sesión activa (2026-08-17)
 
 El CEO reportó que al entrar a `app.glomabeauty.com` sin sesión activa aparecía el

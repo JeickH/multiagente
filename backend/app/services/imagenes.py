@@ -29,6 +29,11 @@ from PIL import Image, ImageFile, ImageOps
 
 logger = logging.getLogger(__name__)
 
+# Versión del proceso. Va como metadata `optimizado` en el objeto de S3 y es lo
+# que deja al barrido del bucket saltarse una foto sin bajarla. Subirla fuerza
+# que todo se vuelva a procesar.
+MARCA = "v1"
+
 MAX_LADO = 2000       # px del lado largo; nadie ve una foto de mascota a 4000px
 CALIDAD_SUBIDA = 85   # calidad fija del camino rápido
 # Escalera del camino lento, de menor a mayor: gana la primera que pasa el SSIM.

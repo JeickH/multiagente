@@ -111,7 +111,19 @@ desde fuera de la VPC. Lo que hay que saber:
   aws s3 rm s3://gloma-mascotas-747456040509/import/optimizacion_fotos.json --region sa-east-1
   ```
 - **Los PNG pasan a JPG**, o sea que cambia la clave del objeto. El PNG viejo **no se
-  borra** (regla 1): queda hasta que el CEO autorice limpiarlo.
+  borra** ahí mismo (regla 1): queda como residuo hasta que el CEO autorice limpiarlo.
+
+**Limpiar el residuo** — objetos del bucket que ninguna fila de `mascota_fotos`
+referencia. Necesita autorización explícita del CEO cada vez:
+
+```bash
+./backend/scripts/rds_query.sh "SELECT storage_key FROM mascota_fotos" | tail -n +3 > /tmp/keys.txt
+python backend/scripts/limpiar_residuo_fotos.py --claves /tmp/keys.txt            # enumera
+python backend/scripts/limpiar_residuo_fotos.py --claves /tmp/keys.txt --borrar   # borra
+```
+
+Aborta si la lista de claves vivas llega con menos de 50 (sin ella, todo parecería
+residuo) y baja una copia de cada objeto a `respaldos_fotos_mascotas/` antes de borrarlo.
 
 Resultado de la primera corrida (2026-08-16): 100 fotos, **88.3 MB → 16.7 MB**. Detalle
 en BITACORA #359.
