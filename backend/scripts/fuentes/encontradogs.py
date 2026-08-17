@@ -98,7 +98,7 @@ def _ficha(pid: str, tipo: str) -> Optional[Dict[str, Any]]:
         "especie": especie,
         "raza": base.limpiar(datos.get("raza"), 80),
         "color": base.limpiar(datos.get("color"), 80),
-        "nombre": base.limpiar(nombre, 80),
+        "nombre": base.valor_real(nombre, 80),
         "sexo": base.normalizar_sexo(datos.get("sexo")),
         "edad": base.edad_desde_texto(senas),
         "tamano": base.limpiar(datos.get("tamano"), 24),
@@ -113,6 +113,13 @@ def _ficha(pid: str, tipo: str) -> Optional[Dict[str, Any]]:
         "notas": base.limpiar(
             f"Importado de encontradogs (ficha /pet/{pid}). El sitio no publica el "
             f"teléfono: el contacto se resuelve en su ficha original.", 2000),
+        # Multi-fuente. La ficha no separa ciudad: el campo «Dónde» mezcla
+        # barrio y ciudad en una sola frase, así que solo se puede rescatar
+        # cuando la nombra al final ("Barrio el limonar, Cali").
+        "ciudad": base.valor_real(donde.split(",")[-1], 120) if "," in donde else None,
+        "departamento": None,
+        "estado_origen": "encontrada" if tipo == "encontrada" else "perdida",
+        "publicado_origen_at": f"{fecha}T00:00:00" if fecha else None,
         "_fotos": fotos,
         "_crudo": {"id": pid, "titulo": titulo, "seccion": tipo, **datos,
                    "mensaje": mensaje, "fecha": fecha},

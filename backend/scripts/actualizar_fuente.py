@@ -113,6 +113,81 @@ def cargar(mod, solo: set | None) -> None:
           f"ya_estaban={repetidos} fallidos={fallidos} total={len(pendientes)}")
 
 
+# Columnas multi-fuente. El backfill solo escribe estas, y solo donde están en
+# NULL: un dato que el equipo corrigió a mano no lo pisa una corrida del script.
+CAMPOS_MULTIFUENTE = (
+    "ciudad", "departamento", "esterilizado", "vacunado", "desparasitado",
+    "peso_kg", "salud", "resguardo", "resguardo_nombre", "rescatado_por",
+    "rescatado_por_telefono", "recompensa", "estado_origen", "publicado_origen_at",
+)
+
+
+def backfill(mod, escribir_json: str | None) -> None:
+    """Rellena las columnas multi-fuente de lo que ya está cargado.
+
+    Los registros que entraron antes de que existieran esas columnas tienen los
+    15 campos en NULL. Se vuelve a bajar la fuente (sin fotos) y se completa lo
+    que falte, emparejando por `origen_id`.
+
+    Con `--json <archivo>` no toca la base: deja los valores en un archivo para
+    aplicarlos en producción, donde la base no es accesible desde aquí.
+    """
+    from app.database import SessionLocal
+    from app import models
+    from app.services import mascotas as svc
+
+    print(f"[{mod.FUENTE}] bajando para completar campos ...")
+    registros, _ = mod.bajar()
+    valores = {
+        r["origen_id"]: {c: r.get(c) for c in CAMPOS_MULTIFUENTE if r.get(c) is not None}
+        for r in registros
+    }
+    valores = {k: v for k, v in valores.items() if v}
+    print(f"[{mod.FUENTE}] {len(valores)} fichas con algo que completar")
+
+    if escribir_json:
+        with open(escribir_json, "w", encoding="utf-8") as fh:
+            json.dump({"source": mod.FUENTE, "valores": valores}, fh,
+                      ensure_ascii=False, default=str)
+        print(f"[{mod.FUENTE}] valores guardados en {escribir_json}")
+        return
+
+    db = SessionLocal()
+    tocados = campos_escritos = 0
+    try:
+        for origen_id, campos in valores.items():
+            m = (db.query(models.Mascota)
+                 .filter(models.Mascota.source == mod.FUENTE,
+                         models.Mascota.origen_id == origen_id).first())
+            if m is None:
+                continue
+            cambio = False
+            for campo, valor in campos.items():
+                if getattr(m, campo) is not None:
+                    continue          # ya tiene dato: no se pisa
+                if campo in ("esterilizado", "vacunado", "desparasitado", "recompensa"):
+                    valor = svc._booleano(valor)
+                elif campo == "peso_kg":
+                    valor = svc._decimal(valor)
+                elif campo == "publicado_origen_at":
+                    valor = svc._parse_datetime(valor)
+                else:
+                    valor = svc._limpiar(valor, svc._LIMITES.get(campo, 255))
+                if valor is None:
+                    continue
+                setattr(m, campo, valor)
+                campos_escritos += 1
+                cambio = True
+            if cambio:
+                m.sincronizado_at = __import__("datetime").datetime.utcnow()
+                tocados += 1
+        db.commit()
+    finally:
+        db.close()
+    print(f"RESUMEN backfill {mod.FUENTE}: fichas_tocadas={tocados} "
+          f"campos_escritos={campos_escritos}")
+
+
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -122,7 +197,11 @@ def main() -> None:
                        help="baja la fuente y arma el HTML de revisión (no toca la base)")
     grupo.add_argument("--cargar", action="store_true",
                        help="carga lo aprobado en la revisión anterior")
+    grupo.add_argument("--backfill", action="store_true",
+                       help="completa las columnas multi-fuente de lo ya cargado")
     p.add_argument("--solo", help="cargar solo estos origen_id, separados por coma")
+    p.add_argument("--json", help="con --backfill: escribe los valores a un archivo "
+                                  "en vez de tocar la base (para producción)")
     args = p.parse_args()
 
     nombres = sorted(FUENTES) if args.fuente == "todas" else [args.fuente]
@@ -131,6 +210,9 @@ def main() -> None:
         mod = FUENTES[nombre]
         if args.revisar:
             revisar(mod)
+        elif args.backfill:
+            destino = args.json.replace("FUENTE", nombre) if args.json else None
+            backfill(mod, destino)
         else:
             cargar(mod, solo)
 

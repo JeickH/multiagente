@@ -52,8 +52,20 @@ COMO_SE_LLENO = [
 # Palabras con las que la gente marca un hallazgo en el nombre o la descripción.
 _ENCONTRADA = ("encontrad", "hallad", "me encontre", "lo encontre", "la encontre",
                "esta en mi casa", "lo tengo", "la tengo", "aparecio")
-_NO_NOMBRE = ("encontrado", "encontrada", "perdido", "perdida", "me perdi",
-              "no tiene nombre", "sin nombre", "n/a", "na")
+
+
+def _resguardo(tipo_owner: str | None) -> str | None:
+    """Quién tiene al animal, según el tipo de cuenta que lo reportó.
+
+    "Voluntario Albergue (Hogar de Paso o Centro PYBA)" es literalmente lo que
+    devuelve la API; un ciudadano que reporta lo tiene en su casa.
+    """
+    t = base.sin_tildes(tipo_owner or "")
+    if "albergue" in t or "hogar de paso" in t or "pyba" in t:
+        return "albergue"
+    if "ciudadano" in t:
+        return "con_quien_la_encontro"
+    return None
 
 
 def _clasificar(nombre: str, descripcion: str) -> Tuple[str, str]:
@@ -93,7 +105,7 @@ def bajar() -> Tuple[List[Dict[str, Any]], Dict[str, int]]:
         personalidad = (d.get("personality") or "").strip()
         tipo, porque = _clasificar(nombre_crudo, descripcion)
 
-        nombre = None if base.sin_tildes(nombre_crudo).strip() in _NO_NOMBRE else nombre_crudo
+        nombre = base.valor_real(nombre_crudo, 80)
         senas_crudas = " ".join(t for t in (descripcion, personalidad) if t)
         municipio = (item.get("ubicacion") or d.get("ubicacion_animal") or "").strip()
 
@@ -132,6 +144,20 @@ def bajar() -> Tuple[List[Dict[str, Any]], Dict[str, int]]:
             ),
             "fecha_evento": None,               # la fuente no publica fecha
             "notas": base.limpiar(" ".join(notas), 2000),
+            # Multi-fuente: es la única que da estado sanitario. Los numéricos
+            # (edad, peso, tamaño) vienen todos en 0 = sin usar, y `_decimal`
+            # ya descarta el 0, así que se mandan tal cual.
+            "ciudad": base.valor_real(municipio, 120),
+            "departamento": "Valle del Cauca",   # es la gobernación del Valle
+            "esterilizado": d.get("sterilized"),
+            "vacunado": d.get("vaccinated"),
+            "desparasitado": d.get("dewormed"),
+            "peso_kg": d.get("peso_animal"),
+            "resguardo": _resguardo(d.get("owner_type_name")),
+            "resguardo_nombre": base.limpiar(
+                d.get("albergue") or item.get("owner"), 120),
+            "estado_origen": item.get("estadoname"),
+            "publicado_origen_at": None,
             "_fotos": fotos,
             "_crudo": {**item, "detalle": {k: v for k, v in d.items() if k != "imgs"}},
             "_alertas": [

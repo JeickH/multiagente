@@ -56,7 +56,9 @@ def bajar() -> Tuple[List[Dict[str, Any]], Dict[str, int]]:
 
             features = c.get("features") or ""
             breed = c.get("breed") or ""
-            location = (c.get("location") or "").strip()
+            # `location` a veces trae un estado en vez de un lugar ("RESCATADO"):
+            # como zona no sirve, y guardarla ensuciaría el cruce.
+            location = base.valor_real(c.get("location"), 120) or ""
             city = (c.get("city") or "").strip()
             department = (c.get("department") or "").strip()
 
@@ -80,7 +82,7 @@ def bajar() -> Tuple[List[Dict[str, Any]], Dict[str, int]]:
                 "especie": especie,
                 "raza": base.limpiar(breed, 80),
                 "color": base.color_desde_texto(features, breed),
-                "nombre": base.limpiar(c.get("name"), 80),
+                "nombre": base.valor_real(c.get("name"), 80),
                 "sexo": base.sexo_desde_texto(features, c.get("name")),
                 "edad": base.edad_desde_texto(features),
                 "tamano": base.tamano_desde_texto(features, breed),
@@ -93,6 +95,12 @@ def bajar() -> Tuple[List[Dict[str, Any]], Dict[str, int]]:
                 "origen_url": URL,
                 "fecha_evento": fecha,
                 "notas": base.limpiar(" ".join(notas), 2000),
+                # Multi-fuente: PetSearch separa ciudad y departamento, que es
+                # más de lo que dan las otras.
+                "ciudad": base.valor_real(city, 120),
+                "departamento": base.valor_real(department, 120),
+                "estado_origen": estado,
+                "publicado_origen_at": c.get("created_at"),
                 "_fotos": [u for u in (c.get("photo_urls") or []) if u],
                 "_crudo": c,
                 "_alertas": [],

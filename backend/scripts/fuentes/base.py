@@ -151,6 +151,15 @@ def telefono_de_texto(*textos: Optional[str]) -> Optional[str]:
     return None
 
 
+# Rótulos que quedan colgando cuando se le quita el número al texto
+# ("Teléfonos de contacto: / "). Sin esto las señas terminan en basura.
+_ROTULO_TEL = re.compile(
+    r"\b(tel[eé]fonos?|cel(ular)?(es)?|whatsapp|wpp|contacto|informes?)\s*"
+    r"(de\s+contacto)?\s*[:.-]*\s*[/,y\s-]*$",
+    re.IGNORECASE,
+)
+
+
 def quitar_telefonos(texto: Optional[str]) -> Optional[str]:
     """Saca los números de un texto que va a leer el bot.
 
@@ -162,9 +171,33 @@ def quitar_telefonos(texto: Optional[str]) -> Optional[str]:
     if not texto:
         return texto
     limpio = _TEL_EN_TEXTO.sub("", texto)
-    limpio = re.sub(r"[\s.,;:_-]*$", "", limpio.strip())
-    limpio = re.sub(r"\s{2,}", " ", limpio)
+    limpio = re.sub(r"\s{2,}", " ", limpio).strip()
+    for _ in range(3):          # "…contacto: / y" necesita varias pasadas
+        nuevo = _ROTULO_TEL.sub("", limpio).strip()
+        nuevo = re.sub(r"[\s.,;:_/-]+$", "", nuevo)
+        if nuevo == limpio:
+            break
+        limpio = nuevo
     return limpio or None
+
+
+# Lo que la gente escribe cuando no hay nombre o no hay zona. Guardarlos sería
+# peor que dejarlos vacíos: el cruce puntúa el nombre y la zona, y "Anonimo"
+# contra "Anonimo" daría un parecido que no existe.
+_SIN_VALOR = {
+    "anonimo", "anonima", "anonimos", "anonimas", "sin nombre", "no tiene nombre",
+    "desconocido", "desconocida", "n/a", "na", "no se sabe", "ninguno", "-", "?",
+    "rescatado", "rescatada", "rescatados", "rescatadas", "encontrado", "encontrada",
+    "perdido", "perdida", "me perdi", "sin datos", "no aplica",
+}
+
+
+def valor_real(texto: Any, limite: int) -> Optional[str]:
+    """Devuelve el texto, o None si es uno de esos rellenos que no dicen nada."""
+    limpio = limpiar(texto, limite)
+    if not limpio or sin_tildes(limpio).strip(" .") in _SIN_VALOR:
+        return None
+    return limpio
 
 
 def telefono_colombiano(valor: Any) -> Optional[str]:

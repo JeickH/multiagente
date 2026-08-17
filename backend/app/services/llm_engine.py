@@ -1090,10 +1090,23 @@ def _run_tool_mascotas(
             # las dos partes y confirma el reencuentro desde el panel.
             svc.marcar_reconocida(db, codigo, runtime.get("chat_ref"))
             logger.info("mascotas: contacto entregado codigo=%s", codigo)
-            if datos.get("origen_url"):
-                # Reporte importado de una plataforma hermana: no tenemos el
-                # teléfono de quien reportó, así que la vía de contacto es su
-                # ficha original.
+            if datos.get("origen_url") and datos.get("contacto_telefono"):
+                # Reporte de una plataforma hermana que SÍ publica el teléfono
+                # (PetSearch): van las dos vías. El teléfono primero, porque
+                # quien acaba de reconocer a su mascota quiere marcar ya, no
+                # dar una vuelta por otro sitio; y el enlace después, para que
+                # pueda ver la ficha completa y sepa de dónde salió.
+                instruccion = (
+                    "Compártele la ubicación, el enlace de Maps si existe y el "
+                    "teléfono. Dile además que este reporte viene de "
+                    f"{datos['origen']} y pásale el enlace TAL CUAL "
+                    f"({datos['origen_url']}) por si quiere ver la ficha "
+                    "completa. Recomiéndale llevar fotos o algo que acredite "
+                    "que es su mascota, y despídete deseándole suerte."
+                )
+            elif datos.get("origen_url"):
+                # Plataforma hermana que NO publica el teléfono: la única vía
+                # de contacto es su ficha original.
                 instruccion = (
                     f"Este reporte NO es nuestro: viene de {datos['origen']}. "
                     "NO tienes teléfono de contacto y no debes inventar "

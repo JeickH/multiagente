@@ -1,6 +1,6 @@
 """Carga el reporte de mascotas de RoyiPets (Cali) como reportes 'encontrada'.
 
-El payload (metadatos + fotos) lo produce `testdata/royipets_import/extraer.py`
+El payload (metadatos + fotos) lo produce `backend/scripts/extraer_royipets_pdf.py`
 a partir del PDF que manda la fundación.
 
     registros.json     lista de dicts con los campos de `models.Mascota`
