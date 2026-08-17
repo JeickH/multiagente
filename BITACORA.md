@@ -3276,3 +3276,51 @@ de GitHub y hay que **rotarlas**. Mientras no se roten, `recuperatumascota@gmail
 `talulah@gloma.com` son cuentas abiertas para cualquiera que lea el repo.
 Limpiar el historial (`git filter-repo` + force-push) es posible pero rompe todos los
 clones y hay una sesión paralela trabajando: coordinar antes.
+
+---
+
+## #365 — El contacto de la antesala no llegaba al registro (2026-08-17)
+
+El CEO reportó que el nombre y el teléfono que la persona escribe **antes** de empezar
+a chatear no quedaban en la conversación del panel.
+
+### Causa
+
+`frontend/pages/mascotas.tsx` pide nombre, teléfono y motivo en una antesala, y con eso
+compone el primer mensaje: *"Hola, soy {nombre}. {motivo}. Mi teléfono de contacto es
+{telefono}."*. El backend nunca leía esos datos: `chat_contacto` se llenaba **solo** si
+la conversación llegaba a registrar un reporte, leyéndolo de la ficha. Si la persona
+buscaba su mascota y la encontraba —o se iba antes—, el hilo quedaba anónimo.
+
+Se ve en los datos: de 78 conversaciones, las únicas con contacto son las que registraron
+un caso. La de las 06:01 UTC llegó a **reconocer a su mascota** y quedó con
+`contacto=None`.
+
+### Arreglo
+
+`services/mascotas.py` gana tres extractores deterministas — `telefono_dicho`,
+`nombre_dicho` y `contacto_dicho` — y el chat los aplica a cada mensaje, guardando el
+resultado en la sesión cifrada (`k`) para que sobreviva a los turnos siguientes. El
+reporte sigue mandando cuando existe: son los datos que la persona confirmó.
+
+La lista de exclusión de `nombre_dicho` es a propósito: sin ella, "soy de Cali" y "soy la
+dueña" llenaban el panel de contactos llamados "De" y "La".
+
+`backend/tests/test_mascotas_contacto.py` cubre las cuatro plantillas reales de la
+antesala, incluidos el nombre en minúsculas y el listado de Excel (que no pide teléfono).
+
+### De paso
+
+El venv de `backend/` no tenía `Pillow` (que sí está en `requirements.txt`). Eso hacía
+fallar 11 tests que no estaban rotos. Con la dependencia instalada, **la suite pasa
+entera: 181 tests**.
+
+### Pendiente
+
+`marcar_reconocida()` marca **solo la ficha de la mascota encontrada**. Ni el reporte de
+quien la está buscando ni la fila de `mascota_coincidencias` cambian de estado, así que
+el par sigue apareciendo como pendiente de revisar en el panel. Verificado en el log de
+producción que el bot sí hace su parte (`MC-00261 marcada como reconocida` a las
+06:04:36 UTC); lo que falta es propagar el reconocimiento a las otras dos filas.
+Aparte, `MC-00261` quedó con `estado='reconocida'` pero `reconocida_at` en NULL y un
+`updated_at` de 12 horas después: algo reescribió la fila más tarde y no se identificó qué.

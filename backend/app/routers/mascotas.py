@@ -298,6 +298,10 @@ def _load_session(token: Optional[str]) -> Dict[str, Any]:
         # Identificador del hilo, para agrupar los turnos en el registro de
         # conversaciones del panel. Corto porque solo tiene que ser único.
         "chat": uuid.uuid4().hex[:16],
+        # Nombre/teléfono que la persona dijo, aunque todavía no haya reporte.
+        # Se guarda en la sesión porque lo dice UNA vez, casi siempre en el
+        # primer mensaje, y el panel lo necesita en todos los turnos del hilo.
+        "contacto": None,
     }
     if not token:
         return nueva
@@ -314,6 +318,7 @@ def _load_session(token: Optional[str]) -> Dict[str, Any]:
         "upload": str(data.get("u") or "") or nueva["upload"],
         "codigo": data.get("c") or None,
         "chat": str(data.get("r") or "") or nueva["chat"],
+        "contacto": data.get("k") or None,
     }
 
 
@@ -325,6 +330,7 @@ def _dump_session(sess: Dict[str, Any], history: List[Dict[str, str]]) -> str:
             "u": sess["upload"],
             "c": sess.get("codigo"),
             "r": sess.get("chat"),
+            "k": sess.get("contacto"),
         },
         ensure_ascii=False,
     ))
@@ -418,13 +424,21 @@ def chat(payload: ChatIn, request: Request, db: Session = Depends(get_db)):
     if creados:
         sess["codigo"] = creados[-1]
 
-    # Si en este chat ya se registró un caso, el panel puede mostrar a quién
-    # corresponde el hilo (nombre o teléfono que dio la persona).
-    contacto = None
+    # A quién corresponde el hilo en el panel. El reporte manda cuando existe
+    # (son los datos que la persona confirmó al registrarse), pero no se espera
+    # a que exista: si se presentó en el primer mensaje y la conversación nunca
+    # llega a registrar nada, ese nombre y ese teléfono son lo único que queda
+    # para poder devolverle la llamada.
+    dicho = svc.contacto_dicho(payload.message)
+    if dicho and not sess.get("contacto"):
+        sess["contacto"] = dicho
+    contacto = sess.get("contacto")
     if sess.get("codigo"):
         reporte = svc.obtener(db, sess["codigo"])
         if reporte is not None:
-            contacto = reporte.contacto_nombre or reporte.contacto_telefono
+            del_reporte = reporte.contacto_nombre or reporte.contacto_telefono
+            if del_reporte:
+                contacto = del_reporte
     llm_engine.record_decision(
         db, bot, result.get("telemetry"), source="mascotas",
         chat_ref=sess.get("chat"), chat_contacto=contacto,

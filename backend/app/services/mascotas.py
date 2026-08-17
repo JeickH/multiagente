@@ -550,6 +550,68 @@ def buscar(
 # quien busca a su mascota necesita las dos.
 _TELEFONO_RE = re.compile(r"^[+\d][\d\s\-()/,]{6,30}$")
 
+# --- Quién está escribiendo, cuando todavía no hay reporte -------------------
+# El panel mostraba el contacto de un hilo leyéndolo del reporte registrado. Si
+# la persona daba su nombre y su teléfono en el primer mensaje y la conversación
+# no llegaba a registrar nada, ese dato se perdía: el hilo quedaba anónimo y no
+# había a quién devolverle la llamada. Estos dos extractores lo rescatan de lo
+# que la persona escribió, sin esperar a que exista una ficha.
+
+_TELEFONO_DICHO_RE = re.compile(r"(?:\+?57[\s-]?)?\b\d[\d\s\-()]{5,14}\d\b")
+
+_NOMBRE_DICHO_RE = re.compile(
+    r"\b(?:me\s+llamo|mi\s+nombre\s+es|habla(?:s)?\s+con|soy)\s+"
+    r"([^\W\d_]{2,}(?:\s+[^\W\d_]{2,})?)",
+    re.IGNORECASE | re.UNICODE,
+)
+
+# Palabras que siguen a "soy" sin ser un nombre: "soy de Cali", "soy la dueña".
+# Sin esta lista el panel se llena de contactos llamados "De" o "La".
+_NO_ES_NOMBRE = frozenset({
+    "de", "del", "la", "el", "los", "las", "un", "una", "unos", "unas",
+    "mi", "su", "tu", "yo", "quien", "que", "muy", "solo", "solamente",
+    "dueno", "duena", "dueño", "dueña", "papa", "mama", "papá", "mamá",
+    "hermano", "hermana", "vecino", "vecina", "amigo", "amiga", "hijo",
+    "hija", "persona", "usuario", "nuevo", "nueva", "aqui", "aquí",
+})
+
+
+def _sin_tildes(texto: str) -> str:
+    return "".join(
+        c for c in unicodedata.normalize("NFD", texto)
+        if unicodedata.category(c) != "Mn"
+    )
+
+
+def telefono_dicho(texto: str) -> Optional[str]:
+    """El primer teléfono que aparece en lo que escribió la persona."""
+    for candidato in _TELEFONO_DICHO_RE.findall(texto or ""):
+        digitos = re.sub(r"\D", "", candidato)
+        # 7 dígitos = fijo sin indicativo. Por debajo son fechas, horas o
+        # códigos de reporte; por encima de 15 no es un número marcable.
+        if 7 <= len(digitos) <= 15:
+            return digitos
+    return None
+
+
+def nombre_dicho(texto: str) -> Optional[str]:
+    """El nombre con el que la persona se presentó, si se presentó."""
+    m = _NOMBRE_DICHO_RE.search(texto or "")
+    if m is None:
+        return None
+    partes = [p for p in m.group(1).split() if p]
+    if not partes or _sin_tildes(partes[0]).lower() in _NO_ES_NOMBRE:
+        return None
+    return " ".join(p.capitalize() for p in partes)[:120]
+
+
+def contacto_dicho(texto: str) -> Optional[str]:
+    """Cómo identificar a quien escribe: "Ana · 3001234567", o lo que haya."""
+    nombre, telefono = nombre_dicho(texto), telefono_dicho(texto)
+    if nombre and telefono:
+        return f"{nombre} · {telefono}"
+    return nombre or telefono
+
 
 def _limpiar(valor: Any, limite: int) -> Optional[str]:
     if valor is None:
