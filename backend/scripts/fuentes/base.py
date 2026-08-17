@@ -203,8 +203,8 @@ def valor_real(texto: Any, limite: int) -> Optional[str]:
 def telefono_colombiano(valor: Any) -> Optional[str]:
     """Deja el número en formato local. Devuelve None si no parece un teléfono.
 
-    Las fuentes lo publican de todas las formas: `573147530915`, `+57 314…`,
-    `314-753-0915`. El bot lo va a leer en voz alta a alguien angustiado.
+    Las fuentes lo publican de todas las formas: `57XXXXXXXXXX`, `+57 3XX…`,
+    `3XX-XXX-XXXX`. El bot lo va a leer en voz alta a alguien angustiado.
     """
     digitos = re.sub(r"\D", "", str(valor or ""))
     if digitos.startswith("57") and len(digitos) == 12:

@@ -23,7 +23,7 @@ pedidos (se puede re-correr el seed después: es idempotente y re-crea el bot).
 
 Otros ENV opcionales:
     TALULAH_EMAIL   (default talulah@gloma.com)
-    TALULAH_PWD     (default Talulah2026*)
+    TALULAH_PWD     (obligatoria)
     MEDIA_BASE      (default https://app.glomabeauty.com)
 """
 from __future__ import annotations
@@ -39,7 +39,12 @@ from app.services.crypto import encrypt_secret  # type: ignore
 
 
 OWNER_EMAIL = os.environ.get("TALULAH_EMAIL", "talulah@gloma.com")
-OWNER_PWD = os.environ.get("TALULAH_PWD", "Talulah2026*")
+# Sin default: este repositorio es PÚBLICO (regla de seguridad #8), así que la
+# contraseña no puede vivir en el código. Se pasa por variable de entorno en
+# la corrida y se guarda en el gestor del CEO.
+OWNER_PWD = os.environ.get("TALULAH_PWD")
+if not OWNER_PWD:
+    sys.exit("Falta TALULAH_PWD: la contraseña se pasa por entorno, no va en el código.")
 OWNER_NAME = "Talulah"
 ASESORA_EMAIL = "asesora1.talulah@gloma.com"
 ASESORA_HANDLE = "asesor_1"

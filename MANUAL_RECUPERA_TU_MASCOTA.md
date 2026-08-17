@@ -16,7 +16,7 @@ al equipo revisar y gestionar los casos.
 |---|---|
 | Chat ciudadano (público, sin login) | https://mascotasperdidascolombia.com |
 | Panel privado | https://app.glomabeauty.com → menú **🐾 Mascotas** |
-| Cuenta | `recuperatumascota@gmail.com` / `Mascotas2026*` |
+| Cuenta | `recuperatumascota@gmail.com` / `«en el gestor del CEO»` |
 | API | `https://api.glomabeauty.com` |
 | Firma del sitio público | Footer **"Tecnología de Gloma App"** → [@gloma_app](https://www.instagram.com/gloma_app/). Solo ahí; la app y la landing de Gloma no se tocan sin aviso |
 

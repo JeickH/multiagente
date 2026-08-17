@@ -153,6 +153,14 @@ Reglas permanentes que debe respetar todo el equipo. Violaciones de estas reglas
    `exp`** — nunca rol, correo, tenant ni permisos: esas decisiones son del backend,
    que es el único que verifica la firma. Al agregar una pantalla nueva, si es privada
    **no** se agrega a `PUBLIC_PAGES` en `pages/_app.tsx`.
+8. **Este repositorio es PÚBLICO** (`github.com/JeickH/multiagente`). Nunca se escribe
+   en un archivo versionado: contraseñas de cuentas (ni de prueba — son cuentas vivas
+   en producción), tokens, ni **teléfonos o correos de personas reales**. Los teléfonos
+   que llegan de las fuentes son datos de terceros: en docstrings y documentación van
+   enmascarados (`3XXXXXXXXX`), nunca el número real. Las credenciales viven en el
+   gestor del CEO o en SSM; en los documentos de prueba se referencian, no se copian.
+   Un secreto commiteado **no se arregla borrándolo**: queda en el historial público y
+   hay que **rotarlo**.
 
 ---
 

@@ -6,7 +6,7 @@
 |---|---|
 | Chat ciudadano (público, sin login) | **https://mascotasperdidascolombia.com** |
 | Panel de la cuenta (con login) | **https://app.glomabeauty.com** → menú lateral **🐾 Mascotas** |
-| Credenciales del panel | usuario `recuperatumascota@gmail.com` · contraseña `Mascotas2026*` |
+| Credenciales del panel | usuario `recuperatumascota@gmail.com` · contraseña **en el gestor de contraseñas del CEO** (este repo es público: nunca se escribe aquí) |
 | API | `https://api.glomabeauty.com` |
 
 > En producción ya hay **10 reportes de demostración** (`source = demo`, fotos reales
@@ -60,7 +60,7 @@
 
 ## Bloque 5 — Panel de la cuenta (validación de datos)
 
-Entra a **https://app.glomabeauty.com** con `recuperatumascota@gmail.com` / `Mascotas2026*`
+Entra a **https://app.glomabeauty.com** con `recuperatumascota@gmail.com` / `«en el gestor del CEO»`
 y abre **🐾 Mascotas** en el menú lateral.
 
 | # | Paso | Resultado esperado |

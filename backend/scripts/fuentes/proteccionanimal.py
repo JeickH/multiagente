@@ -13,7 +13,7 @@ Dos rarezas de esta fuente, y las dos importan:
    llaman literalmente "encontrado", "perdido" o "Me perdí". El tipo se deduce
    de ahí y **cada deducción queda marcada en la revisión**.
 2. **El teléfono va escrito dentro de la descripción** ("…mancha blanca en
-   pecho-3193566690", "Informes al: 315 2129670"). Se extrae al campo de
+   pecho-3XXXXXXXXX", "Informes al: 3XX XXXXXXX"). Se extrae al campo de
    contacto y se BORRA del texto: si quedara en `senas`, el guardarraíl
    antiteléfonos del bot le tumbaría el turno al mostrar la ficha.
 

@@ -1,4 +1,4 @@
-"""Reset idempotente de la password de `demo@gmail.com` a `Demo2026!`.
+"""Reset idempotente de la password de `demo@gmail.com` (se pasa por entorno).
 
 Sprint 13 #169 — el password documentado en CREDENCIALES.txt no funcionaba
 (reportado en #164). Este script fija un password conocido y estable para
@@ -6,7 +6,7 @@ la cuenta demo del entorno local.
 
 Comportamiento:
   - Si el user `demo@gmail.com` no existe → aborta con código 1.
-  - Si existe → actualiza `hashed_password` con bcrypt(`Demo2026!`).
+  - Si existe → actualiza `hashed_password` con bcrypt(`$DEMO_PASSWORD`).
   - Idempotente: re-ejecutar deja la misma password (sólo refresca el hash).
 
 Uso:
@@ -24,7 +24,12 @@ from app import crud  # type: ignore
 
 
 DEMO_EMAIL = "demo@gmail.com"
-DEMO_PASSWORD = "Demo2026!"
+# Sin default: este repositorio es PÚBLICO (regla de seguridad #8), así que la
+# contraseña no puede vivir en el código. Se pasa por variable de entorno en
+# la corrida y se guarda en el gestor del CEO.
+DEMO_PASSWORD = os.environ.get("DEMO_PASSWORD")
+if not DEMO_PASSWORD:
+    sys.exit("Falta DEMO_PASSWORD: la contraseña se pasa por entorno, no va en el código.")
 
 
 def main() -> int:

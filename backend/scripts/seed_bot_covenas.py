@@ -28,7 +28,12 @@ from app import crud, models, schemas  # type: ignore
 
 
 AGENCY_EMAIL = os.environ.get("DEMO_AGENCY_EMAIL", "agencia@demo.com")
-AGENCY_PWD = os.environ.get("DEMO_PWD", "Demo1234*")
+# Sin default: este repositorio es PÚBLICO (regla de seguridad #8), así que la
+# contraseña no puede vivir en el código. Se pasa por variable de entorno en
+# la corrida y se guarda en el gestor del CEO.
+AGENCY_PWD = os.environ.get("DEMO_PWD")
+if not AGENCY_PWD:
+    sys.exit("Falta DEMO_PWD: la contraseña se pasa por entorno, no va en el código.")
 AGENCY_NAME = "Agencia de Viajes Arranquemos Pues"
 ASESOR_EMAIL = "asesor1@demo.com"
 ASESOR_HANDLE = "asesor_1"            # lo que se guarda en conversation.assigned_to

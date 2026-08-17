@@ -23,7 +23,7 @@ Uso:
 
 ENV opcionales:
     MASCOTAS_ACCOUNT_EMAIL  (default recuperatumascota@gmail.com)
-    MASCOTAS_PWD            (default Mascotas2026*)
+    MASCOTAS_PWD            (obligatoria)
 """
 from __future__ import annotations
 
@@ -37,7 +37,12 @@ from app import crud, models, schemas  # type: ignore
 
 
 OWNER_EMAIL = os.environ.get("MASCOTAS_ACCOUNT_EMAIL", "recuperatumascota@gmail.com")
-OWNER_PWD = os.environ.get("MASCOTAS_PWD", "Mascotas2026*")
+# Sin default: este repositorio es PÚBLICO (regla de seguridad #8), así que la
+# contraseña no puede vivir en el código. Se pasa por variable de entorno en
+# la corrida y se guarda en el gestor del CEO.
+OWNER_PWD = os.environ.get("MASCOTAS_PWD")
+if not OWNER_PWD:
+    sys.exit("Falta MASCOTAS_PWD: la contraseña se pasa por entorno, no va en el código.")
 OWNER_NAME = "Recupera Tu Mascota"
 BOT_NAME = "Huella — Mascotas Perdidas Cali"
 

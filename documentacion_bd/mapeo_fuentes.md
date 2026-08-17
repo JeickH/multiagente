@@ -89,7 +89,7 @@ tener que adivinar.
    en el campo del nombre: hay fichas llamadas literalmente `encontrado` o
    `Me perdí`. El tipo se deduce de ahí y **cada deducción queda marcada en la
    revisión** para que un humano la confirme.
-2. **El teléfono va dentro de la descripción** (`…mancha blanca en pecho-3193566690`).
+2. **El teléfono va dentro de la descripción** (`…mancha blanca en pecho-3XXXXXXXXX`).
    Se extrae al campo de contacto y se **borra del texto**: un número suelto en
    `senas` le tumba el turno al bot por el guardarraíl antiteléfonos.
 3. Los campos numéricos (`edad_animal`, `peso_animal`, `tamano_animal`) vienen

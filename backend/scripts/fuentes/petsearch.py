@@ -29,7 +29,7 @@ COMO_SE_LLENO = [
     "<b>tipo_registro</b>: <code>missing</code> → perdida, <code>stray</code> → encontrada. "
     "Las <code>found</code> (ya volvieron a casa) no se traen.",
     "<b>contacto_telefono</b>: el que publica la fuente, normalizado a formato local "
-    "(llegan como <code>573147530915</code> y como <code>3178340390</code>).",
+    "(llegan como <code>57XXXXXXXXXX</code> y como <code>3XXXXXXXXX</code>).",
     "<b>ubicacion</b>: el barrio más la ciudad, porque la ubicación es obligatoria.",
     "<b>senas</b>: el campo <code>features</code> tal cual.",
     "<b>color, sexo, tamano, edad</b>: la fuente no los tiene como campo aparte; se leen "
