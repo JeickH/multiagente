@@ -7,6 +7,7 @@ from sqlalchemy import (
     Date,
     DateTime,
     ForeignKey,
+    Numeric,
     Text,
     UniqueConstraint,
     Index,
@@ -1065,6 +1066,53 @@ class Mascota(Base):
     # origen y sirve para deduplicar entre corridas del importador.
     origen_url = Column(String(500), nullable=True)
     origen_id = Column(String(120), nullable=True, index=True)
+
+    # -- Campos multi-fuente (2026-08-17) --------------------------------
+    # La unión de lo que traen las seis fuentes que alimentan la tabla. Antes
+    # todo esto terminaba concatenado dentro de `notas`, donde no se puede
+    # filtrar ni contar. Cada columna existe porque al menos una fuente la
+    # publica como dato aparte: ver `documentacion_bd/mapeo_fuentes.md`.
+    # Ninguna es obligatoria — casi ninguna fuente las trae todas.
+
+    # Geografía. `barrio` ya existía y sigue siendo la zona fina; estas dos son
+    # los niveles de arriba, que varias fuentes sí separan y antes se perdían
+    # aplastados dentro de `ubicacion`.
+    ciudad = Column(String(120), nullable=True, index=True)
+    departamento = Column(String(120), nullable=True, index=True)
+
+    # Salud y estado sanitario. Tri-estado a propósito: NULL es "la fuente no
+    # lo dice", que no es lo mismo que False ("dice que no está esterilizada").
+    esterilizado = Column(Boolean, nullable=True)
+    vacunado = Column(Boolean, nullable=True)
+    desparasitado = Column(Boolean, nullable=True)
+    peso_kg = Column(Numeric(5, 2), nullable=True)
+    salud = Column(String(255), nullable=True)   # lesiones / estado reportado
+
+    # Dónde está durmiendo el animal hoy, que no es lo mismo que dónde lo
+    # encontraron (`barrio`) ni dónde se atiende al público (`ubicacion`).
+    # Vocabulario sin CHECK a propósito: lo alimentan fuentes externas y una
+    # restricción nueva rompería un importador cada vez que aparezca un valor.
+    #   hospital · hogar_de_paso · albergue · con_quien_la_encontro ·
+    #   en_la_calle · con_su_familia
+    resguardo = Column(String(40), nullable=True, index=True)
+    resguardo_nombre = Column(String(120), nullable=True)
+
+    # Quién llevó al animal al refugio. Es una tercera persona distinta del
+    # contacto: quien lo recogió de la calle no siempre es quien lo cuida.
+    rescatado_por = Column(String(120), nullable=True)
+    rescatado_por_telefono = Column(String(32), nullable=True)
+
+    recompensa = Column(Boolean, nullable=True)
+
+    # El estado tal como lo escribe la fuente ("DISPONIBLE (ADAPTACIÓN)",
+    # "stray", "Perdido"). No se traduce: sirve para auditar de dónde salió
+    # nuestro `tipo_registro` cuando hubo que deducirlo.
+    estado_origen = Column(String(60), nullable=True)
+
+    # Cuándo lo publicó la fuente (≠ `created_at`, que es cuándo lo trajimos)
+    # y cuándo fue la última vez que lo vimos en ella.
+    publicado_origen_at = Column(DateTime, nullable=True)
+    sincronizado_at = Column(DateTime, nullable=True)
 
     fecha_evento = Column(Date, nullable=True)   # cuándo se perdió / encontró
     estado = Column(
