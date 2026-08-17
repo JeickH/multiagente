@@ -144,6 +144,15 @@ Reglas permanentes que debe respetar todo el equipo. Violaciones de estas reglas
    de APIs externas, SQL) va únicamente a `logger.exception` server-side. El cliente recibe
    mensajes genéricos (`"credenciales inválidas"`, `"error temporal al conectar con el
    proveedor"`).
+7. **La sesión del navegador se toca SOLO por `frontend/lib/session.ts`**: prohibido
+   `localStorage.getItem('token')` / `setItem` / `removeItem` suelto en una página o
+   componente. Se usan `getToken()`, `haySesion()`, `guardarToken()` y `cerrarSesion()`.
+   El motivo (#361): cuando cada página leía el token por su cuenta, "hay token guardado"
+   se confundió con "hay sesión" y la plataforma se abría con una sesión vencida; y
+   "Salir" era un link que no borraba nada. Del payload del JWT se lee **únicamente
+   `exp`** — nunca rol, correo, tenant ni permisos: esas decisiones son del backend,
+   que es el único que verifica la firma. Al agregar una pantalla nueva, si es privada
+   **no** se agrega a `PUBLIC_PAGES` en `pages/_app.tsx`.
 
 ---
 
