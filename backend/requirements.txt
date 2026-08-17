@@ -17,3 +17,7 @@ boto3>=1.34,<2
 # que un rebuild limpio dejaba el backend sin arrancar.
 requests>=2.31,<3
 openpyxl>=3.1,<4
+# #360: comprime las fotos de mascotas al subirlas (`services/imagenes`).
+# Sin esto el backend arranca igual, pero cada foto se guarda tal como llega
+# del celular — hasta 8 MB.
+Pillow>=10.0,<12

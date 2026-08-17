@@ -35,6 +35,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from .. import models
+from . import imagenes
 
 logger = logging.getLogger(__name__)
 
@@ -158,12 +159,27 @@ def guardar_foto(
 
     Sin `mascota` la foto queda en el limbo (`pendientes/<upload_session>/`)
     hasta que `adoptar_fotos()` la mueva al reporte.
+
+    La foto se comprime antes de guardarla (#360): llegaban de 4 MB desde el
+    celular y el sitio las servía tal cual. Si la compresión falla o no gana
+    nada, se guarda el original y la foto queda sin marcar, para que el barrido
+    del bucket la tome después.
     """
+    bytes_original = len(data)
+    comprimida = imagenes.comprimir(data)
+    if comprimida is not None:
+        data, content_type = comprimida, "image/jpeg"
+
     ext = ALLOWED_IMAGE_TYPES.get(content_type, ".jpg")
     nombre = f"{uuid.uuid4().hex}{ext}"
     carpeta = f"mascotas/{mascota.codigo}" if mascota else f"pendientes/{upload_session}"
     key = f"{carpeta}/{nombre}"
     _put_object(key, data, content_type)
+    if comprimida is not None:
+        logger.info(
+            "mascotas: foto comprimida %d -> %d bytes (%.0f%% menos)",
+            bytes_original, len(data), 100 * (1 - len(data) / bytes_original),
+        )
 
     foto = models.MascotaFoto(
         mascota_id=mascota.id if mascota else None,
@@ -171,6 +187,9 @@ def guardar_foto(
         storage_key=key,
         content_type=content_type,
         bytes_size=len(data),
+        optimizada=comprimida is not None,
+        optimizada_at=datetime.utcnow() if comprimida is not None else None,
+        bytes_original=bytes_original,
     )
     db.add(foto)
     db.commit()
@@ -511,7 +530,10 @@ def buscar(
 # Alta y actualización de reportes
 # ---------------------------------------------------------------------------
 
-_TELEFONO_RE = re.compile(r"^[+\d][\d\s\-()]{6,30}$")
+# Acepta uno o dos teléfonos separados por `/` o `,`: un animal en hogar de paso
+# tiene dos vías de contacto (la fundación y la casa donde está durmiendo), y
+# quien busca a su mascota necesita las dos.
+_TELEFONO_RE = re.compile(r"^[+\d][\d\s\-()/,]{6,30}$")
 
 
 def _limpiar(valor: Any, limite: int) -> Optional[str]:

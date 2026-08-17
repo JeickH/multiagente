@@ -24,6 +24,8 @@ type Foto = {
   storage_uri: string;
   content_type: string;
   bytes_size: number | null;
+  optimizada?: boolean;
+  bytes_original?: number | null;
 };
 
 type Reporte = {
@@ -341,6 +343,14 @@ function Visor({
               {foto.storage_uri}
               {foto.bytes_size ? ` · ${pesoLegible(foto.bytes_size)}` : ''}
             </div>
+            {foto.optimizada && (
+              <div className="text-gray-400">
+                ⚡ Peso optimizado
+                {foto.bytes_original && foto.bytes_size && foto.bytes_original > foto.bytes_size
+                  ? ` · antes pesaba ${pesoLegible(foto.bytes_original)}`
+                  : ''}
+              </div>
+            )}
           </div>
           <button
             type="button"

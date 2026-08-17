@@ -1208,6 +1208,16 @@ class MascotaFoto(Base):
     bytes_size = Column(Integer, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
+    # Compresión: `scripts/optimizar_fotos_mascotas.py` (que corre desde el
+    # equipo del CEO, porque el bucket es privado) re-comprime cada foto y
+    # marca aquí que ya pasó, para no volver a procesarla nunca. `bytes_size`
+    # es el peso actual; `bytes_original`, lo que pesaba antes.
+    optimizada = Column(
+        Boolean, nullable=False, default=False, server_default="false", index=True
+    )
+    optimizada_at = Column(DateTime, nullable=True)
+    bytes_original = Column(Integer, nullable=True)
+
     mascota = relationship("Mascota", back_populates="fotos")
 
     def __repr__(self) -> str:

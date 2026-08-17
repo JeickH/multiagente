@@ -170,6 +170,11 @@ class FotoPanelOut(BaseModel):
     storage_uri: str          # s3://bucket/clave, o file://... en local
     content_type: str
     bytes_size: Optional[int] = None
+    # Peso: `optimizada` dice si la foto ya pasó por el compresor
+    # (`scripts/optimizar_fotos_mascotas.py`) y `bytes_original` lo que pesaba
+    # antes. Sirve para saber de un vistazo qué falta por alivianar.
+    optimizada: bool = False
+    bytes_original: Optional[int] = None
 
 
 class MascotaPanelOut(BaseModel):
@@ -646,6 +651,8 @@ def _fila_panel(m: models.Mascota) -> MascotaPanelOut:
                 storage_uri=svc.storage_uri(f.storage_key),
                 content_type=f.content_type or "image/jpeg",
                 bytes_size=f.bytes_size,
+                optimizada=bool(f.optimizada),
+                bytes_original=f.bytes_original,
             )
             for f in (m.fotos or [])
         ],
@@ -953,6 +960,8 @@ async def subir_foto_panel(
         storage_uri=svc.storage_uri(foto.storage_key),
         content_type=foto.content_type or "image/jpeg",
         bytes_size=foto.bytes_size,
+        optimizada=bool(foto.optimizada),
+        bytes_original=foto.bytes_original,
     )
 
 

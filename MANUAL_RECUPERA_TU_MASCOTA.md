@@ -71,6 +71,53 @@ al público. ⚠️ **No tiene versionado**: lo que se borra, se pierde.
 
 ---
 
+## 3.1 Peso de las fotos
+
+El algoritmo vive en `app/services/imagenes.py` y lo usan dos caminos. Los dos bajan a
+2000 px de lado largo, guardan JPEG progresivo y **descartan el EXIF** — con la
+geolocalización que traen las fotos de celular adentro.
+
+**Al subir** (`guardar_foto`, automático): una pasada a calidad 85, ~200 ms para una foto
+de 4 MB. La foto nace con `optimizada=TRUE`. Si la imagen viene corrupta o no se gana
+nada, se guarda el original sin marcar y el barrido la toma después: nunca se pierde una
+foto por un error de compresión.
+
+**El barrido del bucket** (`optimizar_fotos_mascotas.py`, manual): para lo que ya estaba
+guardado. Prueba varias calidades y se queda con la más baja que aún pasa SSIM ≥ 0.96.
+
+```bash
+conda activate multiagente
+python backend/scripts/optimizar_fotos_mascotas.py --dry-run   # ver qué haría
+python backend/scripts/optimizar_fotos_mascotas.py             # sólo lo pendiente
+python backend/scripts/optimizar_fotos_mascotas.py --restaurar <clave>   # revertir una
+```
+
+**Corre siempre desde el equipo del CEO**: el bucket es privado y la BD no se alcanza
+desde fuera de la VPC. Lo que hay que saber:
+
+- **Nunca repite trabajo**: lleva registro en `registro_optimizacion_fotos.csv` (se abre
+  en Excel), deja la marca `optimizado=v1` en el objeto de S3, y la columna
+  `mascota_fotos.optimizada` en la BD. Una foto nueva con la misma clave sí se reprocesa
+  (cambia el ETag).
+- **Respalda antes de sobreescribir** en `respaldos_fotos_mascotas/` (git-ignorado). Es
+  el único camino de vuelta mientras el bucket no tenga versionado.
+- **Deja un manifiesto** `registro_optimizacion_pendientes_bd.json` con lo que falta
+  reflejar en la BD. Se aplica desde dentro de la VPC:
+  ```bash
+  aws s3 cp backend/scripts/registro_optimizacion_pendientes_bd.json \
+      s3://gloma-mascotas-747456040509/import/optimizacion_fotos.json --region sa-east-1
+  TASKDEF=multiagente-backend:15 ./backend/scripts/rds_exec.sh \
+      backend/scripts/sync_fotos_bd_mascotas.py
+  aws s3 rm s3://gloma-mascotas-747456040509/import/optimizacion_fotos.json --region sa-east-1
+  ```
+- **Los PNG pasan a JPG**, o sea que cambia la clave del objeto. El PNG viejo **no se
+  borra** (regla 1): queda hasta que el CEO autorice limpiarlo.
+
+Resultado de la primera corrida (2026-08-16): 100 fotos, **88.3 MB → 16.7 MB**. Detalle
+en BITACORA #359.
+
+---
+
 ## 4. El bot (Huella)
 
 Tres casos de uso, y nada más:
@@ -219,4 +266,6 @@ Ver BITACORA, sprint "Ayuda a Cali" (#347–#354). Los principales:
 - **#350** Retención/borrado de datos y aviso de privacidad formal (habeas data).
 - **#351** Moderación de fotos.
 - **#352** Búsqueda visual por foto (subiría muchísimo la tasa de acierto).
+- **#361** Borrar los 36 PNG viejos que quedaron tras la conversión a JPG (26.5 MB) —
+  necesita visto bueno explícito del CEO.
 - **Activar versionado en el bucket de fotos** (lección del borrado accidental).

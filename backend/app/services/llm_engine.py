@@ -324,14 +324,20 @@ def _bloque_mascotas(
                 "su mascota en una ficha y le entregaste el contacto."
             )
 
-    if telefono and not runtime.get("reporte_codigo"):
+    # El empujón a registrar NO va en el primer turno. El chat web pide nombre y
+    # teléfono en un formulario antes de abrir la conversación, así que el número
+    # llega en el mensaje inicial — cuando todavía no se sabe qué animal es ni
+    # dónde está. Sin este freno el modelo obedecía el ⚠️ y registraba de una,
+    # inventando la especie y poniendo «pendiente» de ubicación.
+    if telefono and not runtime.get("reporte_codigo") and history:
         lineas.append(
             f"⚠️ La persona YA te dio un teléfono de contacto ({telefono}) y el "
             "caso TODAVÍA no está registrado. Si ya sabes qué animal es y dónde "
             "se perdió o dónde está, llama `registrar_reporte` en ESTE turno, "
             "sin hacer más preguntas — incluye `contacto_telefono` y "
             "`contacto_nombre` si te dio el nombre. Lo que falte lo completas "
-            "después con `completar_reporte`."
+            "después con `completar_reporte`. Si aún no sabes la especie o la "
+            "ubicación, NO registres: pregunta primero, nunca las inventes."
         )
     fotos = int(runtime.get("fotos_pendientes") or 0)
     if fotos:
@@ -800,6 +806,16 @@ def _tools_mascotas() -> List[Dict[str, Any]]:
 # 301 245 8967, (602) 555-3311, +57 315 802 4471).
 _TELEFONO_EN_TEXTO_RE = re.compile(r"(?:\+?\d[\d\s\-().]{5,}\d)")
 
+# Muletillas con las que el modelo rellena la ubicación cuando quiere registrar
+# sin tenerla. Un reporte con una de estas no sirve para nada: la ubicación es
+# lo único que dice dónde ir a buscar al animal.
+_UBICACION_RELLENO = {
+    "pendiente", "pendiente por confirmar", "por confirmar", "por definir",
+    "no sé", "no se", "no sabe", "no indicada", "no especificada", "sin especificar",
+    "desconocida", "desconocido", "sin definir", "sin dato", "sin datos",
+    "n/a", "na", "-", "--", "?", "ninguna", "ninguno", "tbd", "x",
+}
+
 _MAX_CORRECCIONES = 2
 
 _CORRECCION_FICHA = (
@@ -888,6 +904,28 @@ def _viola_contacto(
             if len(digitos) >= 7:
                 return True
     return False
+
+
+def _ubicacion_de_relleno(valor: Any) -> Optional[str]:
+    """La ubicación que mandó el modelo, si es una muletilla en vez de un lugar.
+
+    Devuelve el texto ofensor (para poder decírselo) o `None` si el valor sirve.
+    """
+    texto = str(valor or "").strip()
+    if not texto:
+        return None
+    normalizado = re.sub(r"[.\s]+", " ", texto.lower()).strip(" .,;:")
+    if normalizado in _UBICACION_RELLENO:
+        return texto
+    # "ubicación pendiente", "lugar por confirmar": la muletilla con una palabra
+    # de relleno delante sigue siendo una muletilla.
+    sin_prefijo = re.sub(
+        r"^(ubicaci[oó]n|lugar|direcci[oó]n|zona|barrio|sitio)\s*[:\-]?\s*",
+        "", normalizado,
+    ).strip()
+    if sin_prefijo != normalizado and sin_prefijo in _UBICACION_RELLENO:
+        return texto
+    return None
 
 
 _MASCOTAS_TOOLS = frozenset({
@@ -1077,6 +1115,20 @@ def _run_tool_mascotas(
             }, ensure_ascii=False), False
 
         if name == "registrar_reporte":
+            # Guardarraíl: la ubicación es obligatoria y tiene que ser un lugar
+            # de verdad. Cuando el modelo se siente presionado a registrar sin
+            # tenerla, rellena el campo con muletillas ("pendiente", "no sé") y
+            # el reporte nace inservible: nadie sabe dónde buscar al animal.
+            relleno = _ubicacion_de_relleno(tool_input.get("ubicacion"))
+            if relleno:
+                return (
+                    "NO registré nada: pusiste una ubicación de relleno "
+                    f"({relleno!r}). La ubicación es obligatoria y tiene que ser "
+                    "un lugar real — el barrio, una calle o un punto de "
+                    "referencia. Pregúntale dónde se perdió o dónde está la "
+                    "mascota y registra cuando te lo diga. Nunca la inventes.",
+                    False,
+                )
             mascota, problema = svc.crear_reporte(
                 db, tool_input,
                 bot_id=runtime.get("bot_id"),

@@ -48,3 +48,18 @@ marketing/*
 !marketing/instagram/
 
 BITACORA_*
+
+# Originales de las fotos de mascotas antes de comprimirlas
+# (`scripts/optimizar_fotos_mascotas.py`). Son ~70 MB de fotos de gente real:
+# no van a git, pero NO se borran: el bucket no tiene versionado y este es el
+# único camino de vuelta si una compresión sale mal.
+respaldos_fotos_mascotas/
+
+# Manifiesto de trabajo del optimizador: se regenera en cada corrida y se aplica
+# con `sync_fotos_bd_mascotas.py`. El registro que sí importa —y sí va a git— es
+# `registro_optimizacion_fotos.csv`.
+backend/scripts/registro_optimizacion_pendientes_bd.json
+
+# Material crudo del importador de RoyiPets (PDF de la fundación, ZIP de fotos,
+# lo que extrae `extraer.py`). Son ~113 MB de insumo, no de código.
+testdata/

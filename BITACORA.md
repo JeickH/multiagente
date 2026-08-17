@@ -2720,3 +2720,113 @@ idempotencia).
 
 Despliegues de la ronda: imágenes `:ayudacali2` a `:ayudacali5`, task-defs rev 28 a 31.
 Amplify jobs 59, 60 y 61 SUCCEED.
+
+---
+
+## #359 — Alivianar las fotos del bucket sin perder calidad (2026-08-16)
+
+El CEO pidió lo que hace TinyPNG/Squoosh, pero para las fotos que ya viven en S3, con
+un registro local de lo procesado para que correr el script otra vez no repita trabajo.
+
+**Por qué no se usó TinyPNG.** Son fotos de mascotas de familias reales, subidas por
+ciudadanos; mandarlas a un tercero para ahorrar unos KB no se justifica. El proceso
+corre local y las fotos no salen de AWS ni de este equipo.
+
+### `backend/scripts/optimizar_fotos_mascotas.py`
+
+Corre **siempre desde el equipo del CEO** (el bucket es privado y la BD vive en la VPC).
+Para cada foto busca el archivo más liviano que todavía se ve igual: prueba calidades
+JPEG de 78 hacia arriba y se queda con la **primera que pasa un umbral de SSIM**
+(similitud estructural, implementada en el propio script con ventana gaussiana 11×11 —
+sin scipy). Si ninguna calidad llega al umbral, la foto **no se toca**.
+
+Además: redimensiona a 2000 px de lado largo (venían fotos de 4032 px), guarda el JPEG
+progresivo, y descarta el EXIF — que de paso saca la **geolocalización** que traen las
+fotos de celular.
+
+**Umbral 0.96, y por qué no 0.98.** Calibrado contra las fotos reales del bucket: el
+SSIM se mide contra el original ya redimensionado, y el ruido de sensor de una foto de
+celular no lo conserva ninguna recompresión — en las más pesadas ni calidad 95 pasa de
+0.983. Con imágenes limpias el mismo script se queda en calidad 78 con SSIM 0.99.
+
+**Triple candado contra el reproceso**, en este orden:
+1. `registro_optimizacion_fotos.csv` (se abre en Excel) — guarda el ETag resultante, así
+   que si mañana suben otra foto con la misma clave el ETag cambia y se vuelve a procesar;
+2. metadata `optimizado=v1` en el objeto de S3;
+3. la columna `mascota_fotos.optimizada` en la BD (ver abajo).
+
+**Respaldo antes de tocar nada.** Cada original se copia a `respaldos_fotos_mascotas/`
+(git-ignorado, 70 MB) antes de sobreescribir. El bucket no tiene versionado: sin esto no
+hay camino de vuelta. Para revertir: `--restaurar <clave>`.
+
+### Campo en la BD (pedido del CEO a mitad del trabajo)
+
+`mascota_fotos.optimizada` (BOOLEAN, indexada), `optimizada_at` y `bytes_original`.
+Migración `migrate_optimizacion_fotos.py`, idempotente, **aplicada en local y en RDS**.
+Como el optimizador corre fuera de la VPC, deja un manifiesto JSON que
+`sync_fotos_bd_mascotas.py` aplica desde adentro (llega por `s3://…/import/`, igual que
+el importador de patitasacasa, porque los overrides de ECS topan en 8 KB).
+El panel muestra "⚡ Peso optimizado · antes pesaba X".
+
+### Resultado
+
+**100 fotos, 88.3 MB → 16.7 MB (81% menos).** 96 comprimidas, 4 dejadas como estaban
+porque ya venían optimizadas (bajaban menos del 10%; igual quedan marcadas para no
+volver a evaluarlas). La más pesada, `MC-00111`, pasó de 4.1 MB a 302 KB. SSIM: mínimo
+0.960, mediana 0.986. En la BD, `100/100 optimizadas`.
+
+Se corrió en dos tandas porque entraron 32 reportes nuevos (`MC-00132`–`MC-00163`) en
+medio del trabajo: el script los tomó solo en la segunda corrida y no volvió a tocar los
+de la primera — que era exactamente lo que había que demostrar.
+
+Tres hallazgos de paso:
+- **Cinco JPEG del bucket estaban truncados** (`MC-00095/96/98/99/102`, les faltaban 1-3
+  bytes del marcador de fin). El navegador los pinta igual y Pillow no. Se agregó un
+  rescate con guardarraíl: si las últimas filas salen en gris plano —así rellena Pillow
+  lo que no alcanza a decodificar— la imagen se considera mutilada de verdad y no se
+  toca. Las cinco se recuperaron y quedaron guardadas como JPEG válido.
+- **36 fotos eran PNG** de ~2 MB (las 4 primeras, y luego los 32 reportes nuevos, todos
+  en PNG). Pasan a JPG, lo que cambia la clave del objeto; el PNG viejo **no se borró**
+  (regla del módulo: nada se borra sin visto bueno del CEO). Son 26.5 MB de peso muerto
+  en el bucket.
+- **El primer diseño reprocesaba los PNG convertidos en cada corrida**: se guardaba el
+  ETag del JPG nuevo contra la clave del PNG viejo, que obviamente nunca coincidía. Se
+  corrigió guardando el ETag del objeto que está *en la clave de esa fila*.
+
+Smoke en producción: `GET /mascotas/foto/{codigo}/{id}` responde 200 `image/jpeg` para
+las convertidas (`MC-00107`, `MC-00131`), las truncadas (`MC-00095`) y la de prueba
+(`MC-00127`).
+
+### Pendientes que abre
+
+| # | Pendiente | Notas |
+|---|---|---|
+| #361 | **Borrar los 36 PNG viejos** (26.5 MB) y la copia `comparacion/MC-00127-ORIGINAL.jpg` | Ya nadie los sirve: la BD apunta al `.jpg`. Requiere visto bueno explícito del CEO. |
+| #362 | **Versionado del bucket** | Sigue abierto desde el borrado accidental. Mientras no exista, `respaldos_fotos_mascotas/` es el único respaldo de los originales. |
+
+## #360 — Comprimir al subir, no después (2026-08-16)
+
+El CEO lo aprobó apenas se propuso: alivianar lo que ya está guardado sirve una vez, y
+al día siguiente vuelve a entrar una foto de 4 MB.
+
+El algoritmo se sacó a `app/services/imagenes.py`, compartido por los dos caminos:
+
+- **`comprimir()` — subida.** Una sola pasada a calidad fija 85. Lo atiende un request
+  de alguien que está esperando, así que no puede probar seis calidades. Usa el modo
+  `draft` de Pillow, que aprovecha el DCT del JPEG para decodificar ya reducido en vez de
+  armar la imagen completa y achicarla después: **una foto de 4 MB tarda 200 ms**.
+- **`comprimir_buscando()` — barrido del bucket.** El de #359, con la escalera de
+  calidades y el SSIM. Se quedó igual; el script dejó de duplicar 131 líneas.
+
+`guardar_foto()` comprime antes de subir a S3 y nace con `optimizada=TRUE` y
+`bytes_original`. **Falla hacia el original**: si la imagen viene corrupta o la
+compresión no gana nada, se guarda tal cual y la foto queda sin marcar, para que el
+barrido la tome después. Perder la foto de alguien por un error de compresión sería
+mucho peor que guardarla pesada.
+
+`Pillow` se agregó a `requirements.txt` — no estaba, y sin él el backend arranca pero
+guarda todo sin comprimir.
+
+**Prueba local end-to-end** (`POST /mascotas/foto` contra el contenedor):
+`4183 KB → 376 KB (91%)` un JPEG, y un PNG de 2 MB entró como `.jpg` de 276 KB con
+`content_type` corregido. Basura de entrada devuelve `None` y guarda el original.
