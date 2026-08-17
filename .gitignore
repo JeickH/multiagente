@@ -63,3 +63,9 @@ backend/scripts/registro_optimizacion_pendientes_bd.json
 # Material crudo del importador de RoyiPets (PDF de la fundación, ZIP de fotos,
 # lo que extrae `extraer.py`). Son ~113 MB de insumo, no de código.
 testdata/
+
+# "Bucket" de fotos de desarrollo: el equivalente local de
+# `gloma-mascotas-747456040509`. El backend escribe aquí cuando corre sin
+# MASCOTAS_BUCKET (docker-compose lo monta en /app/media). Son fotos de gente
+# real copiadas de producción para poder probar: nunca van a git.
+media_local/

@@ -54,14 +54,24 @@ services:
       TWILIO_WHATSAPP_FROM: ${TWILIO_WHATSAPP_FROM:-}
       TWILIO_MESSAGING_SERVICE_SID: ${TWILIO_MESSAGING_SERVICE_SID:-}
       TWILIO_WEBHOOK_BASE_URL: ${TWILIO_WEBHOOK_BASE_URL:-}
-      # Sprint "Ayuda a Cali": fotos de las mascotas reportadas. En producción
-      # va el bucket (MASCOTAS_BUCKET) y en local el disco del contenedor, que
-      # se persiste con el volumen de abajo — sin él, cada rebuild borraba las
-      # fotos y los reportes quedaban apuntando a archivos inexistentes.
+      # Sprint "Ayuda a Cali": fotos de las mascotas reportadas.
+      #
+      # Hay dos "buckets", igual que hay dos bases de datos:
+      #   producción → S3 `gloma-mascotas-747456040509` (MASCOTAS_BUCKET en la
+      #                task-def de ECS).
+      #   local      → la carpeta `media_local/` de este repo, montada abajo en
+      #                /app/media. MASCOTAS_BUCKET vacío es lo que activa el
+      #                modo disco (`services/mascotas._bucket()`).
+      # Dejarlo vacío por defecto es deliberado: así una prueba local jamás
+      # escribe ni borra nada en el bucket de producción.
       MASCOTAS_BUCKET: ${MASCOTAS_BUCKET:-}
       MASCOTAS_MEDIA_DIR: /app/media
     volumes:
-      - mascotas_media:/app/media
+      # Carpeta del repo (git-ignorada) en vez de un volumen anónimo: así las
+      # fotos de prueba se ven, se respaldan y se pueden refrescar desde S3 con
+      # `aws s3 sync` sin entrar al contenedor. Mismo layout que el bucket
+      # (`mascotas/<codigo>/…`), para que las claves de la BD sirvan en ambos.
+      - ./media_local:/app/media
     depends_on:
       - db
 
@@ -83,4 +93,8 @@ services:
 
 volumes:
   postgres_data:
-  mascotas_media:
+  # `mascotas_media` (volumen anónimo donde vivían las fotos locales) ya no se
+  # declara: ahora se monta `./media_local`. El volumen sigue existiendo en
+  # Docker con su contenido intacto — no se borra, es el respaldo por si algo
+  # faltara en la carpeta. Se elimina a mano cuando el CEO lo autorice:
+  #   docker volume rm wati_mascotas_media
