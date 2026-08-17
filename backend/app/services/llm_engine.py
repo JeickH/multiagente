@@ -1058,13 +1058,44 @@ def _run_tool_mascotas(
                         "`registrar_reporte` y avisarle apenas aparezca algo."
                     ),
                 }, ensure_ascii=False), False
+            # Las fotos de las candidatas van TODAS ahora, en una sola tanda.
+            # Antes el bot mostraba de a una con `ver_ficha` y esperaba un "no
+            # es" para pasar a la siguiente: cuatro turnos para descartar
+            # cuatro perros, cada uno con su llamada al modelo. Quien está
+            # buscando a su mascota reconoce la suya de un vistazo — que las vea
+            # juntas es más rápido para ella y más barato para la iniciativa.
+            with_foto = 0
+            for r in resultados:
+                mascota = svc.obtener(db, r["codigo"])
+                fotos = list(getattr(mascota, "fotos", None) or [])
+                if not fotos:
+                    continue
+                actions.append({
+                    "type": "say_media",
+                    "payload": {
+                        # El código en el pie: sin él, cuatro fotos seguidas son
+                        # indistinguibles y la persona no puede decir cuál es.
+                        "caption": r["codigo"],
+                        "media_type": "image",
+                        "url": _foto_url(mascota.codigo, fotos[0].id),
+                    },
+                })
+                with_foto += 1
+
             return json.dumps({
                 "coincidencias": [
                     {**r, "resumen": _resumen_ficha(r)} for r in resultados
                 ],
+                "fotos_enviadas": with_foto,
                 "instruccion": (
-                    "Cuéntale cuántas coincidencias hay y muéstrale la más "
-                    "parecida con `ver_ficha` (una a la vez). Nunca des el "
+                    f"Hay {len(resultados)} coincidencia(s) y ya le enviaste "
+                    f"{with_foto} foto(s), cada una con su código en el pie. "
+                    "Mándale UN solo mensaje que las resuma todas: una línea "
+                    "por mascota, con su código y las señas que la distinguen "
+                    "de las otras. Ordénalas de más a menos parecida y "
+                    "pregúntale si reconoce alguna. NO uses `ver_ficha` para "
+                    "irlas mostrando de a una: ya las tiene todas. Úsala solo "
+                    "si te pide más detalle de una en concreto. Nunca des el "
                     "teléfono todavía."
                 ),
             }, ensure_ascii=False), False
