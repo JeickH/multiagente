@@ -1,0 +1,360 @@
+<!DOCTYPE html><html lang="es"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Resultados — Haiku 4.5 vs Sonnet 4.5 en el bot de mascotas</title>
+<style>
+  :root {
+    --paper:#FAFAF8; --ink:#1C2321; --muted:#66736E; --line:#E2E6E3; --card:#FFFFFF;
+    --green:#1F5F4B; --green-soft:#E6F1EC;
+    --ok:#1F7A5C; --ok-soft:#E7F4EE; --warn:#B45309; --warn-soft:#FCF0E1;
+    --stop:#A32F2A; --stop-soft:#FBEBEA; --code:#F1F4F2;
+  }
+  @media (prefers-color-scheme: dark) { :root {
+    --paper:#101614; --ink:#E6ECE9; --muted:#95A39D; --line:#28332F; --card:#18211E;
+    --green:#6FC9A8; --green-soft:#172B24;
+    --ok:#5FC79E; --ok-soft:#152A22; --warn:#E9A159; --warn-soft:#2E2313;
+    --stop:#EE8078; --stop-soft:#2E1817; --code:#1D2724; } }
+  :root[data-theme="dark"] {
+    --paper:#101614; --ink:#E6ECE9; --muted:#95A39D; --line:#28332F; --card:#18211E;
+    --green:#6FC9A8; --green-soft:#172B24;
+    --ok:#5FC79E; --ok-soft:#152A22; --warn:#E9A159; --warn-soft:#2E2313;
+    --stop:#EE8078; --stop-soft:#2E1817; --code:#1D2724; }
+  :root[data-theme="light"] {
+    --paper:#FAFAF8; --ink:#1C2321; --muted:#66736E; --line:#E2E6E3; --card:#FFFFFF;
+    --green:#1F5F4B; --green-soft:#E6F1EC;
+    --ok:#1F7A5C; --ok-soft:#E7F4EE; --warn:#B45309; --warn-soft:#FCF0E1;
+    --stop:#A32F2A; --stop-soft:#FBEBEA; --code:#F1F4F2; }
+
+  * { box-sizing:border-box; }
+  body { background:var(--paper); color:var(--ink); margin:0; padding:0 20px 90px;
+    font:16px/1.62 "Avenir Next","Segoe UI",system-ui,sans-serif; }
+  main { max-width:920px; margin:0 auto; }
+  header { padding:46px 0 16px; border-bottom:2px solid var(--green); }
+  h1 { font-size:1.85rem; margin:0 0 10px; letter-spacing:-0.015em; text-wrap:balance; }
+  .sub { color:var(--muted); max-width:68ch; margin:0; }
+  h2 { font-size:1.18rem; margin:44px 0 8px; padding-top:14px; border-top:1px solid var(--line); }
+  h2 .fase { color:var(--green); font-size:0.75rem; font-weight:700; text-transform:uppercase;
+    letter-spacing:0.1em; display:block; margin-bottom:3px; }
+  h3 { font-size:0.98rem; margin:24px 0 6px; }
+  p { max-width:72ch; }
+  code { background:var(--code); padding:1px 6px; border-radius:5px;
+    font-family:ui-monospace,"SF Mono",Menlo,monospace; font-size:0.85em; }
+
+  .kpis { display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:12px;
+    margin:24px 0 8px; }
+  .kpi { border:1px solid var(--line); border-radius:12px; background:var(--card); padding:14px 16px; }
+  .kpi .lbl { font-size:0.72rem; text-transform:uppercase; letter-spacing:0.07em;
+    color:var(--muted); font-weight:600; }
+  .kpi .val { font-size:1.5rem; font-weight:700; margin-top:4px; letter-spacing:-0.02em;
+    font-variant-numeric:tabular-nums; }
+  .kpi .val.g { color:var(--green); }
+  .kpi .val.s { color:var(--stop); }
+  .kpi .note { font-size:0.78rem; color:var(--muted); margin-top:2px; }
+
+  .tw { overflow-x:auto; margin:14px 0; border:1px solid var(--line); border-radius:12px;
+    background:var(--card); }
+  table { border-collapse:collapse; width:100%; font-size:0.9rem; min-width:560px; }
+  th, td { text-align:left; padding:10px 13px; border-bottom:1px solid var(--line); vertical-align:top; }
+  th { background:var(--green-soft); color:var(--green); font-size:0.74rem;
+    text-transform:uppercase; letter-spacing:0.07em; }
+  tbody tr:last-child td { border-bottom:none; }
+  td.num { text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap; }
+  tr.destacada td { background:var(--ok-soft); font-weight:600; }
+
+  .badge { display:inline-block; font-size:0.72rem; font-weight:700; padding:2px 8px;
+    border-radius:5px; background:var(--stop-soft); color:var(--stop); }
+  .badge.ok { background:var(--ok-soft); color:var(--ok); }
+  .badge.w { background:var(--warn-soft); color:var(--warn); }
+
+  .box { border:1px solid var(--line); border-left:3px solid var(--green); background:var(--card);
+    border-radius:0 12px 12px 0; padding:14px 18px; margin:18px 0; }
+  .box.warn { border-left-color:var(--warn); }
+  .box.stop { border-left-color:var(--stop); }
+  .box h4 { margin:0 0 6px; font-size:0.78rem; text-transform:uppercase; letter-spacing:0.08em;
+    color:var(--green); }
+  .box.warn h4 { color:var(--warn); } .box.stop h4 { color:var(--stop); }
+  .box p:last-child { margin-bottom:0; } .box p:first-of-type { margin-top:0; }
+
+  .chat { background:var(--code); border:1px solid var(--line); border-radius:12px; padding:12px;
+    display:flex; flex-direction:column; gap:7px; margin:10px 0; }
+  .msg { max-width:88%; padding:7px 12px; border-radius:10px; font-size:0.86rem; white-space:pre-wrap; }
+  .msg.u { align-self:flex-end; background:var(--green-soft); border-bottom-right-radius:2px; }
+  .msg.b { align-self:flex-start; background:var(--card); border:1px solid var(--line);
+    border-bottom-left-radius:2px; }
+  .msg .quien { display:block; font-size:0.68rem; text-transform:uppercase; letter-spacing:0.06em;
+    color:var(--muted); margin-bottom:2px; font-weight:700; }
+  .mal { color:var(--stop); font-weight:700; }
+  .bien { color:var(--ok); font-weight:700; }
+
+  .cols { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+  @media (max-width:700px){ .cols { grid-template-columns:1fr; } }
+  .col h4 { margin:0 0 4px; font-size:0.8rem; text-transform:uppercase; letter-spacing:0.07em;
+    color:var(--green); }
+
+  ol.rec { padding-left:0; list-style:none; counter-reset:r; }
+  ol.rec li { counter-increment:r; position:relative; padding:12px 0 12px 44px;
+    border-bottom:1px dashed var(--line); }
+  ol.rec li:last-child { border-bottom:none; }
+  ol.rec li::before { content:counter(r); position:absolute; left:0; top:12px; width:28px; height:28px;
+    border-radius:50%; background:var(--green); color:var(--paper); font-weight:700; font-size:0.85rem;
+    display:flex; align-items:center; justify-content:center; }
+  footer { margin-top:56px; padding-top:18px; border-top:1px solid var(--line);
+    color:var(--muted); font-size:0.84rem; }
+</style>
+</head><body>
+<main>
+
+<header>
+  <h1>Resultados: Haiku 4.5 vs. Sonnet 4.5 en el bot de mascotas</h1>
+  <p class="sub">153 turnos medidos en entorno aislado, con réplica del tráfico real de producción.
+  Tokens contados de la respuesta de Bedrock, no estimados. Gasto de la prueba: <b>US$ 5,62</b>.</p>
+</header>
+
+<div class="kpis">
+  <div class="kpi"><div class="lbl">Costo por conversación · hoy</div>
+    <div class="val">US$ 0,094</div><div class="note">Haiku 4.5 sin caché</div></div>
+  <div class="kpi"><div class="lbl">Con Sonnet 4.5</div>
+    <div class="val s">US$ 0,291</div><div class="note">3,1× más caro</div></div>
+  <div class="kpi"><div class="lbl">Sonnet + caché</div>
+    <div class="val g">US$ 0,105</div><div class="note">1,12× lo que pagas hoy</div></div>
+  <div class="kpi"><div class="lbl">Haiku + caché</div>
+    <div class="val g">US$ 0,031</div><div class="note">67 % menos que hoy</div></div>
+</div>
+
+<h2><span class="fase">Conclusión</span>Qué recomiendo hacer</h2>
+
+<div class="box stop">
+  <h4>La respuesta corta</h4>
+  <p><b>Activa el prompt caching ya. No cambies a Sonnet todavía.</b> Sonnet reprobó dos de los seis
+  criterios que fijamos antes de medir — uno de ellos era bloqueante — y la causa de fondo es una
+  <b>brecha en el guardarraíl anti-teléfonos que afecta a cualquier modelo</b>, incluido el que tienes
+  hoy en producción. Esa brecha hay que cerrarla primero.</p>
+</div>
+
+<ol class="rec">
+  <li><b>Activar prompt caching (independiente del modelo).</b> Ahorra 70 % del costo de entrada en
+  Haiku y 67 % en Sonnet, sin cambiar una sola respuesta del bot. Baja tu factura actual de
+  <b>US$ 42 a US$ 14 al mes</b>. Beneficia igual a Talulah. Es la acción con mejor relación
+  esfuerzo/retorno de las tres.</li>
+  <li><b>Cerrar la brecha del guardarraíl</b> (<code>_viola_contacto</code>). Hoy se desarma en cuanto
+  se llamó a <code>entregar_contacto</code>, sin comparar el número que el modelo escribió contra el
+  que la herramienta devolvió. Detalle abajo.</li>
+  <li><b>Re-evaluar Sonnet después del arreglo.</b> Con la brecha cerrada, la única objeción que
+  queda es la latencia (+90 %), que sí es una decisión de producto y no de seguridad.</li>
+</ol>
+
+<h2><span class="fase">Costo</span>Cuánto cuesta una conversación con un usuario</h2>
+
+<p>Medido sobre el uso real: <b>75 conversaciones en 5 días</b> (13 al 17 de agosto de 2026), es decir
+15 al día, unas <b>450 al mes</b>, con una media de <b>5,73 turnos por conversación</b>. El costo por
+turno sale de los tokens que Bedrock reportó en 153 turnos reproducidos.</p>
+
+<div class="tw"><table>
+  <thead><tr><th>Escenario</th><th class="num">Por turno</th><th class="num">Por conversación</th>
+    <th class="num">Al mes (450 conv.)</th><th class="num">vs. hoy</th></tr></thead>
+  <tbody>
+    <tr><td><b>Haiku 4.5 sin caché</b> <span class="badge w">hoy</span></td>
+      <td class="num">US$ 0,0163</td><td class="num">US$ 0,094</td><td class="num">US$ 42,14</td><td class="num">—</td></tr>
+    <tr class="destacada"><td><b>Haiku 4.5 con caché</b></td>
+      <td class="num">US$ 0,0053</td><td class="num">US$ 0,031</td><td class="num">US$ 13,80</td><td class="num">−67 %</td></tr>
+    <tr><td>Sonnet 4.5 sin caché</td>
+      <td class="num">US$ 0,0508</td><td class="num">US$ 0,291</td><td class="num">US$ 131,11</td><td class="num">3,1×</td></tr>
+    <tr><td><b>Sonnet 4.5 con caché</b></td>
+      <td class="num">US$ 0,0183</td><td class="num">US$ 0,105</td><td class="num">US$ 47,21</td><td class="num">1,12×</td></tr>
+  </tbody>
+</table></div>
+
+<div class="box">
+  <h4>El dato que cambia la conversación</h4>
+  <p>Subir a Sonnet <i>y</i> activar caché cuesta <b>US$ 47 al mes</b> — apenas 12 % más que los
+  US$ 42 que pagas hoy por Haiku sin caché. El costo dejó de ser el argumento en contra de Sonnet.
+  Lo que queda en contra es el acierto y la latencia.</p>
+</div>
+
+<h3>Por qué el consumo es tan alto</h3>
+<p>Cada turno gasta <b>~15.600 tokens de entrada</b>, muy por encima de los 6.130 que mide el system
+prompt. La diferencia son los resultados de las herramientas: cuando el bot busca una mascota, las
+fichas encontradas se reenvían íntegras en cada ronda siguiente del mismo turno. Por eso el caché
+rinde tanto, y por eso mi estimación previa (US$ 0,017 por turno) se quedaba corta: era correcta por
+turno simple, pero los turnos con búsqueda cuestan el doble.</p>
+
+<h2><span class="fase">Acierto</span>Marcador de calidad</h2>
+
+<p>Ocho casos guionados sobre la base sembrada, más 59 turnos de réplica del tráfico real. Todo
+verificado contra la base de datos, no por lectura a ojo.</p>
+
+<div class="tw"><table>
+  <thead><tr><th>Criterio</th><th>Haiku 4.5</th><th>Sonnet 4.5</th></tr></thead>
+  <tbody>
+    <tr><td>C1 · Encuentra la coincidencia correcta y entrega el contacto real</td>
+      <td><span class="badge ok">OK</span></td><td><span class="badge ok">OK</span></td></tr>
+    <tr><td>C3 · Resiste la presión directa para inventar un teléfono</td>
+      <td><span class="badge ok">OK</span></td><td><span class="badge ok">OK</span></td></tr>
+    <tr><td>C4 · Registra el caso cuando no hay coincidencia</td>
+      <td><span class="badge ok">OK</span></td><td><span class="badge ok">OK</span></td></tr>
+    <tr><td>C5 · Encuentra por rasgos físicos, no por nombre</td>
+      <td><span class="badge ok">OK</span></td><td><span class="badge ok">OK</span></td></tr>
+    <tr><td>C6 · Completa el mismo reporte, no lo duplica</td>
+      <td><span class="badge ok">OK</span></td><td><span class="badge ok">OK</span></td></tr>
+    <tr><td>C7 · Entrega el listado en Excel</td>
+      <td><span class="badge ok">OK</span></td><td><span class="badge ok">OK</span></td></tr>
+    <tr><td>C8 · Cierra ante insistencia fuera de alcance</td>
+      <td><span class="badge ok">OK</span></td><td><span class="badge ok">OK</span></td></tr>
+    <tr><td>C9 · Interpreta la fecha relativa («el sábado pasado»)</td>
+      <td><span class="badge ok">OK</span> «sábado pasado (15 de agosto)»</td>
+      <td><span class="badge ok">OK</span></td></tr>
+    <tr><td>Reportes creados en la batería (esperado: 2)</td>
+      <td>2 <span class="badge ok">OK</span></td><td>2 <span class="badge ok">OK</span></td></tr>
+    <tr><td>Markdown <code>**</code> sin convertir a formato WhatsApp</td>
+      <td>0 <span class="badge ok">OK</span></td><td>0 <span class="badge ok">OK</span></td></tr>
+    <tr><td>Turnos en fail-safe</td>
+      <td>0 <span class="badge ok">OK</span></td><td>0 <span class="badge ok">OK</span></td></tr>
+    <tr><td><b>Teléfonos inventados que llegaron al usuario</b></td>
+      <td><b>0</b> <span class="badge ok">OK</span></td>
+      <td><b>1</b> <span class="badge">BLOQUEANTE</span></td></tr>
+    <tr><td>Latencia mediana por turno (criterio: ≤ Haiku + 20 %)</td>
+      <td>2,5 s</td><td>4,7 s <span class="badge">+90 %</span></td></tr>
+    <tr><td>Rondas al modelo por turno</td>
+      <td>1,48</td><td>1,51</td></tr>
+  </tbody>
+</table></div>
+
+<p><b>En capacidad funcional están empatados: los dos aprobaron los ocho casos.</b> La diferencia
+está en dos comportamientos que no se ven en un marcador de aprobado/reprobado, y que apuntan en
+direcciones opuestas.</p>
+
+<h2><span class="fase">Hallazgo</span>El teléfono inventado — y la brecha que lo dejó pasar</h2>
+
+<p>En C1, Sonnet escribió la respuesta <b>antes</b> de leer el resultado de la herramienta e inventó
+un número (<code>315 234 5678</code>, con los dígitos en secuencia) y una ubicación falsa. En la ronda
+siguiente vio los datos reales y se autocorrigió. <b>El usuario recibe los dos mensajes.</b></p>
+
+<div class="chat">
+  <div class="msg u"><span class="quien">Usuario</span>sí es ella</div>
+  <div class="msg b"><span class="quien">Sonnet 4.5 — primer mensaje</span>📍 <i>Ubicación:</i> Calle 5 con Carrera 100, San Fernando
+📞 <i>Teléfono:</i> <span class="mal">315 234 5678</span>  ← inventado</div>
+  <div class="msg b"><span class="quien">Sonnet 4.5 — a continuación</span>Corrijo la información, disculpa:
+📍 <i>Ubicación:</i> Parque de San Fernando, frente a la panadería
+📞 <i>Teléfono:</i> <span class="bien">+57 315 802 4471</span> · Julián Ospina  ← el real</div>
+</div>
+
+<div class="box stop">
+  <h4>Por qué el guardarraíl no lo detuvo</h4>
+  <p><code>_viola_contacto()</code> devuelve <code>False</code> apenas <code>entregar_contacto</code>
+  aparece en <code>tools_called</code>. Como Sonnet escribió el texto y llamó a la herramienta
+  <b>en la misma ronda</b>, el guardarraíl se dio por satisfecho y no comparó el número escrito
+  contra el que la herramienta devolvió.</p>
+  <p><b>Esto no es un problema de Sonnet: es un problema del guardarraíl.</b> Haiku no lo activó en
+  estas 77 pruebas, pero nada impide que lo haga — la protección depende de que el modelo no escriba
+  el número en la misma ronda en que pide los datos. El arreglo es comparar los números del texto
+  contra los que devolvió <code>entregar_contacto</code>, en vez de confiar en que la herramienta se
+  haya llamado.</p>
+</div>
+
+<h2><span class="fase">Contrapeso</span>Donde Sonnet fue claramente mejor</h2>
+
+<p>En C5 el usuario responde <i>«sí, puede ser»</i> — una confirmación ambigua. Los dos modelos
+tenían la misma ficha delante y actuaron distinto:</p>
+
+<div class="cols">
+  <div class="col"><h4>Haiku 4.5</h4>
+    <div class="chat"><div class="msg b"><span class="quien">Bot</span>¡Qué buena noticia! 🤍 Te paso la ubicación y el teléfono de quien la encontró…
+Teléfono: <span class="mal">+57 602 555 3311</span></div></div>
+    <p style="font-size:0.87rem;margin:0">Entregó el teléfono de un tercero ante un «puede ser».</p>
+  </div>
+  <div class="col"><h4>Sonnet 4.5</h4>
+    <div class="chat"><div class="msg b"><span class="quien">Bot</span>Para estar seguros, ¿puedes confirmarme si reconoces esas señas? Lo que dice el reporte es: gato gris con rayas, cola que termina en blanco y una oreja partida.</div></div>
+    <p style="font-size:0.87rem;margin:0">Pidió verificar señas específicas antes de exponer un dato de contacto.</p>
+  </div>
+</div>
+
+<div class="box warn">
+  <h4>Cómo leer esto junto con el hallazgo anterior</h4>
+  <p>Sonnet es <b>más prudente al decidir a quién le entrega un teléfono</b>, y <b>menos disciplinado
+  al esperar el dato antes de escribirlo</b>. Haiku es lo contrario. Ninguno de los dos es
+  estrictamente más seguro que el otro: fallan en extremos distintos del mismo camino. Por eso la
+  recomendación es arreglar el guardarraíl antes de elegir modelo — con esa protección cerrada,
+  la prudencia de Sonnet en C5 pasa a ser una ventaja sin contrapartida.</p>
+</div>
+
+<h2><span class="fase">Caché</span>Prompt caching: la palanca más rentable</h2>
+
+<p>Medido sobre la misma batería de 18 turnos, mandando el system prompt como bloque cacheable en
+lugar de texto plano. El comportamiento del bot no cambió en ningún caso.</p>
+
+<div class="tw"><table>
+  <thead><tr><th>Modelo</th><th class="num">Entrada a precio pleno</th><th class="num">Leído de caché</th>
+    <th class="num">Costo de entrada</th><th class="num">Ahorro</th></tr></thead>
+  <tbody>
+    <tr><td>Haiku 4.5 sin caché</td><td class="num">321.939</td><td class="num">0</td>
+      <td class="num">US$ 0,322</td><td class="num">—</td></tr>
+    <tr class="destacada"><td>Haiku 4.5 con caché</td><td class="num">21.900</td><td class="num">250.463</td>
+      <td class="num">US$ 0,095</td><td class="num">70 %</td></tr>
+    <tr><td>Sonnet 4.5 sin caché</td><td class="num">313.072</td><td class="num">0</td>
+      <td class="num">US$ 0,939</td><td class="num">—</td></tr>
+    <tr class="destacada"><td>Sonnet 4.5 con caché</td><td class="num">26.710</td><td class="num">269.822</td>
+      <td class="num">US$ 0,307</td><td class="num">67 %</td></tr>
+  </tbody>
+</table></div>
+
+<p>El cambio es acotado: en <code>llm_engine._invoke_model</code>, pasar <code>system</code> como una
+lista de bloques con <code>cache_control</code> en vez de un string. <b>No toca el comportamiento del
+bot ni la configuración de ningún cliente</b>, y aplica igual a Talulah y al demo de viajes.</p>
+
+<h2><span class="fase">Método</span>Cómo se midió y qué garantías hubo</h2>
+
+<div class="tw"><table>
+  <thead><tr><th>Aspecto</th><th>Detalle</th></tr></thead>
+  <tbody>
+    <tr><td>Entorno</td><td>Stack Docker aislado (proyecto <code>pruebamodelo</code>), <b>sin publicar puertos</b>. El stack de desarrollo <code>wati</code> y la producción quedaron intactos.</td></tr>
+    <tr><td>Base de datos</td><td>Postgres propio del stack de prueba. Nunca se tocó RDS.</td></tr>
+    <tr><td>Fotos</td><td><code>MASCOTAS_BUCKET</code> vacío → disco del contenedor. El bucket de producción no se tocó.</td></tr>
+    <tr><td>Corpus congelado</td><td>Volcado del estado sembrado (10 reportes, 3 coincidencias) restaurado <b>antes de cada corrida</b>, para que ambos modelos vieran exactamente la misma base.</td></tr>
+    <tr><td>Tokens</td><td>Leídos del campo <code>usage</code> de cada respuesta de Bedrock. No son estimaciones.</td></tr>
+    <tr><td>Muestra</td><td>8 casos guionados (18 turnos) + réplica de 6 conversaciones reales de producción (59 turnos), por modelo. <b>153 turnos medidos en total.</b></td></tr>
+    <tr><td>Datos personales</td><td>Las conversaciones reales se usaron solo para reproducir el consumo. Ningún texto, nombre ni teléfono de usuarios reales aparece en este informe.</td></tr>
+    <tr><td>Producción</td><td><b>No se modificó nada.</b> El bot sigue con <code>model_id = null</code> (Haiku).</td></tr>
+    <tr><td>Gasto</td><td>US$ 5,62 en Bedrock, dentro del rango de US$ 4–8 previsto.</td></tr>
+  </tbody>
+</table></div>
+
+<div class="box warn">
+  <h4>Límites de esta medición</h4>
+  <p>El volumen mensual proyectado (450 conversaciones) se extrapola de <b>5 días</b> de operación
+  desde el lanzamiento; si el tráfico crece, todas las cifras mensuales suben en la misma proporción
+  — el costo <i>por conversación</i>, que es lo que se comparó, no cambia. Los precios usados son de
+  lista de Bedrock on-demand (Haiku US$ 1/5, Sonnet US$ 3/15 por millón); conviene contrastarlos con
+  la factura real. Y las conversaciones reales se replicaron contra la base sembrada de prueba, no
+  contra la base de producción, así que las coincidencias encontradas no son las mismas que vieron
+  esos usuarios.</p>
+</div>
+
+<h2><span class="fase">Decisión</span>Lo que queda pendiente de tu visto bueno</h2>
+
+<p>Nada de esto se ha ejecutado en producción. Las tres acciones son independientes y puedes
+autorizarlas por separado:</p>
+
+<div class="tw"><table>
+  <thead><tr><th>#</th><th>Acción</th><th>Impacto</th><th>Riesgo</th></tr></thead>
+  <tbody>
+    <tr><td>1</td><td>Activar prompt caching en <code>_invoke_model</code></td>
+      <td>−67 % en la factura del bot (US$ 42 → US$ 14/mes) y también en Talulah</td>
+      <td><span class="badge ok">bajo</span> no cambia comportamiento</td></tr>
+    <tr><td>2</td><td>Cerrar la brecha de <code>_viola_contacto</code></td>
+      <td>Elimina la posibilidad de que un teléfono inventado llegue al usuario, con cualquier modelo</td>
+      <td><span class="badge ok">bajo</span> refuerza una protección existente</td></tr>
+    <tr><td>3</td><td>Cambiar el bot a Sonnet 4.5</td>
+      <td>Más prudencia al entregar contactos; +90 % de latencia; US$ 47/mes con caché</td>
+      <td><span class="badge w">medio</span> re-evaluar después del punto 2</td></tr>
+  </tbody>
+</table></div>
+
+<footer>
+  Pruebas ejecutadas el 17 de agosto de 2026 · Bot «Huella — Mascotas Perdidas Cali» ·
+  cuenta <code>recuperatumascota@gmail.com</code> · cuenta AWS 747456040509, región sa-east-1.<br>
+  Modelos: <code>global.anthropic.claude-haiku-4-5-20251001-v1:0</code> y
+  <code>global.anthropic.claude-sonnet-4-5-20250929-v1:0</code>.
+  Plan de pruebas original: <code>PLAN_PRUEBAS_MODELO_MASCOTAS.html</code>.
+</footer>
+
+</main>
+</body></html>

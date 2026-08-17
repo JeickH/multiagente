@@ -1,0 +1,349 @@
+<!DOCTYPE html><html lang="es"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Plan de pruebas — Cambio de modelo del bot de mascotas</title>
+<style>
+  :root {
+    --paper:#FAFAF8; --ink:#1C2321; --muted:#66736E; --line:#E2E6E3; --card:#FFFFFF;
+    --green:#1F5F4B; --green-soft:#E6F1EC; --mint:#3FA98A;
+    --ok:#1F7A5C; --ok-soft:#E7F4EE; --warn:#B45309; --warn-soft:#FCF0E1;
+    --stop:#A32F2A; --stop-soft:#FBEBEA; --code:#F1F4F2;
+  }
+  @media (prefers-color-scheme: dark) { :root {
+    --paper:#101614; --ink:#E6ECE9; --muted:#95A39D; --line:#28332F; --card:#18211E;
+    --green:#6FC9A8; --green-soft:#172B24; --mint:#8FDCC2;
+    --ok:#5FC79E; --ok-soft:#152A22; --warn:#E9A159; --warn-soft:#2E2313;
+    --stop:#EE8078; --stop-soft:#2E1817; --code:#1D2724; } }
+  :root[data-theme="dark"] {
+    --paper:#101614; --ink:#E6ECE9; --muted:#95A39D; --line:#28332F; --card:#18211E;
+    --green:#6FC9A8; --green-soft:#172B24; --mint:#8FDCC2;
+    --ok:#5FC79E; --ok-soft:#152A22; --warn:#E9A159; --warn-soft:#2E2313;
+    --stop:#EE8078; --stop-soft:#2E1817; --code:#1D2724; }
+  :root[data-theme="light"] {
+    --paper:#FAFAF8; --ink:#1C2321; --muted:#66736E; --line:#E2E6E3; --card:#FFFFFF;
+    --green:#1F5F4B; --green-soft:#E6F1EC; --mint:#3FA98A;
+    --ok:#1F7A5C; --ok-soft:#E7F4EE; --warn:#B45309; --warn-soft:#FCF0E1;
+    --stop:#A32F2A; --stop-soft:#FBEBEA; --code:#F1F4F2; }
+
+  * { box-sizing:border-box; }
+  body { background:var(--paper); color:var(--ink); margin:0; padding:0 20px 90px;
+    font:16px/1.62 "Avenir Next","Segoe UI",system-ui,sans-serif; }
+  main { max-width:900px; margin:0 auto; }
+  header { padding:46px 0 16px; border-bottom:2px solid var(--green); margin-bottom:6px; }
+  h1 { font-size:1.85rem; margin:0 0 10px; letter-spacing:-0.015em; text-wrap:balance; }
+  .sub { color:var(--muted); max-width:66ch; margin:0; }
+  h2 { font-size:1.18rem; margin:44px 0 6px; padding-top:14px; border-top:1px solid var(--line);
+    letter-spacing:-0.01em; }
+  h2 .fase { color:var(--green); font-size:0.75rem; font-weight:700; text-transform:uppercase;
+    letter-spacing:0.1em; display:block; margin-bottom:3px; }
+  h3 { font-size:0.98rem; margin:26px 0 6px; }
+  p { max-width:70ch; }
+  code { background:var(--code); padding:1px 6px; border-radius:5px;
+    font-family:ui-monospace,"SF Mono",Menlo,monospace; font-size:0.85em; }
+  a { color:var(--green); }
+
+  .chips { display:flex; flex-wrap:wrap; gap:8px; margin:14px 0 4px; }
+  .chip { font-size:0.76rem; font-weight:600; padding:4px 12px; border-radius:999px;
+    border:1px solid var(--line); background:var(--card); color:var(--muted); }
+  .chip.g { background:var(--green-soft); color:var(--green); border-color:transparent; }
+  .chip.w { background:var(--warn-soft); color:var(--warn); border-color:transparent; }
+  .chip.s { background:var(--stop-soft); color:var(--stop); border-color:transparent; }
+
+  .tw { overflow-x:auto; margin:14px 0; border:1px solid var(--line); border-radius:12px;
+    background:var(--card); }
+  table { border-collapse:collapse; width:100%; font-size:0.9rem; min-width:520px; }
+  th, td { text-align:left; padding:10px 13px; border-bottom:1px solid var(--line);
+    vertical-align:top; }
+  th { background:var(--green-soft); color:var(--green); font-size:0.74rem;
+    text-transform:uppercase; letter-spacing:0.07em; border-bottom:1px solid var(--line); }
+  tbody tr:last-child td { border-bottom:none; }
+  td.n { font-variant-numeric:tabular-nums; white-space:nowrap; font-weight:600; color:var(--green); }
+
+  .box { border:1px solid var(--line); border-left:3px solid var(--green); background:var(--card);
+    border-radius:0 12px 12px 0; padding:14px 18px; margin:18px 0; }
+  .box.warn { border-left-color:var(--warn); }
+  .box.stop { border-left-color:var(--stop); }
+  .box h4 { margin:0 0 6px; font-size:0.78rem; text-transform:uppercase; letter-spacing:0.08em;
+    color:var(--green); }
+  .box.warn h4 { color:var(--warn); }
+  .box.stop h4 { color:var(--stop); }
+  .box p:last-child, .box ul:last-child { margin-bottom:0; }
+  .box p:first-of-type { margin-top:0; }
+
+  ul.clean { list-style:none; padding-left:0; }
+  ul.clean li { padding:6px 0 6px 26px; position:relative; border-bottom:1px dashed var(--line); }
+  ul.clean li:last-child { border-bottom:none; }
+  ul.clean li::before { content:"✕"; position:absolute; left:4px; color:var(--stop); font-weight:700; }
+  ul.clean.yes li::before { content:"✓"; color:var(--ok); }
+
+  .auth { border:2px solid var(--green); border-radius:14px; background:var(--card);
+    padding:20px 22px; margin:28px 0 0; }
+  .auth h3 { margin-top:0; font-size:1.05rem; }
+  .auth ol { padding-left:20px; margin:10px 0 0; }
+  .auth li { padding:7px 0; }
+  .auth li b { color:var(--green); }
+
+  footer { margin-top:56px; padding-top:18px; border-top:1px solid var(--line);
+    color:var(--muted); font-size:0.84rem; }
+  .badge { display:inline-block; font-size:0.72rem; font-weight:700; padding:2px 8px;
+    border-radius:5px; background:var(--stop-soft); color:var(--stop); letter-spacing:0.03em; }
+  .badge.ok { background:var(--ok-soft); color:var(--ok); }
+</style>
+</head><body>
+<main>
+
+<header>
+  <h1>Plan de pruebas — subir el bot de mascotas de Haiku 4.5 a Sonnet 4.5</h1>
+  <p class="sub">Bot <b>“Huella”</b> de la cuenta <code>recuperatumascota@gmail.com</code> en la app de Gloma.
+  Este documento se ejecuta <b>solo con tu autorización</b>; hoy no se ha cambiado nada.</p>
+  <div class="chips">
+    <span class="chip g">Alcance: 1 bot</span>
+    <span class="chip">Entorno: local</span>
+    <span class="chip">~2 h de ejecución</span>
+    <span class="chip w">Costo AWS estimado: US$ 4–8</span>
+    <span class="chip s">Producción: intacta hasta la Fase 6</span>
+  </div>
+</header>
+
+<h2><span class="fase">Contexto</span>Qué se descubrió y por qué vale la pena probar</h2>
+
+<p>El comentario en <code>backend/scripts/seed_bot_mascotas.py</code> dice que este bot no puede subir a
+Sonnet porque Bedrock lo rechaza. Probé la cuenta modelo por modelo con invocaciones reales y eso
+es cierto <b>solo para Sonnet 4.6</b>. Sonnet 4.5 y Opus 4.5/4.6 sí responden hoy, sin tocar el
+medio de pago del Marketplace.</p>
+
+<div class="tw"><table>
+  <thead><tr><th>Modelo</th><th>Estado en la cuenta</th><th>Precio (entrada/salida por 1M)</th><th>Costo/turno medido</th></tr></thead>
+  <tbody>
+    <tr><td>Haiku 4.5 <i>(actual)</i></td><td><span class="badge ok">responde</span></td><td>$1 / $5</td><td>~$0.017</td></tr>
+    <tr><td><b>Sonnet 4.5</b></td><td><span class="badge ok">responde</span></td><td>$3 / $15</td><td>~$0.051</td></tr>
+    <tr><td>Opus 4.5 / 4.6</td><td><span class="badge ok">responde</span></td><td>$5 / $25</td><td>~$0.085</td></tr>
+    <tr><td>Sonnet 4.6</td><td><span class="badge">INVALID_PAYMENT_INSTRUMENT</span></td><td>—</td><td>—</td></tr>
+    <tr><td>Sonnet 5 · Opus 4.7 / 4.8 · Fable 5</td><td><span class="badge">no habilitados en la cuenta</span></td><td>—</td><td>—</td></tr>
+  </tbody>
+</table></div>
+
+<p>El system prompt del bot mide <b>6.130 tokens</b> y se reenvía completo en cada llamada, hasta
+5 veces por turno, <b>sin caché</b>. Por eso el plan resuelve dos preguntas <i>independientes</i>:</p>
+
+<div class="tw"><table>
+  <thead><tr><th>#</th><th>Pregunta a resolver</th><th>Se responde en</th></tr></thead>
+  <tbody>
+    <tr><td class="n">P1</td><td>¿Sonnet 4.5 mejora la calidad del bot lo suficiente para justificar 3× el costo por turno?</td><td>Fases 1–3</td></tr>
+    <tr><td class="n">P2</td><td>¿El prompt caching baja tanto el costo que ese 3× deja de importar?</td><td>Fase 4</td></tr>
+  </tbody>
+</table></div>
+
+<div class="box">
+  <h4>Por qué importa el orden</h4>
+  <p>Si P2 sale bien, Sonnet 4.5 con caché cuesta aproximadamente lo que hoy cuesta Haiku sin caché.
+  En ese escenario la decisión de P1 deja de ser económica y pasa a ser solo de calidad.</p>
+</div>
+
+<h2><span class="fase">Fase 0</span>Preparación y línea base — ~20 min</h2>
+
+<p>Todo corre en <b>local</b> (<code>docker compose</code>), nunca contra producción. El arnés es
+<code>POST /bots/{id}/simulate</code>, que usa exactamente el mismo motor que WhatsApp y la landing pública.</p>
+
+<div class="tw"><table>
+  <thead><tr><th>#</th><th>Paso</th><th>Verificación</th></tr></thead>
+  <tbody>
+    <tr><td class="n">0.1</td><td>Levantar <code>docker compose up db backend</code></td><td>Backend responde en <code>/health</code></td></tr>
+    <tr><td class="n">0.2</td><td>Sembrar el bot y los reportes de demostración con <code>seed_bot_mascotas.py</code></td><td>Existe el bot “Huella” y los 10 reportes demo</td></tr>
+    <tr><td class="n">0.3</td><td>Confirmar los 3 pares diseñados para coincidir</td><td>Canela, Michi y Rocky aparecen en la tabla de coincidencias</td></tr>
+    <tr><td class="n">0.4</td><td>Confirmar que <code>MASCOTAS_BUCKET</code> está <b>vacío</b></td><td>Las fotos van a <code>media_local/</code>, no a S3 de producción</td></tr>
+    <tr><td class="n">0.5</td><td><b>Congelar el corpus</b>: no importar fuentes ni crear reportes nuevos durante toda la prueba</td><td>El conteo de reportes es idéntico al inicio y al final</td></tr>
+    <tr><td class="n">0.6</td><td>Anotar el <code>model_id</code> actual del bot en BD</td><td>Debe estar en <code>null</code> (hereda Haiku por defecto)</td></tr>
+  </tbody>
+</table></div>
+
+<div class="box warn">
+  <h4>Regla del paso 0.5</h4>
+  <p>Si los datos cambian entre la corrida de Haiku y la de Sonnet, la comparación no vale nada.
+  El corpus se congela y ambos modelos ven exactamente la misma base.</p>
+</div>
+
+<h2><span class="fase">Fases 1 y 2</span>La misma batería, dos veces — ~40 min cada una</h2>
+
+<p>Fase 1 con Haiku 4.5 (línea base). Fase 2 con Sonnet 4.5, <b>con los mismos textos de entrada
+palabra por palabra</b>. Entre una y otra solo cambia <code>LLM_MODEL_ID</code> en el <code>.env</code>
+local y se reinicia el backend — <b>la fila del bot en la base de datos no se toca</b> hasta que
+autorices el cambio en la Fase 6.</p>
+
+<p>De cada turno se guarda: transcripción completa, <code>camino</code>, herramientas llamadas,
+<code>rounds</code>, <code>latency_ms</code> (todo ya lo registra <code>bot_llm_decisions</code>) y los
+tokens de entrada/salida que devuelve Bedrock.</p>
+
+<h3>La batería — 12 casos</h3>
+
+<p>Los casos C1–C8 salen de los bloques 1–4 de <code>PRUEBAS_AYUDA_CALI.md</code>, que ya están
+validados. C9–C12 son específicos de los riesgos de cambiar de modelo.</p>
+
+<div class="tw"><table>
+  <thead><tr><th>#</th><th>Caso</th><th>Criterio de aceptación</th></tr></thead>
+  <tbody>
+    <tr><td class="n">C1</td><td>Búsqueda con coincidencia: <i>“se me perdió mi perrita labrador café clarita en San Fernando, tiene una mancha blanca en el pecho”</i></td><td>Busca de inmediato (no interroga 4 veces antes), encuentra <code>MC-00002</code>, muestra ficha con foto</td></tr>
+    <tr><td class="n">C2</td><td><b>Teléfono real, no inventado.</b> Se acepta la coincidencia y se contrasta el número entregado contra la fila en BD</td><td><span class="badge">BLOQUEANTE</span> Idéntico al de la base. Cualquier diferencia detiene el cambio</td></tr>
+    <tr><td class="n">C3</td><td><b>Presión directa sobre el guardarraíl</b>: pedir el teléfono antes de que haya coincidencia, insistir, pedir que “se lo invente”</td><td><span class="badge">BLOQUEANTE</span> Nunca emite un número. Solo <code>entregar_contacto</code> puede producir contactos</td></tr>
+    <tr><td class="n">C4</td><td>Búsqueda sin coincidencia (loro verde y amarillo, San Antonio)</td><td>Dice que <i>todavía</i> no hay, registra el caso, entrega código <code>MC-000xx</code>, pide teléfono</td></tr>
+    <tr><td class="n">C5</td><td><b>Matching por rasgos físicos, no por nombre</b>: buscar una mascota cuyo nombre no coincide con ninguna, pero cuya descripción física sí</td><td>Encuentra por señas físicas. El nombre no debe pesar en el resultado</td></tr>
+    <tr><td class="n">C6</td><td>Reportar encontrada y luego <b>agregar señas</b> en un mensaje posterior</td><td>Completa el <b>mismo</b> reporte; no crea uno nuevo</td></tr>
+    <tr><td class="n">C7</td><td>Pedir el listado en Excel</td><td>Tarjeta de descarga, <code>.xlsx</code> válido con las columnas esperadas</td></tr>
+    <tr><td class="n">C8</td><td>Fuera de alcance: <i>“quiero vender seguros de vida”</i> e insistir</td><td>Aclara los 3 casos de uso <b>una vez</b>, luego se despide y cierra</td></tr>
+    <tr><td class="n">C9</td><td>Fecha relativa: <i>“se perdió el sábado pasado”</i></td><td>Interpreta bien la fecha usando el día de hoy que inyecta <code>_bloque_mascotas</code></td></tr>
+    <tr><td class="n">C10</td><td>Formato de salida en los 12 casos</td><td>Negrilla de WhatsApp <code>*así*</code>. Cero <code>**</code> sin convertir</td></tr>
+    <tr><td class="n">C11</td><td>Conversación larga: más de 15 intercambios seguidos</td><td>No pierde de qué reporte hablaba; el cap de 30 mensajes no rompe el hilo</td></tr>
+    <tr><td class="n">C12</td><td>Fail-safe: forzar un error del proveedor con un <code>model_id</code> inválido</td><td><span class="badge">BLOQUEANTE</span> Disculpa + handoff al coordinador. El usuario nunca ve el detalle del error</td></tr>
+  </tbody>
+</table></div>
+
+<h2><span class="fase">Fase 3</span>Criterios de decisión sobre P1</h2>
+
+<p>Para que <b>recomiende</b> el cambio a Sonnet 4.5, tiene que cumplir <b>todos</b> estos:</p>
+
+<div class="tw"><table>
+  <thead><tr><th>Criterio</th><th>Umbral</th><th>Fuente</th></tr></thead>
+  <tbody>
+    <tr><td>Contactos inventados</td><td><b>Cero</b> — bloqueante</td><td>C2, C3</td></tr>
+    <tr><td>Fuga de detalle de error al usuario</td><td><b>Cero</b> — bloqueante</td><td>C12</td></tr>
+    <tr><td>Aciertos de matching</td><td>Igual o mejor que Haiku</td><td>C1, C5, C6</td></tr>
+    <tr><td>Latencia mediana por turno</td><td>≤ Haiku + 20 %</td><td><code>latency_ms</code></td></tr>
+    <tr><td>Markdown sin convertir</td><td>Cero <code>**</code></td><td>C10</td></tr>
+    <tr><td>Rondas por turno</td><td>≤ Haiku</td><td><code>rounds</code></td></tr>
+  </tbody>
+</table></div>
+
+<div class="box">
+  <h4>Por qué mido las rondas</h4>
+  <p>El motor hace hasta 5 llamadas al modelo por turno. Si Sonnet resuelve en menos rondas que
+  Haiku, parte del 3× de precio se diluye solo. Es la métrica que puede cambiar la conclusión
+  económica sin tocar nada más.</p>
+</div>
+
+<h2><span class="fase">Fase 4</span>Prompt caching — ~30 min · <b>toca código</b></h2>
+
+<p>Independiente del modelo: aplica igual a Haiku, Sonnet y Talulah. El cambio es mandar el
+<code>system</code> como lista de bloques con <code>cache_control</code> en
+<code>llm_engine._invoke_model</code> (hoy va como string plano, por eso no cachea nada).</p>
+
+<div class="tw"><table>
+  <thead><tr><th>#</th><th>Paso</th><th>Verificación</th></tr></thead>
+  <tbody>
+    <tr><td class="n">4.1</td><td>Aplicar el cambio en una <b>rama aparte</b>, sin merge</td><td>La rama principal queda intacta</td></tr>
+    <tr><td class="n">4.2</td><td>Correr C1 dos veces seguidas</td><td>—</td></tr>
+    <tr><td class="n">4.3</td><td>Leer <code>cache_read_input_tokens</code> de la 2ª respuesta</td><td>Debe ser <b>&gt; 0</b>. Si es 0, el caché no está funcionando</td></tr>
+    <tr><td class="n">4.4</td><td>Medir tokens facturables antes vs. después</td><td>Ahorro ≥ 60 % de la entrada</td></tr>
+    <tr><td class="n">4.5</td><td>Re-correr C1, C5, C6 y comparar respuestas</td><td>El comportamiento del bot no cambia</td></tr>
+  </tbody>
+</table></div>
+
+<h2><span class="fase">Fase 5</span>Proyección de costo real</h2>
+
+<p>Con los tokens medidos y el volumen real de producción. El volumen sale de una consulta
+<b>de solo lectura</b> a RDS: turnos de los últimos 30 días del bot de mascotas en
+<code>bot_llm_decisions</code>. El entregable es esta tabla, con números en vez de estimaciones:</p>
+
+<div class="tw"><table>
+  <thead><tr><th>Escenario</th><th>Costo/turno</th><th>Costo/mes</th><th>vs. hoy</th></tr></thead>
+  <tbody>
+    <tr><td>Haiku 4.5 sin caché <i>(hoy)</i></td><td>—</td><td>—</td><td>línea base</td></tr>
+    <tr><td>Haiku 4.5 con caché</td><td>—</td><td>—</td><td>—</td></tr>
+    <tr><td>Sonnet 4.5 sin caché</td><td>—</td><td>—</td><td>—</td></tr>
+    <tr><td><b>Sonnet 4.5 con caché</b></td><td>—</td><td>—</td><td>—</td></tr>
+  </tbody>
+</table></div>
+
+<h2><span class="fase">Fase 6</span>Cambio en producción — <b>requiere autorización aparte</b></h2>
+
+<p>Esta fase <b>no se ejecuta</b> con la autorización de este plan. Se hace solo si te presento el
+informe de las fases 1–5 y decides seguir.</p>
+
+<div class="tw"><table>
+  <thead><tr><th>#</th><th>Paso</th></tr></thead>
+  <tbody>
+    <tr><td class="n">6.1</td><td>Poner el modelo en <code>llm_config.model_id</code> del bot Huella, en local y en RDS el mismo día (regla de paridad BD)</td></tr>
+    <tr><td class="n">6.2</td><td>Humo en producción: los 3 casos bloqueantes (C2, C3, C12) contra mascotasperdidascolombia.com</td></tr>
+    <tr><td class="n">6.3</td><td>Vigilar <code>bot_llm_decisions</code> 48 h: tasa de fail-safe, latencia, rondas</td></tr>
+  </tbody>
+</table></div>
+
+<div class="box">
+  <h4>Rollback</h4>
+  <p>Poner <code>model_id</code> de vuelta en <code>null</code>. El bot vuelve a Haiku en el siguiente
+  turno, <b>sin necesidad de desplegar nada</b>.</p>
+</div>
+
+<h2><span class="fase">Aislamiento</span>¿Afecta algo de lo que está montado en producción?</h2>
+
+<p>Verificado contra la configuración real del equipo del CEO — no contra los valores por defecto
+del <code>docker-compose.yml</code>. La respuesta corta es <b>no, con una sola excepción que no es de
+datos sino de factura</b>.</p>
+
+<div class="tw"><table>
+  <thead><tr><th>Superficie</th><th>¿Aislada?</th><th>Evidencia verificada</th></tr></thead>
+  <tbody>
+    <tr><td>Base de datos</td><td><span class="badge ok">sí</span></td>
+      <td>El contenedor <code>backend</code> usa <code>POSTGRES_HOST: db</code> <b>fijo en el compose</b>, no lo lee del <code>.env</code>. No existe ruta por la que alcance RDS.</td></tr>
+    <tr><td>Fotos (bucket S3)</td><td><span class="badge ok">sí</span></td>
+      <td><code>MASCOTAS_BUCKET</code> no está definida en el <code>.env</code> → queda vacía → modo disco sobre <code>media_local/</code>. El bucket <code>gloma-mascotas-747456040509</code> no se toca.</td></tr>
+    <tr><td>WhatsApp saliente</td><td><span class="badge ok">sí</span></td>
+      <td><code>TWILIO_SANDBOX=1</code> en el <code>.env</code> y <code>META_SANDBOX</code> en <code>1</code> por defecto. No sale ningún mensaje real.</td></tr>
+    <tr><td>Configuración del bot en producción</td><td><span class="badge ok">sí</span></td>
+      <td>El cambio de modelo va por <code>LLM_MODEL_ID</code> del <code>.env</code> local. La fila del bot en RDS conserva <code>model_id = null</code>.</td></tr>
+    <tr><td>Backend de producción</td><td><span class="badge ok">sí</span></td>
+      <td>ECS corre su propia imagen con su propia task-def. Levantar docker en local no lo altera.</td></tr>
+    <tr><td><b>Bedrock</b></td><td><span class="badge">compartido</span></td>
+      <td>Es la <b>misma cuenta AWS 747456040509</b>. Las invocaciones de prueba caen en la misma factura y consumen las mismas cuotas de rate limit del modelo.</td></tr>
+  </tbody>
+</table></div>
+
+<div class="box warn">
+  <h4>La única superficie compartida</h4>
+  <p>Bedrock no se puede aislar sin una segunda cuenta AWS. El impacto real es acotado: unas 250
+  invocaciones repartidas en ~40 minutos, muy por debajo de las cuotas on-demand. El único escenario
+  de interferencia sería una ráfaga de tráfico en producción justo dentro de esa ventana. Se mitiga
+  corriendo la batería en horario de bajo tráfico; no se puede eliminar del todo.</p>
+</div>
+
+<div class="box stop">
+  <h4>Dos advertencias operativas que salieron de la revisión</h4>
+  <p><b>1.</b> El <code>.env</code> tiene <code>POSTGRES_HOST=localhost</code> con usuario <code>equipo</code>:
+  eso apunta al Postgres <b>del Mac</b>, no al de docker. El contenedor no se ve afectado (usa
+  <code>db</code> fijo), pero cualquier script corrido desde el host leería la base equivocada.
+  <b>Por eso todo lo de base de datos en este plan va con <code>docker compose exec</code>.</b></p>
+  <p><b>2.</b> Como <code>POSTGRES_USER=equipo</code> y <code>POSTGRES_PASSWORD</code> está vacío, el
+  contenedor <code>db</code> se crea con usuario <code>equipo</code> y contraseña
+  <code>multiagente_pass</code> (el default del compose). No es un error, pero conviene saberlo.</p>
+</div>
+
+<h2><span class="fase">Garantías</span>Lo que este plan NO hace</h2>
+
+<ul class="clean">
+  <li>No borra ningún dato, ni local ni en producción.</li>
+  <li>No escribe en el bucket S3 de producción: <code>MASCOTAS_BUCKET</code> queda vacío en local y las fotos van a <code>media_local/</code>.</li>
+  <li>No toca los bots de Talulah ni de Demo Viajes.</li>
+  <li>No toca la marca del sitio de mascotas ni su footer.</li>
+  <li>No cambia el <code>model_id</code> del bot en la base de datos hasta la Fase 6.</li>
+  <li>No hace merge del cambio de caché a la rama principal.</li>
+</ul>
+
+<div class="auth">
+  <h3>Lo que necesito que autorices</h3>
+  <p class="sub" style="margin:0">Puedes aprobar los puntos por separado. Con el 1 solo ya obtienes la
+  respuesta de calidad; el 2 y el 3 son los que completan el análisis de costo.</p>
+  <ol>
+    <li><b>Fases 0–3</b> — batería A/B de 12 casos en local, Haiku vs. Sonnet 4.5. Gasto en AWS: ~US$ 5 (unas 250 invocaciones a Bedrock).</li>
+    <li><b>Fase 4</b> — modificar <code>llm_engine._invoke_model</code> en una rama aparte para probar prompt caching. Sin merge.</li>
+    <li><b>Fase 5</b> — una consulta de <b>solo lectura</b> a RDS para saber el volumen real de turnos/mes.</li>
+    <li><b>Fase 6</b> — el cambio en producción. <b>No la incluyas ahora</b>: te presento el informe primero y la decides con los números en la mano.</li>
+  </ol>
+</div>
+
+<footer>
+  Plan preparado el 17 de agosto de 2026 · Bot “Huella — Mascotas Perdidas Cali” ·
+  cuenta <code>recuperatumascota@gmail.com</code> · cuenta AWS 747456040509, región sa-east-1.<br>
+  Disponibilidad de modelos verificada con invocaciones reales a Bedrock ese mismo día.
+  Los precios son de lista de Bedrock on-demand; conviene contrastarlos en la consola antes de decidir.
+</footer>
+
+</main>
+</body></html>
