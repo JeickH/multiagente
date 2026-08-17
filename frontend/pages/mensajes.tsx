@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import Layout from '../components/Layout';
 import TutorialOverlay from '../components/TutorialOverlay';
+import { getToken } from '../lib/session';
 
 const MENSAJES_TUTORIAL = [
   {
@@ -74,7 +75,7 @@ const FILTERS = [
 ];
 
 function authHeaders(): HeadersInit {
-  const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+  const token = getToken();
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 

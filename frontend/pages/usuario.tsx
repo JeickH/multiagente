@@ -1,6 +1,7 @@
 import Layout from '../components/Layout';
 import TutorialOverlay from '../components/TutorialOverlay';
 import { useEffect, useState } from 'react';
+import { getToken } from '../lib/session';
 
 const MI_PLAN_TUTORIAL = [
   {
@@ -80,7 +81,7 @@ export default function Usuario() {
     setFormError(null);
     setSubmitting(true);
 
-    const token = localStorage.getItem('token');
+    const token = getToken();
     if (!token) {
       setFormError('Sesión expirada. Inicia sesión de nuevo.');
       setSubmitting(false);
@@ -122,7 +123,7 @@ export default function Usuario() {
     );
     if (!ok) return;
 
-    const token = localStorage.getItem('token');
+    const token = getToken();
     if (!token) return;
 
     setDisconnecting(true);
@@ -142,7 +143,7 @@ export default function Usuario() {
   };
 
   useEffect(() => {
-    const token = localStorage.getItem('token');
+    const token = getToken();
     if (!token) {
       setLoading(false);
       return;

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
 import Layout from '../components/Layout';
 import TutorialOverlay from '../components/TutorialOverlay';
+import { cerrarSesion, getToken } from '../lib/session';
 
 const BOTS_TUTORIAL = [
   {
@@ -93,9 +94,6 @@ export default function BotsPage() {
   const [search, setSearch] = useState('');
   const [downloading, setDownloading] = useState(false);
 
-  const getToken = () =>
-    typeof window !== 'undefined' ? localStorage.getItem('token') : null;
-
   useEffect(() => {
     const token = getToken();
     if (!token) {
@@ -107,8 +105,7 @@ export default function BotsPage() {
     })
       .then(async (res) => {
         if (res.status === 401) {
-          localStorage.removeItem('token');
-          router.push('/login');
+          cerrarSesion();
           return;
         }
         if (!res.ok) throw new Error(`HTTP ${res.status}`);

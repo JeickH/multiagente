@@ -2849,3 +2849,61 @@ siguen sirviendo 200 `image/jpeg`, y `mascotasperdidascolombia.com` responde 200
 
 Queda en `pendientes/e84aa1e3.../` la foto de esa prueba, huérfana a propósito: no se
 borró nada sin autorización.
+
+---
+
+## #361 — La plataforma se abría sin sesión activa (2026-08-17)
+
+El CEO reportó que al entrar a `app.glomabeauty.com` sin sesión activa aparecía el
+dashboard en vez del login.
+
+### Qué pasaba
+
+Dos fallas que se sumaban, las dos en el frontend:
+
+1. **El guard confundía "hay token guardado" con "hay sesión".** `_app.tsx` solo
+   preguntaba si `localStorage.token` existía. El JWT vence a los 30 minutos
+   (`ACCESS_TOKEN_EXPIRE_MINUTES`), pero se queda guardado para siempre: pasado ese rato
+   el token ya no servía para nada y aun así el guard lo daba por bueno y pintaba la
+   plataforma. Uno se enteraba solo cuando alguna pantalla llamaba al backend y recibía
+   un 401 — y en `/` no hay ninguna llamada, así que ahí no se enteraba nunca.
+2. **"Salir" no cerraba sesión.** El botón del sidebar era un `<Link href="/login">`:
+   llevaba al login sin borrar el token. Volver a entrar al dominio reabría la
+   plataforma con la sesión que uno creyó haber cerrado.
+
+El HTML que sirve Amplify siempre estuvo bien (no trae ni el dashboard ni el login: el
+guard corre en el cliente), así que esto era 100% estado viejo en el navegador.
+
+### El arreglo
+
+`frontend/lib/session.ts`, única fuente de verdad sobre la sesión del navegador.
+`getToken()` lee el `exp` del payload del JWT y **borra** el token vencido o ilegible,
+de modo que "hay token" vuelve a significar "hay sesión". Es UX, no seguridad: quien
+valida la firma sigue siendo el backend; acá solo evitamos mostrar una pantalla que el
+token ya no puede alimentar.
+
+- `_app.tsx` usa `haySesion()` y además revisa al volver a la pestaña (`focus` /
+  `visibilitychange`): el token se puede vencer con la pestaña abierta y quieta, y
+  volver a ella es justo cuando uno espera encontrarse el login. Al fallar el guard
+  apaga la pantalla antes de redirigir, para que no quede pintado lo anterior.
+- `Sidebar.tsx`: "Salir" pasó de link a botón que llama `cerrarSesion()`.
+- Se eliminaron los 12 accesos crudos a `localStorage.token` regados en páginas
+  (`bots`, `bots/[id]`, `usuario`, `mensajes`, `mascotas-panel`, `campanas/contactos`,
+  `login`, `lib/api.ts`): todos pasan por `lib/session.ts`.
+
+Las rutas públicas no se tocaron: el chat de mascotas y las landings siguen sirviéndose
+en el HTML inicial, que es lo que importa para buscadores.
+
+### Pruebas
+
+`tsc --noEmit` y `next build` limpios. Sobre el build de producción local se corrieron
+10 pruebas end-to-end manejando Chrome por CDP (`scratchpad/guard-test.mjs`), **10/10**:
+sin token y con token vencido `/` y `/mascotas-panel` mandan al login y el token vencido
+queda borrado; con token vigente el dashboard abre normal; "Salir" borra el token y
+volver a `/` sigue mandando al login; `/mascotas` y `/gloma` siguen abiertas sin sesión.
+
+### Despliegue
+
+Solo frontend, sin tocar backend ni base de datos — no había nada que desplegar en ECS
+ni migración que aplicar, así que este cambio no interfiere con los otros frentes en
+curso.

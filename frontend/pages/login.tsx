@@ -1,6 +1,7 @@
 import Image from 'next/image';
 import { useState } from 'react';
 import { useRouter } from 'next/router';
+import { guardarToken } from '../lib/session';
 
 export default function Login() {
   const router = useRouter();
@@ -27,7 +28,7 @@ export default function Login() {
       }
 
       const data = await res.json();
-      localStorage.setItem('token', data.access_token);
+      guardarToken(data.access_token);
       router.push('/');
     } catch (err: any) {
       setError(err.message);

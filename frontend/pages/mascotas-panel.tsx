@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Layout from '../components/Layout';
 import { authedFetch } from '../lib/api';
+import { getToken } from '../lib/session';
 
 /**
  * Mascotas — panel privado de la cuenta "Recupera Tu Mascota" (sprint "Ayuda a Cali").
@@ -810,7 +811,7 @@ export default function MascotasPanel() {
   const subirFoto = async (r: Reporte, file: File) => {
     setSubiendoEn(r.codigo);
     try {
-      const token = localStorage.getItem('token');
+      const token = getToken();
       const form = new FormData();
       form.append('file', file);
       const res = await fetch(`/api/mascotas/panel/${r.codigo}/fotos`, {

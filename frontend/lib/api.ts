@@ -2,7 +2,8 @@
  * Helper de fetch autenticado.
  *
  * Patrón ya usado en `pages/bots.tsx`/`mensajes.tsx`: JWT en `localStorage`
- * bajo la clave `token`, las requests al backend se hacen al path `/api/...`
+ * bajo la clave `token` (se lee vía `lib/session.ts`, que descarta los
+ * vencidos), las requests al backend se hacen al path `/api/...`
  * (rewrite definido en `next.config.js` → `${BACKEND_URL}/...`).
  *
  * Si el backend responde 401, limpiamos el token y redirigimos a /login.
@@ -10,6 +11,8 @@
  * backend (o un fallback genérico). El detalle completo NO se loggea desde
  * el cliente — el backend ya lo logea en su lado (regla 6 de Seguridad).
  */
+
+import { cerrarSesion, getToken } from './session';
 
 export class ApiError extends Error {
   status: number;
@@ -19,28 +22,13 @@ export class ApiError extends Error {
   }
 }
 
-function getToken(): string | null {
-  if (typeof window === 'undefined') return null;
-  return localStorage.getItem('token');
-}
-
-function redirectToLogin() {
-  if (typeof window === 'undefined') return;
-  try {
-    localStorage.removeItem('token');
-  } catch {
-    /* no-op */
-  }
-  window.location.assign('/login');
-}
-
 export async function authedFetch<T = unknown>(
   path: string,
   opts: RequestInit = {},
 ): Promise<T> {
   const token = getToken();
   if (!token) {
-    redirectToLogin();
+    cerrarSesion();
     throw new ApiError('No autenticado', 401);
   }
 
@@ -57,7 +45,7 @@ export async function authedFetch<T = unknown>(
   const res = await fetch(url, { ...opts, headers });
 
   if (res.status === 401) {
-    redirectToLogin();
+    cerrarSesion();
     throw new ApiError('Sesión expirada', 401);
   }
 

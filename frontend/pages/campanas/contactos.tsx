@@ -30,6 +30,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Layout from '../../components/Layout';
 import { ApiError, authedFetch } from '../../lib/api';
 import { fmtDate, maskPhone } from '../../lib/format';
+import { cerrarSesion, getToken } from '../../lib/session';
 import type {
   Contact,
   ContactCreatePayload,
@@ -59,10 +60,9 @@ function classNames(...xs: (string | false | null | undefined)[]): string {
  * que el browser genera para FormData.
  */
 async function uploadCsv(file: File): Promise<ContactImportResult> {
-  const token =
-    typeof window === 'undefined' ? null : localStorage.getItem('token');
+  const token = getToken();
   if (!token) {
-    if (typeof window !== 'undefined') window.location.assign('/login');
+    cerrarSesion();
     throw new ApiError('No autenticado', 401);
   }
   const fd = new FormData();
@@ -73,12 +73,7 @@ async function uploadCsv(file: File): Promise<ContactImportResult> {
     body: fd,
   });
   if (res.status === 401) {
-    try {
-      localStorage.removeItem('token');
-    } catch {
-      /* no-op */
-    }
-    window.location.assign('/login');
+    cerrarSesion();
     throw new ApiError('Sesión expirada', 401);
   }
   if (!res.ok) {

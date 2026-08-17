@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useRouter } from 'next/router';
 import Head from 'next/head';
+import { cerrarSesion, getToken } from '../../lib/session';
 
 type BotStep = {
   id: number;
@@ -283,9 +284,6 @@ function SimulatorModal({
   const [sending, setSending] = useState(false);
   const [typing, setTyping] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
-
-  const getToken = () =>
-    typeof window !== 'undefined' ? localStorage.getItem('token') : null;
 
   const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -767,9 +765,9 @@ export default function BotDetailPage() {
 
   useEffect(() => {
     if (!id || typeof id !== 'string') return;
-    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+    const token = getToken();
     if (!token) {
-      router.replace('/login');
+      cerrarSesion();
       return;
     }
     fetch(`/api/bots/${id}`, {
@@ -777,8 +775,7 @@ export default function BotDetailPage() {
     })
       .then(async (res) => {
         if (res.status === 401) {
-          localStorage.removeItem('token');
-          router.replace('/login');
+          cerrarSesion();
           return;
         }
         if (res.status === 404) throw new Error('Bot no encontrado');

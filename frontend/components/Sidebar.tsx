@@ -2,6 +2,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
 import { useEffect, useState } from 'react';
+import { cerrarSesion, getToken } from '../lib/session';
 
 const menu = [
   { name: 'Mensajes', path: '/mensajes', icon: '💬' },
@@ -28,7 +29,7 @@ export default function Sidebar() {
 
   useEffect(() => {
     let cancelado = false;
-    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+    const token = getToken();
     if (!token) return;
 
     const headers = { Authorization: `Bearer ${token}` };
@@ -79,16 +80,20 @@ export default function Sidebar() {
           </Link>
         ))}
       </nav>
-      {/* Logout */}
+      {/* Logout — botón, no link: "Salir" tiene que BORRAR el token. Cuando
+          era un `<Link href="/login">` la sesión seguía viva en localStorage y
+          al volver a app.glomabeauty.com la plataforma se abría de nuevo. */}
       <div className="flex flex-col items-center gap-1 mt-8 mb-2">
-        <Link href="/login" legacyBehavior>
-          <a className="flex flex-col items-center text-gloma-rose-soft hover:text-white transition-colors">
-            <div className="w-10 h-10 bg-gloma-brown-darker rounded-full flex items-center justify-center">
-              <span className="text-xl">🚪</span>
-            </div>
-            <span className="text-xs mt-1">Salir</span>
-          </a>
-        </Link>
+        <button
+          type="button"
+          onClick={cerrarSesion}
+          className="flex flex-col items-center text-gloma-rose-soft hover:text-white transition-colors"
+        >
+          <div className="w-10 h-10 bg-gloma-brown-darker rounded-full flex items-center justify-center">
+            <span className="text-xl">🚪</span>
+          </div>
+          <span className="text-xs mt-1">Salir</span>
+        </button>
       </div>
     </aside>
   );

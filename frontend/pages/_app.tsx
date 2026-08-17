@@ -2,7 +2,8 @@ import '../styles/globals.css';
 import type { AppProps } from 'next/app';
 import Head from 'next/head';
 import { useRouter } from 'next/router';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
+import { haySesion } from '../lib/session';
 
 /**
  * Título de la pestaña por ruta. Convención: `Sección · Gloma` — el nombre de
@@ -54,34 +55,63 @@ function hostIsPublicLanding(): boolean {
 
 export default function App({ Component, pageProps }: AppProps) {
   const router = useRouter();
-  const [ready, setReady] = useState(false);
+  const [autorizado, setAutorizado] = useState(false);
 
-  useEffect(() => {
+  // Rutas que se pintan sin sesión. Se evalúa igual en servidor y en cliente,
+  // así que las landings salen en el HTML inicial (importa para buscadores).
+  const rutaPublica = PUBLIC_PAGES.includes(router.pathname);
+
+  /**
+   * El guard. `haySesion()` valida el `exp` del JWT, no solo que exista la
+   * llave en localStorage: un token vencido cuenta como no tener sesión y
+   * manda al login, que es lo que se espera al entrar a app.glomabeauty.com
+   * sin sesión activa.
+   */
+  const revisarSesion = useCallback(() => {
     // En el dominio público de la landing nunca redirigimos a /login —
     // la plataforma vive bajo otro dominio.
-    if (hostIsPublicLanding()) {
-      setReady(true);
+    if (rutaPublica || hostIsPublicLanding()) {
+      setAutorizado(true);
       return;
     }
-    const token = localStorage.getItem('token');
-    if (!token && !PUBLIC_PAGES.includes(router.pathname)) {
-      router.replace('/login');
-    } else {
-      setReady(true);
+    if (haySesion()) {
+      setAutorizado(true);
+      return;
     }
-  }, [router.pathname]);
+    // Se apaga primero para que no quede pintada la pantalla anterior
+    // mientras el router hace el cambio.
+    setAutorizado(false);
+    router.replace('/login');
+  }, [router, rutaPublica]);
+
+  useEffect(() => {
+    revisarSesion();
+  }, [revisarSesion]);
+
+  // El token puede vencerse con la pestaña abierta y quieta. Volver a ella es
+  // justo el momento en que el usuario espera encontrarse el login.
+  useEffect(() => {
+    const alVolver = () => {
+      if (document.visibilityState === 'visible') revisarSesion();
+    };
+    window.addEventListener('focus', revisarSesion);
+    document.addEventListener('visibilitychange', alVolver);
+    return () => {
+      window.removeEventListener('focus', revisarSesion);
+      document.removeEventListener('visibilitychange', alVolver);
+    };
+  }, [revisarSesion]);
 
   // Mientras se resuelve el guard de sesión no se pinta la página, pero el
   // título sí: si no, la pestaña muestra la URL cruda hasta que carga.
-  const esperandoSesion =
-    !ready && !PUBLIC_PAGES.includes(router.pathname) && !hostIsPublicLanding();
+  const mostrarPagina = rutaPublica || autorizado;
 
   return (
     <>
       <Head>
         <title>{TITULOS[router.pathname] || 'Gloma'}</title>
       </Head>
-      {esperandoSesion ? null : <Component {...pageProps} />}
+      {mostrarPagina ? <Component {...pageProps} /> : null}
     </>
   );
 }
