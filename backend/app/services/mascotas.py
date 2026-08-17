@@ -269,6 +269,48 @@ def leer_foto(db: Session, mascota_codigo: str, foto_id: int) -> Optional[Tuple[
     return data, foto.content_type or "image/jpeg"
 
 
+def leer_foto_pendiente(
+    db: Session, upload_session: str
+) -> Optional[Tuple[bytes, str]]:
+    """La primera foto que la persona adjuntó en el chat, antes de que exista
+    un reporte al cual colgarla.
+
+    Es la que sirve para comparar visualmente contra las candidatas: en ese
+    momento la persona ya mostró a su mascota pero todavía no registró nada.
+    """
+    if not upload_session:
+        return None
+    foto = (
+        db.query(models.MascotaFoto)
+        .filter(
+            models.MascotaFoto.upload_session == upload_session,
+            models.MascotaFoto.mascota_id.is_(None),
+        )
+        .order_by(models.MascotaFoto.id)
+        .first()
+    )
+    if foto is None:
+        return None
+    data = _get_object(foto.storage_key)
+    if data is None:
+        return None
+    return data, foto.content_type or "image/jpeg"
+
+
+def leer_primera_foto(
+    db: Session, codigo: str
+) -> Optional[Tuple[bytes, str]]:
+    """La primera foto de un reporte, para comparar contra otra."""
+    mascota = obtener(db, codigo)
+    fotos = list(getattr(mascota, "fotos", None) or [])
+    if not fotos:
+        return None
+    data = _get_object(fotos[0].storage_key)
+    if data is None:
+        return None
+    return data, fotos[0].content_type or "image/jpeg"
+
+
 # ---------------------------------------------------------------------------
 # Normalización y scoring
 # ---------------------------------------------------------------------------

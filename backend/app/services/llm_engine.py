@@ -1040,6 +1040,29 @@ def _run_tool_mascotas(
         if name == "buscar_mascota":
             buscar_en = str(tool_input.get("buscar_en") or "encontradas")
             resultados = svc.buscar(db, tool_input, buscar_en=buscar_en)
+
+            # Desempate visual (#368). El texto ya filtró; si la persona
+            # adjuntó una foto, se compara contra las candidatas que tengan la
+            # suya. Una descripción escrita de madrugada ("perrito café,
+            # mediano") empata con media Cali; la mancha del pecho no.
+            # Solo aquí, sobre 4 candidatas como mucho: pasar el cruce diario
+            # entero por visión costaría más que toda la operación.
+            foto_persona = None
+            try:
+                foto_persona = svc.leer_foto_pendiente(
+                    db, runtime.get("upload_session") or ""
+                )
+            except Exception:
+                logger.exception("mascotas: no se pudo leer la foto del chat")
+            if foto_persona and resultados:
+                from . import vision_mascotas
+                resultados = vision_mascotas.reordenar_candidatas(
+                    foto_persona,
+                    resultados,
+                    lambda codigo: svc.leer_primera_foto(db, codigo),
+                    model_id=cfg.get("model_id"),
+                )
+
             if resultados:
                 apuntar(
                     "candidatos de la búsqueda: "
@@ -1097,6 +1120,14 @@ def _run_tool_mascotas(
                     "irlas mostrando de a una: ya las tiene todas. Úsala solo "
                     "si te pide más detalle de una en concreto. Nunca des el "
                     "teléfono todavía."
+                    + (
+                        " Algunas traen `motivo_foto`: es lo que se vio al "
+                        "comparar su foto con la que ella mandó. Menciónalo "
+                        "como observación ('se le parece en la mancha del "
+                        "pecho'), NUNCA como certeza — la que decide si es su "
+                        "mascota es ella, no la comparación."
+                        if any(r.get("motivo_foto") for r in resultados) else ""
+                    )
                 ),
             }, ensure_ascii=False), False
 
