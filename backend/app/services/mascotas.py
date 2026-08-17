@@ -982,28 +982,77 @@ def purgar(db: Session, source: str) -> int:
     return len(reportes)
 
 
-def marcar_reconocida(
-    db: Session, codigo: str, chat_ref: Optional[str] = None
-) -> bool:
-    """Deja constancia de que alguien dijo reconocer a esta mascota.
-
-    Es una afirmación sin verificar: pasa el reporte a `reconocida` ("por
-    confirmar"), no a `reunida`. El equipo llama a las dos partes y recién
-    entonces confirma el reencuentro desde el panel.
-
-    No toca los casos que ya están cerrados, reunidos o reconocidos: el estado
-    solo avanza, nunca retrocede por una conversación nueva.
-    """
-    mascota = obtener(db, codigo)
+def _reconocer_una(mascota, chat_ref: Optional[str]) -> bool:
+    """Pasa UNA ficha a `reconocida`. False si su estado ya no lo permite."""
     if mascota is None or mascota.estado != models.MASCOTA_ESTADO_ACTIVO:
         return False
     mascota.estado = models.MASCOTA_ESTADO_RECONOCIDA
     mascota.reconocida_at = datetime.utcnow()
     mascota.reconocida_chat = (chat_ref or "")[:64] or None
     mascota.updated_at = datetime.utcnow()
-    db.commit()
-    logger.info("mascotas: %s marcada como reconocida (por confirmar)", mascota.codigo)
     return True
+
+
+def marcar_reconocida(
+    db: Session,
+    codigo: str,
+    chat_ref: Optional[str] = None,
+    codigo_perdida: Optional[str] = None,
+) -> bool:
+    """Deja constancia de que alguien dijo reconocer a esta mascota.
+
+    Es una afirmación sin verificar: pasa a `reconocida` ("por confirmar"), no a
+    `reunida`. El equipo llama a las dos partes y recién entonces confirma el
+    reencuentro desde el panel.
+
+    Un reencuentro tiene DOS fichas y un par en `mascota_coincidencias`, y antes
+    solo se marcaba la encontrada. Las otras dos filas se quedaban como si nada
+    hubiera pasado: la familia seguía apareciendo "buscando" y la coincidencia
+    seguía contando como "sin revisar", que es justo la lista por la que el
+    equipo decide a quién llamar. Cuando la conversación registró el reporte de
+    quien busca (`codigo_perdida`), se marcan los tres.
+
+    No toca los casos cerrados, reunidos o ya reconocidos: el estado solo
+    avanza, nunca retrocede por una conversación nueva.
+    """
+    encontrada = obtener(db, codigo)
+    marcada = _reconocer_una(encontrada, chat_ref)
+
+    perdida = obtener(db, codigo_perdida) if codigo_perdida else None
+    if perdida is not None and perdida.id != getattr(encontrada, "id", None):
+        if _reconocer_una(perdida, chat_ref):
+            logger.info(
+                "mascotas: %s (quien busca) marcada como reconocida", perdida.codigo
+            )
+
+    # El par del panel. Solo el que une a estas dos fichas: la encontrada puede
+    # tener varias coincidencias abiertas y solo una persona la reconoció.
+    if encontrada is not None and perdida is not None:
+        par = (
+            db.query(models.MascotaCoincidencia)
+            .filter(
+                models.MascotaCoincidencia.perdida_id == perdida.id,
+                models.MascotaCoincidencia.encontrada_id == encontrada.id,
+                models.MascotaCoincidencia.estado.in_(
+                    (models.MATCH_ESTADO_NUEVA, models.MATCH_ESTADO_REVISADA)
+                ),
+            )
+            .first()
+        )
+        if par is not None:
+            par.estado = models.MATCH_ESTADO_RECONOCIDA
+            par.updated_at = datetime.utcnow()
+            logger.info(
+                "mascotas: coincidencia %s↔%s marcada como reconocida",
+                perdida.codigo, encontrada.codigo,
+            )
+
+    db.commit()
+    if marcada:
+        logger.info(
+            "mascotas: %s marcada como reconocida (por confirmar)", encontrada.codigo
+        )
+    return marcada
 
 
 def datos_de_contacto(db: Session, codigo: str) -> Optional[Dict[str, Any]]:

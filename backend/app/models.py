@@ -608,7 +608,9 @@ class Contact(Base):
             r"phone_e164 ~ '^\+[1-9][0-9]{6,18}$'",
             name="ck_contacts_phone_e164",
         ),
-        Index("ix_contacts_team_id", "team_id"),
+        # `team_id` ya declara `index=True`, que crea ese mismo índice con este
+        # mismo nombre: repetirlo aquí hacía que `create_all()` emitiera dos
+        # veces el CREATE INDEX y fallara contra una base vacía.
         Index("ix_contacts_team_name", "team_id", "name"),
     )
 
@@ -646,7 +648,7 @@ class ContactGroup(Base):
 
     __table_args__ = (
         UniqueConstraint("team_id", "name", name="uq_contact_groups_team_name"),
-        Index("ix_contact_groups_team_id", "team_id"),
+        # Igual que en `contacts`: `team_id` ya lo indexa con `index=True`.
     )
 
     team = relationship("Team")
@@ -1169,10 +1171,16 @@ class Mascota(Base):
 
 MATCH_ESTADO_NUEVA = "nueva"
 MATCH_ESTADO_REVISADA = "revisada"
+# Alguien dijo en el chat que esta ES su mascota y se le entregó el contacto.
+# Va entre "nueva" y "confirmada": no lo revisó el equipo (por eso no es
+# `revisada`) y nadie ha verificado el reencuentro (por eso no es `confirmada`),
+# pero es la coincidencia más caliente del panel — hay una familia marcando un
+# número ahora mismo. Se pone sola desde `entregar_contacto`.
+MATCH_ESTADO_RECONOCIDA = "reconocida"
 MATCH_ESTADO_CONFIRMADA = "confirmada"
 MATCH_ESTADO_DESCARTADA = "descartada"
 AVAILABLE_MATCH_ESTADOS = (
-    MATCH_ESTADO_NUEVA, MATCH_ESTADO_REVISADA,
+    MATCH_ESTADO_NUEVA, MATCH_ESTADO_REVISADA, MATCH_ESTADO_RECONOCIDA,
     MATCH_ESTADO_CONFIRMADA, MATCH_ESTADO_DESCARTADA,
 )
 

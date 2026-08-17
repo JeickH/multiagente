@@ -1087,8 +1087,13 @@ def _run_tool_mascotas(
                 return f"no existe el reporte {codigo}", False
             apuntar(f"entregaste el contacto del reporte {codigo}")
             # Queda marcado como "reconocido, por confirmar": el equipo llama a
-            # las dos partes y confirma el reencuentro desde el panel.
-            svc.marcar_reconocida(db, codigo, runtime.get("chat_ref"))
+            # las dos partes y confirma el reencuentro desde el panel. Se pasa
+            # también el reporte de quien busca —si esta conversación lo
+            # registró— para que las dos fichas y el par del panel avancen
+            # juntos, no solo la mascota encontrada.
+            svc.marcar_reconocida(
+                db, codigo, runtime.get("chat_ref"), runtime.get("reporte_codigo")
+            )
             logger.info("mascotas: contacto entregado codigo=%s", codigo)
             if datos.get("origen_url") and datos.get("contacto_telefono"):
                 # Reporte de una plataforma hermana que SÍ publica el teléfono

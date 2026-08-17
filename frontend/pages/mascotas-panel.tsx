@@ -97,6 +97,10 @@ const ESTADO_STYLE: Record<string, { bg: string; color: string; label: string }>
 const MATCH_STYLE: Record<string, { bg: string; color: string; label: string }> = {
   nueva: { bg: '#DBEAFE', color: '#1E40AF', label: 'Sin revisar' },
   revisada: { bg: '#FEF3C7', color: '#92400E', label: 'Revisada' },
+  // La pone el bot cuando alguien reconoce a su mascota en el chat y se le
+  // entrega el contacto. Es la más urgente de llamar: hay una familia marcando
+  // ese número ahora mismo, pero nadie ha confirmado todavía el reencuentro.
+  reconocida: { bg: '#FFE4E6', color: '#9F1239', label: '🤍 La reconocieron' },
   confirmada: { bg: '#DCFCE7', color: '#166534', label: '¡Es la misma! 🎉' },
   descartada: { bg: '#F3F4F6', color: '#4B5563', label: 'Descartada' },
 };
