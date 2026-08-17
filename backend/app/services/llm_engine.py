@@ -880,28 +880,70 @@ def _viola_ficha(
     return any(_PRESENTA_MASCOTA_RE.search(t or "") for t in textos_de_la_ronda)
 
 
+_FECHA_ISO_RE = re.compile(r"\b\d{4}-\d{2}-\d{2}\b")
+
+
+def _digitos_de_telefonos(texto: str) -> List[str]:
+    """Los teléfonos de un texto, en dígitos. 7 es el mínimo marcable: por
+    debajo son horas, códigos de reporte (MC-00012) o cantidades.
+
+    Las fechas ISO se quitan antes de contar: `2026-08-13` tiene 8 dígitos y se
+    leía como teléfono, así que confirmarle a alguien "tu reporte quedó
+    registrado hoy, 2026-08-13" descartaba el turno — justo el mensaje que le
+    dice que su caso quedó guardado. Ningún teléfono tiene forma de fecha, así
+    que descartarlas no debilita el guardarraíl.
+    """
+    limpio = _FECHA_ISO_RE.sub(" ", texto or "")
+    salida = []
+    for candidato in _TELEFONO_EN_TEXTO_RE.findall(limpio):
+        digitos = re.sub(r"\D", "", candidato)
+        if len(digitos) >= 7:
+            salida.append(digitos)
+    return salida
+
+
+def _mismo_telefono(a: str, b: str) -> bool:
+    """`+57 315 802 4471` y `3158024471` son el mismo número.
+
+    Se comparan por los últimos 10 dígitos (el largo de un celular colombiano),
+    así el indicativo escrito o no escrito deja de importar.
+    """
+    corto = min(len(a), len(b), 10)
+    return bool(corto >= 7 and a[-corto:] == b[-corto:])
+
+
 def _viola_contacto(
     cfg: Dict[str, Any],
     textos_de_la_ronda: List[str],
     tools_called: List[Dict[str, Any]],
+    permitidos: Optional[List[str]] = None,
 ) -> bool:
     """¿El bot escribió un teléfono que nadie le dio?
 
-    Guardarraíl duro del bot de mascotas: los modelos pequeños a veces
-    "recuerdan" un teléfono plausible en vez de pedirlo, y aquí eso significa
-    mandar a una familia angustiada a marcar un número equivocado. Solo se
-    permiten números en el turno donde `entregar_contacto` los entregó de verdad.
+    Guardarraíl duro del bot de mascotas: los modelos a veces "recuerdan" un
+    teléfono plausible en vez de pedirlo, y aquí eso significa mandar a una
+    familia angustiada a marcar el número de un desconocido.
+
+    Antes bastaba con que `entregar_contacto` apareciera en `tools_called` para
+    dar el turno por bueno. Eso dejó pasar un caso real: el modelo escribió el
+    mensaje —con un número inventado— y llamó a la herramienta en la MISMA
+    ronda, así que el guardarraíl se dio por satisfecho sin comparar nada, y la
+    persona recibió primero un número falso y después la corrección. Ahora se
+    compara: solo pasan los números que la herramienta devolvió de verdad o que
+    la propia persona escribió en la conversación (`permitidos`).
     """
     if cfg.get("mascotas") is None or not textos_de_la_ronda:
         return False
-    if any(t.get("tool") == "entregar_contacto" for t in tools_called):
-        return False
+    ok = list(permitidos or [])
+    # Lo que `entregar_contacto` devolvió en esta misma ronda. El caller pasa
+    # además el resultado completo por `permitidos`, porque aquí `resultado`
+    # viene recortado a 300 caracteres y el teléfono puede quedar fuera.
+    for llamada in tools_called:
+        if llamada.get("tool") == "entregar_contacto":
+            ok.extend(_digitos_de_telefonos(str(llamada.get("resultado") or "")))
     for texto in textos_de_la_ronda:
-        for candidato in _TELEFONO_EN_TEXTO_RE.findall(texto):
-            digitos = re.sub(r"\D", "", candidato)
-            # 7 dígitos = fijo sin indicativo; por debajo son fechas, horas,
-            # códigos de reporte (MC-00012) o cantidades.
-            if len(digitos) >= 7:
+        for dicho in _digitos_de_telefonos(texto):
+            if not any(_mismo_telefono(dicho, permitido) for permitido in ok):
                 return True
     return False
 
@@ -1738,6 +1780,16 @@ def _advance_inner(
     finished = False
     rounds = 0
     correcciones = 0
+    # Números que el bot SÍ puede escribir: los que la propia persona dio en la
+    # conversación (repetirle su teléfono para confirmarlo es legítimo) más los
+    # que `entregar_contacto` devuelva durante el turno. Cualquier otro que
+    # aparezca en una respuesta está inventado.
+    telefonos_ok: List[str] = [
+        d
+        for m in history + [{"role": "user", "content": user_text}]
+        if m.get("role") == "user"
+        for d in _digitos_de_telefonos(m.get("content") or "")
+    ]
 
     for _ in range(_MAX_TOOL_ROUNDS):
         data = _invoke_model(model_id, system, working, tools)
@@ -1771,6 +1823,12 @@ def _advance_inner(
                         "resultado": result_text[:300],
                     }
                 )
+                # Los números que la herramienta entregó de verdad. Se leen del
+                # resultado COMPLETO, no del recorte de 300 caracteres de
+                # arriba: si el teléfono cae más allá del corte, el guardarraíl
+                # lo tomaría por inventado y tumbaría un turno correcto.
+                if name == "entregar_contacto":
+                    telefonos_ok.extend(_digitos_de_telefonos(result_text))
                 if name == "escalar_a_asesor":
                     escalated_to = cfg.get("assignee", "asesor_1")
                 finished = finished or ended
@@ -1787,7 +1845,9 @@ def _advance_inner(
         # que dijo en esta ronda y se le exige que use la herramienta.
         correccion = None
         if correcciones < _MAX_CORRECCIONES:
-            if _viola_contacto(cfg, say_texts[textos_previos:], tools_called):
+            if _viola_contacto(
+                cfg, say_texts[textos_previos:], tools_called, telefonos_ok
+            ):
                 correccion, motivo = _CORRECCION_CONTACTO, "contacto inventado"
             elif _viola_ficha(cfg, say_texts[textos_previos:], tools_called):
                 correccion, motivo = _CORRECCION_FICHA, "ficha descrita sin consultarla"
