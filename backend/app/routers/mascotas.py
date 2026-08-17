@@ -9,6 +9,8 @@ PÚBLICA (sin auth) — la usa cualquier ciudadano desde el chat web:
   - `POST /mascotas/foto`            adjuntar una foto durante la conversación.
   - `GET  /mascotas/foto/{codigo}/{id}`  servir una foto (el bucket es privado;
                                      el backend hace de proxy).
+  - `GET  /mascotas/listado/enlace`  emite el enlace firmado del listado sin
+                                     gastar una conversación con el bot.
   - `GET  /mascotas/listado.xlsx`    descarga del listado (token firmado).
 
 PRIVADA (JWT, solo la cuenta de la iniciativa):
@@ -25,6 +27,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
 import time
 import uuid
@@ -64,6 +67,13 @@ _LISTADO_TTL_SECONDS = 24 * 3600
 
 _chat_limiter = ratelimit.SlidingWindow(por_ip=80, global_=800)
 _foto_limiter = ratelimit.SlidingWindow(por_ip=40, global_=400)
+# El listado se descarga, no se conversa: quien lo quiere hace un par de clics,
+# no veinte. El mismo contador cubre la emisión del enlace y la descarga en sí
+# porque el costo real está en el segundo paso (arma el Excel leyendo la tabla)
+# y el token vive 24 h: sin esto, un enlace viejo alcanza para pedir el archivo
+# indefinidamente. Holgado a propósito para no castigar a una oficina o un
+# albergue que salen todos por la misma IP.
+_listado_limiter = ratelimit.SlidingWindow(por_ip=20, global_=400)
 
 _TEXTO_SIN_BOT = (
     "En este momento no puedo atenderte por aquí 🙏 Vuelve a intentarlo en "
@@ -154,6 +164,13 @@ class FotoOut(BaseModel):
     ok: bool = True
     session: Optional[str] = None
     fotos: int = 0
+
+
+class EnlaceListadoOut(BaseModel):
+    """Enlace de descarga del listado, listo para poner en un `href`."""
+
+    url: str
+    filename: str
 
 
 class FotoPanelOut(BaseModel):
@@ -373,6 +390,21 @@ def _url_web(url: Optional[str]) -> Optional[str]:
     return url
 
 
+def _url_listado(tipo: str = models.MASCOTA_TIPO_ENCONTRADA) -> str:
+    """Enlace firmado de descarga del listado, tal como lo consume el navegador.
+
+    La firma es la de siempre (`services.crypto`, Fernet): el token es un sobre
+    cifrado y autenticado por nosotros, no un identificador adivinable, y
+    `descargar_listado` lo rechaza si viene manipulado o si pasó de 24 horas.
+    Es exactamente el mismo sobre que emite la herramienta `descargar_listado`
+    del bot en `services/llm_engine`, así que el archivo se entrega igual venga
+    del chat o del botón de la antesala.
+    """
+    token = encrypt_secret(json.dumps({"t": tipo, "exp": "listado"}))
+    base = (os.getenv("MASCOTAS_PUBLIC_BASE") or "").rstrip("/")
+    return _url_web(f"{base}/mascotas/listado.xlsx?token={token}") or ""
+
+
 # ---------------------------------------------------------------------------
 # Chat público
 # ---------------------------------------------------------------------------
@@ -583,13 +615,43 @@ def ver_foto(codigo: str, foto_id: int, db: Session = Depends(get_db)):
     )
 
 
+@router.get("/listado/enlace", response_model=EnlaceListadoOut)
+def enlace_listado(request: Request):
+    """Emite el enlace de descarga del listado **sin pasar por el bot**. Público.
+
+    Por qué existe: de 75 conversaciones reales, 21 fueron solo para bajar el
+    Excel y 19 de ellas se resolvieron en un turno. Cada una gastaba una
+    conversación completa del modelo (~US$0,03) para entregar un archivo que no
+    necesita ninguna decisión. El botón de la antesala pega aquí y la persona
+    recibe el archivo de una.
+
+    No se afloja nada: el enlace sigue firmado (`_url_listado`) y sigue siendo
+    solo el de las mascotas ENCONTRADAS, que es lo único que se reparte en un
+    archivo (manual §2). Lo que se ahorra es la llamada al modelo.
+    """
+    if not _listado_limiter.allow(ratelimit.client_ip(request)):
+        logger.warning("mascotas listado: rate-limit alcanzado al pedir el enlace")
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Has pedido el listado varias veces seguidas. Intenta en un rato.",
+        )
+    return EnlaceListadoOut(url=_url_listado(), filename="mascotas_encontradas.xlsx")
+
+
 @router.get("/listado.xlsx")
-def descargar_listado(token: str, db: Session = Depends(get_db)):
+def descargar_listado(token: str, request: Request, db: Session = Depends(get_db)):
     """Descarga del listado en Excel. Público, con token firmado por nosotros.
 
-    El token lo emite la herramienta `descargar_listado` del bot dentro de una
-    conversación; no es adivinable y caduca a las 24 horas.
+    El token lo emite `GET /mascotas/listado/enlace` (botón de la antesala) o la
+    herramienta `descargar_listado` del bot dentro de una conversación; no es
+    adivinable y caduca a las 24 horas.
     """
+    if not _listado_limiter.allow(ratelimit.client_ip(request)):
+        logger.warning("mascotas listado: rate-limit alcanzado al descargar")
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Has descargado el listado varias veces seguidas. Intenta en un rato.",
+        )
     try:
         data = json.loads(decrypt_secret(token, ttl_seconds=_LISTADO_TTL_SECONDS))
     except (CryptoError, ValueError, TypeError):

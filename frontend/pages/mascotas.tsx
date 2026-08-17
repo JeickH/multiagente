@@ -17,6 +17,12 @@ import { useCallback, useEffect, useRef, useState } from 'react';
  * el contacto en vez de gastar tres turnos preguntándolos. Reemplaza a los
  * botones de acceso rápido que antes vivían dentro del chat.
  *
+ * **El listado no abre chat**: es el tercer caso de uso del bot, pero entregar
+ * un archivo no necesita que nadie converse. De 75 conversaciones reales, 21
+ * fueron solo para bajar el Excel y 19 se resolvieron en un turno — cada una
+ * gastando una conversación completa del modelo. Ese botón pide el enlace
+ * firmado a `GET /api/mascotas/listado/enlace` y baja el archivo ahí mismo.
+ *
  * El estado de la conversación vive en el token `session` que devuelve el
  * backend (cifrado; el cliente solo lo reenvía). Las fotos se suben aparte
  * (`POST /api/mascotas/foto`) contra esa misma sesión y el backend las pega al
@@ -70,8 +76,6 @@ const MOTIVOS: {
     frase: 'Encontré una mascota y quiero reportarla',
   },
 ];
-
-const FRASE_LISTADO = 'Quiero descargar el listado de mascotas encontradas en Excel';
 
 const MAX_FOTO_BYTES = 8 * 1024 * 1024;
 
@@ -165,6 +169,8 @@ export default function MascotasChat() {
   const [finalizado, setFinalizado] = useState(false);
   const [reporte, setReporte] = useState<string | null>(null);
   const [aviso, setAviso] = useState<string | null>(null);
+  const [descargando, setDescargando] = useState(false);
+  const [errorListado, setErrorListado] = useState<string | null>(null);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -253,13 +259,9 @@ export default function MascotasChat() {
   }, [msgs, enviando, finalizado, fase]);
 
   /** Arma el primer mensaje del hilo con lo que se llenó en la antesala. */
-  const primerMensaje = (elegido: Motivo | 'listado'): string => {
-    const yo = nombre.trim();
-    if (elegido === 'listado') {
-      return yo ? `Hola, soy ${yo}. ${FRASE_LISTADO}.` : `${FRASE_LISTADO}.`;
-    }
+  const primerMensaje = (elegido: Motivo): string => {
     const frase = MOTIVOS.find((m) => m.id === elegido)!.frase;
-    return `Hola, soy ${yo}. ${frase}. Mi teléfono de contacto es ${telefono.trim()}.`;
+    return `Hola, soy ${nombre.trim()}. ${frase}. Mi teléfono de contacto es ${telefono.trim()}.`;
   };
 
   const validar = (): boolean => {
@@ -280,16 +282,10 @@ export default function MascotasChat() {
     return Object.keys(errs).length === 0;
   };
 
-  /**
-   * Cierra la antesala y abre el chat con el primer mensaje ya escrito.
-   *
-   * El listado en Excel no necesita teléfono —nadie tiene que devolverle la
-   * llamada a quien solo quiere el archivo—, así que ese atajo se salta la
-   * validación y manda lo que haya.
-   */
-  const abrirChat = (elegido: Motivo | 'listado') => {
+  /** Cierra la antesala y abre el chat con el primer mensaje ya escrito. */
+  const abrirChat = (elegido: Motivo) => {
     if (fase !== 'intake') return;
-    if (elegido !== 'listado' && !validar()) return;
+    if (!validar()) return;
     const texto = primerMensaje(elegido);
     setFase('abriendo');
     timerRef.current = window.setTimeout(() => {
@@ -297,6 +293,35 @@ export default function MascotasChat() {
       push([{ from: 'user', text: texto, kind: 'texto' }]);
       void enviar(texto);
     }, MS_TRANSICION);
+  };
+
+  /**
+   * Baja el listado de encontradas sin abrir el chat.
+   *
+   * El backend firma el enlace y lo devuelve; aquí solo se navega a él. Se usa
+   * `location.href` y no `window.open` porque la respuesta viene con
+   * `Content-Disposition: attachment`: el navegador baja el archivo y deja la
+   * antesala como está, sin arriesgarse a que un bloqueador de ventanas
+   * emergentes se coma la descarga.
+   */
+  const descargarListado = async () => {
+    if (descargando) return;
+    setDescargando(true);
+    setErrorListado(null);
+    try {
+      const res = await fetch('/api/mascotas/listado/enlace');
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data: { url?: string } = await res.json();
+      if (!data.url) throw new Error('respuesta sin enlace');
+      window.location.href = data.url;
+    } catch {
+      // El detalle queda del lado del servidor (regla de seguridad #6).
+      setErrorListado(
+        'No pudimos preparar la descarga. Intenta de nuevo o pídenos el listado en el chat.'
+      );
+    } finally {
+      setDescargando(false);
+    }
   };
 
   const enviarTexto = (e?: React.FormEvent) => {
@@ -624,10 +649,57 @@ export default function MascotasChat() {
                       </span>
                     </button>
                   ))}
+
+                  {/* Tercer caso de uso del bot, pero este NO abre el chat: el
+                      archivo se baja de una. Entregar un Excel no necesita
+                      conversación (ni el teléfono de nadie), y así deja de
+                      costar una conversación del modelo cada vez. La flecha lo
+                      distingue de las dos opciones de arriba: estas eligen, esta
+                      hace algo ya. */}
+                  <button
+                    type="button"
+                    onClick={() => void descargarListado()}
+                    disabled={descargando}
+                    className="rt-opcion disabled:opacity-60"
+                    aria-describedby={errorListado ? 'rt-listado-error' : undefined}
+                  >
+                    <span className="text-2xl shrink-0" aria-hidden="true">📊</span>
+                    <span className="min-w-0 flex-1">
+                      <span
+                        className="block text-[14.5px] font-medium"
+                        style={{ color: WA.textoLight }}
+                      >
+                        {descargando ? 'Preparando la descarga…' : 'Solo quiero el listado'}
+                      </span>
+                      <span className="block text-[12px]" style={{ color: WA.textoTenueLight }}>
+                        Descárgalo en Excel al instante, sin chat
+                      </span>
+                    </span>
+                    <svg
+                      width="20"
+                      height="20"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      className="shrink-0"
+                      style={{ color: WA.headerLight }}
+                      aria-hidden="true"
+                    >
+                      <path d="M12 3v12m0 0l-4-4m4 4l4-4M4 19h16" />
+                    </svg>
+                  </button>
                 </div>
                 {errores.motivo && (
                   <p id="rt-motivo-error" className="text-[12px] mt-1.5" style={{ color: '#C6362B' }} role="alert">
                     {errores.motivo}
+                  </p>
+                )}
+                {errorListado && (
+                  <p id="rt-listado-error" className="text-[12px] mt-1.5" style={{ color: '#C6362B' }} role="alert">
+                    {errorListado}
                   </p>
                 )}
               </fieldset>
@@ -646,20 +718,6 @@ export default function MascotasChat() {
                 </svg>
                 Iniciar chat
               </button>
-
-              {/* Tercer caso de uso del bot. Va discreto porque la inmensa
-                  mayoría llega a buscar o a reportar, pero no se esconde. */}
-              <p className="text-[12px] text-center mt-3.5" style={{ color: WA.textoTenueLight }}>
-                ¿Solo quieres el listado de mascotas encontradas?{' '}
-                <button
-                  type="button"
-                  onClick={() => abrirChat('listado')}
-                  className="font-semibold underline"
-                  style={{ color: WA.headerLight }}
-                >
-                  Descárgalo aquí
-                </button>
-              </p>
 
               <p
                 className="text-[11px] text-center mt-4 leading-relaxed"
