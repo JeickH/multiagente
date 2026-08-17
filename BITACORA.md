@@ -2966,3 +2966,18 @@ Dos pruebas usan la red bloqueada hacia `/api/*` a propósito: el token de la ba
 de mentiras y el backend local lo rechaza con 401 — que dispara el logout del helper y
 tapaba lo que se quería medir. Ese camino (401 real → cierra sesión) se verificó aparte
 contra el backend vivo, y funciona.
+
+### Despliegue
+
+Solo frontend, sin tocar backend ni base de datos — no había nada que desplegar en ECS
+ni migración que aplicar, así que este cambio no interfirió con los otros frentes en
+curso (importadores de fuentes y bot de mascotas iban en paralelo y quedaron sin tocar
+en el árbol de trabajo).
+
+Commits `234300c` + `36d75f0` → push a `main`. Amplify **job 79 SUCCEED** (auto-disparado
+por el push).
+
+**Smoke en producción** (`scratchpad/smoke-prod.mjs`, Chrome headless contra
+`app.glomabeauty.com`): **20/20**. Las 9 pantallas privadas entradas directo por URL
+mandan al login, tanto sin token como con token vencido, y el vencido queda borrado.
+`mascotasperdidascolombia.com` y la landing `glomabeauty.com` siguen abiertas sin sesión.
