@@ -1,0 +1,71 @@
+@startuml flujo_importacion
+' Cómo entra un reporte de una fuente externa a la base.
+' Lo importante del diagrama: la base NO se toca hasta que un humano aprueba.
+' Render:  plantuml documentacion_bd/flujo_importacion.puml
+
+!theme plain
+skinparam backgroundColor #F6F8F7
+skinparam sequence {
+  ArrowColor #0F5C46
+  LifeLineBorderColor #5D726A
+  ParticipantBorderColor #0F5C46
+  ParticipantBackgroundColor #FFFFFF
+  ActorBorderColor #B4530A
+}
+skinparam note {
+  BackgroundColor #FFF6EC
+  BorderColor #E8C9A4
+}
+
+actor "CEO" as ceo
+participant "actualizar_fuente.py" as cli
+participant "fuentes/<fuente>.py" as scraper
+database "mascotas\n(local o RDS)" as db
+participant "revision.html" as html
+participant "import_fuente.py" as loader
+database "storage\n(media_local / S3)" as s3
+
+== Paso 1 · Revisar (no escribe en la base) ==
+
+ceo -> cli : ""--revisar""
+cli -> scraper : bajar()
+scraper -> scraper : normaliza a los campos de `Mascota`\nquita teléfonos de las señas\ndescarta rellenos ("anonimo", "N/A")
+scraper --> cli : candidatos
+cli -> db : ¿qué origen_id ya existen\npara este source?
+db --> cli : los ya cargados
+cli -> cli : **descarta lo repetido**
+cli -> scraper : baja las fotos ahora\n(algunas URLs vencen en 1 h)
+cli -> html : arma la revisión\n(foto + los 18 campos + alertas)
+cli -> cli : guarda pendientes.json
+
+note over db
+  Hasta aquí la base solo se **leyó**.
+end note
+
+== Paso 2 · La compuerta ==
+
+ceo -> html : abre y revisa ficha por ficha
+note right of ceo
+  Alertas que tiene que resolver:
+  · tipo deducido (proteccionanimal)
+  · posible duplicado
+  · sin foto / sin vía de contacto
+  · campo leído de la descripción
+end note
+ceo -> ceo : **aprueba** (o borra fichas\ndel pendientes.json)
+
+== Paso 3 · Cargar ==
+
+ceo -> loader : ""--cargar"" (o rds_exec.sh en producción)
+loader -> db : ¿(source, origen_id) ya existe?
+db --> loader : no
+loader -> db : crear_reporte()
+loader -> s3 : guardar_foto() — comprime al entrar
+loader --> ceo : creados / fotos / ya_estaban / fallidos
+
+note over loader, db
+  Idempotente: correrlo dos veces da
+  ""creados=0 ya_estaban=N"".
+end note
+
+@enduml

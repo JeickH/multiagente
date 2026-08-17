@@ -3022,3 +3022,152 @@ por el push).
 `app.glomabeauty.com`): **20/20**. Las 9 pantallas privadas entradas directo por URL
 mandan al login, tanto sin token como con token vencido, y el vencido queda borrado.
 `mascotasperdidascolombia.com` y la landing `glomabeauty.com` siguen abiertas sin sesión.
+
+---
+
+## #362 — Cinco fuentes nuevas, y una tabla que las aguante a todas (2026-08-16/17)
+
+El CEO trajo un PDF de RoyiPets y tres sitios más, y pidió lo mismo para todos: que
+nada entre a la base sin que él lo haya visto antes, y que re-correr una fuente no
+duplique. De paso, que la tabla deje de esconder datos dentro de `notas`.
+
+### Lo que entró
+
+| Fuente | Fichas | Perdidas · Encontradas | Con teléfono | Fotos |
+|---|---|---|---|---|
+| `royipets` (PDF) | 32 | 0 · 32 | 32 | 32 |
+| `petsearch` | 121 | 91 · 30 | 118 | 135 |
+| `encontradogs` | 59 | 30 · 29 | 0 (por diseño) | 177 |
+| `proteccionanimal` | 38 | 31 · 7 | 16 | 41 |
+
+**250 reportes y 385 fotos**, en local y en RDS con los mismos números. Ningún registro
+previo se modificó: `web`, `patitasacasa` y `mascotasporcolombia` quedaron con su
+`updated_at` intacto, verificado en los dos entornos.
+
+### El PDF de RoyiPets
+
+Exportado de Excel y **sin rejilla vectorial**: las columnas se reconstruyen por la
+coordenada x de cada palabra y las filas por el recuadro de la foto. Guiarse solo por
+las fotos costaba dos filas —hay dos registros sin imagen— así que las filas se anclan
+en la columna ESPECIE y los huecos entre fotos se rellenan.
+
+Dos cosas que el PDF esconde y hubo que detectar:
+- **Excel recorta el texto que no cabe.** Una descripción de una línea que topa el borde
+  derecho está *incompleta*, no es corta. El extractor lo marca (`carac_cortada`).
+- **15 de las 32 fichas no dicen de qué color es el animal.** Como el color pesa 5 en el
+  cruce, se sacaron mirando las fotos y quedaron marcadas como derivadas en la revisión.
+
+Los teléfonos de terceros que venían en las notas se borraron: en un reporte solo puede
+haber un número, el de contacto.
+
+### El framework de importación
+
+`backend/scripts/fuentes/` con un módulo por fuente y `actualizar_fuente.py` de CLI:
+
+```bash
+python backend/scripts/actualizar_fuente.py petsearch --revisar   # baja y arma el HTML
+#   ← el CEO revisa
+python backend/scripts/actualizar_fuente.py petsearch --cargar    # carga lo aprobado
+```
+
+El descarte de repetidos va contra `(source, origen_id)`, la restricción única que ya
+existía. En la revisión solo aparece lo que todavía no está, y la carga vuelve a
+verificar: correr las tres cargas dos veces dio `creados=0 ya_estaban=121/59/38`.
+
+Rarezas que costó descubrir, y que están en `documentacion_bd/mapeo_fuentes.md`:
+- **petsearch** tiene *tres* estados, no dos: `missing`, `stray` y `found`. El tercero
+  son reencontradas y no se traen.
+- **encontradogs** no publica teléfono a propósito (hace de intermediario) y **sí tiene
+  perdidas**, no solo encontradas como se creía. El tipo sale de la sección de la
+  portada, y por eso las «de vuelta en casa» quedan fuera sin adivinar nada.
+- **proteccionanimal** marca *todo* como «Perdido» aunque haya hallazgos: la gente lo
+  escribe en el campo del nombre (hay fichas llamadas `encontrado`). El tipo se deduce y
+  **las 38 quedaron marcadas** para que un humano lo confirme. Su teléfono va **dentro
+  de la descripción** y hay que sacarlo de ahí y **borrarlo del texto**: un número suelto
+  en `senas` le tumba el turno al bot por el guardarraíl antiteléfonos. Sus URLs de foto
+  son de S3 firmadas y **vencen en una hora**, así que las fotos se bajan en la revisión.
+
+### Dos teléfonos en un campo
+
+El CEO pidió que las fichas en hogar de paso lleven el de la fundación **y** el de la
+casa. `_TELEFONO_RE` rechazaba el `/`, así que el panel no habría podido guardar ninguna
+edición de esas 23 fichas. Ahora acepta uno o dos separados por `/` o `,`.
+
+### El bot mandaba a la ficha de origen aunque tuviéramos el teléfono
+
+`entregar_contacto` entraba en la rama «no es nuestro, no tienes teléfono» **con solo ver
+`origen_url`**. Las 121 de PetSearch tienen las dos cosas: a alguien que acababa de
+reconocer a su perro le habría dado la portada de PetSearch en vez del número. Quedaron
+tres ramas: teléfono + enlace (los dos, el teléfono primero), solo enlace, y reporte
+propio. `ORIGEN_NOMBRES` se completó con las cuatro fuentes nuevas.
+
+**Prueba end-to-end en producción**, conversación completa contra `api.glomabeauty.com`:
+el bot buscó, encontró `MC-00261` (importada de PetSearch), mostró su foto desde S3 y al
+confirmar entregó `350 2369790` **y** el enlace, atribuyéndolo a «PetSearch Colombia».
+La prueba dejó el reporte marcado como `reconocida` —lo hace `entregar_contacto`— y se
+revirtió a `activo`: nadie reconoció nada de verdad y el equipo habría perdido una
+llamada.
+
+### Los 15 campos que la tabla estaba botando
+
+Todo lo que no tenía columna terminaba concatenado en `notas`, donde no se puede
+filtrar ni contar. `migrate_campos_multifuente.py` agrega la unión de lo que publican
+las siete fuentes:
+
+`ciudad` · `departamento` · `esterilizado` · `vacunado` · `desparasitado` · `peso_kg` ·
+`salud` · `resguardo` · `resguardo_nombre` · `rescatado_por` · `rescatado_por_telefono` ·
+`recompensa` · `estado_origen` · `publicado_origen_at` · `sincronizado_at`
+
+Todas nullable y **tri-estado donde aplica**: NULL es «la fuente no lo dice», que no es
+lo mismo que `false`. `resguardo` va **sin CHECK a propósito** — lo alimentan fuentes
+externas y una restricción rompería un importador cada vez que aparezca un valor nuevo.
+
+Aplicada en **local y RDS**, 43 columnas en los dos. El backfill
+(`backfill_campos_multifuente.py`) completó **250 fichas y 1.136 campos**, con los mismos
+números en ambos entornos. Solo escribe donde hay NULL: un dato corregido a mano en el
+panel no lo pisa una corrida del script.
+
+> **Trampa que costó un despliegue:** el primer backfill contra RDS reportó
+> `campos_escritos=0` sin fallar. La migración había corrido por SQL directo, pero la
+> imagen desplegada tenía un `models.py` sin esas columnas, así que el ORM ni las veía.
+> **Migrar la base no basta: hay que desplegar el modelo.**
+
+### Documentación
+
+Carpeta `documentacion_bd/` — `index.html` (esquema, fuentes, matriz campo × fuente,
+pesos del cruce y diccionario), `diccionario_datos.md`, `mapeo_fuentes.md`,
+`esquema.sql` y dos diagramas PlantUML. Los tres primeros **se generan leyendo la base
+real** (`python documentacion_bd/generar.py`), y el generador avisa cuando aparece una
+columna sin describir — así se detectó que cuatro descripciones de
+`mascota_coincidencias` tenían nombres inventados.
+
+### Despliegue
+
+Tres imágenes, todas construidas desde un **worktree limpio sobre HEAD** con solo el
+cambio propio: había trabajo sin commitear de otras sesiones en el árbol (columnas de
+optimización de fotos, caché de prompts) y no se subió a producción nada ajeno.
+
+| Imagen | Rev | Qué llevó |
+|---|---|---|
+| `royipets1` | 38 | `_TELEFONO_RE` con dos teléfonos |
+| `fuentes1` | 40 | Las tres ramas de `entregar_contacto` + `ORIGEN_NOMBRES` |
+| `multifuente1` | 41 | Las 15 columnas en `models.py` |
+
+Se verificó que los commits de auth de la otra sesión (#361) son **solo frontend**: no
+hubo pisada entre despliegues.
+
+La policy `mascotas-s3-fotos` no permitía leer el prefijo `import/` que documenta el
+manual: se le agregó `s3:GetObject` **solo de lectura** sobre `import/*`. El prefijo se
+limpió después de cada carga.
+
+### Pendientes
+
+- **Wirear los campos nuevos al panel y al scoring.** Las columnas existen y están
+  llenas, pero el panel todavía no las muestra ni filtra por ellas, y el cruce las
+  ignora. Ojo con `ciudad`: sumarla al scoring reintroduce el ruido de las zonas
+  genéricas que ya se había quitado a propósito.
+- **`mascotasporcolombia` y `patitasacasa` no tienen backfill**: sus 61 reportes siguen
+  con las 15 columnas en NULL. Habría que portarlos al framework de `fuentes/`.
+- Cuatro fotos de `MC-00035` y `MC-00036` (locales, de 2026-08-13) están referenciadas en
+  la BD pero **no existen en `media_local/` ni en el volumen viejo**. Son anteriores al
+  cambio de montaje. No se borró nada.

@@ -1,0 +1,134 @@
+@startuml esquema_mascotas
+' Esquema de las tablas del módulo "Recupera Tu Mascota".
+' Render:  plantuml documentacion_bd/esquema_mascotas.puml
+' Fuente de verdad: backend/app/models.py — este diagrama se edita a mano.
+
+!theme plain
+skinparam backgroundColor #F6F8F7
+skinparam linetype ortho
+skinparam class {
+  BackgroundColor #FFFFFF
+  BorderColor #0F5C46
+  ArrowColor #0F5C46
+  FontColor #12211C
+}
+skinparam note {
+  BackgroundColor #FFF6EC
+  BorderColor #E8C9A4
+}
+hide circle
+
+entity "**mascotas**" as mascotas {
+  * id : integer <<PK>>
+  --
+  * codigo : varchar(16) <<UQ>>  — MC-00042, nombra la carpeta de fotos
+  * tipo_registro : varchar(16)  — perdida | encontrada
+  * estado : varchar(24)         — activo | reconocida | reunida | cerrado
+  * source : varchar(24)         — web | royipets | petsearch | …
+  --
+  == Identificación del animal ==
+  * especie : varchar(24)        — perro | gato | otra
+  especie_otra : varchar(60)
+  raza : varchar(80)
+  color : varchar(80)
+  nombre : varchar(80)
+  sexo : varchar(16)
+  edad : varchar(40)
+  tamano : varchar(24)
+  senas : text
+  --
+  == Dónde ==
+  * ubicacion : varchar(255)     — obligatoria
+  barrio : varchar(120)          — la zona que usa el cruce
+  ciudad : varchar(120)
+  departamento : varchar(120)
+  maps_url : varchar(500)
+  --
+  == Contacto (PII) ==
+  contacto_nombre : varchar(120)
+  contacto_telefono : varchar(32)  — uno o dos, separados por /
+  rescatado_por : varchar(120)
+  rescatado_por_telefono : varchar(32)
+  --
+  == Salud y cuidado ==
+  esterilizado : boolean
+  vacunado : boolean
+  desparasitado : boolean
+  peso_kg : numeric(5,2)
+  salud : varchar(255)
+  resguardo : varchar(40)
+  resguardo_nombre : varchar(120)
+  recompensa : boolean
+  --
+  == Trazabilidad del origen ==
+  origen_url : varchar(500)
+  origen_id : varchar(120)
+  estado_origen : varchar(60)
+  publicado_origen_at : timestamp
+  sincronizado_at : timestamp
+  --
+  == Ciclo de vida ==
+  fecha_evento : date
+  notas : text
+  bot_id : integer <<FK>>
+  reconocida_at : timestamp
+  reconocida_chat : varchar(64)
+  * created_at : timestamp
+  * updated_at : timestamp
+}
+
+entity "**mascota_fotos**" as fotos {
+  * id : integer <<PK>>
+  --
+  mascota_id : integer <<FK>>    — NULL mientras está en el limbo
+  upload_session : varchar(64)   — uuid del chat, antes de adoptarla
+  * storage_key : varchar(400)   — mascotas/<codigo>/<uuid>.jpg
+  * content_type : varchar(60)
+  bytes_size : integer
+  --
+  optimizada : boolean
+  optimizada_at : timestamp
+  bytes_original : integer
+  --
+  * created_at : timestamp
+}
+
+entity "**mascota_coincidencias**" as cruces {
+  * id : integer <<PK>>
+  --
+  * perdida_id : integer <<FK>>
+  * encontrada_id : integer <<FK>>
+  * puntaje : integer            — umbral 12 en el cruce diario
+  campos : text                  — qué coincidió
+  * estado : varchar(24)         — nueva | revisada | confirmada | descartada
+  * created_at : timestamp
+}
+
+entity "bots" as bots {
+  * id : integer <<PK>>
+}
+
+mascotas ||--o{ fotos       : "fotos\nON DELETE CASCADE"
+mascotas ||--o{ cruces      : "perdida_id\nON DELETE CASCADE"
+mascotas ||--o{ cruces      : "encontrada_id\nON DELETE CASCADE"
+bots     ||--o{ mascotas    : "bot_id\nON DELETE SET NULL"
+
+note right of mascotas
+  **UNIQUE (source, origen_id)**
+  Es lo que hace idempotentes a los
+  importadores: re-correr una fuente
+  no duplica nada.
+
+  **Teléfono u origen_url**: la regla se
+  valida en `services/mascotas`, no en la
+  BD — el motivo es de negocio, no de
+  integridad referencial.
+end note
+
+note bottom of fotos
+  El bucket **no tiene versionado**:
+  lo que se borra, se pierde.
+  Ya costó fotos irrecuperables una vez.
+end note
+
+@enduml

@@ -65,6 +65,16 @@ Chat web (mascotasperdidascolombia.com)
 **Tablas**: `mascotas`, `mascota_fotos`, `mascota_coincidencias`, y `bot_llm_decisions`
 (con `chat_ref` / `chat_contacto` para el registro de conversaciones).
 
+> **El esquema completo está documentado en [`documentacion_bd/`](documentacion_bd/)**:
+> diccionario campo por campo, qué publica cada una de las siete fuentes, los pesos del
+> cruce y los diagramas. `index.html` se genera leyendo la base real
+> (`python documentacion_bd/generar.py`), así que no se desactualiza en silencio.
+>
+> `mascotas` tiene **43 columnas**. Las 15 multi-fuente (`ciudad`, `departamento`,
+> `esterilizado`, `resguardo`, `rescatado_por`, `estado_origen`…) existen para que las
+> fuentes no tengan que esconder datos dentro de `notas`. Todas nullable, y las
+> booleanas son **tri-estado**: NULL es «la fuente no lo dice», no `false`.
+
 **Storage**: bucket privado `gloma-mascotas-747456040509`, prefijo `mascotas/<codigo>/`.
 El backend hace de proxy en `GET /mascotas/foto/{codigo}/{id}` — el bucket nunca se abre
 al público. ⚠️ **No tiene versionado**: lo que se borra, se pierde.
@@ -186,12 +196,60 @@ funciona.
 
 ## 6. Importadores
 
+> **El esquema de la tabla y qué publica cada fuente están documentados en
+> [`documentacion_bd/`](documentacion_bd/) — empieza por su `index.html`.**
+
+### 6.1 Fuentes con revisión manual (`backend/scripts/fuentes/`)
+
+Las cuatro fuentes nuevas comparten un solo flujo, y **ninguna escribe en la base sin
+que un humano haya visto el HTML antes**:
+
+```bash
+python backend/scripts/actualizar_fuente.py <fuente> --revisar   # baja y arma el HTML
+#   ← el CEO revisa testdata/fuentes_import/<fuente>/revision.html
+python backend/scripts/actualizar_fuente.py <fuente> --cargar    # carga lo aprobado
+```
+
+`<fuente>` = `petsearch` · `encontradogs` · `proteccionanimal` · o `todas`.
+`--backfill` completa las columnas multi-fuente de lo ya cargado.
+
+En producción la carga va con el payload en S3 y `rds_exec.sh`:
+
+```bash
+aws s3 cp testdata/fuentes_import/<f> s3://gloma-mascotas-747456040509/import/<f>/ \
+    --recursive --region sa-east-1 --exclude "revision.html"
+TASKDEF=multiagente-backend:NN ./backend/scripts/rds_exec.sh \
+    backend/scripts/import_fuente.py SOURCE=<f> \
+    IMPORT_BUCKET=gloma-mascotas-747456040509 IMPORT_PREFIX=import/<f>
+aws s3 rm s3://gloma-mascotas-747456040509/import/ --recursive --region sa-east-1
+```
+
+Los scrapers **corren desde el equipo del CEO**, no desde ECS: varios de estos sitios
+bloquean las IPs de AWS.
+
+| Origen | Cómo | Ojo con |
+|---|---|---|
+| `petsearch.neuralync.dev` | API JSON `api.neuralync.dev/api/petsearch/pets?status=` | **Tres** estados: `missing`→perdida, `stray`→encontrada, `found`=reencontrada **no se trae**. Única fuente externa con teléfono |
+| `encontradogs.co` | HTML del servidor, ficha en `/pet/<id>`, foto grande en `/photo/<id>` | **No publica teléfono a propósito** (es intermediario): entra con `origen_url`. Tiene perdidas **y** encontradas; el tipo sale de la sección de la portada |
+| `proteccionanimal.valledelcauca.gov.co` | API .NET: `GetListAnimalesPerdidos` + `GetAnimalDetail?AnimalId=` | Marca **todo** como «Perdido»: el tipo va escrito en el campo del nombre y **se deduce**. El teléfono va dentro de la descripción — hay que extraerlo y **borrarlo del texto**. Fotos S3 firmadas que **vencen en 1 h** |
+| RoyiPets (PDF) | `backend/scripts/extraer_royipets_pdf.py` | PDF de Excel sin rejilla: columnas por coordenada x, filas por el recuadro de la foto. **Excel recorta lo que no cabe**: una línea que topa el borde está incompleta |
+
+### 6.2 Importadores anteriores
+
 | Origen | Cómo | Ojo con |
 |---|---|---|
 | `mascotasporcolombia.com` | Sitemap + payload de React. `/mascotas/` = perdidas, `/found-pets/` = encontradas | Respeta robots.txt. Separa fichas con varias mascotas en un registro por animal |
 | `patitasacasa.com` | Su **API pública** `/prod/pets/<ciudad>?limit=100` | **Su WAF bloquea las IPs de AWS (403)**: no se puede correr desde ECS. Hay que ejecutarlo desde una red no bloqueada y subir el resultado |
 
-Ambos deduplican por `(source, origen_id)` y son idempotentes.
+Todos deduplican por `(source, origen_id)` y son idempotentes.
+
+### 6.3 Regla que vale para cualquier fuente nueva
+
+**Ningún teléfono puede quedar en `senas` ni en `notas`.** El guardarraíl
+`llm_engine._viola_contacto` descarta el turno completo si el bot escribe un número que
+no vino de `entregar_contacto`: un teléfono metido en una descripción deja al bot mudo
+justo cuando encontró a la mascota. Todo importador debe pasar el texto libre por
+`base.quitar_telefonos()`.
 
 **Los teléfonos de patitasacasa vienen enmascarados** (`310****57`) — su plataforma los
 protege a propósito. No hay forma legítima de obtener el número completo: para contactar
@@ -280,4 +338,13 @@ Ver BITACORA, sprint "Ayuda a Cali" (#347–#354). Los principales:
 - **#352** Búsqueda visual por foto (subiría muchísimo la tasa de acierto).
 - **#361** Borrar los 36 PNG viejos que quedaron tras la conversión a JPG (26.5 MB) —
   necesita visto bueno explícito del CEO.
+- **#362** Wirear los 15 campos multi-fuente al **panel** (que se vean y se filtren) y
+  decidir si alguno entra al **scoring**. Ojo: sumar `ciudad` al cruce reintroduce el
+  ruido de las zonas genéricas que ya se había quitado a propósito.
+- **#362** `mascotasporcolombia` y `patitasacasa` no tienen backfill: sus 61 reportes
+  siguen con las 15 columnas nuevas en NULL. Habría que portarlos al framework de
+  `backend/scripts/fuentes/`.
+- **#362** Cuatro fotos de `MC-00035` y `MC-00036` están referenciadas en la BD **local**
+  pero no existen en `media_local/` ni en el volumen viejo (son anteriores al cambio de
+  montaje). No se borró nada: hay que decidir si se recuperan o se limpian las filas.
 - **Activar versionado en el bucket de fotos** (lección del borrado accidental).

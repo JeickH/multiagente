@@ -172,9 +172,18 @@ Las tres que más duelen si se olvidan:
 1. **Nunca borrar datos sin confirmación explícita del CEO** — ya se perdieron fotos
    irrecuperables por un borrado hecho sobre una interpretación.
 2. **El bot jamás inventa un teléfono**: solo sale de `entregar_contacto`, y hay un
-   guardarraíl que lo hace cumplir.
+   guardarraíl que lo hace cumplir. Corolario para los importadores: **ningún número
+   puede quedar en `senas` ni en `notas`**, o el guardarraíl le tumba el turno al bot.
 3. Los cambios de marca de ese sitio (hoy el footer "Tecnología de **Gloma App**") viven
    solo ahí; la app y la landing de Gloma no se tocan sin aviso.
+
+**El esquema de la base está documentado en [`documentacion_bd/`](documentacion_bd/)**
+(empieza por `index.html`): diccionario de datos, matriz de qué publica cada fuente y
+diagramas. Se regenera leyendo la base con `python documentacion_bd/generar.py`.
+
+**Fuentes externas**: se importan con `backend/scripts/actualizar_fuente.py <fuente>
+--revisar` → el CEO aprueba el HTML → `--cargar`. **Ninguna fuente entra a la base sin
+esa revisión.** El descarte de repetidos va por `(source, origen_id)`.
 
 ---
 
@@ -193,6 +202,10 @@ Las tres que más duelen si se olvidan:
    - Follow-up permanente: adoptar Alembic para migraciones versionadas.
      Mientras no exista Alembic, scripts manuales con `IF NOT EXISTS` /
      `ADD COLUMN IF NOT EXISTS` son obligatorios para ser idempotentes.
+   - **Migrar la base no basta: hay que desplegar el modelo.** Si se agregan
+     columnas por SQL pero la imagen en ECS lleva un `models.py` viejo, el ORM
+     ni las ve y los scripts que las escriben **no fallan** — reportan cero
+     filas tocadas, que es peor. Toda migración va con su despliegue.
 2. **Ambiente Python**: nunca instalar dependencias del backend en el
    intérprete del sistema. Siempre `conda activate multiagente` o
    `source backend/.venv/bin/activate` antes de `pip install` o `pytest`.
