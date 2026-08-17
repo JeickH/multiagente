@@ -3324,3 +3324,56 @@ producción que el bot sí hace su parte (`MC-00261 marcada como reconocida` a l
 06:04:36 UTC); lo que falta es propagar el reconocimiento a las otras dos filas.
 Aparte, `MC-00261` quedó con `estado='reconocida'` pero `reconocida_at` en NULL y un
 `updated_at` de 12 horas después: algo reescribió la fila más tarde y no se identificó qué.
+
+---
+
+## #366-368 — Rotación de credenciales y seis mejoras del bot (2026-08-17)
+
+Lote de un solo push y un solo despliegue, coordinado con la sesión paralela que
+estaba levantando la suite de tests del módulo.
+
+### Incidente cerrado: contraseñas rotadas
+
+Las de `recuperatumascota@gmail.com` y `talulah@gloma.com` estaban publicadas en
+el repo (ver #364). Se rotaron con `rds_exec.sh` pasando **solo el hash bcrypt**
+—calculado local— porque los overrides de `ecs run-task` quedan en CloudTrail.
+Verificado: las viejas dan 401, las nuevas 200. Las nuevas quedaron en
+`CREDENCIALES.txt` (git-ignorado). **El historial de GitHub sigue teniendo las
+viejas; por eso había que rotar, no solo borrar.**
+
+### Lo que entró
+
+| # | Qué | Por qué |
+|---|---|---|
+| — | El reconocimiento marca las DOS fichas y el par | Un reencuentro son dos reportes y una coincidencia; solo se marcaba la encontrada, así que la familia seguía "buscando" y el par seguía "sin revisar" |
+| 3 | `_viola_contacto` compara el número | Se apagaba con que la tool apareciera en la ronda; dejó pasar un teléfono inventado (benchmark #363) |
+| 4 | La búsqueda manda las candidatas juntas | Mostraba de a una con `ver_ficha`: 4 turnos y 4 llamadas al modelo para descartar 4 perros |
+| 6 | Tokens por turno en `bot_llm_decisions` | El costo real solo se sabía corriendo un benchmark aparte; `cache_read` es el termómetro del caching de #363 |
+| 5 | Botón directo al Excel | 21 de 75 conversaciones eran solo para el listado, 19 de un turno: US$0,03 cada una por un archivo |
+| 2 | Desempate visual entre candidatas | Una descripción de madrugada ("perrito café, mediano") empata con media Cali; la mancha del pecho no |
+
+De paso, dos correcciones a la suite en paralelo: una fecha ISO se leía como
+teléfono (8 dígitos) y descartaba el turno que confirma un registro; y
+`test_el_token_solo_autoriza_las_encontradas` pasaba o fallaba según el orden,
+porque `test_crypto.py` recarga `app.services.crypto` con otra clave y el
+`from ... import` de adentro tomaba un Fernet distinto al que firmó el token.
+
+### Límites deliberados del desempate visual
+
+El máximo que puede sumar la foto (5) empata con acertar la raza, y por debajo
+de 6/10 no suma: la foto desempata lo que el texto ya dejó cerca, no encarama a
+un animal que el texto separó. Máximo 4 comparaciones por búsqueda — son dos
+imágenes al modelo cada una. El cruce diario (~12.500 pares) **no** pasa por
+visión: costaría más que toda la operación.
+
+### Pendientes
+
+- El venv de `backend/` no traía `Pillow` (sí está en `requirements.txt`), lo que
+  hacía fallar 11 tests que no estaban rotos. Instalado.
+- `MC-00261` quedó con `estado='reconocida'` pero `reconocida_at` en NULL y un
+  `updated_at` 12 h posterior al reconocimiento. El log confirma que el bot hizo
+  su parte a las 06:04:36 UTC; **algo reescribió la fila después y no se
+  identificó qué**. Vale la pena mirarlo antes de confiar en `reconocida_at`
+  para métricas.
+- El desempate visual no se persiste: se recalcula en cada búsqueda. Si el
+  volumen crece, cachear por par de fotos.
