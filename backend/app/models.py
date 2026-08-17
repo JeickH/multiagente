@@ -439,6 +439,15 @@ class BotLlmDecision(Base):
     chat_ref = Column(String(64), nullable=True, index=True)
     # Nombre o teléfono que la persona dio durante la conversación, si lo dio.
     chat_contacto = Column(String(120), nullable=True)
+    # Consumo del turno, sumando todas las rondas al modelo. Sin esto el costo
+    # solo se puede estimar corriendo un benchmark aparte; con esto el panel
+    # puede decir lo que costó de verdad cada conversación. `cache_read` es
+    # además el termómetro del prompt caching: si se va a cero de forma
+    # sostenida, el prefijo dejó de ser estable y el ahorro se perdió.
+    tokens_in = Column(Integer, nullable=True)
+    tokens_out = Column(Integer, nullable=True)
+    cache_read = Column(Integer, nullable=True)
+    cache_write = Column(Integer, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
     __table_args__ = (

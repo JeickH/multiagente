@@ -1574,6 +1574,10 @@ def record_decision(
             failsafe=bool(telemetry.get("failsafe")),
             chat_ref=chat_ref,
             chat_contacto=chat_contacto,
+            tokens_in=telemetry.get("tokens_in"),
+            tokens_out=telemetry.get("tokens_out"),
+            cache_read=telemetry.get("cache_read"),
+            cache_write=telemetry.get("cache_write"),
         )
         db.add(row)
         db.commit()
@@ -1790,10 +1794,17 @@ def _advance_inner(
         if m.get("role") == "user"
         for d in _digitos_de_telefonos(m.get("content") or "")
     ]
+    # Consumo del turno, sumando todas las rondas (#366).
+    uso = {"tokens_in": 0, "tokens_out": 0, "cache_read": 0, "cache_write": 0}
 
     for _ in range(_MAX_TOOL_ROUNDS):
         data = _invoke_model(model_id, system, working, tools)
         rounds += 1
+        _u = data.get("usage") or {}
+        uso["tokens_in"] += _u.get("input_tokens") or 0
+        uso["tokens_out"] += _u.get("output_tokens") or 0
+        uso["cache_read"] += _u.get("cache_read_input_tokens") or 0
+        uso["cache_write"] += _u.get("cache_creation_input_tokens") or 0
         content = data.get("content") or []
         # Marca de agua para poder deshacer lo dicho en ESTA ronda si el
         # guardarraíl la rechaza (ver `_viola_contacto`).
@@ -1892,6 +1903,7 @@ def _advance_inner(
         "finished": finished,
         "escalated_to": escalated_to,
         "failsafe": False,
+        **uso,
     }
     return {
         "actions": actions,
