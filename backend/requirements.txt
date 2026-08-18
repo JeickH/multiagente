@@ -4,6 +4,15 @@ SQLAlchemy>=1.4,<1.6
 psycopg2-binary
 python-dotenv
 passlib[bcrypt]>=1.7,<1.9
+# passlib 1.7.4 (su última versión, 2020) hace un self-test al primer login
+# que revienta con bcrypt>=4.1: la librería empezó a levantar ValueError en
+# vez de truncar en el caso que passlib usa para probar un bug viejo, y
+# `_load_backend_mixin()` no lo atrapa. Sin este pin, cualquier instalación
+# limpia (Docker, CI) resuelve el bcrypt más nuevo y el login queda roto.
+# El Dockerfile ya traía este mismo pin como argumento aparte de pip install;
+# se documenta aquí para que CI y `pip install -r requirements-dev.txt` lo
+# hereden igual.
+bcrypt==4.0.1
 python-jose[cryptography]>=3.5,<3.7
 pydantic[email]>=2.12,<2.14
 pydantic-settings>=2.0.0,<3.0.0
