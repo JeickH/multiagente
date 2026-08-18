@@ -1,0 +1,43 @@
+name: Backend tests
+
+# Corre en cada push a main y en cada PR contra main. No necesita Postgres ni
+# AWS: toda la suite usa SQLite en memoria y dobles de boto3/Bedrock (ver
+# backend/conftest.py y backend/tests/mascotas/conftest.py).
+#
+# Las pruebas marcadas `costo` (backend/tests/mascotas/costo/) llaman a
+# Bedrock de verdad o salen a mascotasperdidascolombia.com en producción.
+# Se saltan aquí a propósito: `pytest` sin `--con-costo` ya las excluye por
+# default (ver backend/conftest.py), así que este workflow no necesita ninguna
+# bandera especial ni credenciales AWS para correr.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: backend-tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+          cache-dependency-path: |
+            backend/requirements.txt
+            backend/requirements-dev.txt
+
+      - name: Instalar dependencias (incluye las de test)
+        run: pip install -r requirements-dev.txt
+
+      - name: Correr la suite (sin las pruebas de costo)
+        run: python -m pytest tests/ -v

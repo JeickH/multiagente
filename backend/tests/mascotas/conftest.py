@@ -86,6 +86,49 @@ def motor_conectado(Sesion, monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def cifrado_estable(monkeypatch):
+    """Una clave de cifrado coherente durante todo el test.
+
+    `crypto._get_fernet()` está cacheado con `lru_cache` y su docstring avisa
+    que si la env var cambia en runtime hay que reiniciar el proceso. En la
+    suite sí cambia: `test_crypto` y `test_meta_account_flow` la reemplazan y
+    recargan el módulo. Sin esto, un token que el bot cifra (`descargar_listado`)
+    y que el test descifra podían quedar con claves distintas — y el fallo solo
+    aparecía al correr la suite entera, nunca el archivo suelto.
+
+    `test_crypto` además **recarga** el módulo: los que hicieron
+    `from ..services.crypto import encrypt_secret` se quedan apuntando a la
+    copia vieja, con su propio `lru_cache` y su propia clave. Por eso no alcanza
+    con limpiar el caché del módulo actual — hay que limpiarlo en cada copia
+    viva, y a esas se llega por los `__globals__` de las funciones ya enlazadas.
+    """
+    from cryptography.fernet import Fernet
+
+    from app.routers import mascotas as router_mascotas
+    from app.services import crypto, llm_engine
+
+    monkeypatch.setenv("APP_ENCRYPTION_KEY", Fernet.generate_key().decode())
+    monkeypatch.delenv("APP_ENCRYPTION_KEY_OLD", raising=False)
+
+    def _limpiar_todas():
+        vistos = set()
+        for fn in (
+            crypto.encrypt_secret,
+            llm_engine.encrypt_secret,
+            router_mascotas.encrypt_secret,
+            router_mascotas.decrypt_secret,
+        ):
+            constructor = fn.__globals__.get("_get_fernet")
+            if constructor is not None and id(constructor) not in vistos:
+                vistos.add(id(constructor))
+                constructor.cache_clear()
+
+    _limpiar_todas()
+    yield
+    _limpiar_todas()
+
+
+@pytest.fixture(autouse=True)
 def canal_limpio():
     """Los límites y las pausas del chat viven en el proceso, no en la base.
 

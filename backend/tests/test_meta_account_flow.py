@@ -26,8 +26,13 @@ for _mod in [m for m in list(sys.modules.keys()) if m.endswith("app.services.cry
 from app import models  # noqa: E402
 from app import crud  # noqa: E402
 from app.database import Base  # noqa: E402
-# Reimport crypto para que crud lo use con la nueva env var
-from app.services import crypto as _crypto  # noqa: E402
+# Reimport crypto para que crud lo use con la nueva env var.
+# `import_module` y no `from app.services import crypto`: tras el `del` de
+# arriba el módulo sigue colgado como atributo del paquete `app.services`, así
+# que la forma `from ... import` devuelve el objeto viejo sin volver a
+# registrarlo en sys.modules — y el `reload` siguiente moría con "not in
+# sys.modules" en cuanto algo importaba crypto antes que este archivo.
+_crypto = importlib.import_module("app.services.crypto")
 importlib.reload(_crypto)
 
 

@@ -1,0 +1,11 @@
+# Dependencias para correr la suite de pruebas. No van en la imagen de
+# producción: `requirements.txt` es lo que se despliega.
+-r requirements.txt
+
+pytest>=8.0,<10
+
+# `services/imagenes` importa numpy dentro de las funciones de SSIM, que solo
+# usa el barrido del bucket (`scripts/optimizar_fotos_mascotas.py`) y que corre
+# desde el equipo del CEO, no dentro del contenedor. Aquí sí hace falta para
+# poder probar esa parte.
+numpy>=1.26,<3
