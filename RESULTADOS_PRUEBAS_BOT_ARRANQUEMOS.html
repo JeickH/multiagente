@@ -1,0 +1,313 @@
+<!DOCTYPE html><html lang="es"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Resultados — 10 conversaciones de prueba contra el bot de Arranquemos Pues</title>
+<style>
+  :root {
+    --paper:#FAFAF8; --ink:#1C2321; --muted:#66736E; --line:#E2E6E3; --card:#FFFFFF;
+    --green:#1F5F4B; --green-soft:#E6F1EC; --mint:#3FA98A;
+    --ok:#1F7A5C; --ok-soft:#E7F4EE; --warn:#B45309; --warn-soft:#FCF0E1;
+    --stop:#A32F2A; --stop-soft:#FBEBEA; --code:#F1F4F2;
+  }
+  @media (prefers-color-scheme: dark) { :root {
+    --paper:#101614; --ink:#E6ECE9; --muted:#95A39D; --line:#28332F; --card:#18211E;
+    --green:#6FC9A8; --green-soft:#172B24; --mint:#8FDCC2;
+    --ok:#5FC79E; --ok-soft:#152A22; --warn:#E9A159; --warn-soft:#2E2313;
+    --stop:#EE8078; --stop-soft:#2E1817; --code:#1D2724; } }
+  :root[data-theme="dark"] {
+    --paper:#101614; --ink:#E6ECE9; --muted:#95A39D; --line:#28332F; --card:#18211E;
+    --green:#6FC9A8; --green-soft:#172B24; --mint:#8FDCC2;
+    --ok:#5FC79E; --ok-soft:#152A22; --warn:#E9A159; --warn-soft:#2E2313;
+    --stop:#EE8078; --stop-soft:#2E1817; --code:#1D2724; }
+  :root[data-theme="light"] {
+    --paper:#FAFAF8; --ink:#1C2321; --muted:#66736E; --line:#E2E6E3; --card:#FFFFFF;
+    --green:#1F5F4B; --green-soft:#E6F1EC; --mint:#3FA98A;
+    --ok:#1F7A5C; --ok-soft:#E7F4EE; --warn:#B45309; --warn-soft:#FCF0E1;
+    --stop:#A32F2A; --stop-soft:#FBEBEA; --code:#F1F4F2; }
+
+  * { box-sizing:border-box; }
+  body { background:var(--paper); color:var(--ink); margin:0; padding:0 20px 90px;
+    font:16px/1.62 "Avenir Next","Segoe UI",system-ui,sans-serif; }
+  main { max-width:900px; margin:0 auto; }
+  header { padding:46px 0 16px; border-bottom:2px solid var(--green); margin-bottom:6px; }
+  h1 { font-size:1.85rem; margin:0 0 10px; letter-spacing:-0.015em; text-wrap:balance; }
+  .sub { color:var(--muted); max-width:66ch; margin:0; }
+  h2 { font-size:1.18rem; margin:44px 0 6px; padding-top:14px; border-top:1px solid var(--line);
+    letter-spacing:-0.01em; }
+  h2 .fase { color:var(--green); font-size:0.75rem; font-weight:700; text-transform:uppercase;
+    letter-spacing:0.1em; display:block; margin-bottom:3px; }
+  h3 { font-size:0.98rem; margin:26px 0 6px; }
+  p { max-width:70ch; }
+  code { background:var(--code); padding:1px 6px; border-radius:5px;
+    font-family:ui-monospace,"SF Mono",Menlo,monospace; font-size:0.85em; }
+  a { color:var(--green); }
+
+  .chips { display:flex; flex-wrap:wrap; gap:8px; margin:14px 0 4px; }
+  .chip { font-size:0.76rem; font-weight:600; padding:4px 12px; border-radius:999px;
+    border:1px solid var(--line); background:var(--card); color:var(--muted); }
+  .chip.g { background:var(--green-soft); color:var(--green); border-color:transparent; }
+  .chip.w { background:var(--warn-soft); color:var(--warn); border-color:transparent; }
+  .chip.s { background:var(--stop-soft); color:var(--stop); border-color:transparent; }
+
+  .tw { overflow-x:auto; margin:14px 0; border:1px solid var(--line); border-radius:12px;
+    background:var(--card); }
+  table { border-collapse:collapse; width:100%; font-size:0.9rem; min-width:520px; }
+  th, td { text-align:left; padding:10px 13px; border-bottom:1px solid var(--line);
+    vertical-align:top; }
+  th { background:var(--green-soft); color:var(--green); font-size:0.74rem;
+    text-transform:uppercase; letter-spacing:0.07em; border-bottom:1px solid var(--line); }
+  tbody tr:last-child td { border-bottom:none; }
+  td.n { font-variant-numeric:tabular-nums; white-space:nowrap; font-weight:600; color:var(--green); }
+
+  .box { border:1px solid var(--line); border-left:3px solid var(--green); background:var(--card);
+    border-radius:0 12px 12px 0; padding:14px 18px; margin:18px 0; }
+  .box.warn { border-left-color:var(--warn); }
+  .box.stop { border-left-color:var(--stop); }
+  .box h4 { margin:0 0 6px; font-size:0.78rem; text-transform:uppercase; letter-spacing:0.08em;
+    color:var(--green); }
+  .box.warn h4 { color:var(--warn); }
+  .box.stop h4 { color:var(--stop); }
+  .box p:last-child, .box ul:last-child { margin-bottom:0; }
+  .box p:first-of-type { margin-top:0; }
+
+  ul.clean { list-style:none; padding-left:0; }
+  ul.clean li { padding:6px 0 6px 26px; position:relative; border-bottom:1px dashed var(--line); }
+  ul.clean li:last-child { border-bottom:none; }
+  ul.clean li::before { content:"✕"; position:absolute; left:4px; color:var(--stop); font-weight:700; }
+  ul.clean.yes li::before { content:"✓"; color:var(--ok); }
+
+  .auth { border:2px solid var(--green); border-radius:14px; background:var(--card);
+    padding:20px 22px; margin:28px 0 0; }
+  .auth h3 { margin-top:0; font-size:1.05rem; }
+  .auth ol { padding-left:20px; margin:10px 0 0; }
+  .auth li { padding:7px 0; }
+  .auth li b { color:var(--green); }
+
+  footer { margin-top:56px; padding-top:18px; border-top:1px solid var(--line);
+    color:var(--muted); font-size:0.84rem; }
+  .badge { display:inline-block; font-size:0.72rem; font-weight:700; padding:2px 8px;
+    border-radius:5px; background:var(--stop-soft); color:var(--stop); letter-spacing:0.03em; }
+  .badge.ok { background:var(--ok-soft); color:var(--ok); }
+</style>
+</head><body>
+<main>
+<header>
+  <h1>Diez conversaciones de prueba contra el bot de Arranquemos Pues</h1>
+  <p class="sub">Bot <b>“Plan Tolú &amp; Coveñas (IA)”</b> (id 12) de la cuenta
+  <code>arranquemospues.contacto@gmail.com</code>. La prueba se corrió <b>en producción</b>, como
+  pediste, y los arreglos que salieron de ella ya están desplegados.</p>
+  <div class="chips">
+    <span class="chip g">10 conversaciones · 25 turnos</span>
+    <span class="chip">Modelo: Haiku 4.5 · sa-east-1</span>
+    <span class="chip s">8 hallazgos</span>
+    <span class="chip ok">8 cerrados</span>
+    <span class="chip w">Costo de las corridas: US$ 0,21</span>
+  </div>
+</header>
+
+<h2><span class="fase">Método</span>Cómo se prueba en producción sin mandarle un WhatsApp a nadie</h2>
+
+<p>La prueba corre <b>dentro de la imagen desplegada en ECS</b>: lee el bot de RDS y habla con el
+Claude de Bedrock que atiende a los clientes. Es el mismo <code>llm_engine.advance</code> que
+ejecuta el webhook de WhatsApp, no una copia de laboratorio.</p>
+
+<ul class="clean yes">
+  <li><b>No envía mensajes.</b> No toca el sender <code>+57 333 432 4954</code> ni gasta del cupo
+  de 250 conversaciones/24 h.</li>
+  <li><b>No escribe en la base.</b> No registra decisiones de prueba en
+  <code>bot_llm_decisions</code>; el consumo de tokens sale de la telemetría de cada turno.</li>
+  <li><b>Sí gasta modelo</b>: US$ 0,14 la línea base y US$ 0,06 cada control.</li>
+</ul>
+
+<div class="box warn">
+  <h4>Dos trampas del método, para la próxima</h4>
+  <p>Los <i>container overrides</i> de ECS tienen tope de <b>8.192 caracteres</b> y el guion no
+  cabía: viaja comprimido (<code>zlib</code>+<code>base64</code>) dentro de un <code>python -c</code>.
+  Y <code>rds_exec.sh</code> apunta por defecto a <code>multiagente-backend:15</code> — para probar
+  <b>lo que está desplegado</b> hay que pasarle la revisión vigente, o se prueba una imagen de hace
+  meses creyendo que es producción.</p>
+</div>
+
+<h2><span class="fase">Hallazgos</span>Qué encontraron los 10 guiones</h2>
+
+<div class="tw"><table>
+  <thead><tr><th>#</th><th>Qué pasó</th><th>Evidencia</th><th>Estado</th></tr></thead>
+  <tbody>
+    <tr><td class="n">1 🔴</td><td>El bot le mandó al cliente <code>&lt;/parameter&gt;</code> y
+      <code>&lt;/invoke&gt;</code> literales</td>
+      <td>2 de 25 turnos, ambos en el guion de medios de pago. Eso viaja tal cual por WhatsApp.</td>
+      <td><span class="badge ok">cerrado</span></td></tr>
+    <tr><td class="n">2 🔴</td><td>Inventó características del plan</td>
+      <td>“Hospedaje en hotel <b>3 estrellas</b>” y “alimentación completa: desayuno, almuerzo y
+      cena <b>todos los días</b>”. El contexto no da categoría del hotel, y el lunes solo hay
+      desayuno. Es material de reclamo en el destino.</td>
+      <td><span class="badge ok">cerrado</span></td></tr>
+    <tr><td class="n">3 🟠</td><td>Negó medios de pago por su cuenta</td>
+      <td>“Lamentablemente Nequi y contraentrega no están dentro de las opciones”. Nadie le dijo
+      eso: lo dedujo de una lista y cerró una puerta comercial.</td>
+      <td><span class="badge ok">cerrado</span></td></tr>
+    <tr><td class="n">4 🟠</td><td>Le preguntó el nombre a quien acababa de darlo</td>
+      <td>“Hola, soy Andrés” → “¿Con quién tengo el gusto? 😊 Ah, perfecto Andrés…”. En 3 de las 7
+      conversaciones donde la persona se presentó. Se lee a robot.</td>
+      <td><span class="badge ok">cerrado</span></td></tr>
+    <tr><td class="n">5 🟡</td><td>Mandó imágenes sin anunciarlas</td>
+      <td><code>info_general</code> pegada al saludo, sin una línea que dijera qué era.</td>
+      <td><span class="badge ok">cerrado</span></td></tr>
+    <tr><td class="n">6 🟡</td><td><b>0 % de prompt caching</b></td>
+      <td><code>cache_read=0</code> en los 25 turnos, pese a que #363 lo activó y el bot de mascotas
+      ahorra ~68 %. El bot pagaba entrada completa en silencio.</td>
+      <td><span class="badge ok">cerrado</span></td></tr>
+    <tr><td class="n">7 🟡</td><td>Los chips de camino mentían</td>
+      <td>4 de 25: el itinerario se registraba como <code>tours</code>, el hotel como
+      <code>precios_condiciones</code>, “¿eres un bot?” como <code>asesor</code>. Las métricas de
+      “qué pregunta la gente” salían sesgadas.</td>
+      <td><span class="badge ok">cerrado</span></td></tr>
+    <tr><td class="n">8 🟢</td><td>Asterisco huérfano visible</td>
+      <td>“…una experiencia increíble!<b>*</b>”. WhatsApp solo cierra la negrilla en el mismo
+      renglón.</td>
+      <td><span class="badge ok">cerrado</span></td></tr>
+  </tbody>
+</table></div>
+
+<div class="box">
+  <h4>Lo que ya funcionaba y no se tocó</h4>
+  <p>Nunca citó un precio de memoria, ni siquiera bajo presión (“¿me lo dejas en 300 mil?”): manda
+  los tarifarios. El itinerario salió exacto, con los opcionales correctos. Y ante los datos de
+  reserva escaló en un solo turno, con el motivo completo para el asesor.</p>
+</div>
+
+<h2><span class="fase">El dato caro</span>Por qué el caché estaba apagado (y no era un bug)</h2>
+
+<p>Esta era la parte que no se podía adivinar leyendo código. El caché no fallaba: Bedrock
+simplemente <b>no cachea</b> un prefijo por debajo de un mínimo, y no lo reporta como error. Se
+midió invocando el modelo con prefijos de distinto tamaño:</p>
+
+<div class="tw"><table>
+  <thead><tr><th>Bloque <code>system</code></th><th><code>cache_write</code></th><th><code>cache_read</code></th><th>Resultado</th></tr></thead>
+  <tbody>
+    <tr><td class="n">~2.700 tok <i>(contexto original)</i></td><td>0</td><td>0</td><td>no cachea</td></tr>
+    <tr><td class="n">3.756 tok</td><td>0</td><td>0</td><td>no cachea</td></tr>
+    <tr><td class="n">4.328 tok <i>(system+tools)</i></td><td>0</td><td>0</td><td>no cachea</td></tr>
+    <tr><td class="n">4.194 tok <i>(solo system)</i></td><td>4.194</td><td>4.194</td><td><span class="badge ok">cachea</span></td></tr>
+  </tbody>
+</table></div>
+
+<div class="box stop">
+  <h4>La regla, para todos los bots</h4>
+  <p>El mínimo de Haiku 4.5 en Bedrock es <b>4.096 tokens y cuenta solo el bloque
+  <code>system</code></b>: las <i>tools</i> no suman aunque se rendericen antes. Un bot con contexto
+  corto <b>no cachea nunca</b> y paga el triple sin que nada falle. El de mascotas ahorraba porque
+  su contexto es grande; el de viajes se quedaba 340 tokens corto.</p>
+</div>
+
+<p>Esos 340 tokens no se rellenaron con paja: se invirtieron en una sección de <b>ejemplos
+resueltos</b> —el saludo con nombre, el hotel, Nequi, el descuento, el tema fuera de catálogo— que
+era justo lo que hacía falta para los hallazgos 2, 3 y 4. Un mismo cambio arregló las invenciones
+y encendió el descuento.</p>
+
+<h2><span class="fase">Cambios</span>Qué entró</h2>
+
+<div class="tw"><table>
+  <thead><tr><th>Qué</th><th>Dónde</th></tr></thead>
+  <tbody>
+    <tr><td>Sanitizador: borra el andamiaje de tool-use y el asterisco sin pareja antes de que
+      salga al cliente. Cubre WhatsApp, el simulador y el chat de la landing de una vez.</td>
+      <td><code>services/llm_engine.py</code></td></tr>
+    <tr><td>Contexto reescrito: hotel <b>El Amor de Dios</b> (solo el nombre y el video), la lista
+      real de medios de pago, precio fijo sin negociación, saludo condicional según haya nombre o
+      no, “<b>negar también es inventar</b>”, y el <i>catch-all</i>: lo que no cae en los ocho
+      caminos va a un asesor humano.</td>
+      <td><code>app/bot_contexts/demo_viajes.md</code></td></tr>
+    <tr><td>La pregunta de la persona manda sobre el medio adjunto al clasificar el camino;
+      <code>hotel</code> y <code>otros_destinos</code> pasan a ser caminos propios; “asesor” se
+      detecta por frases y no por la palabra suelta “persona”.</td>
+      <td><code>_classify_camino</code>, <code>seed_bot_viajes_llm.py</code></td></tr>
+    <tr><td>Actualización quirúrgica de la config del bot en la base, <b>sin borrar nada</b>.</td>
+      <td><code>scripts/migrate_viajes_caminos.py</code></td></tr>
+    <tr><td>Los 10 guiones versionados como suite: <b>38 tests</b>, 21 gratis y 17 contra el modelo
+      real (<code>--con-costo</code>).</td>
+      <td><code>backend/tests/viajes/</code></td></tr>
+  </tbody>
+</table></div>
+
+<div class="box warn">
+  <h4>Por qué un script nuevo y no re-correr el seed</h4>
+  <p><code>seed_bot_viajes_llm.py</code> <b>borra todos los bots de la cuenta</b> antes de
+  recrearlos (decisión #254). Contra producción se habría llevado por delante el bot 12 con su
+  historial. El script nuevo solo hace <code>UPDATE</code> y es idempotente.</p>
+</div>
+
+<h2><span class="fase">Resultado</span>La misma prueba, antes y después</h2>
+
+<div class="tw"><table>
+  <thead><tr><th>&nbsp;</th><th>Antes <code>:lote366</code></th><th>Después <code>:lote372b</code></th></tr></thead>
+  <tbody>
+    <tr><td>Andamiaje de tool-use al cliente</td><td>2 turnos</td><td class="n">0</td></tr>
+    <tr><td>Datos inventados</td><td>hotel 3★, comidas de más</td><td class="n">0</td></tr>
+    <tr><td>Medios de pago negados por su cuenta</td><td>sí</td><td class="n">0 · escala a un humano</td></tr>
+    <tr><td>Pregunta el nombre de nuevo</td><td>3 de 7</td><td class="n">0</td></tr>
+    <tr><td>Chips de camino errados</td><td>4 de 25</td><td class="n">0</td></tr>
+    <tr><td>Entrada servida por caché</td><td>0 %</td><td class="n">89 %</td></tr>
+    <tr><td>Costo por conversación</td><td>US$ 0,0143</td><td class="n">US$ 0,0063 <i>(−56 %)</i></td></tr>
+    <tr><td>Latencia p50 / p95</td><td>4.232 / 5.327 ms</td><td class="n">4.151 / 5.262 ms</td></tr>
+  </tbody>
+</table></div>
+
+<p>Con el cupo actual de 250 conversaciones/24 h, el techo de gasto del bot baja de ~US$ 12 a
+<b>~US$ 5 al día</b>.</p>
+
+<h3>El mismo turno, antes y después</h3>
+
+<div class="box stop">
+  <h4>Antes — medios de pago</h4>
+  <p>“Lamentablemente Nequi y contraentrega no están dentro de las opciones en este momento…”<br>
+  <code>&lt;/parameter&gt;</code></p>
+</div>
+
+<div class="box">
+  <h4>Después — medios de pago</h4>
+  <p>“Los medios de pago habilitados son: llave <b>Bre-B</b>, <b>Bancolombia</b>, <b>Davivienda</b>,
+  <b>BBVA</b>, efectivo, tarjetas <b>Mastercard</b>, <b>Visa</b> y <b>American Express</b>, y
+  <b>Crédito Fácil Codensa</b> 💳. Nequi y contraentrega no están en la lista en este momento. Te
+  paso con un asesor para que revise si hay alguna alternativa…” → <code>escalar_a_asesor</code></p>
+</div>
+
+<div class="box stop">
+  <h4>Antes — el hotel</h4>
+  <p>“🏨 <b>Hospedaje</b> en hotel 3 estrellas · 🍽️ <b>Alimentación completa</b>: desayuno, almuerzo
+  y cena todos los días”</p>
+</div>
+
+<div class="box">
+  <h4>Después — el hotel</h4>
+  <p>“Nos hospedamos en el hotel <b>El Amor de Dios</b> 🏨. Te dejo el video para que lo veas 👇
+  Sobre las estrellas, tipo de habitación y servicios te paso con un asesor, que te da el detalle
+  exacto 💬”</p>
+</div>
+
+<h2><span class="fase">Abierto</span>Lo que queda</h2>
+
+<ul class="clean">
+  <li><b>Paridad local.</b> <code>migrate_viajes_caminos.py</code> está aplicado en RDS pero no en la
+  base local: el puerto 5432 lo tiene ocupado otro Postgres del equipo y el contenedor
+  <code>db</code> no levanta. Es cambio de datos, no de schema, y el script es idempotente — una
+  corrida cuando el puerto esté libre.</li>
+  <li><b>Escalar cierra la conversación.</b> Un “¿tienen San Andrés?” temprano corta la venta del
+  plan de Coveñas. Es exactamente lo que pediste, pero vale decidir si el bot debería ofrecer
+  seguir con Tolú antes de soltar.</li>
+  <li><b>Las preguntas frecuentes reales</b> (equipaje, niños, cancelaciones, fechas de salida)
+  quedaron para la próxima iteración. Hoy caen en el catch-all y terminan en un asesor, que es
+  correcto pero le carga trabajo a la persona.</li>
+  <li><b>La suite con costo es la red de seguridad.</b> Cada uno de los 8 hallazgos tiene su test:
+  <code>pytest --con-costo -m costo tests/viajes</code>, unos 15 centavos la corrida. Vale correrla
+  antes de cada cambio del contexto.</li>
+</ul>
+
+<footer>
+  Prueba ejecutada el 18 de agosto de 2026 · bot “Plan Tolú &amp; Coveñas (IA)” (id 12) ·
+  cuenta <code>arranquemospues.contacto@gmail.com</code> · imágenes <code>:lote366</code> (línea
+  base) y <code>:lote372b</code> (control, task-def 47) · modelo
+  <code>global.anthropic.claude-haiku-4-5</code> en sa-east-1.
+</footer>
+
+</main>
+</body></html>

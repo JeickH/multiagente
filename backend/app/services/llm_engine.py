@@ -1493,9 +1493,17 @@ def _classify_camino(
     """Deriva el camino que tomó el bot en este turno.
 
     Prioridad: (1) failsafe; (2) la herramienta llamada ES la decisión
-    (escalar/fin/shopify); (3) el `camino` declarado del medio enviado;
-    (4) clasificador por keywords de `llm_config.caminos`; (5) saludo si es
-    el primer turno; (6) respuesta_libre.
+    (escalar/fin/shopify); (3) clasificador por keywords de lo que PREGUNTÓ la
+    persona (`llm_config.caminos`); (4) el `camino` declarado del medio
+    enviado; (5) saludo si es el primer turno; (6) respuesta_libre.
+
+    El orden (3) antes que (4) se corrigió el 2026-08-18: el chip que ve el
+    tenant en el panel debe decir de qué se le habló, y el medio adjunto no es
+    buen testigo de eso. "¿Cómo es el itinerario?" quedaba marcado como `tours`
+    solo porque la respuesta traía el video de los tours, y "¿y el hotel cómo
+    es?" como `precios_condiciones` porque ahí estaba mapeado `hotel_video`.
+    Con la pregunta mandando, la métrica de "qué pregunta la gente" deja de
+    estar sesgada por lo que el bot decidió adjuntar.
     """
     if failsafe:
         return "failsafe"
@@ -1520,12 +1528,6 @@ def _classify_camino(
         return "catalogo"
     if "finalizar_conversacion" in tool_names:
         return "fin"
-    if sent_media_log:
-        media = _media_catalog(cfg)
-        for key in sent_media_log:
-            camino = (media.get(key) or {}).get("camino")
-            if camino:
-                return str(camino)
     text = (user_input or "").lower()
     if text:
         caminos = cfg.get("caminos")
@@ -1536,8 +1538,13 @@ def _classify_camino(
                 for kw in keywords:
                     if isinstance(kw, str) and kw and kw.lower() in text:
                         return str(label)
-        return "respuesta_libre"
-    return "saludo"
+    if sent_media_log:
+        media = _media_catalog(cfg)
+        for key in sent_media_log:
+            camino = (media.get(key) or {}).get("camino")
+            if camino:
+                return str(camino)
+    return "respuesta_libre" if text else "saludo"
 
 
 def record_booking(
@@ -1718,16 +1725,63 @@ def _invoke_model(
 
 _MD_BOLD_RE = re.compile(r"\*\*(?=\S)([^*\n]+?)(?<=\S)\*\*")
 
+# Sintaxis de tool-use que el modelo a veces escupe COMO TEXTO en vez de emitir
+# como bloque `tool_use`. Visto en producción el 2026-08-18: dos respuestas del
+# bot de viajes terminaron con `</parameter>` y `</invoke>` a la vista, y eso
+# viaja tal cual por WhatsApp. No es recuperable río arriba —el modelo ya se
+# equivocó— así que se limpia a la salida, donde pasan los tres canales.
+_ANDAMIAJE_RE = re.compile(
+    r"</?\s*(?:antml:)?"
+    r"(?:invoke|parameter|function_calls|function_results|tool_use|tool_result)"
+    r"\b[^>]*>",
+    re.IGNORECASE,
+)
+
+
+def _sin_andamiaje(text: str) -> str:
+    """Borra los tags de tool-use filtrados, y con ellos las líneas que dejen
+    vacías (si no, queda un renglón en blanco en mitad del mensaje).
+
+    Una línea que ya venía vacía se respeta: son los saltos de párrafo con los
+    que el modelo separa las ideas, y quitarlos apelmaza el mensaje.
+    """
+    lineas = []
+    for linea in text.split("\n"):
+        limpia = _ANDAMIAJE_RE.sub("", linea)
+        if limpia.strip() or not linea.strip():
+            lineas.append(limpia)
+    return "\n".join(lineas).strip()
+
+
+def _sin_asterisco_huerfano(text: str) -> str:
+    """Quita el `*` que quedó sin pareja en una línea.
+
+    WhatsApp solo cierra la negrilla con un segundo asterisco en el MISMO
+    renglón; el que sobra se ve crudo ("una experiencia increíble!*"). Se
+    descarta el último, que es el que quedó abierto al leer de izquierda a
+    derecha.
+    """
+    lineas = []
+    for linea in text.split("\n"):
+        if linea.count("*") % 2:
+            corte = linea.rfind("*")
+            linea = linea[:corte] + linea[corte + 1:]
+        lineas.append(linea)
+    return "\n".join(lineas)
+
 
 def _to_whatsapp_format(text: str) -> str:
-    """Normaliza el markdown que a veces emite el modelo al formato WhatsApp.
+    """Normaliza lo que emite el modelo al formato que WhatsApp sí renderiza.
 
     WhatsApp usa `*negrilla*` (un asterisco) y muestra `**así**` literalmente,
     con los asteriscos a la vista. El system prompt lo pide, pero el modelo
     recae en markdown de vez en cuando: se corrige aquí para los tres canales
     (WhatsApp, simulador y landing) en vez de en cada frontend.
+
+    El orden importa: el asterisco huérfano se busca DESPUÉS de convertir la
+    negrilla, para contar los que de verdad le van a llegar al cliente.
     """
-    return _MD_BOLD_RE.sub(r"*\1*", text)
+    return _sin_asterisco_huerfano(_MD_BOLD_RE.sub(r"*\1*", _sin_andamiaje(text)))
 
 
 def _load_history(state: Optional[Dict[str, Any]]) -> List[Dict[str, str]]:

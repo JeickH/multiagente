@@ -64,12 +64,12 @@ MEDIA = {
     },
     "hotel_video": {
         "url": f"{M}/demo_viajes/hotel.mp4", "media_type": "video",
-        "descripcion": "video del hotel donde se hospedan",
-        "camino": "precios_condiciones",
+        "descripcion": "video del hotel 'El Amor de Dios' donde se hospedan",
+        "camino": "hotel",
     },
     "medios_pago": {
         "url": f"{M}/demo_viajes/medios_pago.jpeg", "media_type": "image",
-        "descripcion": "imagen con los métodos de pago (transferencia, PSE, tarjeta)",
+        "descripcion": "imagen con los métodos de pago (Bre-B, bancos, efectivo, tarjetas)",
         "camino": "pagos",
     },
     "formulario_reserva": {
@@ -79,22 +79,39 @@ MEDIA = {
     },
 }
 
-# #255 observabilidad: clasificador de camino por keywords (fallback cuando el
-# turno no llama tools ni envía media). Orden = prioridad de matcheo.
+# #255 observabilidad: clasificador de camino por la pregunta de la persona.
+# Orden = prioridad de matcheo (el dict conserva el orden de escritura), así
+# que lo específico va ANTES que lo genérico.
 CAMINOS = {
-    "reserva": ["reserva", "reservar", "apartar", "separar", "cedula", "cédula"],
+    "reserva": ["reserva", "reservar", "apartar", "separar", "cedula", "cédula",
+                 "cupo"],
+    # Va de primero: "¿tienen plan a San Andrés?" caía en info_general por la
+    # palabra "plan", y es justo el caso que debe ir a un asesor humano.
+    "otros_destinos": ["san andres", "san andrés", "cartagena", "santa marta",
+                        "guajira", "eje cafetero", "providencia", "otro destino",
+                        "otros destinos", "otro plan", "otros planes",
+                        "otro viaje", "otros viajes"],
+    "hotel": ["hotel", "hospedaje", "alojamiento", "habitacion", "habitación",
+               "amor de dios"],
     "itinerario": ["itinerario", "agenda", "cronograma", "dia a dia", "día a día",
-                    "actividades", "que hacemos", "qué hacemos"],
+                    "actividades", "que hacemos", "qué hacemos", "a que hora",
+                    "a qué hora"],
     "precios_condiciones": ["precio", "precios", "cuesta", "cuanto", "cuánto",
-                             "valor", "tarifa", "condicion", "condición", "hotel",
-                             "abono", "reembolso", "cancelacion", "cancelación"],
-    "tours": ["tour", "tours", "caimanera", "cienaga", "ciénaga", "paseo",
-               "incluye", "incluido"],
+                             "valor", "tarifa", "condicion", "condición",
+                             "descuento", "rebaja", "abono", "reembolso",
+                             "cancelacion", "cancelación"],
     "pagos": ["pago", "pagar", "pse", "transferencia", "tarjeta", "nequi",
-               "daviplata", "metodo", "método"],
+               "daviplata", "bre-b", "breb", "bancolombia", "davivienda",
+               "bbva", "efectivo", "codensa", "metodo", "método"],
+    "tours": ["tour", "tours", "caimanera", "cienaga", "ciénaga", "paseo",
+               "incluye", "incluido", "playa"],
+    # Frases, no palabras sueltas: "persona" a secas marcaba como `asesor` un
+    # "¿eres una persona real o un bot?", que no es una petición de humano.
+    "asesor": ["hablar con una persona", "con una persona", "asesor humano",
+                "un asesor", "una asesora", "un humano", "con alguien",
+                "atencion humana", "atención humana"],
     "info_general": ["informacion", "información", "info", "plan", "covenas",
                       "coveñas", "tolu", "tolú", "promo"],
-    "asesor": ["asesor", "asesora", "humano", "persona", "agente"],
 }
 
 
@@ -126,12 +143,13 @@ STEPS = [
         "mode": "accion", "accion": "info", "fuente": "contexto a priori",
         "mensaje": "🌴✨ ITINERARIO: 🚌 Viernes viaje (salida 6-9pm, Estación "
                    "Universidad) · 📍 Sábado Caimanera · 📍 Domingo Tolú · "
-                   "🚌 Lunes regreso. Desayunos, almuerzos y cenas incluidos ⚠️ "
-                   "sujeto a cambios logísticos."}},
+                   "🚌 Lunes regreso. Alimentación del desayuno del sábado al "
+                   "desayuno del lunes ⚠️ sujeto a cambios logísticos."}},
     {"step_type": "llm", "label": "Métodos de pago", "config": {
         "mode": "accion", "accion": "media", "fuente": "medios_pago.jpeg",
-        "mensaje": "Estos son los métodos de pago disponibles 💳. Aceptamos "
-                   "transferencia, PSE y tarjeta."}},
+        "mensaje": "Estos son los métodos de pago disponibles 💳: llave Bre-B, "
+                   "Bancolombia, Davivienda, BBVA, efectivo, tarjetas "
+                   "Mastercard/Visa/Amex y Crédito Fácil Codensa."}},
     {"step_type": "llm", "label": "Reserva · pide los datos", "config": {  # 7
         "mode": "accion", "accion": "media",
         "fuente": "fomulario_reserva.jpeg",

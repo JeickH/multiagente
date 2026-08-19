@@ -60,6 +60,57 @@ class WhatsappFormatTests(unittest.TestCase):
             "ya es *negrilla* y ** suelto",
         )
 
+    def test_borra_el_andamiaje_de_tool_use_que_se_filtra_como_texto(self):
+        """Caso real de producción (2026-08-18, bot de viajes): el modelo cerró
+        su respuesta con los tags del tool-use y el cliente los vería crudos."""
+        crudo = (
+            "¿Quieres ver los precios del plan? 📦\n"
+            "</parameter>\n"
+            "</invoke>"
+        )
+        self.assertEqual(
+            llm_engine._to_whatsapp_format(crudo),
+            "¿Quieres ver los precios del plan? 📦",
+        )
+
+    def test_borra_el_andamiaje_en_cualquier_variante(self):
+        for tag in (
+            '<parameter name="claves">', "<invoke>", "</invoke>",
+            "<function_calls>", "</function_results>", "<tool_use>",
+        ):
+            with self.subTest(tag=tag):
+                self.assertEqual(
+                    llm_engine._to_whatsapp_format(f"Hola {tag} Camilo"),
+                    "Hola  Camilo",
+                )
+
+    def test_respeta_los_saltos_de_parrafo(self):
+        """Solo se cae la línea que el andamiaje dejó vacía; el renglón en
+        blanco que separa párrafos es del modelo y se queda."""
+        crudo = "Primera línea\n\nSegunda línea\n</parameter>"
+        self.assertEqual(
+            llm_engine._to_whatsapp_format(crudo),
+            "Primera línea\n\nSegunda línea",
+        )
+
+    def test_quita_el_asterisco_que_quedo_sin_pareja(self):
+        """WhatsApp solo cierra la negrilla en el mismo renglón; el que sobra
+        se ve crudo (caso real: '...una experiencia increíble!*')."""
+        self.assertEqual(
+            llm_engine._to_whatsapp_format(
+                "es un viaje *de viernes a lunes* y es increíble!* 🙌"
+            ),
+            "es un viaje *de viernes a lunes* y es increíble! 🙌",
+        )
+
+    def test_el_asterisco_huerfano_se_cuenta_despues_de_la_negrilla(self):
+        """`**Gloma**` son cuatro asteriscos antes y dos después: contar antes
+        de convertir daría impar y se comería una negrilla legítima."""
+        self.assertEqual(
+            llm_engine._to_whatsapp_format("Somos **Gloma** y *vendemos* más"),
+            "Somos *Gloma* y *vendemos* más",
+        )
+
 
 class FranjasAgendaTests(unittest.TestCase):
     """Sprint 21 #291: política de agenda — L-V 10:00-16:00, +3 días hábiles."""

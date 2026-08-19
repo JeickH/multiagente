@@ -3377,3 +3377,100 @@ visión: costaría más que toda la operación.
   para métricas.
 - El desempate visual no se persiste: se recalcula en cada búsqueda. Si el
   volumen crece, cachear por par de fotos.
+
+---
+
+## #372 — Diez conversaciones de prueba contra el bot de Arranquemos Pues (2026-08-18)
+
+**Pedido del CEO**: probar el bot con un guion de 10 conversaciones y dar
+retroalimentación. Con una condición que cambió el diseño de la prueba: **tenía
+que ser en producción**.
+
+### Cómo se probó sin mandarle un WhatsApp a nadie
+
+La prueba corre **dentro de la imagen desplegada** (`ecs run-task` sobre el
+task-def vigente), lee el bot de RDS y habla con el Claude de Bedrock que
+atiende a los clientes: el mismo `llm_engine.advance` del webhook. No envía
+mensajes —no toca el sender `+57 333 432 4954` ni el cupo de 250 conv/24h— y no
+escribe en la base: los tokens salen de la telemetría del turno, así que
+`bot_llm_decisions` no queda contaminada con tráfico de prueba.
+
+Detalle operativo: los container overrides de ECS tienen tope de **8192
+caracteres** y el guion no cabía. Se manda comprimido (`zlib`+`base64`) dentro
+de un `python -c`. Ojo también con `rds_exec.sh`: su `TASKDEF` por defecto es
+`multiagente-backend:15` — para probar **lo que está desplegado** hay que
+pasarle la revisión vigente.
+
+### Lo que encontró la línea base (imagen `:lote366`)
+
+| # | Hallazgo | Gravedad |
+|---|----------|----------|
+| 1 | El bot le mandó al cliente `</parameter>` y `</invoke>` literales (2 de 25 turnos) | 🔴 |
+| 2 | Inventó "hotel 3 estrellas" y "comidas todos los días" (el lunes solo hay desayuno) | 🔴 |
+| 3 | Negó Nequi/contraentrega como si fuera política de la agencia | 🟠 |
+| 4 | Le preguntó el nombre a quien acababa de darlo (3 de 7) | 🟠 |
+| 5 | Mandó `info_general` sin anunciarla en el texto | 🟡 |
+| 6 | **0% de prompt caching** pese a #363 | 🟡 |
+| 7 | Los chips de camino mentían en 4 de 25 turnos | 🟡 |
+| 8 | Asterisco huérfano visible (`increíble!*`) | 🟢 |
+
+### El dato que no se podía adivinar: el mínimo cacheable
+
+#363 activó el caching y el bot de mascotas ahorra ~68%, pero el de viajes
+marcaba `cache_read=0` **en los 25 turnos**. La causa se midió, no se supuso:
+
+| Prefijo (bloque `system`) | Resultado |
+|---|---|
+| 2.700 tok (contexto viejo) | no cachea |
+| 3.756 tok | no cachea |
+| 4.328 tok | **no cachea** |
+| 4.194 tok de `system` + tools aparte | **cachea** (`cache_write` → `cache_read`) |
+
+El mínimo de Haiku 4.5 en Bedrock es **4.096 y cuenta solo el bloque `system`**:
+las tools no suman aunque se rendericen antes. Un bot con contexto corto no
+cachea nunca, y no falla — paga triple en silencio. Los ~400 tokens que
+faltaban se invirtieron en la sección de ejemplos del contexto, que además era
+lo que hacía falta para los hallazgos 2, 3 y 4.
+
+### Lo que entró
+
+| Lote | Qué | Dónde |
+|------|-----|-------|
+| A | Sanitizador de andamiaje de tool-use + asterisco huérfano | `services/llm_engine.py` (`_sin_andamiaje`, `_sin_asterisco_huerfano`) |
+| B | Contexto reescrito: hotel *El Amor de Dios* (solo el nombre), lista real de medios de pago, precio fijo sin descuentos, saludo condicional, "negar también es inventar", catch-all a asesor y 7 ejemplos resueltos | `app/bot_contexts/demo_viajes.md` |
+| C | La pregunta manda sobre el adjunto al clasificar el camino; `hotel` y `otros_destinos` como caminos propios; `asesor` por frases y no por la palabra "persona" | `llm_engine._classify_camino`, `scripts/seed_bot_viajes_llm.py` |
+| C | Update quirúrgico de la config del bot **sin borrar nada** | `scripts/migrate_viajes_caminos.py` |
+| D | Los 10 guiones versionados: 21 tests gratis + 17 con costo | `backend/tests/viajes/` |
+
+Por qué el script nuevo en vez de re-correr el seed: `seed_bot_viajes_llm.py`
+**borra todos los bots de la cuenta** antes de recrearlos (#254). Contra
+producción se habría llevado el bot 12 con su historial.
+
+### Resultado en producción (`:lote372b`, task-def 47)
+
+| | Antes | Después |
+|---|---|---|
+| Andamiaje al cliente | 2 turnos | 0 |
+| Datos inventados | hotel 3★, comidas de más | 0 |
+| Pregunta el nombre de nuevo | 3 de 7 | 0 |
+| Chips errados | 4 de 25 | 0 |
+| Entrada servida por caché | 0% | **88%** |
+| Costo por conversación | US$ 0,0143 | **US$ 0,0067** |
+| Latencia p50 | 4.232 ms | 3.791 ms |
+
+Ante Nequi y ante San Andrés el bot ahora **escala a un asesor humano**, que es
+lo que pidió el CEO: si el mensaje no cae en ninguno de los ocho caminos, no se
+improvisa.
+
+### Pendientes
+
+- **Paridad local**: `migrate_viajes_caminos.py` está aplicado en RDS pero no en
+  la BD local — el puerto 5432 lo tiene ocupado otro Postgres del host y el
+  contenedor `db` no levanta. El script es idempotente: una corrida cuando el
+  puerto esté libre. Es cambio de **datos**, no de schema.
+- La respuesta sobre PSE quedó ambigua ("sobre PSE, por ahora esos son los
+  disponibles"). El contexto ya no lo lista, pero conviene una frase explícita.
+- Escalar cierra la conversación, así que un "¿tienen San Andrés?" temprano
+  corta la venta del plan de Coveñas. Es lo pedido, pero vale revisarlo.
+- Las preguntas frecuentes reales (equipaje, niños, cancelaciones) quedaron para
+  la próxima iteración por decisión del CEO; hoy caen en el catch-all.
