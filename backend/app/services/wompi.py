@@ -305,6 +305,44 @@ def estado_interno(estado_wompi: str) -> Optional[str]:
     return ESTADOS.get((estado_wompi or "").strip().upper())
 
 
+def consultar_transaccion_publica(transaccion_id: str) -> Optional[Dict[str, Any]]:
+    """Estado de una transacción SIN llave privada.
+
+    Es lo que hace falta con los **links de pago**: el cliente vuelve a la app
+    con `?id=<transaccion>` y hay que decirle si el pago entró o no, pero por
+    ese camino no hay llaves configuradas. El endpoint de consulta de Wompi es
+    público (es el mismo que usa su propia pantalla de resultado), así que se
+    llama sin `Authorization`; si hay llave privada, se manda igual porque no
+    estorba.
+
+    Sirve para INFORMAR, no para acreditar. Los créditos siguen dependiendo del
+    webhook firmado: un `id` lo puede escribir cualquiera en la barra del
+    navegador.
+
+    `None` si no se pudo saber.
+    """
+    import httpx
+
+    url = f"{base_url().rstrip('/')}/transactions/{transaccion_id}"
+    headers: Dict[str, str] = {}
+    llave = os.environ.get("WOMPI_PRIVATE_KEY", "").strip()
+    if llave:
+        headers["Authorization"] = f"Bearer {llave}"
+    try:
+        respuesta = httpx.get(url, headers=headers, timeout=10.0)
+        if respuesta.status_code != 200:
+            logger.warning(
+                "wompi: consulta pública de transacción respondió %s",
+                respuesta.status_code,
+            )
+            return None
+        return (respuesta.json() or {}).get("data")
+    except Exception:
+        # Sin `str(e)`: el mensaje de httpx puede traer la URL con credenciales.
+        logger.exception("wompi: error consultando la transacción (público)")
+        return None
+
+
 def consultar_transaccion(transaccion_id: str) -> Optional[Dict[str, Any]]:
     """Le pregunta a Wompi por una transacción. `None` si no se pudo saber.
 

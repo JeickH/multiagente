@@ -32,6 +32,7 @@ exactamente ese neto. Ver `_gross_up_wompi`.
 from __future__ import annotations
 
 import math
+import os
 from typing import Dict, List, Optional, TypedDict
 
 # ---------------------------------------------------------------------------
@@ -145,10 +146,25 @@ def _gross_up_wompi(neto_objetivo_cop: float) -> float:
     return (neto_objetivo_cop + fija_con_iva) / factor
 
 
-def _precio_lista_cop(mensajes: int) -> int:
-    """Precio final al cliente, en pesos enteros.
+#: Precio de lista de cada paquete, en pesos enteros.
+#:
+#: Lo fija el CEO en cifras cerradas y lo revisa cada semana; el cálculo de
+#: `precio_sugerido_cop()` queda como referencia para saber si el precio sigue
+#: cubriendo el costo. Antes esto se calculaba solo: se cambió porque un
+#: precio que se mueve con la TRM da cifras como $80.653, imposibles de
+#: comunicar y de cuadrar en la caja.
+PRECIO_LISTA_COP: Dict[str, int] = {
+    "mensajes_1000": 70_000,
+    "mensajes_5000": 340_000,
+}
 
-    costo → +margen → gross-up de la comisión de Wompi → redondeo hacia arriba.
+
+def precio_sugerido_cop(mensajes: int) -> int:
+    """Lo que costaría el paquete si se calculara: costo → +margen → gross-up.
+
+    Ya no manda sobre el precio (ese lo pone `PRECIO_LISTA_COP`), pero sirve
+    de alarma: si el precio de lista se queda por debajo de esto, el paquete
+    dejó de dar el margen objetivo — típicamente porque subió el dólar.
     """
     costo = costo_cop_por_mensaje() * mensajes
     neto_objetivo = costo * (1 + MARGEN_COMERCIAL)
@@ -170,8 +186,30 @@ class Paquete:
         self.nombre = nombre
         self.messages = messages
         self.currency = "COP"
-        self.amount_cents = _precio_lista_cop(messages) * 100
+        self.amount_cents = PRECIO_LISTA_COP[key] * 100
         self.descripcion = descripcion
+
+    @property
+    def link_pago(self) -> Optional[str]:
+        """Link de pago de Wompi creado a mano para este paquete, si lo hay.
+
+        Es la alternativa al checkout por API: el CEO crea el link en el panel
+        de Wompi (por el valor exacto de `amount_cop`) y lo pega en la variable
+        de entorno `WOMPI_LINK_<KEY>` — por ejemplo `WOMPI_LINK_MENSAJES_1000`.
+
+        **Un link de pago NO es un secreto**: es una página pública donde
+        cualquiera puede pagar. Por eso va en una variable de entorno normal de
+        la task-def y no en SSM, al revés que las llaves de la API.
+
+        Si está vacío, el frontend cae al checkout por API (que sí necesita las
+        llaves). Los dos caminos conviven a propósito: el link sirve desde el
+        día uno sin credenciales, y el checkout por API es el que permite
+        acreditar los mensajes solo.
+        """
+        return (
+            os.environ.get(f"WOMPI_LINK_{self.key.upper()}")
+            or LINKS_DE_PAGO.get(self.key)
+        )
 
     # --- ayudas para pintar el precio sin que el frontend haga cuentas ---
 
@@ -274,6 +312,21 @@ def desglose_paquete(key: str) -> Optional[Desglose]:
 # La tabla es ilustrativa: la fuente de verdad es el cálculo, y los tests
 # verifican los precios contra él (y contra el gross-up), no contra estos
 # comentarios.
+
+#: Links de pago creados a mano en el panel de Wompi, uno por paquete.
+#:
+#: NO son secretos: son páginas públicas de cobro, así que viven en el código
+#: y no en SSM. La variable de entorno `WOMPI_LINK_<KEY>` los pisa, para poder
+#: cambiarlos sin desplegar.
+#:
+#: OJO al actualizarlos: el valor del link tiene que coincidir con
+#: `PRECIO_LISTA_COP`. Si no coinciden, el cliente ve un precio en la app y
+#: paga otro en Wompi.
+LINKS_DE_PAGO: Dict[str, str] = {
+    "mensajes_1000": "https://checkout.wompi.co/l/LXZc6o",
+    "mensajes_5000": "https://checkout.wompi.co/l/a1sl2W",
+}
+
 
 _CATALOGO: List[Paquete] = [
     Paquete(

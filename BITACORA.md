@@ -3833,3 +3833,25 @@ el **archivo** `app/database.py`, no la carpeta.
     inventar fechas.
 
 Suite completa: **659 passed, 51 skipped, 1 xfailed**.
+
+### Links de pago en vez de checkout por API (19-ago-2026)
+
+El CEO decidió crear los links de pago a mano en el panel de Wompi en vez de
+entregar las llaves de la API. Ventaja: funciona sin un solo secreto. Costo:
+**un link estático no le dice a la plataforma quién pagó**, así que los
+créditos NO se acreditan solos — los habilita el equipo tras conciliar.
+
+- Precios en cifras cerradas fijadas por el CEO, que los revisa cada semana:
+  **1.000 → COP 70.000** (margen real 12,6%) y **5.000 → COP 340.000** (10,5%).
+  El precio dejó de calcularse: ahora es `PRECIO_LISTA_COP`, y el cálculo
+  sobrevive como `precio_sugerido_cop()` para avisar si el precio de lista se
+  queda por debajo del costo cuando suba el dólar.
+- `LINKS_DE_PAGO` en `creditos.py`, pisables por `WOMPI_LINK_<KEY>` para
+  cambiarlos sin desplegar. **No son secretos**: son páginas públicas de cobro,
+  por eso van en el código y no en SSM, al revés que las llaves de la API.
+- URL de retorno: `https://app.glomabeauty.com/pagos`. Wompi le agrega
+  `?id=<transacción>`.
+- `GET /pagos/transaccion/{id}` consulta el estado **sin llave privada** (el
+  endpoint de consulta de Wompi es público) y la pantalla muestra "recibimos tu
+  pago, se habilita en ~1 hora" o "no recibimos el pago". Es informativo: el
+  `id` de la URL lo puede escribir cualquiera, así que no acredita nada.

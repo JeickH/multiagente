@@ -41,6 +41,7 @@ from ..schemas import (
     CheckoutCreate,
     CheckoutFormOut,
     CheckoutOut,
+    EstadoPagoOut,
     CompraOut,
     PagosAccesoOut,
     PaqueteDesgloseOut,
@@ -143,6 +144,7 @@ def _paquete_out(p: svc_creditos.Paquete) -> PaqueteOut:
         amount_cop=p.amount_cop,
         precio_por_mensaje_cop=p.precio_por_mensaje_cop,
         currency=p.currency,
+        link_pago=p.link_pago,
         desglose=PaqueteDesgloseOut(
             costo_cop=desglose["costo_cop"],
             margen_objetivo_cop=desglose["margen_objetivo_cop"],
@@ -436,3 +438,36 @@ def _verificar_contra_api() -> bool:
     return wompi.es_produccion() or (
         os.getenv("APP_ENV", "development") or ""
     ).strip().lower() in ("production", "prod")
+
+
+@router.get("/transaccion/{transaccion_id}", response_model=EstadoPagoOut)
+def estado_de_transaccion(
+    transaccion_id: str,
+    member: models.TeamMember = Depends(require_billing_admin),
+):
+    """Cómo le fue a un pago, para mostrárselo al que vuelve de Wompi.
+
+    Con los **links de pago** el cliente regresa a `/pagos?id=<transaccion>` y
+    hay que decirle algo. Esta consulta es **solo informativa**: no acredita
+    nada ni toca el saldo. Los créditos los sigue habilitando el equipo tras
+    conciliar el recaudo, porque un link de pago no le dice a la plataforma
+    quién pagó — y el `id` de la URL lo puede escribir cualquiera.
+    """
+    datos = wompi.consultar_transaccion_publica(transaccion_id.strip())
+    if not datos:
+        # Ni confirmamos ni desmentimos: no se pudo saber.
+        return EstadoPagoOut(estado="desconocido")
+
+    bruto = str(datos.get("status") or "").upper()
+    if bruto == "APPROVED":
+        estado = "aprobado"
+    elif bruto in ("DECLINED", "ERROR", "VOIDED"):
+        estado = "rechazado"
+    else:
+        estado = "pendiente"
+
+    monto = datos.get("amount_in_cents")
+    return EstadoPagoOut(
+        estado=estado,
+        amount_cents=int(monto) if isinstance(monto, int) else None,
+    )

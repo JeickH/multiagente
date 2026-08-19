@@ -752,6 +752,10 @@ class PaqueteOut(BaseModel):
     amount_cop: int            # pesos enteros, para pintar
     precio_por_mensaje_cop: int
     currency: str
+    #: Link de pago de Wompi creado a mano para este paquete, si existe. NO es
+    #: un secreto: es una página pública de cobro. Cuando viene, el frontend
+    #: manda al usuario ahí en vez de armar el checkout por API.
+    link_pago: Optional[str] = None
     desglose: PaqueteDesgloseOut
 
 
@@ -805,6 +809,16 @@ class CheckoutFormOut(BaseModel):
     url: str
     method: str
     fields: Dict[str, Any]
+
+
+class EstadoPagoOut(BaseModel):
+    """Resultado informativo de un pago hecho por link.
+
+    `estado` es uno de: `aprobado`, `rechazado`, `pendiente`, `desconocido`.
+    No expone nada del pagador: solo si entró la plata y por cuánto.
+    """
+    estado: str
+    amount_cents: Optional[int] = None
 
 
 class CheckoutOut(BaseModel):

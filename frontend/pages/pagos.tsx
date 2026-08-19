@@ -40,6 +40,8 @@ type Paquete = {
   amount_cop: number;
   precio_por_mensaje_cop: number;
   currency: string;
+  /** Link de pago creado a mano en Wompi. Si viene, manda ahí directo. */
+  link_pago: string | null;
   desglose: Desglose;
 };
 
@@ -108,6 +110,7 @@ export default function Pagos() {
 
   // ¿Volvemos de Wompi? El id de la transacción llega por query string.
   const volviendoDePago = Boolean(router.query.id || router.query.ref);
+  const [estadoPago, setEstadoPago] = useState<string | null>(null);
 
   const cargar = useCallback(async () => {
     try {
@@ -147,6 +150,24 @@ export default function Pagos() {
       window.clearTimeout(t2);
     };
   }, [volviendoDePago, permitido, cargar]);
+
+  // ¿Entró el pago? Se le pregunta a Wompi por el id que trae la URL. Es solo
+  // para informar: los créditos no dependen de esto.
+  useEffect(() => {
+    const id = router.query.id;
+    if (!id || typeof id !== 'string' || permitido !== true) return;
+    let cancelado = false;
+    authedFetch<{ estado: string }>(`/pagos/transaccion/${encodeURIComponent(id)}`)
+      .then((r) => {
+        if (!cancelado) setEstadoPago(r?.estado ?? 'desconocido');
+      })
+      .catch(() => {
+        if (!cancelado) setEstadoPago('desconocido');
+      });
+    return () => {
+      cancelado = true;
+    };
+  }, [router.query.id, permitido]);
 
   const comprar = async (key: string) => {
     setComprando(key);
@@ -203,10 +224,40 @@ export default function Pagos() {
         )}
 
         {volviendoDePago && (
-          <div className="bg-gloma-rose-soft/50 border border-gloma-mint/40 text-gloma-brown-dark px-4 py-3 rounded-lg mb-6 text-sm">
-            <strong>Estamos confirmando tu pago.</strong> Los créditos se suman
-            cuando el banco confirma la transacción, normalmente en menos de un
-            minuto. Esta página se actualiza sola.
+          <div
+            className={`px-4 py-3 rounded-lg mb-6 text-sm border ${
+              estadoPago === 'aprobado'
+                ? 'bg-emerald-50 border-emerald-200 text-emerald-900'
+                : estadoPago === 'rechazado'
+                ? 'bg-red-50 border-red-200 text-red-800'
+                : 'bg-gloma-rose-soft/50 border-gloma-mint/40 text-gloma-brown-dark'
+            }`}
+          >
+            {estadoPago === 'aprobado' && (
+              <>
+                <strong>✅ Recibimos tu pago.</strong> Tus mensajes quedan
+                habilitados en <strong>aproximadamente 1 hora</strong>. Mientras
+                tanto puedes seguir usando la plataforma con normalidad; el saldo
+                de arriba se actualiza cuando queden cargados.
+              </>
+            )}
+            {estadoPago === 'rechazado' && (
+              <>
+                <strong>❌ No recibimos el pago.</strong> La transacción no se
+                completó, así que no se hizo ningún cobro. Puedes intentarlo de
+                nuevo con el botón Comprar, o con otro medio de pago.
+              </>
+            )}
+            {(estadoPago === null ||
+              estadoPago === 'pendiente' ||
+              estadoPago === 'desconocido') && (
+              <>
+                <strong>Estamos confirmando tu pago.</strong> Si quedó aprobado,
+                tus mensajes se habilitan en{' '}
+                <strong>aproximadamente 1 hora</strong>. Esta página se actualiza
+                sola.
+              </>
+            )}
           </div>
         )}
 
@@ -252,14 +303,28 @@ export default function Pagos() {
                     {COP.format(p.precio_por_mensaje_cop)} c/u
                   </p>
 
-                  <button
-                    type="button"
-                    onClick={() => comprar(p.key)}
-                    disabled={comprando !== null}
-                    className="mt-5 px-4 py-2.5 rounded-lg bg-gloma-brown text-gloma-cream font-semibold text-sm hover:bg-gloma-brown-dark disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                  >
-                    {comprando === p.key ? 'Abriendo el pago…' : 'Comprar'}
-                  </button>
+                  {/* Dos caminos: el link de pago que se crea a mano en Wompi
+                      (no necesita llaves y funciona desde el día uno) o el
+                      checkout por API. Si hay link, gana el link. */}
+                  {p.link_pago ? (
+                    <a
+                      href={p.link_pago}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="mt-5 px-4 py-2.5 rounded-lg bg-gloma-brown text-gloma-cream font-semibold text-sm hover:bg-gloma-brown-dark transition-colors text-center"
+                    >
+                      Comprar
+                    </a>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => comprar(p.key)}
+                      disabled={comprando !== null}
+                      className="mt-5 px-4 py-2.5 rounded-lg bg-gloma-brown text-gloma-cream font-semibold text-sm hover:bg-gloma-brown-dark disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    >
+                      {comprando === p.key ? 'Abriendo el pago…' : 'Comprar'}
+                    </button>
+                  )}
 
                   <button
                     type="button"
