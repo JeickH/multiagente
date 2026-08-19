@@ -61,6 +61,27 @@ class Team(Base):
     modo = Column(
         String(16), nullable=False, default=TEAM_MODO_DEMO, server_default=TEAM_MODO_DEMO
     )
+    # Créditos de mensajes disponibles para envíos masivos. Se recargan
+    # comprando un paquete (ver `CreditPurchase`) y se descuentan al encolar
+    # los destinatarios de una campaña.
+    message_credits = Column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+    # Turno del reparto round-robin de conversaciones entre los asesores del
+    # team: índice del último asesor al que se le entregó un chat. Vive en el
+    # team (no en memoria del proceso) porque con más de una task de ECS cada
+    # una llevaría su propio turno y el reparto dejaría de alternar.
+    handoff_turno = Column(Integer, nullable=False, default=0, server_default="0")
+    # Nombres de los asesores entre los que rota el handoff, en orden de turno
+    # (ej. ["Julián", "Camila"]). Es una lista de nombres y no de usuarios a
+    # propósito: hoy el negocio tiene dos asesores atendiendo pero un solo
+    # login compartido, y la etiqueta 👤 de la bandeja es texto libre. Cuando
+    # cada asesor tenga su cuenta, esto se mapea a `team_members`.
+    # Vacío = se reparte entre los miembros con rol `agent`; si tampoco hay,
+    # cae al `asesor_1` de siempre.
+    asesores_rotacion = Column(
+        JSONB, nullable=False, default=list, server_default="[]"
+    )
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
     owner = relationship("User", back_populates="owned_teams", foreign_keys=[owner_user_id])
@@ -122,7 +143,24 @@ AVAILABLE_PERMISSIONS = [
     "can_manage_bots",      # Editar bots de WhatsApp (futuro)
     "can_manage_team",      # Invitar/editar miembros del equipo (futuro)
     "can_view_analytics",   # Ver reportes (futuro)
+    # Pagos y créditos de mensajes. Es de administrador: el asesor no ve
+    # precios, ni saldo, ni el historial de compras. Va como permiso y no
+    # solo como rol para que mañana un tenant pueda dárselo a alguien más
+    # sin volverlo dueño de la cuenta.
+    "can_manage_billing",
 ]
+
+# Permisos que trae por defecto una cuenta de ASESOR (rol `agent`): puede
+# atender, no puede tocar la plata ni la conexión de WhatsApp. Desconectar la
+# cuenta de Meta ya es owner-only por `get_current_owner_membership`.
+ASESOR_DEFAULT_PERMISSIONS = {
+    "can_reply_messages": True,
+    "can_send_broadcasts": False,
+    "can_manage_bots": False,
+    "can_manage_team": False,
+    "can_view_analytics": True,
+    "can_manage_billing": False,
+}
 
 
 class MetaAccount(Base):
@@ -1001,6 +1039,85 @@ class CampaignEvent(Base):
             f"<CampaignEvent id={self.id} campaign_id={self.campaign_id} "
             f"recipient_id={self.recipient_id} event_type={self.event_type!r} "
             f"payload_json=<REDACTED>>"
+        )
+
+    __str__ = __repr__
+
+
+# ─── Créditos de mensajes y pagos (Wompi) ─────────────────────────────────
+# Un envío masivo consume créditos; los créditos se compran por paquetes.
+# El catálogo vive en `app/services/creditos.py` (no en la BD) porque hoy son
+# dos paquetes fijos y el precio se recalcula con el costo de Twilio: tenerlo
+# en código lo hace revisable en el diff en vez de editable a mano en prod.
+
+CREDIT_PURCHASE_PENDING = "pending"    # referencia creada, sin pagar aún
+CREDIT_PURCHASE_APPROVED = "approved"  # Wompi confirmó el pago → créditos sumados
+CREDIT_PURCHASE_DECLINED = "declined"  # rechazada por el banco / el usuario
+CREDIT_PURCHASE_ERROR = "error"        # error del proveedor
+CREDIT_PURCHASE_VOIDED = "voided"      # anulada
+AVAILABLE_CREDIT_PURCHASE_STATUSES = (
+    CREDIT_PURCHASE_PENDING,
+    CREDIT_PURCHASE_APPROVED,
+    CREDIT_PURCHASE_DECLINED,
+    CREDIT_PURCHASE_ERROR,
+    CREDIT_PURCHASE_VOIDED,
+)
+
+
+class CreditPurchase(Base):
+    """Compra de un paquete de mensajes por la pasarela de pagos.
+
+    `reference` es nuestra idea del pago y viaja a Wompi; `provider_tx_id` es
+    la de ellos. Los créditos se suman UNA sola vez, cuando el webhook confirma
+    `APPROVED`: por eso `status` y el `UNIQUE` sobre `reference` son la defensa
+    contra sumar dos veces si el webhook llega repetido (Wompi reintenta).
+    """
+
+    __tablename__ = "credit_purchases"
+
+    id = Column(Integer, primary_key=True, index=True)
+    team_id = Column(
+        Integer, ForeignKey("teams.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    created_by_user_id = Column(
+        Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    package_key = Column(String(40), nullable=False)   # ej. "mensajes_1000"
+    messages = Column(Integer, nullable=False)         # créditos que otorga
+    amount_cents = Column(Integer, nullable=False)     # en centavos de COP
+    currency = Column(String(8), nullable=False, default="COP", server_default="COP")
+    reference = Column(String(80), nullable=False)     # la nuestra, va a Wompi
+    provider = Column(String(20), nullable=False, default="wompi", server_default="wompi")
+    provider_tx_id = Column(String(80), nullable=True, index=True)
+    status = Column(
+        String(20), nullable=False,
+        default=CREDIT_PURCHASE_PENDING, server_default=CREDIT_PURCHASE_PENDING,
+    )
+    credited_at = Column(DateTime, nullable=True)      # cuándo se sumaron
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+    )
+
+    __table_args__ = (
+        UniqueConstraint("reference", name="uq_credit_purchases_reference"),
+        CheckConstraint(
+            "status IN ('pending','approved','declined','error','voided')",
+            name="ck_credit_purchases_status",
+        ),
+        CheckConstraint("messages > 0", name="ck_credit_purchases_messages"),
+        CheckConstraint("amount_cents > 0", name="ck_credit_purchases_amount"),
+        Index("ix_credit_purchases_team_created", "team_id", "created_at"),
+    )
+
+    team = relationship("Team")
+    created_by = relationship("User")
+
+    def __repr__(self) -> str:
+        return (
+            f"<CreditPurchase id={self.id} team_id={self.team_id} "
+            f"package={self.package_key!r} messages={self.messages} "
+            f"status={self.status!r} reference={self.reference!r}>"
         )
 
     __str__ = __repr__

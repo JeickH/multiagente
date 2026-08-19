@@ -8,7 +8,8 @@
  *   - POST   /contacts
  *   - PATCH  /contacts/{id}
  *   - DELETE /contacts/{id}
- *   - POST   /contacts/import-csv (multipart)
+ *   - GET    /contacts/plantilla      (xlsx de guía)
+ *   - POST   /contacts/import-excel   (multipart + país por defecto)
  *   - GET    /contact-groups
  *   - POST   /contact-groups
  *   - GET    /contact-groups/{id}
@@ -21,7 +22,7 @@
  *   - Todo `phone_e164` se renderiza con `maskPhone()` (regla 1).
  *   - Errores al usuario son sanitizados (regla 6) — el detalle ya viene del
  *     backend; `authedFetch` lanza `ApiError` con `.message` genérico.
- *   - Los `errors` del CSV importer NO contienen teléfono crudo (regla 1 /
+ *   - Los `errors` del importador NO contienen teléfono crudo (regla 1 /
  *     S13-009 backend). Si llegara crudo, es bug del backend y debe reportarse.
  */
 import Link from 'next/link';
@@ -34,11 +35,11 @@ import { cerrarSesion, getToken } from '../../lib/session';
 import type {
   Contact,
   ContactCreatePayload,
+  ContactExcelImportResult,
   ContactGroup,
   ContactGroupCreatePayload,
   ContactGroupDetail,
   ContactGroupUpdatePayload,
-  ContactImportResult,
   ContactUpdatePayload,
 } from '../../types/contacts';
 
@@ -47,46 +48,99 @@ type OptInFilter = 'all' | 'only_opt_in';
 
 const PAGE_SIZE = 50;
 
+/**
+ * Países que aparecen en el desplegable "si mi lista no trae código de país".
+ * Colombia primero porque es donde opera la agencia; la lista es corta a
+ * propósito — quien tenga otro país escribe el `+` en el Excel y listo.
+ */
+const PAISES = [
+  { codigo: '57', nombre: 'Colombia (+57)' },
+  { codigo: '52', nombre: 'México (+52)' },
+  { codigo: '51', nombre: 'Perú (+51)' },
+  { codigo: '56', nombre: 'Chile (+56)' },
+  { codigo: '54', nombre: 'Argentina (+54)' },
+  { codigo: '593', nombre: 'Ecuador (+593)' },
+  { codigo: '507', nombre: 'Panamá (+507)' },
+  { codigo: '1', nombre: 'EE. UU. / Canadá (+1)' },
+  { codigo: '34', nombre: 'España (+34)' },
+];
+
 // ─── Utilities ──────────────────────────────────────────────────────────
 
 function classNames(...xs: (string | false | null | undefined)[]): string {
   return xs.filter(Boolean).join(' ');
 }
 
-/**
- * Wrapper alrededor de fetch para multipart (CSV). Reutiliza el JWT en
- * localStorage. NO usa `authedFetch` porque ese helper inyecta
- * `Content-Type: application/json` cuando hay body, lo que rompe el boundary
- * que el browser genera para FormData.
- */
-async function uploadCsv(file: File): Promise<ContactImportResult> {
+/** El JWT para las llamadas que no pasan por `authedFetch` (regla 7). */
+function tokenOMuere(): string {
   const token = getToken();
   if (!token) {
     cerrarSesion();
     throw new ApiError('No autenticado', 401);
   }
-  const fd = new FormData();
-  fd.append('file', file);
-  const res = await fetch('/api/contacts/import-csv', {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${token}` },
-    body: fd,
-  });
+  return token;
+}
+
+/** Traduce una respuesta no-OK al `ApiError` con el detalle ya sanitizado. */
+async function comoApiError(res: Response, fallback: string): Promise<ApiError> {
   if (res.status === 401) {
     cerrarSesion();
-    throw new ApiError('Sesión expirada', 401);
+    return new ApiError('Sesión expirada', 401);
   }
+  let detail = fallback;
+  try {
+    const body = await res.json();
+    if (body && typeof body.detail === 'string') detail = body.detail;
+  } catch {
+    /* no-op: la respuesta no era JSON */
+  }
+  return new ApiError(detail, res.status);
+}
+
+/**
+ * Descarga la plantilla .xlsx. No puede ser un `<a href>` a secas: el endpoint
+ * pide `Authorization`, así que se baja el archivo y se dispara la descarga
+ * desde un blob.
+ */
+async function descargarPlantilla(): Promise<void> {
+  const res = await fetch('/api/contacts/plantilla', {
+    headers: { Authorization: `Bearer ${tokenOMuere()}` },
+  });
   if (!res.ok) {
-    let detail = 'No se pudo importar el archivo.';
-    try {
-      const body = await res.json();
-      if (body && typeof body.detail === 'string') detail = body.detail;
-    } catch {
-      /* no-op */
-    }
-    throw new ApiError(detail, res.status);
+    throw await comoApiError(res, 'No se pudo descargar la plantilla.');
   }
-  return (await res.json()) as ContactImportResult;
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'plantilla-contactos-gloma.xlsx';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+/**
+ * Sube el .xlsx. NO usa `authedFetch` porque ese helper inyecta
+ * `Content-Type: application/json` cuando hay body, lo que rompe el boundary
+ * que el browser genera para FormData.
+ */
+async function subirExcel(
+  file: File,
+  paisDefault: string,
+): Promise<ContactExcelImportResult> {
+  const fd = new FormData();
+  fd.append('file', file);
+  fd.append('pais_default', paisDefault);
+  const res = await fetch('/api/contacts/import-excel', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${tokenOMuere()}` },
+    body: fd,
+  });
+  if (!res.ok) {
+    throw await comoApiError(res, 'No se pudo importar el archivo.');
+  }
+  return (await res.json()) as ContactExcelImportResult;
 }
 
 // ─── Sub-components ─────────────────────────────────────────────────────
@@ -186,6 +240,147 @@ function GroupChips({
   );
 }
 
+// ─── Editor de datos extra (antes: un textarea con JSON) ────────────────
+
+interface FilaAtributo {
+  campo: string;
+  valor: string;
+}
+
+function aFilas(attrs: Record<string, unknown> | null | undefined): FilaAtributo[] {
+  if (!attrs) return [];
+  return Object.entries(attrs).map(([campo, valor]) => ({
+    campo,
+    valor:
+      valor === null || valor === undefined
+        ? ''
+        : typeof valor === 'object'
+          ? JSON.stringify(valor)
+          : String(valor),
+  }));
+}
+
+/**
+ * Convierte las filas de vuelta a objeto. Las filas sin nombre de campo se
+ * descartan; si el mismo campo se repite, gana el último (que es lo que la
+ * usuaria acaba de escribir).
+ */
+function aObjeto(filas: FilaAtributo[]): Record<string, string> {
+  const salida: Record<string, string> = {};
+  for (const f of filas) {
+    const campo = f.campo.trim();
+    if (!campo) continue;
+    salida[campo] = f.valor.trim();
+  }
+  return salida;
+}
+
+/**
+ * Tabla campo → valor. Antes esto era un `<textarea>` donde había que escribir
+ * `{"ciudad":"Cali"}` a mano: una llave mal puesta y el formulario no
+ * guardaba. Aquí no hay JSON que escribir ni que leer.
+ */
+function EditorAtributos({
+  filas,
+  onChange,
+}: {
+  filas: FilaAtributo[];
+  onChange: (filas: FilaAtributo[]) => void;
+}) {
+  const editar = (i: number, parche: Partial<FilaAtributo>) => {
+    onChange(filas.map((f, idx) => (idx === i ? { ...f, ...parche } : f)));
+  };
+  const quitar = (i: number) => onChange(filas.filter((_, idx) => idx !== i));
+  const agregar = () => onChange([...filas, { campo: '', valor: '' }]);
+
+  const duplicados = new Set(
+    filas
+      .map((f) => f.campo.trim().toLowerCase())
+      .filter((c, i, arr) => c && arr.indexOf(c) !== i),
+  );
+
+  return (
+    <div>
+      <label className="block text-xs font-semibold text-gloma-brown-dark mb-1">
+        Datos extra del contacto
+      </label>
+      <p className="text-[11px] text-gloma-brown-light mb-2">
+        Lo que quieras guardar de esta persona (ciudad, destino favorito,
+        idioma…). Después puedes usar estos datos para personalizar el mensaje
+        de una campaña.
+      </p>
+
+      {filas.length === 0 ? (
+        <div className="rounded-lg border border-dashed border-gloma-brown-light/30 bg-white px-3 py-4 text-center text-[11px] text-gloma-brown-light">
+          Este contacto no tiene datos extra todavía.
+        </div>
+      ) : (
+        <div className="rounded-lg border border-gloma-brown-light/20 bg-white overflow-hidden">
+          <div className="grid grid-cols-[1fr_1fr_auto] gap-2 px-3 py-1.5 bg-gloma-cream text-[10px] uppercase tracking-widest text-gloma-brown-light">
+            <span>Campo</span>
+            <span>Valor</span>
+            <span className="w-6" />
+          </div>
+          <div className="divide-y divide-gloma-brown-light/10">
+            {filas.map((f, i) => (
+              <div
+                key={i}
+                className="grid grid-cols-[1fr_1fr_auto] gap-2 px-3 py-2 items-center"
+              >
+                <input
+                  type="text"
+                  value={f.campo}
+                  onChange={(e) => editar(i, { campo: e.target.value })}
+                  placeholder="Ciudad"
+                  aria-label={`Nombre del dato ${i + 1}`}
+                  className={classNames(
+                    'px-2 py-1 text-xs rounded-md border bg-white focus:outline-none focus:border-gloma-brown',
+                    duplicados.has(f.campo.trim().toLowerCase())
+                      ? 'border-amber-400'
+                      : 'border-gloma-brown-light/30',
+                  )}
+                />
+                <input
+                  type="text"
+                  value={f.valor}
+                  onChange={(e) => editar(i, { valor: e.target.value })}
+                  placeholder="Cali"
+                  aria-label={`Valor del dato ${i + 1}`}
+                  className="px-2 py-1 text-xs rounded-md border border-gloma-brown-light/30 bg-white focus:outline-none focus:border-gloma-brown"
+                />
+                <button
+                  type="button"
+                  onClick={() => quitar(i)}
+                  aria-label={`Quitar el dato ${f.campo || i + 1}`}
+                  title="Quitar"
+                  className="w-6 h-6 rounded-md border border-red-200 text-red-600 hover:bg-red-50 text-xs leading-none"
+                >
+                  ×
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="flex items-center justify-between mt-2">
+        <button
+          type="button"
+          onClick={agregar}
+          className="px-3 py-1.5 text-xs rounded-md border border-gloma-brown text-gloma-brown bg-white hover:bg-gloma-rose-soft/50 font-semibold"
+        >
+          + Agregar dato
+        </button>
+        {duplicados.size > 0 && (
+          <span className="text-[11px] text-amber-700">
+            Hay campos repetidos: se guardará el último.
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ─── Modal: Crear/Editar contacto ───────────────────────────────────────
 
 function ContactFormModal({
@@ -202,10 +397,8 @@ function ContactFormModal({
   const [name, setName] = useState(initial?.name ?? '');
   const [email, setEmail] = useState(initial?.email ?? '');
   const [optIn, setOptIn] = useState<boolean>(initial?.opt_in ?? true);
-  const [attrsText, setAttrsText] = useState(
-    initial?.attributes && Object.keys(initial.attributes).length
-      ? JSON.stringify(initial.attributes, null, 2)
-      : '',
+  const [filasAttrs, setFilasAttrs] = useState<FilaAtributo[]>(
+    aFilas(initial?.attributes),
   );
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -214,28 +407,15 @@ function ContactFormModal({
     e.preventDefault();
     setSaving(true);
     setErr(null);
-    let attrs: Record<string, unknown> | null = null;
-    const trimmed = attrsText.trim();
-    if (trimmed) {
-      try {
-        const parsed = JSON.parse(trimmed);
-        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-          attrs = parsed as Record<string, unknown>;
-        } else {
-          throw new Error('object expected');
-        }
-      } catch {
-        setErr('Atributos: debe ser un objeto JSON válido.');
-        setSaving(false);
-        return;
-      }
-    }
+    // Se manda siempre el diccionario completo: es la vía para BORRAR un dato
+    // (el importador de Excel, en cambio, fusiona y nunca borra).
+    const attrs: Record<string, string> = aObjeto(filasAttrs);
     try {
       if (isEdit && initial) {
         const payload: ContactUpdatePayload = {
           name: name.trim() || null,
           email: email.trim() || null,
-          attributes: attrs ?? undefined,
+          attributes: attrs,
           opt_in: optIn,
         };
         await authedFetch(`/contacts/${initial.id}`, {
@@ -247,7 +427,7 @@ function ContactFormModal({
           phone_e164: phone.trim(),
           name: name.trim() || null,
           email: email.trim() || null,
-          attributes: attrs ?? undefined,
+          attributes: attrs,
           opt_in: optIn,
         };
         await authedFetch('/contacts', {
@@ -328,18 +508,7 @@ function ContactFormModal({
             </span>
           </label>
         </div>
-        <div>
-          <label className="block text-xs font-semibold text-gloma-brown-dark mb-1">
-            Atributos (JSON opcional)
-          </label>
-          <textarea
-            rows={3}
-            value={attrsText}
-            onChange={(e) => setAttrsText(e.target.value)}
-            placeholder='{"ciudad":"Cali","tier":"VIP"}'
-            className="w-full px-3 py-2 rounded-lg border border-gloma-brown-light/30 bg-white font-mono text-xs focus:outline-none focus:border-gloma-brown"
-          />
-        </div>
+        <EditorAtributos filas={filasAttrs} onChange={setFilasAttrs} />
         {err && (
           <div className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-md px-3 py-2">
             {err}
@@ -461,9 +630,111 @@ function AssignToGroupModal({
   );
 }
 
-// ─── Modal: Importar CSV ────────────────────────────────────────────────
+// ─── Modal: Importar contactos desde Excel ──────────────────────────────
 
-function ImportCsvModal({
+function ResumenImportacion({ result }: { result: ContactExcelImportResult }) {
+  const tarjetas = [
+    {
+      etiqueta: 'Leídos',
+      valor: result.total,
+      clase: 'bg-gloma-cream text-gloma-brown-dark',
+      sub: 'text-gloma-brown-light',
+    },
+    {
+      etiqueta: 'Creados',
+      valor: result.created,
+      clase: 'bg-green-50 border border-green-200 text-green-700',
+      sub: 'text-green-700',
+    },
+    {
+      etiqueta: 'Actualizados',
+      valor: result.updated,
+      clase: 'bg-blue-50 border border-blue-200 text-blue-700',
+      sub: 'text-blue-700',
+    },
+    {
+      etiqueta: 'Con problemas',
+      valor: result.rejected,
+      clase:
+        result.rejected > 0
+          ? 'bg-amber-50 border border-amber-200 text-amber-800'
+          : 'bg-gray-50 border border-gray-200 text-gray-500',
+      sub: result.rejected > 0 ? 'text-amber-800' : 'text-gray-500',
+    },
+  ];
+
+  return (
+    <div className="space-y-4 text-sm">
+      <div className="rounded-lg border border-gloma-brown-light/20 bg-white p-4">
+        <p className="font-heading font-bold text-gloma-brown-dark mb-3">
+          {result.created + result.updated > 0
+            ? '✓ Listo, tus contactos ya están cargados'
+            : 'No se cargó ningún contacto'}
+        </p>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          {tarjetas.map((t) => (
+            <div key={t.etiqueta} className={classNames('rounded-md p-3 text-center', t.clase)}>
+              <p className={classNames('text-[10px] uppercase tracking-widest', t.sub)}>
+                {t.etiqueta}
+              </p>
+              <p className="font-heading text-xl font-bold">{t.valor}</p>
+            </div>
+          ))}
+        </div>
+        {result.detected_attributes.length > 0 && (
+          <p className="text-[11px] text-gloma-brown-light mt-3">
+            Datos extra guardados de cada contacto:{' '}
+            {result.detected_attributes.map((a) => (
+              <span
+                key={a}
+                className="inline-block px-1.5 py-0.5 mr-1 rounded bg-gloma-rose-soft text-gloma-brown-dark"
+              >
+                {a}
+              </span>
+            ))}
+          </p>
+        )}
+      </div>
+
+      {result.notice && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+          {result.notice}
+        </div>
+      )}
+
+      {result.errors.length > 0 && (
+        <div className="rounded-lg border border-amber-200 bg-white overflow-hidden">
+          <p className="text-xs font-semibold text-amber-900 bg-amber-50 px-3 py-2">
+            {result.errors.length} fila(s) que no se pudieron cargar — corrígelas
+            en el Excel y vuelve a subirlo (lo ya cargado no se duplica):
+          </p>
+          <div className="max-h-56 overflow-y-auto">
+            <table className="min-w-full text-xs">
+              <thead className="bg-gloma-cream text-gloma-brown-light">
+                <tr>
+                  <th className="text-left font-medium px-3 py-1.5 w-20">Fila</th>
+                  <th className="text-left font-medium px-3 py-1.5">Qué pasó</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gloma-brown-light/10">
+                {result.errors.map((e, i) => (
+                  <tr key={`${e.row}-${i}`}>
+                    <td className="px-3 py-1.5 font-semibold text-gloma-brown-dark">
+                      {e.row}
+                    </td>
+                    <td className="px-3 py-1.5 text-gloma-brown-dark">{e.reason}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ImportExcelModal({
   onClose,
   onImported,
 }: {
@@ -471,26 +742,39 @@ function ImportCsvModal({
   onImported: () => void;
 }) {
   const [file, setFile] = useState<File | null>(null);
+  const [pais, setPais] = useState('57');
   const [busy, setBusy] = useState(false);
-  const [result, setResult] = useState<ContactImportResult | null>(null);
+  const [descargando, setDescargando] = useState(false);
+  const [result, setResult] = useState<ContactExcelImportResult | null>(null);
   const [err, setErr] = useState<string | null>(null);
+
+  const bajarPlantilla = async () => {
+    setDescargando(true);
+    setErr(null);
+    try {
+      await descargarPlantilla();
+    } catch (e) {
+      setErr(
+        e instanceof ApiError ? e.message : 'No se pudo descargar la plantilla.',
+      );
+    } finally {
+      setDescargando(false);
+    }
+  };
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!file) {
-      setErr('Selecciona un archivo .csv');
+      setErr('Elige el archivo de Excel que quieres subir.');
       return;
     }
     setBusy(true);
     setErr(null);
     try {
-      const r = await uploadCsv(file);
-      setResult(r);
+      setResult(await subirExcel(file, pais));
     } catch (e2) {
       setErr(
-        e2 instanceof ApiError
-          ? e2.message
-          : 'No se pudo importar el archivo.',
+        e2 instanceof ApiError ? e2.message : 'No se pudo importar el archivo.',
       );
     } finally {
       setBusy(false);
@@ -503,104 +787,120 @@ function ImportCsvModal({
   };
 
   return (
-    <ModalShell title="Importar contactos desde CSV" onClose={closeAndRefresh} size="lg">
+    <ModalShell
+      title="Cargar contactos desde Excel"
+      onClose={closeAndRefresh}
+      size="lg"
+    >
       {result ? (
-        <div className="space-y-4 text-sm">
-          <div className="rounded-lg border border-gloma-brown-light/20 bg-white p-4">
-            <p className="font-heading font-bold text-gloma-brown-dark mb-3">
-              Importación completada
-            </p>
-            <div className="grid grid-cols-4 gap-3">
-              <div className="rounded-md bg-gloma-cream p-3 text-center">
-                <p className="text-[10px] uppercase tracking-widest text-gloma-brown-light">
-                  Total
-                </p>
-                <p className="font-heading text-xl font-bold text-gloma-brown-dark">
-                  {result.total}
-                </p>
-              </div>
-              <div className="rounded-md bg-green-50 border border-green-200 p-3 text-center">
-                <p className="text-[10px] uppercase tracking-widest text-green-700">
-                  Creados
-                </p>
-                <p className="font-heading text-xl font-bold text-green-700">
-                  {result.created}
-                </p>
-              </div>
-              <div className="rounded-md bg-blue-50 border border-blue-200 p-3 text-center">
-                <p className="text-[10px] uppercase tracking-widest text-blue-700">
-                  Actualizados
-                </p>
-                <p className="font-heading text-xl font-bold text-blue-700">
-                  {result.updated}
-                </p>
-              </div>
-              <div className="rounded-md bg-gray-50 border border-gray-200 p-3 text-center">
-                <p className="text-[10px] uppercase tracking-widest text-gray-500">
-                  Omitidos
-                </p>
-                <p className="font-heading text-xl font-bold text-gray-500">
-                  {result.skipped}
-                </p>
-              </div>
-            </div>
-          </div>
-          {result.errors && result.errors.length > 0 && (
-            <div className="rounded-lg border border-red-200 bg-red-50 p-3">
-              <p className="text-xs font-semibold text-red-700 mb-2">
-                {result.errors.length} fila(s) con errores:
-              </p>
-              <ul className="max-h-48 overflow-y-auto text-xs text-red-700 space-y-1 list-disc list-inside">
-                {result.errors.map((m, i) => (
-                  <li key={i}>{m}</li>
-                ))}
-              </ul>
-              <p className="text-[10px] text-red-700/70 mt-2">
-                Si ves un teléfono crudo en algún mensaje, reporta — el backend
-                debería redactarlo.
-              </p>
-            </div>
-          )}
-          <div className="flex justify-end pt-1">
+        <div className="space-y-4">
+          <ResumenImportacion result={result} />
+          <div className="flex justify-between pt-1">
+            <button
+              type="button"
+              onClick={() => {
+                setResult(null);
+                setFile(null);
+              }}
+              className="px-3 py-1.5 text-xs rounded-md border border-gloma-brown-light/30 bg-white text-gloma-brown-dark"
+            >
+              Subir otro archivo
+            </button>
             <button
               type="button"
               onClick={closeAndRefresh}
               className="px-4 py-1.5 text-xs rounded-md bg-gloma-brown text-gloma-cream font-semibold hover:bg-gloma-brown-dark"
             >
-              Cerrar y refrescar
+              Ver mis contactos
             </button>
           </div>
         </div>
       ) : (
-        <form onSubmit={submit} className="space-y-3 text-sm">
-          <p className="text-xs text-gloma-brown-light">
-            Formato esperado: encabezado opcional{' '}
-            <code className="bg-gloma-cream px-1 rounded">
-              phone_e164,name,email,opt_in
-            </code>
-            . Tamaño máximo 2 MB.
-          </p>
-          <div className="rounded-lg border-2 border-dashed border-gloma-brown-light/30 bg-white p-6 text-center">
-            <input
-              id="csv-file"
-              type="file"
-              accept=".csv,text/csv"
-              onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-              className="block mx-auto text-xs"
-            />
-            {file && (
-              <p className="text-[11px] text-gloma-brown-light mt-2">
-                Seleccionado: <strong>{file.name}</strong> ·{' '}
-                {Math.ceil(file.size / 1024)} KB
-              </p>
-            )}
+        <form onSubmit={submit} className="space-y-4 text-sm">
+          {/* Paso 1 */}
+          <div className="rounded-lg border border-gloma-brown-light/20 bg-white p-4">
+            <p className="text-xs font-semibold text-gloma-brown-dark mb-1">
+              <span className="inline-flex w-5 h-5 mr-1.5 rounded-full bg-gloma-brown text-gloma-cream items-center justify-center text-[10px] font-bold">
+                1
+              </span>
+              Descarga la plantilla
+            </p>
+            <p className="text-[11px] text-gloma-brown-light mb-3 ml-6">
+              Trae los títulos correctos, un ejemplo lleno y una hoja con las
+              instrucciones. Ábrela en Excel, escribe tus contactos y guárdala.
+            </p>
+            <div className="ml-6">
+              <button
+                type="button"
+                onClick={bajarPlantilla}
+                disabled={descargando}
+                className="px-4 py-2 text-xs rounded-lg border border-gloma-brown text-gloma-brown bg-white font-semibold hover:bg-gloma-rose-soft/50 disabled:opacity-50"
+              >
+                {descargando ? 'Descargando…' : '↓ Descargar plantilla (.xlsx)'}
+              </button>
+            </div>
           </div>
+
+          {/* Paso 2 */}
+          <div className="rounded-lg border border-gloma-brown-light/20 bg-white p-4">
+            <p className="text-xs font-semibold text-gloma-brown-dark mb-1">
+              <span className="inline-flex w-5 h-5 mr-1.5 rounded-full bg-gloma-brown text-gloma-cream items-center justify-center text-[10px] font-bold">
+                2
+              </span>
+              Sube tu archivo lleno
+            </p>
+            <div className="ml-6 mt-3">
+              <div className="rounded-lg border-2 border-dashed border-gloma-brown-light/30 bg-gloma-cream p-5 text-center">
+                <input
+                  id="excel-file"
+                  type="file"
+                  accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                  onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+                  className="block mx-auto text-xs"
+                />
+                {file ? (
+                  <p className="text-[11px] text-gloma-brown-dark mt-2">
+                    Seleccionado: <strong>{file.name}</strong> ·{' '}
+                    {Math.ceil(file.size / 1024)} KB
+                  </p>
+                ) : (
+                  <p className="text-[11px] text-gloma-brown-light mt-2">
+                    Archivos .xlsx de hasta 2 MB (unos 5.000 contactos).
+                  </p>
+                )}
+              </div>
+
+              <div className="mt-3">
+                <label className="block text-xs font-semibold text-gloma-brown-dark mb-1">
+                  Si tus teléfonos no tienen código de país, ¿de dónde son?
+                </label>
+                <select
+                  value={pais}
+                  onChange={(e) => setPais(e.target.value)}
+                  className="w-full md:w-72 px-3 py-2 text-sm rounded-lg border border-gloma-brown-light/30 bg-white focus:outline-none focus:border-gloma-brown"
+                >
+                  {PAISES.map((p) => (
+                    <option key={p.codigo} value={p.codigo}>
+                      {p.nombre}
+                    </option>
+                  ))}
+                  <option value="">Todos ya traen su código (+57, +52…)</option>
+                </select>
+                <p className="text-[11px] text-gloma-brown-light mt-1">
+                  Solo se usa para los números que vengan sin el «+». Los que ya
+                  lo traen se respetan tal cual.
+                </p>
+              </div>
+            </div>
+          </div>
+
           {err && (
             <div className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-md px-3 py-2">
               {err}
             </div>
           )}
-          <div className="flex justify-end gap-2 pt-2">
+
+          <div className="flex justify-end gap-2 pt-1">
             <button
               type="button"
               onClick={onClose}
@@ -613,7 +913,7 @@ function ImportCsvModal({
               disabled={busy || !file}
               className="px-4 py-1.5 text-xs rounded-md bg-gloma-brown text-gloma-cream font-semibold hover:bg-gloma-brown-dark disabled:opacity-50"
             >
-              {busy ? 'Importando…' : 'Importar'}
+              {busy ? 'Cargando…' : 'Cargar contactos'}
             </button>
           </div>
         </form>
@@ -1347,7 +1647,7 @@ export default function ContactosPage() {
                   onClick={() => setShowImport(true)}
                   className="px-3 py-2 text-xs rounded-lg border border-gloma-brown-light/30 bg-white text-gloma-brown-dark hover:bg-gloma-brown-light/10"
                 >
-                  ⤒ Importar CSV
+                  ⤒ Cargar desde Excel
                 </button>
                 <button
                   type="button"
@@ -1393,7 +1693,7 @@ export default function ContactosPage() {
                       Aún no tienes contactos
                     </h3>
                     <p className="text-sm text-gloma-brown-light max-w-sm mx-auto mb-4">
-                      Importa un CSV o crea uno manualmente para empezar.
+                      Carga tu lista desde un archivo de Excel o crea uno a mano.
                     </p>
                     <div className="flex justify-center gap-2">
                       <button
@@ -1401,7 +1701,7 @@ export default function ContactosPage() {
                         onClick={() => setShowImport(true)}
                         className="px-4 py-2 rounded-lg border border-gloma-brown-light/30 bg-white text-gloma-brown-dark text-sm hover:bg-gloma-brown-light/10"
                       >
-                        ⤒ Importar CSV
+                        ⤒ Cargar desde Excel
                       </button>
                       <button
                         type="button"
@@ -1683,7 +1983,7 @@ export default function ContactosPage() {
         />
       )}
       {showImport && (
-        <ImportCsvModal
+        <ImportExcelModal
           onClose={() => setShowImport(false)}
           onImported={() => {
             reloadContacts();

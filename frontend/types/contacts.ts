@@ -50,6 +50,47 @@ export interface ContactImportResult {
   errors: string[];
 }
 
+/** Una fila que el importador de Excel rechazó. Refleja
+ *  `schemas.ContactExcelRowError`. `reason` es un motivo en español, sin PII
+ *  (regla 1): dice qué está mal, nunca repite el teléfono ni el correo.
+ */
+export interface ContactExcelRowError {
+  row: number;
+  reason: string;
+}
+
+/** Refleja `schemas.ContactExcelImportResult` (POST /contacts/import-excel). */
+export interface ContactExcelImportResult {
+  total: number;
+  created: number;
+  updated: number;
+  rejected: number;
+  errors: ContactExcelRowError[];
+  /** Encabezados extra que se guardaron como atributos del contacto. */
+  detected_attributes: string[];
+  /** Mensaje que aplica a todo el archivo, no a una fila. */
+  notice: string | null;
+}
+
+/** Un campo del contacto usable para personalizar un mensaje.
+ *  Refleja `schemas.ContactFieldOut` (GET /contacts/campos). Es el CATÁLOGO:
+ *  no trae valores, así que no hay PII en esta respuesta (regla 2).
+ */
+export interface ContactField {
+  key: string;
+  label: string;
+  /** Token que se guarda en `template_variables_json`. */
+  token: string;
+  source: 'base' | 'attribute' | string;
+  contacts: number;
+}
+
+/** Refleja `schemas.ContactFieldsOut`. */
+export interface ContactFieldsResponse {
+  fields: ContactField[];
+  scanned_contacts: number;
+}
+
 /** Body para `POST /contacts` (refleja `schemas.ContactCreate`). */
 export interface ContactCreatePayload {
   phone_e164: string;

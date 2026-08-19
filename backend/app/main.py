@@ -3,7 +3,7 @@ import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from .database import Base, engine
-from .routers import auth, usuario, mensajes, campanas, bots, teams, meta_webhook, internal, landing, contacts, templates, campaigns, twilio_webhook, citas, instagram, mascotas
+from .routers import auth, usuario, mensajes, campanas, bots, teams, meta_webhook, internal, landing, contacts, templates, campaigns, twilio_webhook, citas, instagram, mascotas, pagos
 
 # #255: los logs de la app (p. ej. `llm_decision ...` del motor de bots) van a
 # nivel INFO. Sin esto el root logger queda en WARNING y las decisiones del
@@ -41,3 +41,4 @@ app.include_router(templates.router)
 app.include_router(campaigns.router)
 app.include_router(instagram.router)
 app.include_router(mascotas.router)
+app.include_router(pagos.router)

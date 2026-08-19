@@ -136,6 +136,56 @@ def member_has_permission(member: models.TeamMember, key: str) -> bool:
     return permissions_dict(member).get(key, False)
 
 
+# ===================== Reparto de conversaciones =====================
+def asesores_del_team(db: Session, team: models.Team) -> List[str]:
+    """Nombres de los asesores entre los que rota el handoff, en orden.
+
+    Prioridad:
+      1. `team.asesores_rotacion` — la lista que configura el negocio.
+      2. Los miembros con rol `agent`, por su nombre de usuario.
+      3. `asesor_1`, el handle histórico, para que un team sin configurar
+         siga comportándose como antes.
+    """
+    configurados = list(team.asesores_rotacion or [])
+    if configurados:
+        return configurados
+
+    miembros = (
+        db.query(models.TeamMember)
+        .filter(
+            models.TeamMember.team_id == team.id,
+            models.TeamMember.role == "agent",
+        )
+        .order_by(models.TeamMember.id)
+        .all()
+    )
+    nombres = [m.user.nombre for m in miembros if m.user and m.user.nombre]
+    return nombres or ["asesor_1"]
+
+
+def siguiente_asesor(db: Session, team: models.Team) -> str:
+    """Devuelve a quién le toca el próximo chat y avanza el turno.
+
+    Round-robin simple: primero uno, después el otro. El turno se guarda en
+    `teams.handoff_turno` y no en memoria, porque con más de una task de ECS
+    cada proceso llevaría su propia cuenta y el reparto dejaría de alternar.
+
+    Ojo: reparte por TURNO, no por carga. Si un asesor cierra rápido y el otro
+    no, igual les llega la mitad a cada uno. Repartir por chats abiertos es el
+    siguiente paso natural si el volumen lo pide.
+    """
+    asesores = asesores_del_team(db, team)
+    if len(asesores) == 1:
+        return asesores[0]
+
+    turno = int(team.handoff_turno or 0)
+    elegido = asesores[turno % len(asesores)]
+    team.handoff_turno = (turno + 1) % len(asesores)
+    db.add(team)
+    db.commit()
+    return elegido
+
+
 # ===================== Meta Account =====================
 def get_meta_account_for_team(db: Session, team_id: int) -> Optional[models.MetaAccount]:
     return (

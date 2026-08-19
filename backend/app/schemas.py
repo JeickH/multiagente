@@ -437,6 +437,52 @@ class ContactBulkImportResult(BaseModel):
     errors: List[str] = []
 
 
+class ContactExcelRowError(BaseModel):
+    """Una fila rechazada del Excel: en qué fila fue y por qué.
+
+    SEGURIDAD (regla 1): `reason` es un motivo en español para que la usuaria
+    encuentre la celda — NUNCA el teléfono, el correo ni la fila cruda.
+    """
+    row: int
+    reason: str
+
+
+class ContactExcelImportResult(BaseModel):
+    """Resultado de POST /contacts/import-excel.
+
+    A diferencia del CSV, aquí el rechazo viaja estructurado (`row` + `reason`)
+    porque la pantalla lo pinta como una tabla y no como una lista de strings.
+    """
+    total: int
+    created: int
+    updated: int
+    rejected: int
+    errors: List[ContactExcelRowError] = []
+    # Encabezados extra que se guardaron como atributos del contacto.
+    detected_attributes: List[str] = []
+    # Mensaje general cuando algo aplica a todo el archivo (no a una fila).
+    notice: Optional[str] = None
+
+
+class ContactFieldOut(BaseModel):
+    """Un campo del contacto utilizable para personalizar un mensaje.
+
+    SEGURIDAD (regla 2): es el CATÁLOGO, no los valores. Aquí no viaja PII.
+    """
+    key: str
+    label: str
+    # Convención que se guarda en `campaigns.template_variables_json` cuando
+    # la campaña usa el dato del contacto en vez de un texto fijo.
+    token: str
+    source: str  # 'base' | 'attribute'
+    contacts: int = 0
+
+
+class ContactFieldsOut(BaseModel):
+    fields: List[ContactFieldOut] = []
+    scanned_contacts: int = 0
+
+
 # ─── Sprint 13 / templates ────────────────────────────────────────────────
 # Schemas para WhatsApp Templates. Reglas clave aplicadas:
 #   - Regla 2 / S13-010: NUNCA exponer `MetaAccountOut` embebido —
@@ -659,3 +705,113 @@ class CampaignRecipientsPage(BaseModel):
     total: int = 0
     limit: int = 50
     offset: int = 0
+
+
+# ===== Pagos: paquetes de mensajes (Wompi) =====
+#
+# SEGURIDAD (regla 2): ningún `...Out` de acá lleva llaves de Wompi. Lo único
+# que sale al navegador es la **llave pública** y la **firma** ya calculada,
+# ambas dentro de `checkout.fields` — la pública es pública por definición y
+# la firma es el resultado del secreto, no el secreto. `WOMPI_PRIVATE_KEY`,
+# `WOMPI_INTEGRITY_SECRET` y `WOMPI_EVENTS_SECRET` no aparecen en ningún
+# schema de respuesta ni pueden aparecer: no hay campo donde quepan.
+
+
+class PagosAccesoOut(BaseModel):
+    """`GET /pagos/access` — ¿esta sesión ve el módulo de pagos?"""
+    allowed: bool
+
+
+class PaqueteDesgloseOut(BaseModel):
+    """En qué se va cada peso del precio de un paquete.
+
+    Va en el catálogo para que el CEO pueda auditar el precio desde la
+    pantalla, sin abrir el código. Es información de costos del negocio, así
+    que solo la ve un administrador — el endpoint que la sirve exige
+    `can_manage_billing`.
+    """
+    costo_cop: int
+    margen_objetivo_cop: int
+    neto_objetivo_cop: int
+    comision_wompi_cop: int
+    neto_real_cop: int
+    margen_real_cop: int
+    margen_real_pct: float
+    trm: float
+    trm_fecha: str
+    costo_usd_por_mensaje: float
+
+
+class PaqueteOut(BaseModel):
+    """Un paquete del catálogo. El precio ya viene calculado del servidor."""
+    key: str
+    nombre: str
+    descripcion: str
+    messages: int
+    amount_cents: int          # centavos de COP — el formato que exige Wompi
+    amount_cop: int            # pesos enteros, para pintar
+    precio_por_mensaje_cop: int
+    currency: str
+    desglose: PaqueteDesgloseOut
+
+
+class PaquetesOut(BaseModel):
+    paquetes: List[PaqueteOut]
+    #: `false` si al backend le faltan llaves de Wompi: la pantalla avisa
+    #: "pagos no disponible" en vez de mandar al usuario a un checkout roto.
+    pagos_habilitados: bool
+
+
+class CompraOut(BaseModel):
+    """Una compra en el historial. Sin datos del pagador ni del medio de pago."""
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    package_key: str
+    messages: int
+    amount_cents: int
+    currency: str
+    reference: str
+    status: str
+    provider_tx_id: Optional[str] = None
+    credited_at: Optional[datetime] = None
+    created_at: datetime
+
+
+class SaldoOut(BaseModel):
+    """`GET /pagos/saldo` — créditos disponibles + historial de compras."""
+    message_credits: int
+    compras: List[CompraOut] = []
+
+
+class CheckoutCreate(BaseModel):
+    """Input de `POST /pagos/checkout`: qué paquete se quiere comprar.
+
+    `redirect_url` es a dónde vuelve el usuario tras pagar. Se valida y se
+    restringe en el router (solo rutas propias): un `redirect-url` libre
+    convierte el checkout en un redirector abierto hacia cualquier dominio.
+    """
+    package_key: str = Field(..., min_length=1, max_length=40)
+    redirect_url: Optional[str] = Field(default=None, max_length=300)
+
+
+class CheckoutFormOut(BaseModel):
+    """El form de Web Checkout listo para enviar.
+
+    `fields` lleva las llaves con el nombre EXACTO de Wompi
+    (`amount-in-cents`, `signature:integrity`, …), que no son identificadores
+    válidos de Python; por eso es un dict y no un modelo con atributos.
+    """
+    url: str
+    method: str
+    fields: Dict[str, Any]
+
+
+class CheckoutOut(BaseModel):
+    """Respuesta de `POST /pagos/checkout`."""
+    reference: str
+    purchase_id: int
+    amount_cents: int
+    currency: str
+    messages: int
+    checkout: CheckoutFormOut

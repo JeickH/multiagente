@@ -69,3 +69,9 @@ testdata/
 # MASCOTAS_BUCKET (docker-compose lo monta en /app/media). Son fotos de gente
 # real copiadas de producción para poder probar: nunca van a git.
 media_local/
+
+# Entregables para clientes: llevan pantallazos de la cuenta viva del tenant
+# (su número de WhatsApp, su correo, su bandeja). Este repo es PÚBLICO —regla
+# de seguridad #8—, así que el material de entrega se queda local y se manda
+# por el canal que el CEO decida.
+entregables/

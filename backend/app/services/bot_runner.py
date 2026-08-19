@@ -189,7 +189,18 @@ def run_turn(
             # El bot entrega el chat a un humano: marcamos la conversación como
             # pendiente y la reasignamos del "bot" al asesor indicado. La UI de
             # mensajes mostrará el nuevo responsable.
-            assignee = payload.get("assignee") or "asesor_1"
+            #
+            # Si el paso no fija un asesor concreto, se reparte por turnos entre
+            # los asesores del team (`teams.asesores_rotacion`): primero uno,
+            # después el otro. Un `assignee` explícito en el paso manda sobre el
+            # turno — sirve para rutas que deben caer siempre en la misma
+            # persona (ej. un camino de reclamos).
+            assignee = payload.get("assignee")
+            if not assignee:
+                team = db.query(models.Team).get(conversation.team_id)
+                assignee = (
+                    crud.siguiente_asesor(db, team) if team is not None else "asesor_1"
+                )
             conversation.status = "pending"
             conversation.assigned_to = assignee
             db.add(conversation)

@@ -16,6 +16,11 @@ const menu = [
 // (`GET /<modulo>/access`), no adivinando por el correo: así el botón aparece
 // únicamente en la cuenta donde funciona.
 const MODULOS_INTERNOS = [
+  // Pagos NO es un módulo interno de Gloma sino del producto, pero usa el mismo
+  // mecanismo por la misma razón: es de ADMINISTRADOR. Se muestra solo si el
+  // backend dice que esta sesión puede usarlo (`/pagos/access`), en vez de
+  // adivinar por el rol leyendo el JWT — del token solo se lee `exp` (regla 7).
+  { name: 'Pagos', path: '/pagos', icon: '💳', access: '/api/pagos/access' },
   { name: 'Citas', path: '/citas', icon: '📅', access: '/api/citas/access' },
   { name: 'Instagram', path: '/instagram', icon: '📸', access: '/api/instagram/access' },
   // Sprint "Ayuda a Cali": panel de la cuenta `recuperatumascota@gmail.com`.

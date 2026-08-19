@@ -12,8 +12,10 @@ from fastapi import (
     APIRouter,
     Depends,
     File,
+    Form,
     HTTPException,
     Query,
+    Response,
     UploadFile,
     status,
 )
@@ -22,6 +24,7 @@ from sqlalchemy.orm import Session
 
 from .. import crud, models, schemas
 from ..dependencies import get_current_membership, get_db
+from ..services import contactos_excel
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +35,14 @@ router = APIRouter(tags=["contacts"])
 # S13-009: límite estricto del CSV en bytes (2 MB del wireframe).
 MAX_CSV_BYTES = 2 * 1024 * 1024
 ALLOWED_CSV_MIMES = {"text/csv", "application/vnd.ms-excel", "application/octet-stream"}
+
+# El navegador manda el MIME del .xlsx; algunos clientes mandan octet-stream.
+ALLOWED_XLSX_MIMES = {
+    contactos_excel.MIME_XLSX,
+    "application/vnd.ms-excel",
+    "application/octet-stream",
+    "application/zip",
+}
 
 
 # ===================== Contactos =====================
@@ -94,6 +105,131 @@ def create_contact_endpoint(
         logger.exception("create_contact: error inesperado (team_id=%s)", member.team_id)
         raise HTTPException(status_code=500, detail="Error temporal al guardar.")
     return schemas.ContactOut.model_validate(contact)
+
+
+# ── Excel: plantilla, importación y catálogo de campos ──────────────────
+#
+# OJO con el orden: estas rutas van ANTES de `/contacts/{contact_id}`. FastAPI
+# resuelve por orden de declaración y `{contact_id}` es un int — si estuviera
+# primero, `/contacts/plantilla` se intentaría parsear como id y devolvería 422.
+
+@router.get("/contacts/plantilla")
+def download_contacts_template_endpoint(
+    member: models.TeamMember = Depends(get_current_membership),
+):
+    """Descarga el .xlsx de guía para cargar contactos.
+
+    Autenticado a propósito aunque el archivo no tenga datos de nadie: es una
+    pantalla de la plataforma, no un recurso público.
+    """
+    try:
+        contenido = contactos_excel.construir_plantilla()
+    except Exception:
+        logger.exception(
+            "contacts_template: no se pudo generar (team_id=%s)", member.team_id
+        )
+        raise HTTPException(
+            status_code=500,
+            detail="Error temporal al generar la plantilla. Inténtalo de nuevo.",
+        )
+    return Response(
+        content=contenido,
+        media_type=contactos_excel.MIME_XLSX,
+        headers={
+            "Content-Disposition": (
+                'attachment; filename="plantilla-contactos-gloma.xlsx"'
+            ),
+        },
+    )
+
+
+@router.get("/contacts/campos", response_model=schemas.ContactFieldsOut)
+def list_contact_fields_endpoint(
+    db: Session = Depends(get_db),
+    member: models.TeamMember = Depends(get_current_membership),
+):
+    """Campos con los que se puede personalizar un mensaje de campaña.
+
+    Nombre y teléfono siempre, más los atributos que existan en los contactos
+    del team. Devuelve el catálogo, nunca los valores (regla 2).
+    """
+    try:
+        return contactos_excel.campos_disponibles(db, member.team_id)
+    except Exception:
+        logger.exception(
+            "contact_fields: error inesperado (team_id=%s)", member.team_id
+        )
+        raise HTTPException(
+            status_code=500, detail="Error temporal al leer los campos."
+        )
+
+
+@router.post(
+    "/contacts/import-excel",
+    response_model=schemas.ContactExcelImportResult,
+)
+async def import_contacts_excel_endpoint(
+    file: UploadFile = File(...),
+    pais_default: str = Form(default=""),
+    db: Session = Depends(get_db),
+    member: models.TeamMember = Depends(get_current_membership),
+):
+    """Importa contactos desde el .xlsx de la plantilla.
+
+    `pais_default` es el código de país (solo dígitos, p. ej. `57`) con el que
+    se completan los números que vengan sin él. Vacío = no completar nada y
+    rechazar esas filas con un motivo claro.
+
+    El contenido del archivo NO se loguea; solo su tamaño (regla 1).
+    """
+    if file.content_type and file.content_type not in ALLOWED_XLSX_MIMES:
+        logger.warning(
+            "import_excel: MIME no permitido (team_id=%s, mime=%s)",
+            member.team_id,
+            file.content_type,
+        )
+        raise HTTPException(
+            status_code=415,
+            detail="Tipo de archivo no soportado. Sube el archivo .xlsx de la plantilla.",
+        )
+
+    prefijo = (pais_default or "").strip().lstrip("+")
+    if prefijo and (not prefijo.isdigit() or len(prefijo) > 4):
+        raise HTTPException(
+            status_code=400,
+            detail="El código de país debe tener solo dígitos (por ejemplo 57).",
+        )
+
+    try:
+        raw = await file.read()
+    except Exception:
+        logger.exception(
+            "import_excel: error al leer upload (team_id=%s)", member.team_id
+        )
+        raise HTTPException(status_code=400, detail="No se pudo leer el archivo.")
+
+    if not raw:
+        raise HTTPException(status_code=400, detail="El archivo está vacío.")
+
+    if len(raw) > contactos_excel.MAX_EXCEL_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail="El archivo excede el tamaño máximo permitido (2 MB).",
+        )
+
+    logger.info("import_excel: team_id=%s bytes=%d", member.team_id, len(raw))
+
+    try:
+        return contactos_excel.importar(db, member.team_id, raw, prefijo or None)
+    except Exception:
+        db.rollback()
+        logger.exception(
+            "import_excel: error inesperado al procesar (team_id=%s)", member.team_id
+        )
+        raise HTTPException(
+            status_code=500,
+            detail="Error temporal al procesar el archivo.",
+        )
 
 
 @router.get("/contacts/{contact_id}", response_model=schemas.ContactOut)

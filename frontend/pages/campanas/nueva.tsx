@@ -8,12 +8,15 @@
  *   - GET  /usuario/me/meta-account     → resolver meta_account_id del team
  *   - GET  /templates?status=APPROVED   → lista plantillas para paso 2
  *   - GET  /contacts?limit=500          → contactos para modo individual
+ *   - GET  /contacts/campos             → campos para personalizar el mensaje
  *   - GET  /contact-groups              → grupos para modo group
  *   - POST /campaigns                   → crear campaña (S13-001/002/003)
  *
  * Reglas de Seguridad aplicadas (frontend):
  *   - regla 6: errores del backend se muestran tal cual los manda él
  *     (`detail` ya está sanitizado server-side); jamás se loggean.
+ *   - regla 1: el teléfono de la vista previa sale enmascarado
+ *     (`resolverValor` en `lib/variablesPlantilla`).
  *   - S13-003 (transparencia opt-in): se muestra aviso al usuario en paso 3
  *     indicándole que los contactos sin opt-in serán omitidos por el sender.
  */
@@ -23,6 +26,15 @@ import { useEffect, useMemo, useState } from 'react';
 
 import Layout from '../../components/Layout';
 import { ApiError, authedFetch } from '../../lib/api';
+import { maskPhone } from '../../lib/format';
+import {
+  aValorGuardado,
+  clavesDeVariables,
+  contextoDeVariable,
+  desdeValorGuardado,
+  renderizarVistaPrevia,
+  TOKEN_NOMBRE,
+} from '../../lib/variablesPlantilla';
 import type {
   CampaignCreatePayload,
   CampaignCreateResponse,
@@ -31,6 +43,7 @@ import type {
   MetaAccountStatus,
   TemplatePreview,
 } from '../../types/campaigns';
+import type { ContactField, ContactFieldsResponse } from '../../types/contacts';
 
 // ─── Constantes ────────────────────────────────────────────────────────────
 
@@ -79,13 +92,7 @@ function extractTemplateBody(t: TemplatePreview | null): string {
 function extractVariableKeys(t: TemplatePreview | null): string[] {
   const body = extractTemplateBody(t);
   if (!body) return [];
-  const matches = body.match(/\{\{\s*(\d+)\s*\}\}/g) || [];
-  const keys = new Set<string>();
-  for (const m of matches) {
-    const n = m.replace(/[^0-9]/g, '');
-    if (n) keys.add(n);
-  }
-  return Array.from(keys).sort((a, b) => Number(a) - Number(b));
+  return clavesDeVariables(body);
 }
 
 function fmtNumber(n: number): string {
@@ -214,6 +221,171 @@ function StepHeader({
   );
 }
 
+// ─── Paso 2: qué va en cada espacio de la plantilla ────────────────────────
+
+/**
+ * Un espacio de la plantilla ({{1}}, {{2}}…) con su selector.
+ *
+ * Antes esto era un input de texto libre donde había que escribir
+ * `{{contact.name}}` de memoria. Ahora se ve el pedazo de plantilla con el
+ * espacio resaltado y se elige de una lista: un dato del contacto o un texto
+ * fijo. Lo que se guarda en `template_variables_json` no cambió — lo traduce
+ * `lib/variablesPlantilla`.
+ */
+function EspacioDePlantilla({
+  clave,
+  cuerpo,
+  valor,
+  campos,
+  vistaPrevia,
+  onChange,
+}: {
+  clave: string;
+  cuerpo: string;
+  valor: string;
+  campos: ContactField[];
+  vistaPrevia: string;
+  onChange: (nuevo: string) => void;
+}) {
+  const seleccion = desdeValorGuardado(valor);
+  const contexto = contextoDeVariable(cuerpo, clave);
+  const esTexto = seleccion.origen === 'texto';
+  const faltaTexto = esTexto && !seleccion.texto.trim();
+
+  return (
+    <div className="rounded-xl border border-gloma-brown-light/20 bg-white p-3">
+      {/* El texto de la plantilla con este espacio resaltado */}
+      <p className="text-xs text-gloma-brown-light mb-2 leading-relaxed">
+        {contexto ? (
+          <>
+            <span>{contexto.antes}</span>
+            <span className="mx-0.5 px-1.5 py-0.5 rounded bg-gloma-mint/30 border border-gloma-mint text-gloma-brown-dark font-semibold">
+              espacio {clave}
+            </span>
+            <span>{contexto.despues}</span>
+          </>
+        ) : (
+          <span className="italic">Espacio {clave}</span>
+        )}
+      </p>
+
+      <div className="flex flex-col sm:flex-row gap-2">
+        <select
+          aria-label={`Qué va en el espacio ${clave}`}
+          value={seleccion.origen}
+          onChange={(e) =>
+            onChange(
+              aValorGuardado({
+                origen: e.target.value,
+                texto: e.target.value === 'texto' ? seleccion.texto : '',
+              }),
+            )
+          }
+          className="flex-1 px-2 py-1.5 text-sm rounded-md border border-gloma-brown-light/30 bg-white focus:outline-none focus:border-gloma-brown"
+        >
+          <option value="texto">Escribir un texto fijo…</option>
+          <optgroup label="Datos del contacto">
+            {campos.map((c) => (
+              <option key={c.key} value={c.key}>
+                {c.label}
+                {c.source === 'attribute' ? ` (dato extra)` : ''}
+              </option>
+            ))}
+          </optgroup>
+        </select>
+
+        {esTexto && (
+          <input
+            type="text"
+            aria-label={`Texto fijo del espacio ${clave}`}
+            value={seleccion.texto}
+            onChange={(e) =>
+              onChange(aValorGuardado({ origen: 'texto', texto: e.target.value }))
+            }
+            placeholder="Ej. Cartagena"
+            className={`flex-1 px-2 py-1.5 text-sm rounded-md border bg-white focus:outline-none focus:border-gloma-brown ${
+              faltaTexto ? 'border-amber-400' : 'border-gloma-brown-light/30'
+            }`}
+          />
+        )}
+      </div>
+
+      <p className="text-[11px] mt-1.5">
+        {faltaTexto ? (
+          <span className="text-amber-700">
+            Escribe el texto que quieres en este espacio.
+          </span>
+        ) : (
+          <span className="text-gloma-brown-light">
+            Quedará: <strong className="text-gloma-brown-dark">{vistaPrevia}</strong>
+          </span>
+        )}
+      </p>
+    </div>
+  );
+}
+
+/** Burbuja de WhatsApp con el mensaje ya armado para un contacto real. */
+function VistaPreviaMensaje({
+  cuerpo,
+  valores,
+  contactos,
+  contactoId,
+  onCambiarContacto,
+}: {
+  cuerpo: string;
+  valores: Record<string, string>;
+  contactos: ContactLite[];
+  contactoId: number | null;
+  onCambiarContacto: (id: number) => void;
+}) {
+  const contacto = contactos.find((c) => c.id === contactoId) ?? null;
+  const texto = renderizarVistaPrevia(cuerpo, valores, contacto);
+
+  return (
+    <div className="bg-gloma-cream border border-gloma-brown-light/20 rounded-xl p-4">
+      <p className="text-xs font-semibold mb-2 text-gloma-brown-dark">
+        Así se verá el mensaje
+      </p>
+
+      <div className="rounded-lg bg-white border border-gloma-brown-light/15 p-3">
+        <div className="max-w-[95%] rounded-2xl rounded-tl-sm bg-gloma-rose-soft px-3 py-2">
+          <p className="text-sm whitespace-pre-wrap text-gloma-brown-dark">
+            {texto || '(la plantilla no tiene texto)'}
+          </p>
+        </div>
+      </div>
+
+      {contactos.length > 0 ? (
+        <div className="mt-3">
+          <label className="block text-[11px] text-gloma-brown-light mb-1">
+            Con los datos de:
+          </label>
+          <select
+            value={contactoId ?? ''}
+            onChange={(e) => onCambiarContacto(Number(e.target.value))}
+            className="w-full px-2 py-1.5 text-xs rounded-md border border-gloma-brown-light/30 bg-white focus:outline-none focus:border-gloma-brown"
+          >
+            {contactos.slice(0, 100).map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name || '(sin nombre)'} · {maskPhone(c.phone_e164)}
+              </option>
+            ))}
+          </select>
+          <p className="text-[11px] text-gloma-brown-light mt-1">
+            Es solo una muestra: cada persona recibe el mensaje con sus propios
+            datos. El teléfono se muestra parcialmente por privacidad.
+          </p>
+        </div>
+      ) : (
+        <p className="text-[11px] text-gloma-brown-light mt-3">
+          Cuando cargues contactos podrás ver aquí el mensaje con datos reales.
+        </p>
+      )}
+    </div>
+  );
+}
+
 // ─── Página ────────────────────────────────────────────────────────────────
 
 export default function NuevaCampanaWizard() {
@@ -227,6 +399,12 @@ export default function NuevaCampanaWizard() {
   const [templates, setTemplates] = useState<TemplatePreview[] | null>(null);
   const [contacts, setContacts] = useState<ContactLite[] | null>(null);
   const [groups, setGroups] = useState<GroupLite[] | null>(null);
+  // Campos con los que se puede personalizar el mensaje (paso 2). Es el
+  // catálogo que devuelve el backend: nombre, teléfono y los datos extra que
+  // existan en los contactos del team. Sin valores — ahí no viaja PII.
+  const [campos, setCampos] = useState<ContactField[]>([]);
+  // Contacto sobre el que se pinta la vista previa del paso 2.
+  const [contactoEjemploId, setContactoEjemploId] = useState<number | null>(null);
   const [bootError, setBootError] = useState<string | null>(null);
   const [booting, setBooting] = useState(true);
 
@@ -278,7 +456,7 @@ export default function NuevaCampanaWizard() {
         // (team recién conectado), usamos `/templates` igual: viene `[]` y
         // el wizard bloqueará el paso 2.
         try {
-          const [tpls, ctcs, grps] = await Promise.all([
+          const [tpls, ctcs, grps, flds] = await Promise.all([
             authedFetch<TemplatePreview[]>(
               '/templates?status=APPROVED',
             ),
@@ -286,11 +464,21 @@ export default function NuevaCampanaWizard() {
               '/contacts?limit=500&opt_in_only=false',
             ),
             authedFetch<GroupLite[]>('/contact-groups'),
+            // Si este endpoint falla no vale tumbar el asistente: sin él el
+            // paso 2 solo pierde los datos extra, y nombre/teléfono siguen.
+            authedFetch<ContactFieldsResponse>('/contacts/campos').catch(
+              () => ({ fields: [], scanned_contacts: 0 }) as ContactFieldsResponse,
+            ),
           ]);
           if (cancelled) return;
           setTemplates(tpls);
           setContacts(ctcs);
           setGroups(grps);
+          setCampos(flds.fields);
+          // La vista previa arranca con alguien que tenga nombre: se entiende
+          // mejor que "(sin nombre)" en el primer vistazo.
+          const conNombre = ctcs.find((c) => (c.name || '').trim());
+          setContactoEjemploId((conNombre ?? ctcs[0])?.id ?? null);
           // Resolver meta_account_id: del primer template, si hay; si no,
           // se queda en null y el paso 2 mostrará empty state. El POST
           // /campaigns en ese caso no puede dispararse (botón deshabilitado).

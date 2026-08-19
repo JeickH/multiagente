@@ -3380,6 +3380,115 @@ visión: costaría más que toda la operación.
 
 ---
 
+## Manual de entrega para el usuario de Arranquemos Pues (2026-08-18)
+
+**Pedido del CEO**: un manual en HTML —para pasarlo a PDF si lo aprueba— que le
+explique a la persona que va a operar la cuenta cómo ver los chats, distinguir
+cuáles quedaron con un asesor humano, leer el tablero de estadísticas y moverse
+por el resto de la app. Más un script que reciba el correo de una cuenta y
+reinicie sus guías interactivas para que vuelvan a salir.
+
+### Qué entró
+
+| Qué | Dónde |
+|-----|-------|
+| Manual de 13 secciones con 22 pantallazos reales | `entregables/manual_arranquemos_pues/index.html` |
+| Scripts para regenerar los pantallazos y sembrar los datos de demo | `entregables/manual_arranquemos_pues/_generador/` |
+| Reinicio de guías interactivas por correo | `backend/scripts/reset_tutoriales.py` |
+| `entregables/` git-ignorado | `.gitignore` |
+
+`reset_tutoriales.py` limpia `users.tutorials_completed` (Sprint 15) del correo
+que reciba. Acepta `--modulos mensajes,campanas` para reiniciar solo algunas y
+`--ver` para consultar sin tocar nada. Idempotente; imprime el estado antes y
+después. Módulos válidos: los de `schemas.ALLOWED_TUTORIAL_MODULES`.
+
+### Por qué el entregable no va a git
+
+Los pantallazos son de la cuenta viva del tenant: su número de WhatsApp, su
+correo y su bandeja. Este repo es público (regla de seguridad #8), así que
+`entregables/` quedó ignorado y el material se manda por el canal que el CEO
+decida. Las conversaciones y contactos que aparecen son sembrados: nombres
+inventados y números `+5730140xxxxx`, nunca datos de clientes reales.
+
+### Cómo se tomaron los pantallazos
+
+Chrome headless manejado por CDP (`websockets`, sin Playwright ni Puppeteer),
+contra la app local levantada con `docker compose -p wati`. El simulador del bot
+se probó de verdad —responde por Bedrock y adjunta la tabla de tarifas—, así que
+esa captura es del bot funcionando, no un montaje.
+
+### Lo que el manual documenta como limitación (y conviene cerrar)
+
+- **#315** — un chat que pasó a un asesor no se devuelve al bot desde la app.
+- **#316** — la app muestra el texto de los mensajes, no las imágenes ni los
+  videos que manda el cliente.
+- Responder a mano un chat que sigue asignado al `bot` **no lo reasigna**: el
+  bot vuelve a contestar en el siguiente mensaje entrante. Es el que más
+  confunde en operación; hoy solo se resuelve avisándole a Gloma.
+- Las tarjetas de "Visión general" del tablero de campañas (límite diario,
+  calidad, límite mensual) están fijas en el código: no leen a Meta. El manual
+  las presenta como valores de referencia del plan y aclara que el cupo real
+  vigente es el de #326 (250 conversaciones/24 h).
+
+### Pendientes
+
+- La base local quedó con la contraseña de `arranquemospues.contacto@gmail.com`
+  cambiada (solo local; producción intacta) y con los datos de demo sembrados.
+- Falta el paso a PDF: espera la aprobación del CEO sobre el HTML.
+
+### Correcciones tras la primera revisión del CEO
+
+1. **Fuera el anexo técnico.** El manual lo lee la persona que opera la agencia,
+   no un dev: se eliminó la sección 14 (los comandos de `reset_tutoriales.py`) y
+   las dos referencias que apuntaban a ella. El script sigue documentado acá y
+   en su propio docstring; el usuario solo tiene que pedir que le reactiven las
+   guías.
+2. **El asesor de la cuenta es `asesor_1`, no un nombre inventado.** Verificado
+   en la base: el team 9 tiene **un solo** miembro con rol `agent` —"Asesor 1"
+   (`asesor1@demo.com`)— y el paso `handoff` del bot 26 escribe el handle
+   `asesor_1` en `conversation.assigned_to`, que es literalmente lo que pinta la
+   etiqueta 👤 de la bandeja. El seed de demo traía "Camila Restrepo", así que
+   el manual enseñaba una etiqueta que el usuario nunca vería. Corregido el seed
+   (`ASESOR = "asesor_1"`, con el porqué en un comentario), re-sembrado y
+   **re-capturadas las 10 pantallas de Mensajes**. Se agregó además una nota
+   explicando que todos los chats entregados quedan con la misma etiqueta porque
+   hoy hay un solo asesor, no porque sea una persona distinta cada vez.
+
+### Segunda ronda: canal de soporte y dos versiones
+
+1. **Sección 14 · Cambios, garantía y soporte.** Toda solicitud de cambios y toda
+   reclamación de garantía se tramita **por medio de Andrés Fernández, Líder de
+   Ventas de Gloma**. La caja aclara además que cuando el manual dice "avísale a
+   Gloma", ese es el camino — así no hay que reescribir las diez menciones
+   sueltas del cuerpo. Va también en el cierre del documento.
+2. **Dos versiones del mismo manual**, en `entregables/manual_app_gloma/`:
+   `manual_arranquemos_pues.html` (con el nombre de la empresa en portada y
+   cierre) y `manual_generico.html` (portada en blanco, "agencia" → "empresa",
+   copy sin sabor a agencia de viajes). La genérica **se deriva**, no se edita:
+   `_generador/generar_generico.py` aplica una lista de reemplazos exactos y
+   **aborta** si alguno deja de coincidir o si sobrevive el nombre de un cliente.
+   Editar siempre la del cliente y regenerar la otra.
+3. **PDF entregado**: `manual_arranquemos_pues.pdf` (6,3 MB), impreso con Chrome
+   headless desde la carpeta del manual para que resuelvan las rutas de `img/`.
+4. Los pantallazos siguen siendo los de la cuenta de ejemplo también en la
+   versión genérica; lleva una nota que lo dice de frente. Reemplazarlos exigiría
+   otra cuenta con datos sembrados.
+
+### Ajuste de paginación del PDF
+
+El índice arrancaba al pie de la portada y se partía entre las páginas 1 y 2. Se
+le puso `break-before/after: page` + `break-inside: avoid` al `.toc`: portada
+sola en la 1, índice completo en la 2, contenido desde la 3 (34 páginas en
+total). De paso la portada ahora ocupa la página entera (`min-height:100vh` con
+flex), que exigió `align-self:flex-start` en el logo — sin eso el flex lo estira
+a todo el ancho y lo deforma. La versión genérica hereda el arreglo al
+regenerarse.
+
+Para revisar la paginación sin `poppler` se usó **PyMuPDF** en el ambiente conda
+`multiagente` (`pip install pymupdf`), que rasteriza páginas sueltas a PNG.
+
+---
+
 ## #372 — Diez conversaciones de prueba contra el bot de Arranquemos Pues (2026-08-18)
 
 **Pedido del CEO**: probar el bot con un guion de 10 conversaciones y dar
@@ -3474,3 +3583,253 @@ improvisa.
   corta la venta del plan de Coveñas. Es lo pedido, pero vale revisarlo.
 - Las preguntas frecuentes reales (equipaje, niños, cancelaciones) quedaron para
   la próxima iteración por decisión del CEO; hoy caen en el catch-all.
+
+### Reinicio de guías en producción (2026-08-18)
+
+El CEO corrió el script y le respondió `service "backend" is not running`. Causa:
+el stack local vive bajo el proyecto de compose **`wati`** (es el que tiene el
+volumen `wati_postgres_data`), no bajo `gloma_software`. Sin `-p wati`, docker
+busca contenedores que no existen. Documentado en el docstring del script y en
+el README del generador del manual.
+
+Lo que de verdad importaba era **producción**: `rds_query.sh` mostró que el
+`user_id=7` de RDS tenía las cuatro guías en `skipped` (bots 2026-06-12,
+mensajes y campañas 2026-08-03, mi_plan 2026-08-10), así que la persona que
+recibe la cuenta **no habría visto ninguna**.
+
+Para poder correrlo allá hubo que ajustar el script: `rds_exec.sh` lo manda como
+cuerpo de un `python -c`, donde no hay `argv` ni `__file__`. Ahora
+`reset_tutoriales.py`:
+
+- toma los datos de `CORREO` / `MODULOS` / `VER` cuando no hay argumentos (el
+  correo no es secreto, así que puede ir en el override de ECS; una contraseña
+  no podría);
+- resuelve la raíz del proyecto a `/app` si `__file__` no existe.
+
+La CLI local no cambió. Probados los dos modos en local y ejecutado en RDS:
+`tutorials_completed` quedó en `{}` — verificado con `rds_query.sh` después.
+
+---
+
+## #373 — Cuenta de demostración para Jerarquía: un bot que cierra la venta (2026-08-19)
+
+**Pedido del CEO**: una cuenta demo para la marca **Jerarquía**
+(`@jerarquia_oficial`), con un bot que venda **un solo producto** —promoción de
+3 camisetas por $160.000— con personalidad tomada de la cuenta de Instagram y
+**solo dos caminos**: pasar a un asesor (que en la simulación cierra el chat) y
+registrar la venta con un link de pago falso, dejando pendiente el comprobante y
+tomando cédula, celular, nombre, dirección de envío y correo para el despacho.
+Sin WhatsApp conectado: se prueba desde la app.
+
+### La marca, leída de su propio perfil
+
+La bio es el brief: 🐺 *Estilo, comodidad y elegancia* · 🔱 *Para hombres con
+liderazgo auténtico* · 🚛 *Envíos a toda Colombia* · 🔥 *Sé tú*. Camisetas tipo
+polo para hombre, 9.5k seguidores, venta por WhatsApp y destacados de clientes,
+envíos, productos, producción y promociones.
+
+De ahí sale la voz del bot (**Samuel**, asesor de Jerarquía): firme, corto y sin
+ruego — "un asesor de Jerarquía no suplica una venta, acompaña una decisión".
+Sin apodos ("hermano", "parcero", "mi rey"), sin diminutivos, sin lenguaje de
+vendedor de feria, máximo dos emojis y solo los de la marca.
+
+### Lo que entró
+
+| Qué | Dónde |
+|-----|-------|
+| Contexto a priori de la marca (voz, ficha del producto, los dos caminos, 15 ejemplos resueltos) | `app/bot_contexts/jerarquia.md` |
+| Herramienta `registrar_venta`: valida los 5 datos, genera número de pedido `JRQ-XXXXXX` y el link de pago | `services/llm_engine.py` |
+| Guardarraíl `_viola_link`: si el bot escribe una URL que no entregó la herramienta, el mensaje **no se envía** y se le exige corregir | `services/llm_engine.py` |
+| Camino nuevo `venta_registrada` en la telemetría | `llm_engine._classify_camino` |
+| Seed de la cuenta demo + bot (11 bloques visuales, 10 caminos de observabilidad) | `scripts/seed_bot_jerarquia.py` |
+| Pasarela de pago **simulada**, pública, sin un solo campo de datos | `frontend/pages/pago-demo.tsx` |
+| 12 tests unitarios + 17 de clasificación + 12 guiones contra Bedrock | `tests/test_venta_jerarquia.py`, `tests/jerarquia/` |
+
+### Por qué un guardarraíl para el link
+
+Es el hermano del de teléfonos inventados del bot de mascotas. Un modelo que
+"recuerda" una URL plausible aquí no manda a nadie a un número equivocado:
+manda a un cliente a pagarle a un desconocido. Solo pasa el link que devolvió
+`registrar_venta` en ese mismo turno; cualquier otro se descarta y el turno se
+repite con la corrección. La prueba lo cazó en la primera corrida.
+
+El link apunta a `/pago-demo`, una página que dice en tres lugares que es una
+simulación, **no pide ni un dato** y su botón "pago aprobado" es 100% del
+navegador. Un demo no puede terminar en un enlace roto, y tampoco puede
+parecerse a una pasarela de pago de verdad.
+
+### Lo que encontraron los guiones (6 conversaciones, Bedrock real)
+
+| # | Hallazgo de la 1ª corrida | Arreglo |
+|---|---------------------------|---------|
+| 1 | "El precio es fijo, **hermano**" | Lista explícita de apodos prohibidos + ejemplo del caso sin nombre |
+| 2 | "Te conecto con un asesor" **sin llamar** `escalar_a_asesor` | Regla "lo que anuncias, lo ejecutas en el mismo turno" |
+| 3 | Aviso de handoff repetido dos veces en el mismo mensaje | "El aviso va una sola vez y en una frase" |
+| 4 | Un caso de asesor en el **primer** mensaje quedaba sin escalar | La regla aplica también al primer turno |
+
+Después: **12 de 12 guiones en verde**, US$ 0,028 la corrida, p50 2,7 s y
+**93% de la entrada servida por caché** — el contexto quedó en ~4.900 tokens,
+por encima del mínimo cacheable de 4.096 que se midió en #372.
+
+### Deploy
+
+Imagen `multiagente-backend:lote374b` (`linux/amd64`), task-def **rev 49**,
+`update-service --force-new-deployment` → `services-stable`. Seed en RDS con
+`ecs run-task` (exit 0): **bot id=18**, team_id=9. Smoke en producción contra
+`https://api.glomabeauty.com`: conversación completa de venta con número de
+pedido y link. En local: bot id=34, misma prueba por `/bots/{id}/simulate`.
+
+**Ojo con el seed en producción**: pesa 16 KB y los container overrides de ECS
+topan en 8.192 caracteres, así que **no** se puede mandar por `rds_exec.sh`
+(que lo envía como cuerpo de un `python -c`). Va como `command` de la task,
+porque el script ya viaja dentro de la imagen. La contraseña viajó como **hash
+bcrypt** calculado en local, nunca en claro (convención de #303: los overrides
+quedan en CloudTrail).
+
+### Hallazgo grande: RDS está atrás del `models.py` del árbol de trabajo
+
+La primera corrida del seed en RDS falló con
+`column teams.message_credits does not exist`. La causa **no** es de este lote:
+en el árbol hay trabajo en curso de otra sesión (pagos/Wompi, créditos,
+contactos Excel) que ya tocó `models.py` con tres columnas nuevas en `teams`
+—`message_credits`, `handoff_turno`, `asesores_rotacion`— y su migración
+(`scripts/migrate_pagos_y_asesores.py`) todavía no se aplicó en RDS.
+
+Es exactamente el gotcha de la convención #1 al revés: **el modelo se adelantó a
+la base**. Y es una bomba de tiempo para el deploy: una imagen construida desde
+el árbol tal cual habría tumbado producción en la primera consulta a `teams`
+(login incluido).
+
+Cómo se resolvió sin tocar el trabajo ajeno: la imagen se construyó desde un
+`git worktree` limpio en `HEAD` al que se le copiaron **solo** los archivos de
+este lote. El árbol de la otra sesión quedó intacto.
+
+> **Bloqueante para quien retome el lote de pagos**: aplicar
+> `migrate_pagos_y_asesores.py` en RDS **antes** de desplegar cualquier imagen
+> que lleve ese `models.py`. Y en local, para no perder la paridad.
+
+### Pendientes
+
+- **Datos provisionales del producto**: tela (algodón piqué), tallas (S–XL),
+  colores (negro, blanco, azul oscuro, gris jaspe, vinotinto), envío incluido y
+  entrega de 2 a 5 días hábiles son **placeholders** para la demo. Confirmarlos
+  con la marca antes de conectar un WhatsApp real. Viven todos en la sección
+  "Ficha del producto" de `jerarquia.md`, un solo lugar que editar.
+- La venta queda registrada en `bot_llm_decisions` (camino `venta_registrada`,
+  con los datos del pedido en `tools_called`), no en una tabla de pedidos con
+  pantalla propia. Alcanza para la demo; si la cuenta se vuelve real, hace falta
+  una tabla `ventas` y su vista.
+- El bot no tiene fotos del producto. `llm_config.media` está listo para
+  recibirlas: basta dejarlas en `frontend/public/` y agregar las claves.
+- **Deuda de tests**: `tests/jerarquia/costo/conftest.py` es la **tercera** copia
+  del `Medidor` (mascotas, viajes, jerarquía). Toca extraerlo a un módulo
+  compartido; no se hizo aquí para no pisar el árbol de la otra sesión.
+
+---
+
+## Lote: roles, pagos por Wompi, contactos por Excel (2026-08-19)
+
+Pedido del CEO en un solo mensaje: dos asesores con reparto por turnos, cuenta
+de asesor con permisos recortados, cambio del correo admin, ventana de pagos
+para comprar paquetes de mensajes, importación de contactos por Excel y
+atributos sin JSON. Más dos cambios al bot de viajes que quedaron **fuera**
+(ver abajo).
+
+### Lo que entró
+
+| Qué | Dónde |
+|-----|-------|
+| Créditos, rotación de asesores y permiso `can_manage_billing` | `app/models.py` |
+| Migración idempotente + tabla `credit_purchases` | `scripts/migrate_pagos_y_asesores.py` |
+| Reparto por turnos entre asesores | `crud.siguiente_asesor` + `services/bot_runner.py` |
+| Configuración de la cuenta (correo, asesor, permisos) | `scripts/configurar_arranquemos_pues.py` |
+| Catálogo de paquetes con precio calculado | `app/services/creditos.py` |
+| Checkout y webhook de Wompi | `app/services/wompi.py`, `app/routers/pagos.py` |
+| Ventana de pagos (solo admin) | `frontend/pages/pagos.tsx` + entrada en `Sidebar.tsx` |
+| Importación por Excel y campos visuales | `app/services/contactos_excel.py`, `routers/contacts.py`, `campanas/contactos.tsx`, `campanas/nueva.tsx` |
+
+Suite: **226 passed**. Frontend: `tsc --noEmit` limpio.
+
+### El precio de los paquetes
+
+Costo real por mensaje de marketing a Colombia: **USD 0,019** = Meta 0,014
+(rate card vigente 1-abr-2026) + Twilio 0,005. A TRM 3.128,65 (Superfinanciera,
+18-ago-2026) son **COP 59,44 por mensaje**.
+
+La comisión de Wompi (Plan Avanzado: 2,65% + $700 + IVA) **no se suma encima
+del precio: se hace gross-up**. Sumarla por fuera deja corto el neto, porque
+Wompi cobra su porcentaje sobre el total ya inflado:
+
+    G = (neto_objetivo + 833) / 0,968465
+
+| Paquete | Costo | Precio | Comisión | Neto |
+|---|---|---|---|---|
+| 1.000 mensajes | 59.444 | **80.700** | 3.378 | 77.322 |
+| 5.000 mensajes | 297.222 | **399.900** | 13.444 | 386.456 |
+
+**El margen del 30% es una suposición**, marcada como tal en `creditos.py`: es
+la única cifra del cálculo que no sale de una fuente oficial. Pendiente de que
+el CEO la confirme. La TRM está en mínimos de 7 años: si el dólar sube, el
+margen se come solo, así que la constante va fechada y hay que revisarla.
+
+### Decisiones que vale la pena recordar
+
+- **Los créditos los suma SOLO el webhook**, nunca el `redirect-url` de vuelta
+  ni un POST del frontend: quien controla una URL podría regalarse mensajes.
+  La suma es idempotente por tres candados (UNIQUE en `reference`,
+  `SELECT ... FOR UPDATE`, y salida temprana si ya está `approved`), porque
+  Wompi reintenta el webhook hasta 3 veces en 24 h.
+- **La firma de integridad se calcula en el backend**, jamás en el navegador:
+  exige el secreto de integridad, y un secreto en el frontend es un secreto
+  publicado.
+- **El turno del round-robin vive en `teams.handoff_turno`**, no en memoria del
+  proceso: con varias tasks de ECS cada una llevaría su propia cuenta y el
+  reparto dejaría de alternar.
+- **Un `assignee` explícito en el paso `handoff` manda sobre el turno.** Sirve
+  para rutas que deben caer siempre en la misma persona. Al bot de Arranquemos
+  Pues se le quitó ese `assignee` fijo para que entre al reparto.
+- El asesor **ya no podía** desconectar la cuenta de WhatsApp: ese endpoint es
+  owner-only desde antes (`get_current_owner_membership`). No hubo que tocarlo.
+
+### Gotcha nuevo: el namespace package de `/app`
+
+Un script que resolvía su raíz buscando el *directorio* `app` se iba por
+`/app` cuando corría desde `/` (Python 3 lo toma como namespace package) y
+fallaba después con `No module named 'app.database'`. Los scripts ahora buscan
+el **archivo** `app/database.py`, no la carpeta.
+
+### Lo que quedó fuera y por qué
+
+- **Los dos cambios al bot de viajes** (descripción más concisa y los días del
+  itinerario). Otra sesión está editando `bot_contexts/demo_viajes.md`,
+  `llm_engine.py` y `seed_bot_viajes_llm.py` con cambios sin commitear. El
+  análisis del tarifario ya está resuelto y documentado en
+  `entregables/analisis_tarifario_arranquemos.md`: **el bot responde mal**, sí
+  hay salidas que terminan en viernes (saliendo el martes).
+- **Migración en RDS y despliegue**: hay otra sesión desplegando. No se tocó
+  nada de AWS a propósito.
+- **Llaves de Wompi**: el módulo lee `WOMPI_*` del entorno y está probado con
+  llaves de juguete. Faltan las de sandbox del CEO.
+- **Pantallazos del flujo nuevo de contactos** para el manual: exigen
+  reconstruir la imagen local, que se evitó mientras la otra sesión despliega.
+
+### Ajustes del CEO (19-ago-2026)
+
+- **Margen del 10%**, no del 30%. El 30% era un provisional del equipo técnico;
+  el CEO lo fijó en 10%. Precios nuevos: **1.000 mensajes → COP 68.400** y
+  **5.000 mensajes → COP 338.500**. El margen real verificado da 10,0% exacto
+  después de descontar la comisión de Wompi.
+- **Bot de viajes, los dos cambios que estaban bloqueados** (las otras sesiones
+  ya commitearon):
+  - *Resumen más conciso*: la frase de una línea ya no enumera qué comida entra
+    cada día; eso vive en el itinerario y en el resumen solo alargaba.
+  - *Días de salida*: el contexto *solo* describía el plan de viernes a lunes,
+    así que ante "¿tienen de lunes a viernes?" el bot improvisó "solo de lunes a
+    jueves". Ahora la sección "Días de salida — NO improvises con esto" lista lo
+    que de verdad hay: viernes→lunes/martes, lunes→jueves desde $350.000, y
+    **martes→viernes** (junio 09–12, 16–19, 30–julio 03, diciembre 08–11). Con
+    instrucción explícita de que la respuesta a "salidas entre semana" es
+    **sí hay**, de preguntar el mes y de mandar los tarifarios en vez de
+    inventar fechas.
+
+Suite completa: **659 passed, 51 skipped, 1 xfailed**.
