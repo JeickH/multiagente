@@ -18,6 +18,12 @@ Un bot usa este motor cuando `bots.engine == 'llm'`. Su configuración vive en
         "tarifario1": {"url": "https://...", "media_type": "image",
                         "descripcion": "precios del plan"}
       },
+      "venta": {                          # sólo si el bot cierra pedidos en el chat
+        "producto": "Promo 3 camisetas",
+        "valor": "$160.000",
+        "prefijo": "JRQ",                 # prefijo del número de pedido
+        "link_pago": "https://.../pago?ref={ref}"
+      },
       "shopify": {                        # sólo si el bot consulta pedidos
         "shop": "x.myshopify.com",
         "client_id": "...",
@@ -503,6 +509,57 @@ def _tools_for(cfg: Dict[str, Any]) -> List[Dict[str, Any]]:
                         },
                     },
                     "required": ["correo", "fecha", "hora"],
+                },
+            }
+        )
+    if isinstance(cfg.get("venta"), dict):
+        tools.append(
+            {
+                "name": "registrar_venta",
+                "description": (
+                    "Registra el pedido del cliente y devuelve el número de "
+                    "pedido y el LINK DE PAGO. Llámala solo cuando ya tengas "
+                    "los cinco datos completos: nombre, cédula, teléfono, "
+                    "correo y dirección de envío. El link no existe antes de "
+                    "esta llamada: no lo escribas ni lo inventes — cópialo "
+                    "textual del resultado."
+                ),
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "nombre": {
+                            "type": "string",
+                            "description": "Nombre completo, como lo escribió.",
+                        },
+                        "cedula": {
+                            "type": "string",
+                            "description": "Número de cédula, solo dígitos.",
+                        },
+                        "telefono": {
+                            "type": "string",
+                            "description": "Celular de contacto.",
+                        },
+                        "correo": {
+                            "type": "string",
+                            "description": "Correo electrónico.",
+                        },
+                        "direccion": {
+                            "type": "string",
+                            "description": (
+                                "Dirección de envío completa, con ciudad."
+                            ),
+                        },
+                        "detalle": {
+                            "type": "string",
+                            "description": (
+                                "Tallas y colores elegidos, si los dijo. "
+                                "Opcional: no retrases el registro por esto."
+                            ),
+                        },
+                    },
+                    "required": [
+                        "nombre", "cedula", "telefono", "correo", "direccion",
+                    ],
                 },
             }
         )
@@ -1372,6 +1429,133 @@ def _clean_booking(
     }, ""
 
 
+# ---------------------------------------------------------------------------
+# Venta con link de pago (#374): bots de producto único que cierran el pedido
+# en el chat. Se activa con `llm_config.venta`.
+# ---------------------------------------------------------------------------
+
+_SOLO_DIGITOS_RE = re.compile(r"\D")
+_LINK_PAGO_DEFAULT = "https://app.glomabeauty.com/pago-demo?ref={ref}"
+
+
+def _nueva_referencia(prefijo: str) -> str:
+    """Número de pedido corto y legible al dictarlo: JRQ-7F3K2M."""
+    import uuid
+
+    limpio = re.sub(r"[^A-Z0-9]", "", (prefijo or "PED").upper())[:6] or "PED"
+    return f"{limpio}-{uuid.uuid4().hex[:6].upper()}"
+
+
+def _clean_venta(
+    tool_input: Dict[str, Any], cfg: Dict[str, Any]
+) -> tuple[Optional[Dict[str, str]], str]:
+    """Valida los datos del pedido. Devuelve (venta|None, mensaje).
+
+    El mensaje va al MODELO, no al cliente: le dice qué dato quedó mal para que
+    lo pida de nuevo y vuelva a llamar la herramienta. Se valida aquí y no en el
+    prompt porque un despacho sale con estos datos: una cédula de 3 dígitos o un
+    correo sin arroba dejan un pedido que nadie puede completar.
+    """
+    venta_cfg = cfg.get("venta") if isinstance(cfg.get("venta"), dict) else {}
+
+    def _s(key: str, limit: int) -> str:
+        return str(tool_input.get(key) or "").strip()[:limit]
+
+    nombre = _s("nombre", 120)
+    if len(nombre) < 5 or len(nombre.split()) < 2:
+        return None, (
+            "el nombre está incompleto: pídele nombre y apellido, y vuelve a "
+            "llamar la herramienta"
+        )
+
+    cedula = _SOLO_DIGITOS_RE.sub("", _s("cedula", 32))
+    if not 5 <= len(cedula) <= 12:
+        return None, (
+            "la cédula no parece válida: pídesela de nuevo (solo el número) y "
+            "vuelve a llamar la herramienta"
+        )
+
+    telefono = _SOLO_DIGITOS_RE.sub("", _s("telefono", 32))
+    if not 7 <= len(telefono) <= 15:
+        return None, (
+            "el número de celular no parece válido: pídeselo de nuevo y vuelve "
+            "a llamar la herramienta"
+        )
+
+    correo = _s("correo", 255).lower()
+    if not _EMAIL_RE.match(correo):
+        return None, (
+            "el correo no parece válido: pídeselo de nuevo con amabilidad y "
+            "vuelve a llamar la herramienta"
+        )
+
+    direccion = _s("direccion", 300)
+    if len(direccion) < 8 or _ubicacion_de_relleno(direccion):
+        return None, (
+            "la dirección de envío está incompleta: pídesela completa y con la "
+            "ciudad, y vuelve a llamar la herramienta"
+        )
+
+    ref = _nueva_referencia(str(venta_cfg.get("prefijo") or "PED"))
+    plantilla = str(venta_cfg.get("link_pago") or _LINK_PAGO_DEFAULT)
+    if not plantilla.startswith("https://"):
+        plantilla = _LINK_PAGO_DEFAULT
+    return {
+        "ref": ref,
+        "link": plantilla.replace("{ref}", ref),
+        "nombre": nombre,
+        "cedula": cedula,
+        "telefono": telefono,
+        "correo": correo,
+        "direccion": direccion,
+        "detalle": _s("detalle", 200),
+        "producto": str(venta_cfg.get("producto") or "pedido")[:120],
+        "valor": str(venta_cfg.get("valor") or "")[:32],
+    }, ""
+
+
+# Guardarraíl hermano del de teléfonos inventados (`_viola_contacto`): el link
+# de pago es lo único que separa un pedido de una estafa, y los modelos rellenan
+# URLs plausibles con una facilidad peligrosa. Solo vale el link que devolvió
+# `registrar_venta` en este mismo turno.
+_URL_EN_TEXTO_RE = re.compile(r"(?:https?://|www\.)[^\s<>\"'()\[\]]+", re.IGNORECASE)
+
+_CORRECCION_LINK = (
+    "ALTO: acabas de escribir una dirección web que NO te entregó ninguna "
+    "herramienta. El link de pago no está en tu memoria y no se puede construir: "
+    "solo existe dentro del resultado de `registrar_venta`. Ese mensaje NO se le "
+    "envió al cliente. Vuelve a responder: si ya tienes los cinco datos (nombre, "
+    "cédula, teléfono, correo y dirección), llama `registrar_venta` y copia "
+    "TEXTUALMENTE el link que te devuelva. Si aún te falta algún dato, pídelo "
+    "sin escribir ningún link."
+)
+
+
+def _normaliza_url(url: str) -> str:
+    return (url or "").strip().rstrip(".,;:!?").lower()
+
+
+def _viola_link(
+    cfg: Dict[str, Any],
+    textos_de_la_ronda: List[str],
+    tools_called: List[Dict[str, Any]],
+) -> bool:
+    """¿El bot escribió un link que ninguna herramienta le dio?"""
+    if not isinstance(cfg.get("venta"), dict) or not textos_de_la_ronda:
+        return False
+    permitidos = {
+        _normaliza_url(u)
+        for llamada in tools_called
+        if llamada.get("tool") == "registrar_venta"
+        for u in _URL_EN_TEXTO_RE.findall(str(llamada.get("resultado") or ""))
+    }
+    for texto in textos_de_la_ronda:
+        for dicho in _URL_EN_TEXTO_RE.findall(texto or ""):
+            if _normaliza_url(dicho) not in permitidos:
+                return True
+    return False
+
+
 def _run_tool(
     name: str,
     tool_input: Dict[str, Any],
@@ -1393,6 +1577,26 @@ def _run_tool(
         return (
             f"demo registrada para el {booking['label']}; confírmasela al "
             "prospecto con esa misma fecha y despídete"
+        ), False
+
+    if name == "registrar_venta":
+        venta, problema = _clean_venta(tool_input, cfg)
+        if venta is None:
+            return problema, False
+        # El pedido queda en la bitácora del turno (`bot_llm_decisions`): el
+        # motor no tiene sesión de BD y este bot todavía no tiene tabla propia
+        # de ventas. El link va PRIMERO en el resultado a propósito — el caller
+        # recorta a 300 caracteres para el guardarraíl de links.
+        if notas is not None:
+            notas.append(f"pedido {venta['ref']} registrado")
+        detalle = f" ({venta['detalle']})" if venta["detalle"] else ""
+        return (
+            f"link de pago: {venta['link']} — pedido {venta['ref']} registrado "
+            f"a nombre de {venta['nombre']}, CC {venta['cedula']}, "
+            f"cel {venta['telefono']}, {venta['correo']}, envío a "
+            f"{venta['direccion']}{detalle}. Dale el número de pedido, pásale "
+            "ese link EXACTO (no lo cambies ni lo acortes) y dile que apenas "
+            "pague nos envíe el comprobante por este chat para despachar."
         ), False
 
     if name == "escalar_a_asesor":
@@ -1510,6 +1714,8 @@ def _classify_camino(
     tool_names = {t.get("tool") for t in tools_called}
     if "registrar_demo" in tool_names:
         return "demo_agendada"
+    if "registrar_venta" in tool_names:
+        return "venta_registrada"
     if "entregar_contacto" in tool_names:
         return "mascota_reconocida"
     if "registrar_reporte" in tool_names:
@@ -1978,6 +2184,8 @@ def _advance_inner(
                 correccion, motivo = _CORRECCION_CONTACTO, "contacto inventado"
             elif _viola_ficha(cfg, say_texts[textos_previos:], tools_called):
                 correccion, motivo = _CORRECCION_FICHA, "ficha descrita sin consultarla"
+            elif _viola_link(cfg, say_texts[textos_previos:], tools_called):
+                correccion, motivo = _CORRECCION_LINK, "link de pago inventado"
         if correccion is not None:
             correcciones += 1
             del actions[acciones_previas:]

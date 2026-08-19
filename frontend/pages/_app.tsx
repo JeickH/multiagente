@@ -35,6 +35,9 @@ const TITULOS: Record<string, string> = {
 // panel privado de la cuenta y sí exige sesión.)
 const PUBLIC_PAGES = [
   '/login', '/register', '/gloma', '/automatas', '/elecol', '/404', '/mascotas',
+  // Destino del link de pago que entrega el bot de ventas: lo abre un cliente
+  // desde WhatsApp, sin sesión. No lee ni escribe nada de la plataforma.
+  '/pago-demo',
 ];
 
 // Hosts donde vive SOLO contenido público — no hay plataforma que proteger.
