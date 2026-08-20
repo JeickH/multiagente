@@ -43,6 +43,10 @@ services:
       META_RATE_LIMIT_RPS: ${META_RATE_LIMIT_RPS:-10}
       CAMPAIGN_SENDER_BATCH: ${CAMPAIGN_SENDER_BATCH:-200}
       INTERNAL_API_KEY: ${INTERNAL_API_KEY:-}
+      # Ventana de supervisión (/conversaciones): qué cuentas se pueden mirar.
+      # Vacío = la lista blanca por defecto del código. En local se sobrescribe
+      # desde el .env raíz para sumar la cuenta de carga sintética.
+      SUPERVISION_CUENTAS: ${SUPERVISION_CUENTAS:-}
       WATI_API_ENDPOINT: ${WATI_API_ENDPOINT:-}
       WATI_BEARER_TOKEN: ${WATI_BEARER_TOKEN:-}
       # Sprint 19: motor de bots LLM vía AWS Bedrock. En local las credenciales
