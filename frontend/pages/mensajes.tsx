@@ -87,6 +87,27 @@ const FILTERS = [
   { key: 'closed', label: 'Cerrado' },
 ];
 
+// Cada cuánto el navegador vuelve a preguntar. Son dos ritmos distintos porque
+// responden a dos preguntas distintas:
+//
+//   LISTA (45 s) — "¿entró alguna conversación nueva?". Decisión del CEO el
+//     20-ago-2026, bajando de 8 s: con la lista paginada cada pregunta cuesta 4
+//     consultas en vez de 602, pero seguía preguntando 450 veces por hora y por
+//     pestaña para oír "nada nuevo" casi siempre. A 45 s son 80.
+//   DETALLE (5 s) — "¿contestó la persona con la que estoy hablando AHORA?".
+//     Este no se toca: es el que hace que una conversación abierta se sienta
+//     viva, y son los segundos que una asesora está esperando mirando la
+//     pantalla.
+//
+// El costo de la lista más lenta: un chat nuevo puede tardar hasta 45 s en
+// aparecer en la bandeja. Los mensajes de la conversación ya abierta NO se
+// atrasan — esos los trae el poll del detalle.
+//
+// Lo que de verdad resuelve esto es que el servidor avise (SSE/websocket) en
+// vez de que el navegador pregunte. Anotado en la BITÁCORA.
+const POLL_LISTA_MS = 45000;
+const POLL_DETALLE_MS = 5000;
+
 function authHeaders(): HeadersInit {
   const token = getToken();
   return token ? { Authorization: `Bearer ${token}` } : {};
@@ -157,7 +178,7 @@ export default function Mensajes() {
     setPagina(1);
   }, [filter, searchAplicado, porPagina]);
 
-  // Cargar conversaciones (poll cada 8s).
+  // Cargar conversaciones (ver POLL_LISTA_MS).
   //
   // El filtro y la búsqueda viajan al backend en vez de aplicarse sobre lo que
   // ya se descargó: si se recortaran acá, "20 por página" filtraría dentro de
@@ -183,14 +204,14 @@ export default function Mensajes() {
         })
         .catch(() => {});
     load();
-    const t = setInterval(load, 8000);
+    const t = setInterval(load, POLL_LISTA_MS);
     return () => {
       active = false;
       clearInterval(t);
     };
   }, [me, filter, searchAplicado, pagina, porPagina]);
 
-  // Cargar detalle al seleccionar (poll cada 5s)
+  // Cargar detalle al seleccionar (ver POLL_DETALLE_MS)
   useEffect(() => {
     if (selectedId == null) {
       setDetail(null);
@@ -205,7 +226,7 @@ export default function Mensajes() {
         })
         .catch(() => {});
     load();
-    const t = setInterval(load, 5000);
+    const t = setInterval(load, POLL_DETALLE_MS);
     return () => {
       active = false;
       clearInterval(t);
