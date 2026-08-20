@@ -4055,3 +4055,21 @@ Suite: **719 passed, 51 skipped, 1 xfailed** (con `TZ=UTC`).
 
 Verificado en producción: la cuenta apagada da 401; `ventas@outlook.com` entra,
 su token dura 120 minutos, ve su equipo y recibe **403** en `/pagos/paquetes`.
+
+#### El CI se cayó otra vez, y otra vez por el entorno
+
+`SECRET_KEY` y `ALGORITHM` se leen del entorno al importar el router de auth, y
+el runner del CI no tiene `.env`: el test nuevo firmaba un token y moría con
+"Algorithm None not supported". En local pasaba porque el `.env` sí está.
+
+Dos veces en la misma noche por lo mismo: **el test corría en una máquina que
+no era la del CI**. La forma de comprobarlo antes de pushear quedó documentada y
+es barata — un worktree limpio no tiene `.env` (está git-ignorado) ni la zona
+horaria de acá:
+
+    git worktree add --detach /tmp/wt-ci HEAD
+    cd /tmp/wt-ci/backend && TZ=UTC python -m pytest -q
+
+Eso reproduce el CI exacto. Con eso se verificó el arreglo (`90d8e42`): **719
+passed**. El arreglo es solo de tests, así que la imagen desplegada (rev 54) no
+cambia.
