@@ -127,6 +127,54 @@ def _pesos(valor: int) -> str:
     return f"${valor:,.0f}".replace(",", ".")
 
 
+def _meses_por_cercania(hoy: date) -> List[int]:
+    """Los 12 meses desde el actual hacia adelante, dando la vuelta.
+
+    Recorrerlos de enero a diciembre ponía «Enero» de primero en agosto, como si
+    fuera el mes más cercano cuando en realidad es el enero del año siguiente —
+    y el bot lo leyó como un error y terminó omitiéndolo de la lista.
+    """
+    return [(hoy.month - 1 + i) % 12 + 1 for i in range(12)]
+
+
+def _rango_temporada() -> Optional[tuple]:
+    """(primera, última) fecha de salida publicada en todo el tarifario."""
+    inicios = [date.fromisoformat(p["inicio"]) for p in _datos().get("planes", [])]
+    return (min(inicios), max(inicios)) if inicios else None
+
+
+def resolver_fecha(fecha: date, mes: Optional[int], hoy: date) -> date:
+    """Corrige el año cuando el modelo manda una fecha que ya pasó.
+
+    El modelo no sabe en qué año vive: al pedirle una fecha exacta escribía
+    `2025-01-15` para «el 15 de enero», y la consulta respondía «esa fecha ya
+    pasó» a un cliente que quería viajar en enero de 2027. Una fecha en el
+    pasado nunca es una petición válida, así que se reinterpreta el año.
+
+    Solo se toca lo que está demostrablemente mal: si la fecha que llega es
+    futura, se respeta tal cual (el cliente pudo haber dicho el año a propósito).
+    Y si ninguna reinterpretación cae dentro de la temporada publicada, se
+    devuelve la original para que la consulta responda «ya pasó» — que en ese
+    caso es la verdad, no un error de año.
+    """
+    if fecha >= hoy:
+        return fecha
+
+    dia, m = fecha.day, (mes or fecha.month)
+    rango = _rango_temporada()
+    for anio in (hoy.year, hoy.year + 1):
+        try:
+            cand = date(anio, m, dia)
+        except ValueError:      # 29 de febrero en un año no bisiesto
+            continue
+        if cand < hoy:
+            continue
+        if rango is not None and not (rango[0] <= cand <= rango[1]):
+            continue
+        return cand
+    return fecha
+
+
 def planes_de(hotel: str, mes: int, hoy: Optional[date] = None) -> List[Dict[str, Any]]:
     """Planes vigentes de ese hotel en ese mes, del más próximo al más lejano."""
     hoy = hoy or hoy_colombia()
@@ -172,19 +220,18 @@ def _bloque_hotel(
     lineas: List[str] = []
 
     if not planes:
-        hay_otros = any(
-            planes_de(hotel, m, hoy) for m in range(1, 13) if m != mes
-        )
         lineas.append(
-            f"{nombre} — {_NOMBRE_MES[mes]}: NO hay salidas publicadas para ese "
-            "mes en este hotel."
+            f"{nombre} — {_NOMBRE_MES[mes]}: NO hay NADA publicado para ese mes "
+            f"en este hotel: ni fines de semana ni salidas entre semana. La "
+            f"promoción de «lunes a jueves» NO aplica a un mes sin fechas "
+            f"publicadas — no se la ofrezcas para {_NOMBRE_MES[mes]}."
         )
-        if hay_otros:
-            disponibles = [
-                _NOMBRE_MES[m] for m in range(1, 13) if planes_de(hotel, m, hoy)
-            ]
+        disponibles = [_NOMBRE_MES[m] for m in _meses_por_cercania(hoy)
+                       if planes_de(hotel, m, hoy)]
+        if disponibles:
             lineas.append(
-                f"  Meses con salidas en {nombre}: {', '.join(disponibles)}."
+                f"  Meses que SÍ tienen salidas en {nombre}, del más próximo al "
+                f"más lejano: {', '.join(disponibles)}."
             )
         lineas.append(
             "  Dile con qué meses SÍ hay y ofrécele el otro hotel; no escales "
@@ -256,11 +303,24 @@ def consultar(
             "viajar y vuelve a consultar."
         )
 
-    if fecha_pedida is not None and fecha_pedida < hoy:
-        return (
-            f"La fecha {fecha_pedida.isoformat()} ya pasó. Pregúntale al cliente "
-            "para qué fecha nueva quiere viajar."
-        )
+    # El modelo no sabe en qué año vive y escribía fechas del año pasado.
+    aviso_vencida = ""
+    if fecha_pedida is not None:
+        resuelta = resolver_fecha(fecha_pedida, num_mes, hoy)
+        if resuelta != fecha_pedida:
+            fecha_pedida = resuelta
+            num_mes = resuelta.month
+        elif fecha_pedida < hoy:
+            # Ya pasó de verdad (no es un año mal escrito). Se avisa, pero NO se
+            # corta: abajo van igual las salidas que quedan en ese mes, que es
+            # lo que el cliente necesita para elegir otra.
+            aviso_vencida = (
+                f"OJO: el {fecha_pedida.isoformat()} ya pasó, no se puede vender. "
+                "Dile que esa fecha ya salió y ofrécele de una las que siguen "
+                "disponibles — NO le preguntes «¿para cuál otra fecha?» sin "
+                "darle opciones."
+            )
+            fecha_pedida = None
 
     clave_hotel = normalizar_hotel(hotel) if hotel else None
     if hotel and clave_hotel is None:
@@ -278,6 +338,8 @@ def consultar(
         f"Tarifario de Coveñas — valores POR PERSONA (hoy es {hoy.isoformat()}; "
         "solo se listan salidas que todavía no han pasado)."
     ]
+    if aviso_vencida:
+        partes.append(aviso_vencida)
     for h in hoteles:
         partes.extend(_bloque_hotel(cfg, h, num_mes, fecha_pedida, hoy))
 
@@ -285,15 +347,20 @@ def consultar(
         partes.append(
             "Bohíos cobra exactamente lo mismo que Amor de Dios (misma tabla)."
         )
-    if any(h in ("amor_de_dios", "bohios") for h in hoteles):
+    # La promo de entre semana solo se menciona si ESE mes tiene fechas
+    # publicadas. Antes se agregaba siempre, y el bot la usó para concluir que
+    # julio "sí tiene salidas" en un hotel que no publicó julio.
+    con_salidas = [h for h in hoteles if planes_de(h, num_mes, hoy)]
+    if any(h in ("amor_de_dios", "bohios") for h in con_salidas):
         partes.append(
-            "Amor de Dios y Bohíos: todos los lunes con jueves hay salidas desde "
-            "$350.000 por persona en múltiple."
+            "Amor de Dios y Bohíos: en los meses publicados, todos los lunes con "
+            "jueves hay salidas desde $350.000 por persona en múltiple."
         )
-    if "piedra_mar" in hoteles:
+    if "piedra_mar" in con_salidas:
         partes.append(
-            "Piedra Mar: todos los lunes con jueves hay salidas desde $389.000 "
-            "por persona en múltiple (no aplica para lunes festivos)."
+            "Piedra Mar: en los meses publicados, todos los lunes con jueves hay "
+            "salidas desde $389.000 por persona en múltiple (no aplica para "
+            "lunes festivos)."
         )
     partes.append(
         "Recuerda: NUNCA le mandes el Excel ni un archivo de datos al cliente, "

@@ -67,12 +67,18 @@ class TestNoVenderElPasado:
         assert any("AGOSTO 21" in f for f in fechas)
         assert any("AGOSTO 28" in f for f in fechas)
 
-    def test_una_fecha_ya_pasada_se_rechaza_de_frente(self):
+    def test_una_fecha_ya_pasada_se_avisa_pero_no_corta_la_venta(self):
+        """Avisa que venció **y** sigue mostrando el mes.
+
+        Antes cortaba en seco y el bot se quedaba preguntando «¿para cuál otra
+        fecha?» sin ofrecer nada — el hallazgo 4 de la prueba del 19-ago-2026.
+        """
         out = tarifario.consultar(
             CFG, hotel="Amor de Dios", mes="agosto", fecha="2026-08-06", hoy=HOY
         )
         assert "ya pasó" in out
-        assert "459" not in out
+        assert "AGOSTO 21 AL 24" in out          # las que sí quedan
+        assert "AGOSTO 06" not in out            # la vencida no se lista
 
     def test_al_final_de_la_temporada_el_mes_queda_vacio(self):
         planes = tarifario.planes_de("piedra_mar", 8, hoy=date(2027, 3, 1))
@@ -97,6 +103,90 @@ class TestZonaHoraria:
         """Hoy mismo aún es vendible: el corte es `< hoy`, no `<= hoy`."""
         planes = tarifario.planes_de("piedra_mar", 12, hoy=date(2026, 12, 8))
         assert any("DICIEMBRE 08 AL 11" in p["fecha"] for p in planes)
+
+
+class TestElAnioQueElModeloNoSabe:
+    """Hallazgos de la prueba del 19-ago-2026 (guiones G06 y G12).
+
+    El modelo no sabe en qué año vive: al pedirle una fecha exacta escribía
+    `2025-01-15` para «el 15 de enero». La consulta respondía «esa fecha ya
+    pasó» a clientes que querían viajar en fechas futuras y vendibles — y le
+    pega justo a los de mayor intención, los que ya escogieron día.
+    """
+
+    def test_el_18_de_diciembre_no_es_del_ano_pasado(self):
+        """El caso exacto que costó una venta en la prueba."""
+        out = tarifario.consultar(
+            CFG, hotel="Piedra Mar", mes="diciembre", fecha="2025-12-18", hoy=HOY
+        )
+        assert "ya pasó" not in out
+        assert "DICIEMBRE 18 AL 21" in out
+        assert "la fecha que pidió" in out
+
+    def test_enero_se_resuelve_al_ano_entrante(self):
+        out = tarifario.consultar(
+            CFG, hotel="Amor de Dios", mes="enero", fecha="2025-01-15", hoy=HOY
+        )
+        assert "ya pasó" not in out
+        assert "ENERO 15 AL 18" in out
+
+    def test_una_fecha_futura_explicita_se_respeta(self):
+        """Solo se corrige lo que está demostrablemente mal."""
+        f = date(2026, 12, 18)
+        assert tarifario.resolver_fecha(f, 12, HOY) == f
+
+    def test_una_fecha_de_verdad_vencida_sigue_marcandose(self):
+        """El 6 de agosto sí pasó, y agosto del año entrante no existe en el
+        tarifario: no hay reinterpretación válida, así que se avisa."""
+        assert tarifario.resolver_fecha(date(2025, 8, 6), 8, HOY) == date(2025, 8, 6)
+        out = tarifario.consultar(
+            CFG, hotel="Amor de Dios", mes="agosto", fecha="2025-08-06", hoy=HOY
+        )
+        assert "ya pasó" in out
+
+    def test_29_de_febrero_no_revienta(self):
+        assert tarifario.resolver_fecha(date(2025, 2, 29 - 1), 2, HOY) is not None
+
+
+class TestFechaVencidaOfreceAlternativas:
+    """Hallazgo 4: cortaba en seco con «¿para cuál otra fecha?» y sin opciones."""
+
+    def test_lista_las_salidas_que_quedan_en_ese_mes(self):
+        out = tarifario.consultar(
+            CFG, hotel="Amor de Dios", mes="agosto", fecha="2025-08-06", hoy=HOY
+        )
+        assert "AGOSTO 21 AL 24" in out and "AGOSTO 28 AL 31" in out
+        assert "$459.000" in out
+
+    def test_le_prohibe_preguntar_sin_dar_opciones(self):
+        out = tarifario.consultar(
+            CFG, hotel="Amor de Dios", mes="agosto", fecha="2025-08-06", hoy=HOY
+        )
+        assert "NO le preguntes" in out
+
+
+class TestMesSinSalidas:
+    """Hallazgo 3: el bot dedujo que julio «sí tiene» salidas entre semana."""
+
+    def test_no_ofrece_la_promo_de_entre_semana(self):
+        out = tarifario.consultar(
+            CFG, hotel="Amor de Dios", mes="julio", hoy=HOY
+        )
+        assert "$350.000" not in out
+        assert "NO aplica a un mes sin fechas publicadas" in out
+
+    def test_la_promo_si_sale_en_un_mes_publicado(self):
+        out = tarifario.consultar(
+            CFG, hotel="Amor de Dios", mes="septiembre", hoy=HOY
+        )
+        assert "$350.000" in out
+
+    def test_los_meses_van_del_mas_proximo_al_mas_lejano(self):
+        """Hallazgo 5: recorriendo enero→diciembre, «Enero» salía de primero en
+        agosto como si fuera lo más cercano, y el bot terminó omitiéndolo."""
+        out = tarifario.consultar(CFG, hotel="Amor de Dios", mes="julio", hoy=HOY)
+        linea = [l for l in out.split("\n") if "Meses que SÍ tienen" in l][0]
+        assert linea.index("Agosto") < linea.index("Diciembre") < linea.index("Enero")
 
 
 class TestBohios:
@@ -174,7 +264,7 @@ class TestFechaSinSalida:
         out = tarifario.consultar(
             CFG, hotel="Amor de Dios", mes="julio", hoy=date(2026, 6, 1)
         )
-        assert "NO hay salidas publicadas" in out
+        assert "NO hay NADA publicado" in out
         assert "no escales todavía" in out.lower()
         assert "Agosto" in out
 

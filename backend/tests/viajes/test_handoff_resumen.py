@@ -95,6 +95,66 @@ class TestElMotorPropagaElResumen:
         assert len(actions[-1]["payload"]["resumen"]) == 500
 
 
+class TestElPromptDiceQueDiaEsHoy:
+    """Hallazgo 1, el caro: sin la fecha en el prompt el modelo adivinaba el año
+    (escribía 2025) y le decía a un cliente que el 18 de diciembre «ya pasó»."""
+
+    def test_el_system_trae_la_fecha_de_colombia(self, bot):
+        from datetime import datetime
+
+        from app.services import tarifario
+
+        system = llm_engine._system_prompt(bot, bot.cfg)
+        hoy = datetime.now(llm_engine._TZ_CO).date()
+        assert hoy.isoformat() in system
+        assert hoy == tarifario.hoy_colombia()
+
+    def test_le_dice_explicitamente_que_no_suponga_anos_viejos(self, bot):
+        system = llm_engine._system_prompt(bot, bot.cfg)
+        assert "Nunca supongas un año anterior al de hoy" in system
+
+
+class TestEnviarMediaTolerante:
+    """Hallazgo 2 de la prueba del 19-ago-2026: el bot prometía una imagen que
+    nunca salía.
+
+    El modelo a veces serializa el arreglo: manda `"['formulario_reserva']"` en
+    vez de `["formulario_reserva"]`. Recorrer ese texto daba letras sueltas,
+    ninguna coincidía con una clave y no se enviaba nada — en silencio, con el
+    bot diciendo «te dejo el tarifario 👇».
+    """
+
+    def _envia(self, bot, claves):
+        actions = []
+        llm_engine._run_tool(
+            "enviar_media", {"claves": claves}, bot.cfg, actions, [], [], [],
+        )
+        return [a["payload"]["url"].rsplit("/", 1)[-1]
+                for a in actions if a["type"] == "say_media"]
+
+    def test_una_lista_normal_sigue_funcionando(self, bot):
+        assert self._envia(bot, ["formulario_reserva"]) == ["fomulario_reserva.jpeg"]
+
+    def test_el_arreglo_serializado_tambien_envia(self, bot):
+        assert self._envia(bot, "['formulario_reserva']") == ["fomulario_reserva.jpeg"]
+
+    def test_con_comillas_dobles_igual(self, bot):
+        assert self._envia(bot, '["tours", "tour_video"]') == \
+            ["tours.jpeg", "tour.mp4"]
+
+    def test_una_sola_clave_suelta_como_texto(self, bot):
+        assert self._envia(bot, "medios_pago") == ["medios_pago.jpeg"]
+
+    def test_una_clave_que_no_existe_no_envia_nada(self, bot):
+        """La tolerancia no puede convertirse en inventar medios."""
+        assert self._envia(bot, "['no_existe']") == []
+
+    def test_letra_por_letra_nunca_mas(self, bot):
+        """La regresión concreta: ni una sola letra suelta cuenta como clave."""
+        assert llm_engine._lista_de_claves("['formulario_reserva']") == \
+            ["formulario_reserva"]
+
+
 class TestLaNotaQuedaEnElChat:
     def test_la_nota_trae_el_nombre_y_la_fecha(self, db_session, conversacion):
         bot_runner._nota_de_handoff(

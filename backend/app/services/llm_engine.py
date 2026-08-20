@@ -126,6 +126,29 @@ def _parse_llm_config(bot) -> Dict[str, Any]:
     return data if isinstance(data, dict) else {}
 
 
+def _lista_de_claves(valor: Any) -> List[str]:
+    """Las claves de `enviar_media`, venga una lista o el texto de una lista.
+
+    El modelo a veces manda el arreglo serializado — `"['formulario_reserva']"`
+    en vez de `["formulario_reserva"]`. Recorrer ese texto da letras sueltas:
+    ninguna coincide con una clave, no se envía nada y el turno queda con el bot
+    diciendo "te dejo el tarifario 👇" sin adjuntar nada. Visto 1 de cada 13
+    envíos en la prueba del 19-ago-2026.
+    """
+    if isinstance(valor, str):
+        texto = valor.strip()
+        if texto.startswith("[") and texto.endswith("]"):
+            try:
+                valor = json.loads(texto.replace("'", '"'))
+            except ValueError:
+                valor = [p.strip(" '\"") for p in texto[1:-1].split(",")]
+        else:
+            valor = [texto]           # una sola clave sin corchetes
+    if not isinstance(valor, (list, tuple)):
+        return []
+    return [str(v).strip() for v in valor if str(v).strip()]
+
+
 def _media_catalog(cfg: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
     media = cfg.get("media")
     if not isinstance(media, dict):
@@ -391,6 +414,20 @@ def _system_prompt(
             "## Medios disponibles para `enviar_media`\n"
             "Usa EXACTAMENTE estas claves (no inventes otras):\n" + "\n".join(lines)
         )
+    # Qué día es hoy. Sin esto el modelo adivina el año y se equivoca: le decía
+    # a un cliente que quería viajar el 18 de diciembre que esa fecha "ya pasó",
+    # porque al llamar a las herramientas escribía 2025. Vale para todos los
+    # bots — el de mascotas además lo repite en su propio bloque de datos vivos,
+    # junto con las fotos que ya adjuntó la persona.
+    _hoy = datetime.now(_TZ_CO).date()
+    parts.append(
+        "## Qué día es hoy\n"
+        f"Hoy es {_fecha_label(_hoy)} de {_hoy.year} (fecha ISO: "
+        f"{_hoy.isoformat()}). Úsala siempre que necesites un año: cuando el "
+        "cliente diga «el 18 de diciembre» sin decir el año, se refiere al "
+        "próximo 18 de diciembre, no al del año pasado. Nunca supongas un año "
+        "anterior al de hoy."
+    )
     parts.append(
         "## Reglas operativas\n"
         "- Responde siempre en español, con mensajes cortos estilo WhatsApp.\n"
@@ -1691,7 +1728,7 @@ def _run_tool(
 
     if name == "enviar_media":
         media = _media_catalog(cfg)
-        claves = tool_input.get("claves") or []
+        claves = _lista_de_claves(tool_input.get("claves"))
         sent, unknown = [], []
         for key in claves:
             item = media.get(str(key))
@@ -1713,6 +1750,12 @@ def _run_tool(
         result = f"enviados: {', '.join(sent) or 'ninguno'}"
         if unknown:
             result += f"; claves inexistentes: {', '.join(unknown)}"
+            # Fallaba en silencio: el bot decía "te dejo el tarifario 👇" y no
+            # salía ningún adjunto. Que quede en el log para poder verlo.
+            logger.warning(
+                "llm_engine: enviar_media con %s clave(s) inexistente(s): %s",
+                len(unknown), ", ".join(unknown)[:200],
+            )
         return result, False
 
     if name == "enviar_catalogo":
