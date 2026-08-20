@@ -4273,3 +4273,77 @@ consulta, quedándose sin las salidas del 21 y del 28 que sí podía ofrecer.
 - **Arreglar destapa cosas nuevas.** Tres de los cuatro problemas de la segunda
   corrida los introdujeron los arreglos de la primera. Re-correr la prueba
   después de arreglar no es opcional.
+
+---
+
+## #377 — En Arranquemos Pues ya no existe `asesor_1` (2026-08-20)
+
+**Pedido del CEO**: que en esa cuenta solo aparezcan Camila, Julián y Alexandra;
+que el chat de las 2:21 pm que quedó en `asesor_1` pase a uno de los tres (el
+asesor ya respondió, alguien lo tomó); y que el cambio no toque a otros tenants.
+
+### Lo que faltaba después de #376
+
+#376 dejó bien la configuración: `teams.asesores_rotacion` con los tres nombres y
+el `LLM_CONFIG` del bot de viajes sin `assignee`. Se comprobó hoy contra RDS que
+eso sigue así, y que los chats **nuevos** ya caen con nombre propio — conv 23 en
+Camila y conv 47 en Julián, ambos de hoy. Quedaban dos cosas:
+
+1. **La puerta seguía abierta.** `bot_engine.py:279` inyecta
+   `assignee: "asesor_1"` por defecto cuando el paso de handoff no fija asesor, y
+   `seed_bot_covenas.py` lo escribe tal cual. Como un `assignee` explícito manda
+   sobre el turno, cualquier re-seed o cualquier bot de flujo volvía a meter el
+   placeholder en la bandeja. Era el "queda abierto" de #376.
+2. **Los chats viejos.** 8 conversaciones seguían guardadas con `asesor_1`, y una
+   de ellas —conv 15, la de las 2:21 pm— recibió mensaje nuevo hoy, así que el
+   CEO la volvió a ver arriba en la lista. En #376 se había decidido dejarlas;
+   hoy el CEO pidió lo contrario.
+
+### El arreglo
+
+`crud.resolver_asesor()` concentra la decisión de a quién le queda el chat, y
+`bot_runner` la llama en el único punto donde se escribe `assigned_to`. La regla:
+un `assignee` explícito sigue mandando —para eso existe, para rutas que deban
+caer siempre en la misma persona— **salvo** que sea un placeholder `asesor_N` y
+el team ya haya declarado sus asesores. Ahí entra al turno como si no estuviera.
+
+El alcance sale de los datos, no de un `if team_id == 5`: solo se comporta
+distinto un team con `asesores_rotacion` configurado, y hoy ese es únicamente
+Arranquemos Pues. Un tenant sin rotación no cambia en nada — ahí el placeholder
+es el único destino que hay, y romperlo le dejaría el chat sin dueño.
+
+`reasignar_asesores_arranquemos.py` reparte por turnos los chats que ya estaban
+guardados con el handle. Es idempotente y filtra por el team de Arranquemos Pues
+(lo ubica por el correo de su admin, no por un id hardcodeado, para que corra
+igual en local y en RDS). Los teléfonos van enmascarados en el log.
+
+**Sobre la atribución**: los tres asesores comparten un solo login, así que nadie
+registró quién atendió cada uno de esos 8 chats. El nombre que queda es el del
+reparto por turnos, no una constancia. Fue decisión explícita del CEO preferir
+eso a seguir mostrando un nombre que no es de nadie.
+
+### Verificación
+
+| | |
+|---|---|
+| Suite | **771 passed**, 51 skipped, 1 xfailed (`TZ=UTC`) |
+| Tests nuevos | 5 en `test_handoff_reparto.py`: el placeholder entra al turno en 4 variantes de escritura, y un team sin rotación **no** cambia |
+| Local | script en seco → aplicado → segunda corrida sin cambios (idempotente); solo tocó el team 9, no el de carga (team 14, con ~170 chats en `asesor_N`) |
+| Desplegado | task-def **60**, imagen `:asesores1`, `rolloutState=COMPLETED`, `/openapi.json` 200 |
+| RDS | 8 chats reasignados. `assigned_to` del team 5 ahora: bot 35 · Camila 4 · Alexandra 3 · Julián 3. **Cero `asesor_1`** |
+
+Sin migración: no cambió ni una columna. El frontend tampoco se tocó — la
+etiqueta 👤 de Mensajes ya pinta `assigned_to` tal cual, así que con el dato
+arreglado muestra el nombre solo.
+
+**En producción no se ensayó nada**: el bot está atendiendo clientes reales. Las
+pruebas fueron todas en local, y contra RDS solo corrieron el cambio real y las
+consultas de verificación.
+
+### Queda abierto
+
+- `bot_engine.py:279` y el paso 14 de `seed_bot_covenas.py` siguen escribiendo
+  `asesor_1`. Ya no hace daño donde importa —el guardarraíl lo descarta— pero se
+  lee mal en el editor de bots y conviene limpiarlo cuando se toque ese código.
+- El reparto sigue siendo por **turno**, no por carga: si una asesora cierra
+  rápido y otra no, igual les llega un tercio a cada una.
