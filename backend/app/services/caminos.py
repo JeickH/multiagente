@@ -41,11 +41,14 @@ MASCOTAS: Dict[str, str] = {
     "reportar_encontrada": "🐾 Reportó una encontrada",
     "reporte_registrado": "📝 Registró un caso",
     "descarga_listado": "📊 Descargó el listado",
+    "terremoto": "🌎 Preguntó por la emergencia",
+    "agradecimiento": "🤍 Agradeció",
 }
 
 # Bot "Plan Tolú & Coveñas" de `arranquemospues.marketing@gmail.com`.
 VIAJES: Dict[str, str] = {
     "info_general": "ℹ️ Preguntó por el plan",
+    "hotel": "🏨 Preguntó por el hotel",
     "tours": "🏝️ Preguntó por los tours",
     "itinerario": "🗺️ Pidió el itinerario",
     "precios_condiciones": "💲 Preguntó precios",

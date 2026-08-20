@@ -321,5 +321,19 @@ class TestEtiquetasDeCamino:
     def test_un_camino_nuevo_se_muestra_legible_en_vez_de_esconderse(self):
         assert caminos.etiqueta("promo_fin_de_ano", VIAJES) == "Promo fin de ano"
 
+    def test_estan_los_caminos_que_los_bots_emiten_de_verdad(self):
+        """La lista salió de consultar producción, no de leer los seeds: el bot
+        emite caminos que el clasificador no declara (`hotel`) y declara otros
+        que todavía no se han visto (`agradecimiento`). Si uno se queda sin
+        etiqueta no se rompe nada —el fallback lo muestra legible— pero en la
+        ventana se lee como una palabra suelta ("Hotel") y se nota."""
+        for camino in ("info_general", "hotel", "tours", "precios_condiciones",
+                       "reserva", "escalar_a_asesor"):
+            assert camino in caminos.catalogo(VIAJES), camino
+        for camino in ("buscar_mascota", "reportar_encontrada", "reporte_registrado",
+                       "descarga_listado", "ficha_mascota", "mascota_reconocida",
+                       "busqueda_mascota", "terremoto", "agradecimiento"):
+            assert camino in caminos.catalogo(MASCOTAS), camino
+
     def test_los_genericos_valen_para_cualquier_cuenta(self):
         assert caminos.etiqueta("saludo", VIAJES) == caminos.etiqueta("saludo", MASCOTAS)
