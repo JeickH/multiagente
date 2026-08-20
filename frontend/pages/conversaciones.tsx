@@ -1,5 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
 import Layout from '../components/Layout';
+import Paginacion, {
+  OPCIONES_POR_PAGINA,
+  guardarPorPagina,
+  leerPorPagina,
+} from '../components/Paginacion';
 import { authedFetch } from '../lib/api';
 
 /**
@@ -153,6 +158,9 @@ export default function Conversaciones() {
   const [detalles, setDetalles] = useState<Record<string, Detalle>>({});
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [pagina, setPagina] = useState(1);
+  const [porPagina, setPorPagina] = useState(OPCIONES_POR_PAGINA[0]);
+  const [total, setTotal] = useState(0);
 
   useEffect(() => {
     let cancelado = false;
@@ -182,28 +190,47 @@ export default function Conversaciones() {
     };
   }, []);
 
-  const cargarHilos = useCallback(async (slug: string) => {
-    setCargando(true);
-    try {
-      const res = await authedFetch<{ conversaciones: Hilo[]; total: number }>(
-        `/supervision/conversaciones?cuenta=${encodeURIComponent(slug)}`
-      );
-      setHilos(res.conversaciones || []);
-      setError(null);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'No pudimos cargar las conversaciones');
-    } finally {
-      setCargando(false);
-    }
+  // El "por página" elegido se recuerda entre visitas. Va en un efecto porque
+  // `localStorage` no existe en el render del servidor.
+  useEffect(() => {
+    setPorPagina(leerPorPagina('conversaciones.porPagina'));
   }, []);
+
+  const cargarHilos = useCallback(
+    async (slug: string, pag: number, tamano: number) => {
+      setCargando(true);
+      try {
+        const res = await authedFetch<{ conversaciones: Hilo[]; total: number }>(
+          `/supervision/conversaciones?cuenta=${encodeURIComponent(slug)}` +
+            `&pagina=${pag}&limite=${tamano}`
+        );
+        setHilos(res.conversaciones || []);
+        setTotal(res.total || 0);
+        setError(null);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : 'No pudimos cargar las conversaciones');
+      } finally {
+        setCargando(false);
+      }
+    },
+    []
+  );
+
+  // Cambiar de cuenta o de tamaño de página vuelve a la primera: quedarse en
+  // la página 7 de una cuenta que tiene 2 muestra una pantalla vacía sin
+  // explicar por qué.
+  useEffect(() => {
+    setPagina(1);
+  }, [cuenta, porPagina]);
 
   useEffect(() => {
     if (!cuenta) return;
-    // Cambiar de cuenta cierra el hilo abierto: el id de un hilo solo tiene
-    // sentido dentro de su cuenta.
+    // Cambiar de página o de cuenta cierra el hilo abierto: el id de un hilo
+    // solo tiene sentido dentro de su cuenta, y el que estaba desplegado ya no
+    // está en pantalla.
     setAbierto(null);
-    void cargarHilos(cuenta);
-  }, [cuenta, cargarHilos]);
+    void cargarHilos(cuenta, pagina, porPagina);
+  }, [cuenta, pagina, porPagina, cargarHilos]);
 
   /** Abre o cierra un hilo; la primera vez trae sus mensajes. */
   const alternar = async (hilo: Hilo) => {
@@ -263,7 +290,7 @@ export default function Conversaciones() {
           </div>
           <button
             type="button"
-            onClick={() => cuenta && void cargarHilos(cuenta)}
+            onClick={() => cuenta && void cargarHilos(cuenta, pagina, porPagina)}
             disabled={cargando || !cuenta}
             className="px-4 py-2 rounded-lg text-sm font-semibold text-white transition-opacity disabled:opacity-50"
             style={{ backgroundColor: '#008069' }}
@@ -314,6 +341,20 @@ export default function Conversaciones() {
           <p className="text-sm text-gray-400 py-8 text-center">
             Todavía no hay conversaciones en esta cuenta.
           </p>
+        )}
+
+        {actual && total > 0 && (
+          <Paginacion
+            pagina={pagina}
+            porPagina={porPagina}
+            total={total}
+            onPagina={setPagina}
+            onPorPagina={(n) => {
+              setPorPagina(n);
+              guardarPorPagina('conversaciones.porPagina', n);
+            }}
+            cargando={cargando}
+          />
         )}
 
         <div className="flex flex-col gap-2">
@@ -373,6 +414,25 @@ export default function Conversaciones() {
             </div>
           ))}
         </div>
+
+        {/* Repetida al pie: con 100 por página, volver arriba para pasar a la
+            siguiente es un viaje largo. */}
+        {actual && total > porPagina && (
+          <Paginacion
+            pagina={pagina}
+            porPagina={porPagina}
+            total={total}
+            onPagina={(n) => {
+              setPagina(n);
+              window.scrollTo({ top: 0, behavior: 'smooth' });
+            }}
+            onPorPagina={(n) => {
+              setPorPagina(n);
+              guardarPorPagina('conversaciones.porPagina', n);
+            }}
+            cargando={cargando}
+          />
+        )}
       </div>
     </Layout>
   );

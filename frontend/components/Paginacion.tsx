@@ -45,16 +45,19 @@ export default function Paginacion({
     'px-3 py-1.5 rounded-lg text-sm font-medium border transition-colors ' +
     'disabled:opacity-40 disabled:cursor-not-allowed';
 
+  // Dos renglones fijos en vez de un `flex-wrap`: la bandeja lo monta en una
+  // columna de 384px y el ancho disponible cambia con la pantalla. Envolviendo,
+  // "Siguiente" caía solo a una tercera línea y quedaba torcido; así se ve
+  // igual en la columna angosta y en la página ancha.
   return (
-    <div className="flex flex-wrap items-center justify-between gap-3 py-3">
-      <p className="text-xs text-gloma-brown-light">
-        {total === 0
-          ? `Sin ${etiqueta}`
-          : `${desde}-${hasta} de ${total} ${etiqueta}`}
-      </p>
-
-      <div className="flex flex-wrap items-center gap-2">
-        <label className="text-xs text-gloma-brown-light">
+    <div className="flex flex-col gap-2 py-3">
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-xs text-gloma-brown-light">
+          {total === 0
+            ? `Sin ${etiqueta}`
+            : `${desde}-${hasta} de ${total} ${etiqueta}`}
+        </p>
+        <label className="text-xs text-gloma-brown-light whitespace-nowrap">
           Por página:{' '}
           <select
             value={porPagina}
@@ -69,7 +72,9 @@ export default function Paginacion({
             ))}
           </select>
         </label>
+      </div>
 
+      <div className="flex items-center justify-between gap-2">
         <button
           type="button"
           onClick={() => onPagina(pagina - 1)}
@@ -78,7 +83,7 @@ export default function Paginacion({
         >
           ← Anterior
         </button>
-        <span className="text-xs text-gloma-brown-light">
+        <span className="text-xs text-gloma-brown-light whitespace-nowrap">
           {pagina} / {paginas}
         </span>
         <button
