@@ -43,11 +43,13 @@ import logging
 import os
 import re
 from collections import defaultdict
+from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
+from sqlalchemy import and_, case, func, or_
 from sqlalchemy.orm import Session
 
 from .. import models
@@ -68,7 +70,10 @@ _CUENTAS_DEFAULT = "recuperatumascota@gmail.com,arranquemospues.marketing@gmail.
 
 def cuentas_supervisadas() -> List[str]:
     """Correos habilitados, en el orden en que se muestran en la ventana."""
-    crudo = os.getenv("SUPERVISION_CUENTAS", _CUENTAS_DEFAULT)
+    # Un `SUPERVISION_CUENTAS=""` (que es lo que deja un passthrough de
+    # docker-compose cuando la variable no está definida) cae en la lista por
+    # defecto en vez de dejar la ventana vacía sin explicación.
+    crudo = os.getenv("SUPERVISION_CUENTAS", "").strip() or _CUENTAS_DEFAULT
     vistos: List[str] = []
     for parte in crudo.split(","):
         correo = parte.strip().lower()
@@ -196,7 +201,12 @@ class HiloOut(BaseModel):
 
 class HilosOut(BaseModel):
     conversaciones: List[HiloOut]
+    # Cuántos hilos hay en total en la cuenta, no cuántos vienen en esta página:
+    # es lo que le deja decir al frontend "21-40 de 900" y saber si hay
+    # siguiente. Se calcula con COUNT en la base, sin traer los hilos.
     total: int
+    pagina: int = 1
+    por_pagina: int = 0
 
 
 class TurnoOut(BaseModel):
@@ -227,7 +237,43 @@ class HiloDetalleOut(BaseModel):
 
 # ---------------------------------------------------------------------------
 # Armado de los hilos
+#
+# La lista se arma en dos tiempos, y ahí está la diferencia entre una ventana
+# que aguanta 20.000 conversaciones y una que no:
+#
+#   1. RESUMEN — una consulta agregada por fuente que devuelve, como mucho,
+#      `pagina × por_pagina` renglones: el id del hilo y su fecha, nada más.
+#      El agrupado lo hace la base, no Python.
+#   2. HIDRATACIÓN — el preview, los caminos y el contacto se buscan solo para
+#      los hilos que de verdad se van a pintar.
+#
+# Para quedarse con la página N de la fusión de dos listas YA ordenadas basta
+# con los primeros `offset + límite` elementos de cada una: lo que no entra en
+# ese prefijo no puede aparecer en esa página. Por eso el paso 1 puede pedir tan
+# poquito y aun así dar el orden correcto.
+#
+# Antes esto se hacía al revés: se traían 5.000 filas de la bitácora, TODAS las
+# conversaciones del team y TODOS sus mensajes a memoria de Python, se armaban
+# todos los hilos y recién ahí se recortaba a 200. Se pagaba el historial
+# completo para pintar 20 renglones.
 # ---------------------------------------------------------------------------
+
+_D = models.BotLlmDecision
+_C = models.Conversation
+_M = models.Message
+
+# Techo de página. Más que esto vuelve a ser el problema que se está
+# arreglando, solo que del lado del navegador.
+MAX_POR_PAGINA = 200
+
+
+@dataclass
+class _Renglon:
+    """Un hilo sin hidratar: lo justo para ordenarlo y paginarlo."""
+
+    hilo_id: str
+    fin: datetime
+
 
 def _canal(source: str) -> str:
     return "web" if source == "mascotas" else source
@@ -240,15 +286,176 @@ def _herramientas(tools_called: Optional[str]) -> List[str]:
         return []
 
 
-def _decisiones(db: Session, cuenta: _Cuenta, limite: int = 5000) -> List[models.BotLlmDecision]:
-    """Bitácora del motor LLM para los bots de la cuenta, lo más reciente primero."""
+def _dia_texto(valor: Any) -> str:
+    """`date(created_at)` devuelve un `date` en Postgres y un texto en SQLite."""
+    if hasattr(valor, "strftime"):
+        return valor.strftime("%Y%m%d")
+    return str(valor)[:10].replace("-", "")
+
+
+def _exprs_agrupacion() -> Tuple[Any, Any, Any, Any]:
+    """Por qué columnas se agrupan los turnos que no cuelgan de una conversación.
+
+    Es `_clave_sin_conversacion` escrita en SQL, y tiene que dar exactamente los
+    mismos grupos: con `chat_ref` se agrupa SOLO por él (un chat web puede
+    cruzar la medianoche y sigue siendo la misma conversación); sin él se cae a
+    bot + canal + día.
+
+    El truco de los `CASE` es lo que permite las dos reglas en un solo GROUP BY:
+    cuando hay `chat_ref` las otras tres columnas valen NULL y no separan nada.
+    Se evita `to_char`, que no existe en SQLite y la suite corre ahí.
+    """
+    sin_ref = _D.chat_ref.is_(None)
+    return (
+        _D.chat_ref,
+        case((sin_ref, _D.bot_id), else_=None),
+        case((sin_ref, _D.source), else_=None),
+        case((sin_ref, func.date(_D.created_at)), else_=None),
+    )
+
+
+def _consulta_bitacora(db: Session, cuenta: _Cuenta):
+    """Un renglón por hilo del chat web / simulador, agrupado en la base.
+
+    El `HAVING` deja fuera las visitas donde la persona nunca escribió: abrieron
+    el chat, recibieron el saludo automático y se fueron. Filtrarlas acá y no en
+    Python es lo que hace que el conteo total sea una sola consulta.
+    """
+    g_ref, g_bot, g_source, g_dia = _exprs_agrupacion()
+    hablo = func.max(
+        case((func.coalesce(func.trim(_D.user_input), "") != "", 1), else_=0)
+    )
+    return (
+        db.query(
+            g_ref.label("chat_ref"),
+            g_dia.label("dia"),
+            func.min(_D.bot_id).label("bot_id"),
+            func.min(_D.source).label("source"),
+            func.max(_D.created_at).label("fin"),
+        )
+        .filter(_D.bot_id.in_(cuenta.bot_ids), _D.conversation_id.is_(None))
+        .group_by(g_ref, g_bot, g_source, g_dia)
+        .having(hablo == 1)
+    )
+
+
+def _clave_de_fila(fila: Any) -> str:
+    """El mismo `hilo_id` que produce `_clave_sin_conversacion`, desde el agregado."""
+    if fila.chat_ref:
+        return f"chat-{fila.chat_ref}"
+    return f"dia-{fila.bot_id}-{fila.source}-{_dia_texto(fila.dia)}"
+
+
+def _renglones_bitacora(db: Session, cuenta: _Cuenta, tope: int) -> List[_Renglon]:
     if not cuenta.bot_ids:
         return []
+    filas = _consulta_bitacora(db, cuenta).order_by(func.max(_D.created_at).desc()).limit(tope).all()
+    return [_Renglon(hilo_id=_clave_de_fila(f), fin=f.fin) for f in filas]
+
+
+def _renglones_conversaciones(db: Session, cuenta: _Cuenta, tope: int) -> List[_Renglon]:
+    """Los hilos de WhatsApp, ordenados por el índice `(team_id, last_message_at)`.
+
+    Se ordena por `last_message_at` y no por la fecha del último mensaje (que es
+    lo que termina mostrándose) porque es la columna indexada. Las dos las
+    mantiene la app en el mismo momento, así que coinciden; si alguna vez se
+    separaran, el costo sería un renglón fuera de orden, no un dato falso.
+    """
+    if cuenta.team is None:
+        return []
+    filas = (
+        db.query(_C.id, _C.last_message_at)
+        .filter(_C.team_id == cuenta.team.id)
+        .order_by(_C.last_message_at.desc())
+        .limit(tope)
+        .all()
+    )
+    return [_Renglon(hilo_id=f"conv-{f.id}", fin=f.last_message_at) for f in filas]
+
+
+def _total_hilos(db: Session, cuenta: _Cuenta) -> int:
+    """Cuántos hilos tiene la cuenta, contando en la base y sin armar ninguno."""
+    total = 0
+    if cuenta.bot_ids:
+        sub = _consulta_bitacora(db, cuenta).subquery()
+        total += db.query(func.count()).select_from(sub).scalar() or 0
+    if cuenta.team is not None:
+        total += (
+            db.query(func.count(_C.id))
+            .filter(_C.team_id == cuenta.team.id)
+            .scalar() or 0
+        )
+    return total
+
+
+def _pagina_de_hilos(
+    db: Session, cuenta: _Cuenta, pagina: int, por_pagina: int
+) -> List[HiloOut]:
+    """Los hilos de una página, ya ordenados e hidratados."""
+    offset = (pagina - 1) * por_pagina
+    tope = offset + por_pagina
+
+    renglones = _renglones_bitacora(db, cuenta, tope) + _renglones_conversaciones(db, cuenta, tope)
+    renglones.sort(key=lambda r: r.fin, reverse=True)
+    visibles = renglones[offset:tope]
+    if not visibles:
+        return []
+
+    claves = [r.hilo_id for r in visibles]
+    conv_ids = [int(c[len("conv-"):]) for c in claves if c.startswith("conv-")]
+    otras = [c for c in claves if not c.startswith("conv-")]
+
+    hilos: List[HiloOut] = []
+    if otras:
+        hilos += _hilos_de_decisiones(cuenta, _turnos_de_hilos(db, cuenta, otras))
+    if conv_ids:
+        hilos += _hilos_de_conversaciones(db, cuenta, conv_ids)
+
+    # Se respeta el orden que ya se calculó por fecha, en vez de reordenar por
+    # un `fin` que la hidratación pudo mover unos segundos.
+    posicion = {clave: i for i, clave in enumerate(claves)}
+    hilos.sort(key=lambda h: posicion.get(h.hilo_id, len(posicion)))
+    return hilos
+
+
+def _turnos_de_hilos(
+    db: Session, cuenta: _Cuenta, claves: Iterable[str]
+) -> List[models.BotLlmDecision]:
+    """Los turnos crudos de un puñado de hilos ya elegidos, y de nadie más.
+
+    Se traduce cada clave a su condición indexada en vez de recomponer la clave
+    en SQL: `chat_ref` tiene índice y los hilos `dia-` caen en el rango de
+    `ix_llm_decisions_bot_created`.
+    """
+    refs = [c[len("chat-"):] for c in claves if c.startswith("chat-")]
+    condiciones: List[Any] = []
+    if refs:
+        condiciones.append(_D.chat_ref.in_(refs))
+    for clave in claves:
+        if not clave.startswith("dia-"):
+            continue
+        try:
+            _, bot_id, source, dia = clave.split("-", 3)
+            inicio = datetime.strptime(dia, "%Y%m%d")
+        except ValueError:
+            continue
+        condiciones.append(and_(
+            _D.bot_id == int(bot_id),
+            _D.source == source,
+            _D.chat_ref.is_(None),
+            _D.created_at >= inicio,
+            _D.created_at < inicio + timedelta(days=1),
+        ))
+    if not condiciones:
+        return []
     return (
-        db.query(models.BotLlmDecision)
-        .filter(models.BotLlmDecision.bot_id.in_(cuenta.bot_ids))
-        .order_by(models.BotLlmDecision.created_at.desc())
-        .limit(limite)
+        db.query(_D)
+        .filter(
+            _D.bot_id.in_(cuenta.bot_ids),
+            _D.conversation_id.is_(None),
+            or_(*condiciones),
+        )
+        .order_by(_D.created_at.desc())
         .all()
     )
 
@@ -317,18 +524,25 @@ def _hilos_de_decisiones(cuenta: _Cuenta, filas: List[models.BotLlmDecision]) ->
 
 
 def _hilos_de_conversaciones(db: Session, cuenta: _Cuenta,
-                             filas: List[models.BotLlmDecision]) -> List[HiloOut]:
-    """Hilos de WhatsApp: uno por `conversation` del team de la cuenta.
+                             conv_ids: List[int]) -> List[HiloOut]:
+    """Hilos de WhatsApp: uno por `conversation`, solo las de la página.
 
     Se listan todas, tengan o no bitácora del bot: una conversación que atendió
     un humano de punta a punta también es una conversación de la cuenta.
+
+    El filtro por `team_id` no es decorativo aunque los ids vengan de una
+    consulta ya filtrada: es el que garantiza que un id de otro tenant no pueda
+    colarse nunca por acá.
     """
-    if cuenta.team is None:
+    if cuenta.team is None or not conv_ids:
         return []
 
     convs = (
         db.query(models.Conversation)
-        .filter(models.Conversation.team_id == cuenta.team.id)
+        .filter(
+            models.Conversation.id.in_(conv_ids),
+            models.Conversation.team_id == cuenta.team.id,
+        )
         .order_by(models.Conversation.last_message_at.desc())
         .all()
     )
@@ -336,9 +550,14 @@ def _hilos_de_conversaciones(db: Session, cuenta: _Cuenta,
         return []
 
     por_conv: Dict[int, List[models.BotLlmDecision]] = defaultdict(list)
-    for fila in filas:
-        if fila.conversation_id is not None:
-            por_conv[fila.conversation_id].append(fila)
+    decisiones = (
+        db.query(models.BotLlmDecision)
+        .filter(models.BotLlmDecision.conversation_id.in_([c.id for c in convs]))
+        .order_by(models.BotLlmDecision.created_at)
+        .all()
+    )
+    for fila in decisiones:
+        por_conv[fila.conversation_id].append(fila)
 
     # Un solo golpe a `messages` para el adelanto y el conteo de todas las
     # conversaciones, en vez de una consulta por renglón.
@@ -376,24 +595,43 @@ def _hilos_de_conversaciones(db: Session, cuenta: _Cuenta,
 def _resumen_mensajes(
     db: Session, conv_ids: List[int]
 ) -> Dict[int, Tuple[int, Optional[str], Optional[datetime]]]:
-    """Cuántos mensajes tiene cada conversación y cuál fue el último."""
+    """Cuántos mensajes tiene cada conversación y cuál fue el último.
+
+    Lo resuelve la base con funciones de ventana y devuelve UN renglón por
+    conversación. Antes se traían todos los mensajes de todas las
+    conversaciones a Python para contarlos con un `for`: con 600 conversaciones
+    de 20 mensajes eran 12.000 filas por cada vista de la lista.
+
+    `row_number` y `count` se evalúan antes que el `WHERE rn = 1` de afuera, así
+    que el conteo es el de la conversación entera y no el del renglón que
+    sobrevive. Ambas funcionan igual en Postgres y en SQLite (donde corre la
+    suite), a diferencia de `DISTINCT ON`, que es solo de Postgres.
+    """
     if not conv_ids:
         return {}
-    filas = (
+    orden = (models.Message.created_at.desc(), models.Message.id.desc())
+    sub = (
         db.query(
-            models.Message.conversation_id,
-            models.Message.content,
-            models.Message.created_at,
+            models.Message.conversation_id.label("conv_id"),
+            models.Message.content.label("content"),
+            models.Message.created_at.label("created_at"),
+            func.count().over(
+                partition_by=models.Message.conversation_id
+            ).label("total"),
+            func.row_number().over(
+                partition_by=models.Message.conversation_id, order_by=orden
+            ).label("rn"),
         )
         .filter(models.Message.conversation_id.in_(conv_ids))
-        .order_by(models.Message.conversation_id, models.Message.created_at)
-        .all()
+        .subquery()
     )
-    resumen: Dict[int, Tuple[int, Optional[str], Optional[datetime]]] = {}
-    for conv_id, contenido, creado in filas:
-        total, _, _ = resumen.get(conv_id, (0, None, None))
-        resumen[conv_id] = (total + 1, (contenido or "")[:160], creado)
-    return resumen
+    filas = db.query(
+        sub.c.conv_id, sub.c.content, sub.c.created_at, sub.c.total
+    ).filter(sub.c.rn == 1).all()
+    return {
+        conv_id: (total, (contenido or "")[:160], creado)
+        for conv_id, contenido, creado, total in filas
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -419,17 +657,20 @@ def listar_cuentas(
     _: models.User = Depends(require_gloma_account),
     db: Session = Depends(get_db),
 ) -> CuentasOut:
-    """Las cuentas que esta ventana puede mirar, con cuánto hay en cada una."""
+    """Las cuentas que esta ventana puede mirar, con cuánto hay en cada una.
+
+    El número de la pestaña sale de dos COUNT. Antes se armaban TODOS los hilos
+    de TODAS las cuentas supervisadas —con sus mensajes— nada más para poder
+    hacerles `len()`, y eso corría al abrir la página.
+    """
     salida = []
     for cuenta in _resolver_cuentas(db):
-        filas = _decisiones(db, cuenta)
-        hilos = _hilos_de_decisiones(cuenta, filas) + _hilos_de_conversaciones(db, cuenta, filas)
         salida.append(CuentaOut(
             slug=cuenta.slug,
             nombre=cuenta.nombre,
             correo=cuenta.correo,
             bots=[b.name for b in cuenta.bots],
-            hilos=len(hilos),
+            hilos=_total_hilos(db, cuenta),
         ))
     return CuentasOut(cuentas=salida)
 
@@ -437,16 +678,25 @@ def listar_cuentas(
 @router.get("/conversaciones", response_model=HilosOut)
 def listar_conversaciones(
     cuenta: str = Query(..., description="slug de la cuenta a mirar"),
-    limite: int = Query(200, ge=1, le=1000),
+    limite: int = Query(20, ge=1, le=MAX_POR_PAGINA,
+                        description="cuántos hilos por página"),
+    pagina: int = Query(1, ge=1, description="página, empezando en 1"),
     _: models.User = Depends(require_gloma_account),
     db: Session = Depends(get_db),
 ) -> HilosOut:
-    """Un renglón por hilo, del más reciente al más viejo."""
+    """Una página de hilos, del más reciente al más viejo.
+
+    La paginación es del servidor a propósito: si se recortara en el navegador,
+    "20 por página" seguiría costando el historial completo en la base, que es
+    justo lo que se quiere evitar.
+    """
     resuelta = _cuenta_o_404(db, cuenta)
-    filas = _decisiones(db, resuelta)
-    hilos = _hilos_de_decisiones(resuelta, filas) + _hilos_de_conversaciones(db, resuelta, filas)
-    hilos.sort(key=lambda h: h.fin, reverse=True)
-    return HilosOut(conversaciones=hilos[:limite], total=len(hilos))
+    return HilosOut(
+        conversaciones=_pagina_de_hilos(db, resuelta, pagina, limite),
+        total=_total_hilos(db, resuelta),
+        pagina=pagina,
+        por_pagina=limite,
+    )
 
 
 @router.get("/conversaciones/{hilo_id}", response_model=HiloDetalleOut)

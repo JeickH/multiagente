@@ -81,9 +81,10 @@ def mundo(db_session, monkeypatch):
     return datos
 
 
-def _conversacion_whatsapp(db, team, bot, *, contacto="573001112233", nombre="Ana"):
+def _conversacion_whatsapp(db, team, bot, *, contacto="573001112233", nombre="Ana",
+                           cuando=None):
     """Un chat de WhatsApp con su bitácora del bot, como lo deja `bot_runner`."""
-    ahora = datetime(2026, 8, 18, 15, 0, 0)
+    ahora = cuando or datetime(2026, 8, 18, 15, 0, 0)
     conv = models.Conversation(
         team_id=team.id, contact_wa_id=contacto, contact_name=nombre,
         status="open", last_message_at=ahora, created_at=ahora,
@@ -111,9 +112,9 @@ def _conversacion_whatsapp(db, team, bot, *, contacto="573001112233", nombre="An
     return conv
 
 
-def _chat_web(db, bot, chat_ref="sesion-abc", *, hablo=True):
+def _chat_web(db, bot, chat_ref="sesion-abc", *, hablo=True, cuando=None):
     """Un hilo del chat web: sin `conversation_id`, agrupado por `chat_ref`."""
-    ahora = datetime(2026, 8, 18, 16, 0, 0)
+    ahora = cuando or datetime(2026, 8, 18, 16, 0, 0)
     db.add(models.BotLlmDecision(
         bot_id=bot.id, source="mascotas", chat_ref=chat_ref,
         chat_contacto="Camila" if hablo else None,
@@ -179,7 +180,7 @@ class TestHilosDeWhatsapp:
         _conversacion_whatsapp(db_session, team, bot)
 
         salida = supervision.listar_conversaciones(
-            cuenta=supervision._slug(VIAJES), limite=200,
+            cuenta=supervision._slug(VIAJES), limite=200, pagina=1,
             _=mundo["gloma"][0], db=db_session,
         )
         assert salida.total == 1
@@ -221,11 +222,92 @@ class TestHilosDeWhatsapp:
         db_session.commit()
 
         salida = supervision.listar_conversaciones(
-            cuenta=supervision._slug(VIAJES), limite=200,
+            cuenta=supervision._slug(VIAJES), limite=200, pagina=1,
             _=mundo["gloma"][0], db=db_session,
         )
         assert [h.contacto for h in salida.conversaciones] == ["Pedro"]
         assert salida.conversaciones[0].caminos == []
+
+
+class TestPaginacion:
+    """La página se arma fusionando DOS listas ordenadas (WhatsApp y chat web).
+
+    Es el punto donde se pierde o se repite un hilo sin que nadie lo note: si la
+    fusión se hace mal, la página 2 empieza donde no debe y una conversación
+    queda invisible para siempre. Por eso se prueba contra el orden global.
+    """
+
+    def _mundo_mezclado(self, db, mundo, cantidad=5):
+        """Hilos de las dos fuentes intercalados en el tiempo, a propósito.
+
+        Alternados: si una fuente quedara toda antes que la otra, la fusión
+        podría estar rota y los tests igual pasarían.
+        """
+        _, team, bot = mundo["viajes"]
+        base = datetime(2026, 8, 18, 12, 0, 0)
+        esperados = []
+        for i in range(cantidad):
+            momento = base + timedelta(hours=2 * i)
+            conv = _conversacion_whatsapp(
+                db, team, bot, contacto=f"57300000{i:04d}",
+                nombre=f"Wa{i}", cuando=momento,
+            )
+            _chat_web(db, bot, f"sesion-{i}", cuando=momento + timedelta(hours=1))
+            esperados += [f"conv-{conv.id}", f"chat-sesion-{i}"]
+        # Del más reciente al más viejo, que es como se listan.
+        return list(reversed(esperados))
+
+    def _pagina(self, db, mundo, pagina, limite):
+        return supervision.listar_conversaciones(
+            cuenta=supervision._slug(VIAJES), limite=limite, pagina=pagina,
+            _=mundo["gloma"][0], db=db,
+        )
+
+    def test_las_paginas_recorren_todo_sin_repetir_ni_saltarse_nada(
+        self, db_session, mundo
+    ):
+        orden_global = self._mundo_mezclado(db_session, mundo)
+
+        recorrido = []
+        for pagina in (1, 2, 3, 4, 5):
+            salida = self._pagina(db_session, mundo, pagina, limite=2)
+            assert len(salida.conversaciones) == 2
+            recorrido += [h.hilo_id for h in salida.conversaciones]
+
+        assert recorrido == orden_global
+        assert len(set(recorrido)) == 10  # ningún hilo repetido entre páginas
+
+    def test_el_total_es_el_de_la_cuenta_y_no_el_de_la_pagina(self, db_session, mundo):
+        self._mundo_mezclado(db_session, mundo)
+
+        primera = self._pagina(db_session, mundo, 1, limite=2)
+        assert len(primera.conversaciones) == 2
+        assert primera.total == 10
+        assert primera.pagina == 1
+        assert primera.por_pagina == 2
+
+        # El total no se mueve al pasar de página: es de la cuenta.
+        assert self._pagina(db_session, mundo, 4, limite=2).total == 10
+
+    def test_una_pagina_pasada_del_final_viene_vacia_pero_no_revienta(
+        self, db_session, mundo
+    ):
+        self._mundo_mezclado(db_session, mundo)
+        salida = self._pagina(db_session, mundo, 99, limite=20)
+        assert salida.conversaciones == []
+        assert salida.total == 10
+
+    def test_el_techo_de_pagina_lo_impone_el_contrato_no_el_frontend(self):
+        """`limite` viene de la URL: el tope tiene que estar en el endpoint.
+
+        Si el techo viviera solo en el `<select>` del navegador, un
+        `?limite=100000` a mano volvería a traerse la cuenta entera.
+        """
+        parametro = inspect.signature(
+            supervision.listar_conversaciones
+        ).parameters["limite"].default
+        topes = [m.le for m in parametro.metadata if hasattr(m, "le")]
+        assert topes == [supervision.MAX_POR_PAGINA]
 
 
 class TestHilosDelChatWeb:
@@ -235,7 +317,7 @@ class TestHilosDelChatWeb:
         _chat_web(db_session, bot, "sesion-xyz")
 
         salida = supervision.listar_conversaciones(
-            cuenta=supervision._slug(MASCOTAS), limite=200,
+            cuenta=supervision._slug(MASCOTAS), limite=200, pagina=1,
             _=mundo["gloma"][0], db=db_session,
         )
         assert salida.total == 2
@@ -248,7 +330,7 @@ class TestHilosDelChatWeb:
         _chat_web(db_session, bot, "solo-miro", hablo=False)
 
         salida = supervision.listar_conversaciones(
-            cuenta=supervision._slug(MASCOTAS), limite=200,
+            cuenta=supervision._slug(MASCOTAS), limite=200, pagina=1,
             _=mundo["gloma"][0], db=db_session,
         )
         assert salida.total == 0
@@ -269,7 +351,7 @@ class TestAislamiento:
     def test_una_cuenta_fuera_de_la_lista_blanca_da_404(self, db_session, mundo):
         with pytest.raises(HTTPException) as exc:
             supervision.listar_conversaciones(
-                cuenta=supervision._slug(AJENA), limite=200,
+                cuenta=supervision._slug(AJENA), limite=200, pagina=1,
                 _=mundo["gloma"][0], db=db_session,
             )
         assert exc.value.status_code == 404
