@@ -4198,3 +4198,78 @@ todo el árbol mientras este archivo estaba a medio escribir. El contenido qued�
 sesión commiteando encima, un `rebase` hace más daño que el commit desordenado.
 Es la tercera vez que pasa lo mismo; sigue valiendo la regla: entre sesiones
 paralelas, archivos distintos y `git status` antes de commitear.
+
+---
+
+## Prueba de los hoteles nuevos y el tarifario, y los 6 hallazgos (2026-08-19/20)
+
+**Pedido del CEO**: plan de pruebas de al menos 10 conversaciones sobre los dos
+hoteles nuevos y el tarifario, reporte en HTML con mejoras sugeridas, sin tocar
+código durante la prueba. Autorizó los fixes al final.
+
+Reporte: [`RESULTADOS_PRUEBAS_HOTELES_TARIFARIO.html`](RESULTADOS_PRUEBAS_HOTELES_TARIFARIO.html)
+
+### La lección de la corrida
+
+**Los 12 guiones pasaron los 63 chequeos automáticos, y aun así el bot estaba
+perdiendo ventas.** Las aserciones solo miden lo que a uno se le ocurrió medir;
+los tres hallazgos graves salieron de **leer las conversaciones una por una**.
+
+### Los seis hallazgos
+
+| # | Qué | Gravedad |
+|---|-----|----------|
+| 1 | El bot no sabía qué día es hoy: adivinaba el año (2025) y declaraba vencidas fechas futuras y vendibles | 🔴 |
+| 2 | `enviar_media` no enviaba nada si `claves` llegaba como texto: prometía una imagen que nunca salía | 🟠 |
+| 3 | Dedujo que julio "sí tiene salidas" en un hotel que no publicó julio | 🟠 |
+| 4 | Una fecha vencida cortaba la venta sin ofrecer alternativas | 🟡 |
+| 5 | Los meses disponibles iban de enero a diciembre: "Enero" salía de primero en agosto | 🟡 |
+| 6 | El saludo traía tres preguntas y un párrafo | 🟢 |
+
+**El #1 es el caro.** El contexto del bot nunca decía la fecha, así que al
+llamar a `consultar_tarifario` con una fecha el modelo escribía `2025-12-18`.
+A un cliente con los datos completos le contestó que el 18 de diciembre "ya
+pasó", y a otro que el 15 de enero "del 2025" también. Le pegaba justo a los de
+mayor intención: los que ya escogieron día.
+
+Arreglo en dos capas, a propósito: la fecha de Colombia va en el prompt de
+**todos** los bots, y `tarifario.resolver_fecha()` reinterpreta el año cuando
+llega uno pasado — **solo entonces**, porque una fecha futura pudo decirla el
+cliente a propósito.
+
+### La primera re-corrida rompió tres cosas, y una la causé yo
+
+Al partir el saludo escribí *"si no sabes el nombre, tu primer mensaje es **solo**
+el saludo"*. Demasiado absoluto: a un "¿qué hoteles manejan?" el bot respondió
+pidiendo el nombre **sin contestar la pregunta**. Peor que antes.
+
+Las otras: mandar el flyer era una *sugerencia* en el texto de la herramienta y
+el bot listó los precios de Bohíos en texto sin la imagen; y las "dos fechas más
+cercanas" eran el mismo día repetido (el plan estándar y el de Barú arrancan el
+mismo viernes).
+
+Y una cuarta, más sutil, causada por el propio arreglo #1: al darle la fecha de
+hoy, el bot empezó a **deducir solo** que el 6 de agosto ya pasó y a saltarse la
+consulta, quedándose sin las salidas del 21 y del 28 que sí podía ofrecer.
+**Saber qué día es hoy no le dice qué salidas quedan.**
+
+### Cierre
+
+| | |
+|---|---|
+| Corridas | 12 guiones (línea base) → 14 (tras arreglar) → 14 (final) |
+| Resultado final | **14/14**, verificado además leyendo las transcripciones |
+| Suite | **765 passed** en condiciones de CI (worktree limpio, sin `.env`, `TZ=UTC`) |
+| Desplegado | task-def **59**, imagen `:viajesfix10` |
+| Costo | USD 0,087 la corrida de 12 · ~USD 0,007 por conversación · 90% de caché |
+
+### Lo que hay que recordar
+
+- **La variación del modelo es real**: el mismo guion mandó el flyer de Bohíos en
+  una corrida y no en la siguiente sin que cambiara una línea. Por eso los
+  arreglos que importan viven en la **herramienta**, que responde igual siempre,
+  y no en el prompt. Conviene correr esta prueba antes de cada despliegue que
+  toque el bot.
+- **Arreglar destapa cosas nuevas.** Tres de los cuatro problemas de la segunda
+  corrida los introdujeron los arreglos de la primera. Re-correr la prueba
+  después de arreglar no es opcional.
