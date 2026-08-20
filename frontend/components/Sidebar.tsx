@@ -21,6 +21,10 @@ const MODULOS_INTERNOS = [
   // backend dice que esta sesión puede usarlo (`/pagos/access`), en vez de
   // adivinar por el rol leyendo el JWT — del token solo se lee `exp` (regla 7).
   { name: 'Pagos', path: '/pagos', icon: '💳', access: '/api/pagos/access' },
+  // Ventana de supervisión: los chats de las cuentas que administramos, en modo
+  // lectura. Es de la cuenta de Gloma, no del producto; `/mensajes` sigue
+  // siendo la bandeja de la cuenta propia y no cambia.
+  { name: 'Conversaciones', path: '/conversaciones', icon: '👁️', access: '/api/supervision/access' },
   { name: 'Citas', path: '/citas', icon: '📅', access: '/api/citas/access' },
   { name: 'Instagram', path: '/instagram', icon: '📸', access: '/api/instagram/access' },
   // Sprint "Ayuda a Cali": panel de la cuenta `recuperatumascota@gmail.com`.

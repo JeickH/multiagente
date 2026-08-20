@@ -4073,3 +4073,58 @@ horaria de acá:
 Eso reproduce el CI exacto. Con eso se verificó el arreglo (`90d8e42`): **719
 passed**. El arreglo es solo de tests, así que la imagen desplegada (rev 54) no
 cambia.
+
+---
+
+## #375 — Ventana de supervisión: los chats de los clientes desde la cuenta admin (2026-08-19)
+
+**Pedido del CEO**: ver desde `gloma@glomabeauty.com` las conversaciones de las
+cuentas que administramos — por ahora mascotas y Arranquemos Pues — en una
+ventana aparte, con la misma forma que el registro de conversaciones del panel
+de mascotas. `/mensajes` **no se toca**: sigue siendo la bandeja de la cuenta
+propia, con el bot de Gloma y nada más.
+
+### Cómo quedó
+
+| Qué | Dónde |
+|---|---|
+| Router de solo lectura (`/supervision/*`) | `app/routers/supervision.py` |
+| Catálogo de etiquetas de camino, por cuenta | `app/services/caminos.py` |
+| Ventana | `frontend/pages/conversaciones.tsx` |
+| Entrada del menú (👁️ Conversaciones) | `components/Sidebar.tsx` |
+| Pruebas | `tests/test_supervision.py` (19) |
+
+Qué cuentas se ven: las de la env var **`SUPERVISION_CUENTAS`** (correos
+separados por coma; default mascotas + Arranquemos Pues). Es lista blanca
+explícita, no "todas las cuentas": mirar los chats de un cliente se habilita a
+propósito, cuenta por cuenta, y agregar la siguiente es una env var, no un
+deploy de código.
+
+### Lo que costó entender: hay DOS registros de conversaciones y ninguno cubre al otro
+
+- **WhatsApp** (Arranquemos Pues) → `conversations` + `messages`. Ahí está el
+  texto completo, **incluido lo que escribió un asesor humano después del
+  handoff**, que la bitácora del bot no ve. `bot_llm_decisions` trae
+  `conversation_id` y sirve solo para anotar qué camino tomó cada turno.
+- **Chat web** (mascotas) → solo `bot_llm_decisions`, agrupado por `chat_ref`:
+  el chat es anónimo y nunca crea una `conversation`. Ahí el texto del bot viene
+  recortado a 300 caracteres (`reply_preview`), y la respuesta lo marca con
+  `completo=false` en vez de aparentar que el bot contestó tres líneas.
+
+Por eso la lista es la unión de los dos, y el detalle tiene dos caminos. Los
+turnos del simulador, que no traen ni `conversation_id` ni `chat_ref`, se
+agrupan por bot + canal + día: no son una conversación de verdad, pero quedan
+ordenados y a la vista en vez de escondidos.
+
+### Aislamiento
+
+El `hilo_id` viaja en la URL, así que el detalle **exige también el slug de la
+cuenta** y valida que el hilo sea de ella: sin eso, `conv-1` servía para
+pasearse por las conversaciones de cualquier tenant de la plataforma. Hay tests
+para los tres casos (hilo de otro tenant por WhatsApp, por chat web, e id
+inventado) y dos tests estructurales: que ningún endpoint quede sin
+`require_gloma_account` y que **todos sean GET** — esta ventana no escribe,
+responderle a un contacto es de la cuenta dueña del WhatsApp.
+
+Suite: **738 passed, 51 skipped, 1 xfailed** (`TZ=UTC`, worktree limpio).
+Sin migración: no se agregó ni una columna, todo sale de tablas que ya existían.
