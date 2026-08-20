@@ -241,7 +241,7 @@ export default function Mensajes() {
   };
 
   return (
-    <Layout variant="fullscreen">
+    <Layout variant="app">
       {/* Header del módulo */}
       <header className="bg-white border-b border-gloma-rose-soft px-8 py-4 flex items-center justify-between shadow-sm">
         <div className="flex items-center gap-3">

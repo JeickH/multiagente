@@ -247,7 +247,7 @@ export default function Conversaciones() {
 
   return (
     <Layout variant="fullscreen">
-      <div className="flex-1 overflow-y-auto p-6 lg:p-8" style={{ backgroundColor: '#FAFAF8' }}>
+      <div className="flex-1 p-6 lg:p-8" style={{ backgroundColor: '#FAFAF8' }}>
         {/* ===== Encabezado ===== */}
         <div className="flex flex-wrap items-start justify-between gap-3 mb-1">
           <div>
