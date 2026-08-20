@@ -1,0 +1,634 @@
+<!DOCTYPE html><html lang="es"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Prueba de los hoteles nuevos y el tarifario — bot de Arranquemos Pues</title>
+<style>
+  :root {
+    --paper:#FAFAF8; --ink:#1C2321; --muted:#66736E; --line:#E2E6E3; --card:#FFFFFF;
+    --green:#1F5F4B; --green-soft:#E6F1EC; --mint:#3FA98A;
+    --ok:#1F7A5C; --ok-soft:#E7F4EE; --warn:#B45309; --warn-soft:#FCF0E1;
+    --stop:#A32F2A; --stop-soft:#FBEBEA; --code:#F1F4F2;
+  }
+  @media (prefers-color-scheme: dark) { :root {
+    --paper:#101614; --ink:#E6ECE9; --muted:#95A39D; --line:#28332F; --card:#18211E;
+    --green:#6FC9A8; --green-soft:#172B24; --mint:#8FDCC2;
+    --ok:#5FC79E; --ok-soft:#152A22; --warn:#E9A159; --warn-soft:#2E2313;
+    --stop:#EE8078; --stop-soft:#2E1817; --code:#1D2724; } }
+  :root[data-theme="dark"] {
+    --paper:#101614; --ink:#E6ECE9; --muted:#95A39D; --line:#28332F; --card:#18211E;
+    --green:#6FC9A8; --green-soft:#172B24; --mint:#8FDCC2;
+    --ok:#5FC79E; --ok-soft:#152A22; --warn:#E9A159; --warn-soft:#2E2313;
+    --stop:#EE8078; --stop-soft:#2E1817; --code:#1D2724; }
+  :root[data-theme="light"] {
+    --paper:#FAFAF8; --ink:#1C2321; --muted:#66736E; --line:#E2E6E3; --card:#FFFFFF;
+    --green:#1F5F4B; --green-soft:#E6F1EC; --mint:#3FA98A;
+    --ok:#1F7A5C; --ok-soft:#E7F4EE; --warn:#B45309; --warn-soft:#FCF0E1;
+    --stop:#A32F2A; --stop-soft:#FBEBEA; --code:#F1F4F2; }
+
+  * { box-sizing:border-box; }
+  body { background:var(--paper); color:var(--ink); margin:0; padding:0 20px 90px;
+    font:16px/1.62 "Avenir Next","Segoe UI",system-ui,sans-serif; }
+  main { max-width:900px; margin:0 auto; }
+  header { padding:46px 0 16px; border-bottom:2px solid var(--green); margin-bottom:6px; }
+  h1 { font-size:1.85rem; margin:0 0 10px; letter-spacing:-0.015em; text-wrap:balance; }
+  .sub { color:var(--muted); max-width:66ch; margin:0; }
+  h2 { font-size:1.18rem; margin:44px 0 6px; padding-top:14px; border-top:1px solid var(--line);
+    letter-spacing:-0.01em; }
+  h2 .fase { color:var(--green); font-size:0.75rem; font-weight:700; text-transform:uppercase;
+    letter-spacing:0.1em; display:block; margin-bottom:3px; }
+  h3 { font-size:0.98rem; margin:26px 0 6px; }
+  p { max-width:70ch; }
+  code { background:var(--code); padding:1px 6px; border-radius:5px;
+    font-family:ui-monospace,"SF Mono",Menlo,monospace; font-size:0.85em; }
+  a { color:var(--green); }
+
+  .chips { display:flex; flex-wrap:wrap; gap:8px; margin:14px 0 4px; }
+  .chip { font-size:0.76rem; font-weight:600; padding:4px 12px; border-radius:999px;
+    border:1px solid var(--line); background:var(--card); color:var(--muted); }
+  .chip.g { background:var(--green-soft); color:var(--green); border-color:transparent; }
+  .chip.w { background:var(--warn-soft); color:var(--warn); border-color:transparent; }
+  .chip.s { background:var(--stop-soft); color:var(--stop); border-color:transparent; }
+
+  .tw { overflow-x:auto; margin:14px 0; border:1px solid var(--line); border-radius:12px;
+    background:var(--card); }
+  table { border-collapse:collapse; width:100%; font-size:0.9rem; min-width:520px; }
+  th, td { text-align:left; padding:10px 13px; border-bottom:1px solid var(--line);
+    vertical-align:top; }
+  th { background:var(--green-soft); color:var(--green); font-size:0.74rem;
+    text-transform:uppercase; letter-spacing:0.07em; border-bottom:1px solid var(--line); }
+  tbody tr:last-child td { border-bottom:none; }
+  td.n { font-variant-numeric:tabular-nums; white-space:nowrap; font-weight:600; color:var(--green); }
+
+  .box { border:1px solid var(--line); border-left:3px solid var(--green); background:var(--card);
+    border-radius:0 12px 12px 0; padding:14px 18px; margin:18px 0; }
+  .box.warn { border-left-color:var(--warn); }
+  .box.stop { border-left-color:var(--stop); }
+  .box h4 { margin:0 0 6px; font-size:0.78rem; text-transform:uppercase; letter-spacing:0.08em;
+    color:var(--green); }
+  .box.warn h4 { color:var(--warn); }
+  .box.stop h4 { color:var(--stop); }
+  .box p:last-child, .box ul:last-child { margin-bottom:0; }
+  .box p:first-of-type { margin-top:0; }
+
+  ul.clean { list-style:none; padding-left:0; }
+  ul.clean li { padding:6px 0 6px 26px; position:relative; border-bottom:1px dashed var(--line); }
+  ul.clean li:last-child { border-bottom:none; }
+  ul.clean li::before { content:"✕"; position:absolute; left:4px; color:var(--stop); font-weight:700; }
+  ul.clean.yes li::before { content:"✓"; color:var(--ok); }
+
+  .auth { border:2px solid var(--green); border-radius:14px; background:var(--card);
+    padding:20px 22px; margin:28px 0 0; }
+  .auth h3 { margin-top:0; font-size:1.05rem; }
+  .auth ol { padding-left:20px; margin:10px 0 0; }
+  .auth li { padding:7px 0; }
+  .auth li b { color:var(--green); }
+
+  footer { margin-top:56px; padding-top:18px; border-top:1px solid var(--line);
+    color:var(--muted); font-size:0.84rem; }
+  .badge { display:inline-block; font-size:0.72rem; font-weight:700; padding:2px 8px;
+    border-radius:5px; background:var(--stop-soft); color:var(--stop); letter-spacing:0.03em; }
+  .badge.ok { background:var(--ok-soft); color:var(--ok); }
+</style>
+<style>
+  .conv { border:1px solid var(--line); border-radius:12px; background:var(--card);
+    margin:18px 0; overflow:hidden; }
+  .conv > summary { cursor:pointer; padding:12px 16px; font-weight:600; font-size:0.95rem;
+    display:flex; align-items:center; gap:10px; list-style:none; }
+  .conv > summary::-webkit-details-marker { display:none; }
+  .conv > summary:hover { background:var(--green-soft); }
+  .conv .cuerpo { padding:4px 16px 16px; border-top:1px solid var(--line); }
+  .gid { font-family:ui-monospace,Menlo,monospace; font-size:0.8rem; color:var(--muted); }
+  .turno { margin:14px 0 0; }
+  .cli, .bot { padding:9px 13px; border-radius:12px; margin:6px 0; max-width:82%;
+    white-space:pre-wrap; font-size:0.9rem; line-height:1.5; }
+  .cli { background:var(--green-soft); color:var(--ink); margin-left:auto;
+    border-bottom-right-radius:3px; }
+  .bot { background:var(--code); border-bottom-left-radius:3px; }
+  .meta { font-size:0.74rem; color:var(--muted); font-family:ui-monospace,Menlo,monospace;
+    padding:3px 0 0; }
+  .med { display:inline-block; font-size:0.74rem; font-family:ui-monospace,Menlo,monospace;
+    background:var(--ok-soft); color:var(--ok); padding:2px 9px; border-radius:6px;
+    margin:3px 4px 3px 0; }
+  .hand { font-size:0.8rem; background:var(--warn-soft); color:var(--warn);
+    padding:8px 12px; border-radius:9px; margin:6px 0; }
+  .checks { margin:12px 0 0; font-size:0.85rem; }
+  .checks span { display:inline-block; margin:3px 6px 3px 0; padding:2px 9px;
+    border-radius:6px; background:var(--ok-soft); color:var(--ok); font-size:0.76rem; }
+  .checks span.no { background:var(--stop-soft); color:var(--stop); }
+  .kpi { display:flex; flex-wrap:wrap; gap:12px; margin:20px 0; }
+  .kpi > div { flex:1 1 150px; border:1px solid var(--line); border-radius:12px;
+    background:var(--card); padding:14px 16px; }
+  .kpi b { display:block; font-size:1.5rem; letter-spacing:-0.02em; }
+  .kpi small { color:var(--muted); font-size:0.78rem; }
+</style>
+</head><body><main>
+<header>
+<h1>Prueba del bot de Arranquemos Pues: los dos hoteles nuevos y el tarifario</h1>
+<p class="sub">12 conversaciones contra el bot que está atendiendo en producción
+(bot 12, task-def 54), con el Claude real de Bedrock. Ninguna salió por WhatsApp
+ni escribió en la base. 19 de agosto de 2026.</p>
+</header>
+
+<div class="kpi">
+  <div><b>12 / 12</b><small>conversaciones pasan los chequeos automáticos</small></div>
+  <div><b>63</b><small>verificaciones, todas en verde</small></div>
+  <div><b>4 🔴🟠</b><small>hallazgos que la automatización NO vio</small></div>
+  <div><b>USD 0.087</b><small>costo de la corrida completa</small></div>
+</div>
+
+<div class="box stop">
+<h4>Lo primero, porque cambia la lectura de todo lo demás</h4>
+<p>Los 12 guiones pasaron. <b>Y aun así el bot está perdiendo ventas hoy.</b> Los
+chequeos automáticos solo miden lo que se me ocurrió medir; los tres hallazgos
+graves salieron de <b>leer las conversaciones</b>, no de las aserciones.</p>
+<p>El peor: un cliente con los datos completos pidió reservar el <b>18 de
+diciembre</b> y el bot le contestó que <i>«ya pasó»</i>. Estamos en agosto.</p>
+</div>
+
+<h2><span class="fase">Cómo se probó</span>Dentro de la imagen desplegada, contra el bot real</h2>
+<p>Mismo método que la prueba de los 10 guiones de ayer: la corrida vive dentro
+de un <code>ecs run-task</code> sobre el task-def vigente, lee el bot 12 desde
+RDS y habla con el mismo <code>llm_engine.advance</code> que atiende el webhook.
+No manda mensajes —no toca el sender ni el cupo de 250 conversaciones/24h— y no
+escribe en <code>bot_llm_decisions</code>.</p>
+<p>Las 12 conversaciones se eligieron para cubrir lo que se acaba de cambiar:
+los hoteles <b>Piedra Mar</b> y <b>Bohíos</b>, y el <b>tarifario por mes</b>.</p>
+
+<div class="tw"><table>
+<thead><tr><th>Frente</th><th>Qué se probó</th><th>Guiones</th></tr></thead>
+<tbody>
+<tr><td>Piedra Mar</td><td>Info, video y precios propios del hotel</td><td>G01, G04, G07, G12</td></tr>
+<tr><td>Bohíos</td><td>Video propio, flyer prestado de Amor de Dios y su aviso</td><td>G02, G03</td></tr>
+<tr><td>Tarifario</td><td>Que la imagen corresponda al mes pedido</td><td>G01, G04, G05</td></tr>
+<tr><td>Fechas</td><td>Salidas vencidas, día sin salida, mes sin publicar</td><td>G06, G07, G08</td></tr>
+<tr><td>Info del plan</td><td>Niños, los tres hoteles, nunca mandar el Excel</td><td>G09, G10, G11</td></tr>
+<tr><td>Handoff</td><td>Que el asesor reciba nombre, fecha y hotel</td><td>G12</td></tr>
+</tbody></table></div>
+
+<h2><span class="fase">Resultados</span>Lo que sí quedó bien</h2>
+<ul class="clean yes">
+<li><b>La imagen del tarifario corresponde al mes en los 4 casos.</b> Septiembre
+en Piedra Mar → <code>piedramar2</code> (jul–oct). Diciembre en Piedra Mar →
+<code>piedramar1</code> (nov–ene). Enero en Amor de Dios → <code>amordios1</code>
+(dic–ene). Octubre en Bohíos → <code>amordios2</code> (ago–nov). Ninguna cruzada.</li>
+<li><b>Bohíos funciona como se diseñó</b>: manda su video propio, presta el flyer
+de Amor de Dios y avisa —sin que se lo pidan— que «la imagen sale a nombre de
+Amor de Dios pero los precios aplican igual para Bohíos».</li>
+<li><b>Los precios salen del Excel, no de la memoria.</b> Verificados uno a uno:
+$469.000/$516.000 en Piedra Mar septiembre, $459.000 en Bohíos octubre, el rango
+$399.000–$799.000 de enero en Amor de Dios. Todos exactos.</li>
+<li><b>Nunca mandó el Excel</b>, ni siquiera cuando se lo pidieron de frente.</li>
+<li><b>Un día sin salida ya no termina en el asesor</b> (G07): ofreció el 18–21 y
+el 25–28 con precio, que era justo el cambio pedido.</li>
+<li><b>El asesor recibe el chat con contexto</b>: <i>«Ricardo Álvarez, CC
+71234567, 4 personas, hotel Piedra Mar, 18 de diciembre»</i>, y con el asesor
+vacío, o sea entrando al reparto por turnos.</li>
+<li><b>El caché funciona</b>: 90% de la entrada vino de caché. La corrida entera
+costó <b>USD 0.087</b> — unos <b>USD 0.0072 por conversación</b>.</li>
+<li>Ni andamiaje de herramientas visible, ni un solo fail-safe.</li>
+</ul>
+
+<h2><span class="fase">Hallazgos</span>Lo que hay que arreglar</h2>
+
+<div class="box stop">
+<h4>🔴 1 — El bot no sabe en qué fecha vive, y declara vencidas fechas vendibles</h4>
+<p>Es el hallazgo caro. El contexto del bot <b>nunca dice qué día es hoy</b>
+(verificado: <code>"hoy es" in contexto → False</code>), así que cuando el
+cliente nombra un día, el modelo <b>adivina el año — y adivina 2025</b>:</p>
+<pre>consultar_tarifario(mes="enero",  hotel="Amor de Dios", fecha="<b>2025</b>-01-15")
+consultar_tarifario(mes="agosto", hotel="Amor de Dios", fecha="<b>2025</b>-08-06")</pre>
+<p>Como 2025 ya pasó, la herramienta responde «esa fecha ya pasó» y el bot se lo
+repite al cliente. Lo vimos en vivo con dos fechas <b>futuras y vendibles</b>:</p>
+<p><i>«Quiero reservar en Piedra Mar para el 18 de diciembre, 4 personas»</i> →
+<b>«El 18 de diciembre de este año ya pasó 😊 ¿Diciembre del próximo año?»</b></p>
+<p><i>«Me sirve el 15 de enero en Amor de Dios»</i> →
+<b>«El 15 de enero del 2025 ya pasó»</b>. Enero en Amor de Dios vale entre
+$399.000 y $799.000 por persona.</p>
+<p>Le pega justo a los clientes de mayor intención: los que ya escogieron día.
+El bot de mascotas sí recibe la fecha de hoy en su prompt; el de viajes no.</p>
+</div>
+
+<div class="box stop">
+<h4>🟠 2 — A veces promete una imagen que nunca sale</h4>
+<p>El modelo puede mandar el parámetro <code>claves</code> de
+<code>enviar_media</code> como <b>texto</b> en vez de lista:</p>
+<pre>input = {"claves": "['formulario_reserva']"}   ← texto, no lista</pre>
+<p>El código hace <code>for key in claves</code>: sobre un texto eso recorre
+<b>letra por letra</b>, ninguna coincide con una clave del catálogo y no se envía
+nada. La herramienta devuelve «claves inexistentes: [, ', f, o, r…» y sigue
+como si nada. El cliente lee «te dejo el formulario 👇» y no le llega ningún
+adjunto. Ocurrió 1 de 13 veces que el bot quiso mandar un medio.</p>
+</div>
+
+<div class="box stop">
+<h4>🟠 3 — Inventó que julio sí tiene salidas, contradiciendo el tarifario</h4>
+<p>Amor de Dios no publicó julio, y la herramienta lo dice claro. Pero también
+agrega <b>siempre</b> la nota promocional «todos los lunes con jueves hay salidas
+desde $350.000», incluso cuando ese mes tiene cero salidas. El bot sumó las dos
+cosas y concluyó:</p>
+<p><b>«Salidas entre semana (lunes a jueves): desde $350.000 en Amor de Dios —
+<i>todos los meses, así que julio sí tiene</i> 🙌»</b></p>
+<p>Eso no consta en ningún lado. Es exactamente el tipo de afirmación que el
+contexto prohíbe y que genera el reclamo en el destino.</p>
+</div>
+
+<div class="box warn">
+<h4>🟡 4 — Si la fecha ya pasó, corta en seco y no ofrece nada</h4>
+<p>Pediste que una fecha sin precio no terminara en el asesor sino con la
+información del mes. Eso funciona cuando el día no existe (G07), pero <b>no
+cuando la fecha ya pasó</b>: ahí la herramienta devuelve solo «ya pasó» y el bot
+se queda preguntando «¿para cuál otra fecha?», sin ofrecer las salidas de agosto
+que sí quedaban (21–24 y 28–31).</p>
+</div>
+
+<div class="box warn">
+<h4>🟡 5 — La lista de meses disponibles arranca por enero</h4>
+<p>Cuando un mes no tiene salidas, la herramienta lista los que sí, pero
+recorriendo de enero a diciembre. En agosto de 2026 eso pone <b>«Enero»</b> de
+primero, como si fuera lo más cercano, cuando en realidad es enero de 2027. El
+bot se confundió y directamente lo omitió: ofreció «agosto, septiembre, octubre,
+noviembre y diciembre» y se comió enero, que es el mes más caro.</p>
+</div>
+
+<div class="box warn">
+<h4>🟢 6 — El primer mensaje trae tres preguntas y un párrafo</h4>
+<p>Cuando el cliente no se presenta, el saludo pregunta el nombre, cuenta el
+plan y además pregunta mes y hotel: tres preguntas en un mensaje de WhatsApp.
+Se responde una y las otras dos se pierden. Se ve en G01, G09 y G11.</p>
+</div>
+
+<h2><span class="fase">Detalle</span>Las 12 conversaciones completas</h2>
+<p>Cada una desplegable, con lo que dijo el cliente, lo que respondió el bot, qué
+archivos mandó y qué verificaciones pasó.</p>
+<details class="conv"><summary><span class="chip g">✓</span> <span class="gid">G01</span> Piedra Mar en septiembre <span class="gid" style="margin-left:auto">Piedra Mar</span></summary><div class="cuerpo">
+<div class="turno">
+<div class="cli">Hola, buenas! me interesa el plan a Covenas</div>
+<div class="bot">¡Hola, buen día! 😊 Espero que se encuentre muy bien el día de hoy, mi nombre es *Maria Camila*, asesora de la *Agencia de Viajes Arranquemos Pues*. ¿Con quién tengo el gusto? 
+
+Te cuento de nuestro plan a *Tolú &amp; Coveñas* 🌴: salida el *viernes* y regreso el *lunes*, con hotel, transporte y alimentación desde el desayuno del sábado.
+
+Tenemos tres opciones de hotel: *Amor de Dios*, *Piedra Mar* y *Bohíos* 🏨. Cuéntame, ¿para qué mes estás pensando viajar y cuál hotel te llama más? Así te paso los precios exactos 😊</div>
+<div class="meta">camino: info_general · herramientas: ninguna</div>
+</div>
+<div class="turno">
+<div class="cli">Soy Marcela. Para septiembre, en el hotel Piedra Mar</div>
+<div class="bot">¡Hola Marcela, un gusto! 🙌 Te consulto los precios exactos de septiembre en Piedra Mar y te los paso enseguida.</div>
+<div class="bot">¡Perfecto, Marcela! 😊 Tenemos varias opciones en septiembre:
+
+*Plan estándar* (viernes a lunes, 2 noches):
+• *Múltiple*: $469.000 por persona
+• *Doble*: $516.000 por persona
+
+*Plan con Obsequio a Barú* (viernes a martes, 3 noches — incluye visita a Barú):
+• *Múltiple*: $620.000 por persona
+• *Doble*: $682.000 por persona
+
+Las salidas estándar son: *4-7, 11-14, 18-21 y 25-28 de septiembre* ✨
+
+Te dejo el tarifario completo 👇 y la info del hotel 🏨</div>
+<div class="bot">¿Cuál de las fechas te llama más? 🌴</div>
+<div><span class="med">📎 tarifario_piedramar2.jpeg</span><span class="med">📎 hotel_piedramar.jpeg</span><span class="med">📎 hotel_piedramar.mp4</span></div>
+<div class="meta">camino: precios_condiciones · herramientas: consultar_tarifario, enviar_media</div>
+</div>
+<div class="checks">
+<span class="">✓ Sin andamiaje de herramientas visible</span>
+<span class="">✓ Sin fail-safe ni error del motor</span>
+<span class="">✓ Menciona «469»</span>
+<span class="">✓ Menciona «516»</span>
+<span class="">✓ NO menciona «459.000»</span>
+<span class="">✓ Envía el flyer «tarifario_piedramar_jul_oct»</span>
+<span class="">✓ NO envía «tarifario_piedramar_nov_ene»</span>
+<span class="">✓ NO envía «tarifario_amordios_ago_nov»</span>
+<span class="">✓ NO envía «tarifario_amordios_dic_ene»</span>
+</div>
+<div class="meta" style="padding-top:10px">tokens: 3814 entrada · 639 salida · 20418 de caché · 10829 ms</div>
+</div></details><details class="conv"><summary><span class="chip g">✓</span> <span class="gid">G02</span> Bohios en octubre: video + flyer de Amor de Dios con aviso <span class="gid" style="margin-left:auto">Bohios</span></summary><div class="cuerpo">
+<div class="turno">
+<div class="cli">Hola soy Julian</div>
+<div class="bot">¡Hola Julián, buen día! 😊 Soy *Maria Camila*, asesora de la *Agencia de Viajes Arranquemos Pues*. Te cuento de nuestro plan a *Tolú &amp; Coveñas* 🌴: salida el *viernes* y regreso el *lunes*, con hotel, transporte y alimentación desde el desayuno del sábado.
+
+Tenemos tres opciones de hotel: *Amor de Dios*, *Piedra Mar* y *Bohíos* 🏨. Cuéntame, ¿para qué mes estás pensando viajar y cuál hotel te llama más? Así te paso los precios exactos 😊</div>
+<div class="meta">camino: respuesta_libre · herramientas: ninguna</div>
+</div>
+<div class="turno">
+<div class="cli">Quiero saber del hotel Bohios para octubre</div>
+<div class="bot">Perfecto, Julián 🌴. Te dejo el video del hotel *Bohíos* para que lo veas 👇</div>
+<div class="bot">Listo, ya ves cómo se ve el hotel 🏨✨. 
+
+Para *octubre en Bohíos* tenemos varias opciones:
+- *02 al 05* — desde *$459.000* por persona en múltiple 🌴
+- *09 al 12* (festivo) — desde *$559.000*
+- *16 al 19* — desde *$459.000*
+- *16 al 20* (con Barú incluido) — desde *$550.000*
+- *23 al 26* — desde *$459.000*
+- *30 de oct al 02 de nov* (festivo) — desde *$559.000*
+
+Te dejo también el tarifario completo 📦</div>
+<div class="bot">La imagen sale a nombre de *Amor de Dios* pero *los precios aplican igual para Bohíos* 🙌. ¿Alguna de esas fechas te encaja, Julián?</div>
+<div><span class="med">📎 hotel_bohios.mp4</span><span class="med">📎 tarifario_amordios2.jpeg</span></div>
+<div class="meta">camino: precios_condiciones · herramientas: consultar_tarifario, enviar_media, enviar_media</div>
+</div>
+<div class="checks">
+<span class="">✓ Sin andamiaje de herramientas visible</span>
+<span class="">✓ Sin fail-safe ni error del motor</span>
+<span class="">✓ Menciona «459»</span>
+<span class="">✓ Menciona «Bohios»</span>
+<span class="">✓ Menciona «Amor de Dios»</span>
+<span class="">✓ Envía el flyer «tarifario_amordios_ago_nov»</span>
+<span class="">✓ NO envía «tarifario_piedramar_jul_oct»</span>
+<span class="">✓ Avisa que el flyer sale a nombre de Amor de Dios</span>
+</div>
+<div class="meta" style="padding-top:10px">tokens: 3672 entrada · 649 salida · 27224 de caché · 10446 ms</div>
+</div></details><details class="conv"><summary><span class="chip g">✓</span> <span class="gid">G03</span> Bohios cuesta lo mismo que Amor de Dios <span class="gid" style="margin-left:auto">Bohios</span></summary><div class="cuerpo">
+<div class="turno">
+<div class="cli">Hola</div>
+<div class="bot">¡Hola, buen día! Espero que se encuentre muy bien el día de hoy, mi nombre es *Maria Camila*, asesora de la *Agencia de Viajes Arranquemos Pues*. ¿Con quién tengo el gusto? 😊</div>
+<div class="meta">camino: respuesta_libre · herramientas: ninguna</div>
+</div>
+<div class="turno">
+<div class="cli">El hotel Bohios es mas caro que el Amor de Dios?</div>
+<div class="bot">¡Para nada! 🙌 El hotel *Bohíos* cobra *exactamente lo mismo que Amor de Dios*, así que los precios son idénticos.
+
+Ahora bien, para mostrarte los valores exactos necesito saber: *¿para qué mes estás pensando viajar?* Los precios cambian según la fecha 😊</div>
+<div class="meta">camino: hotel · herramientas: ninguna</div>
+</div>
+<div class="checks">
+<span class="">✓ Sin andamiaje de herramientas visible</span>
+<span class="">✓ Sin fail-safe ni error del motor</span>
+<span class="">✓ Menciona «mismo»</span>
+</div>
+<div class="meta" style="padding-top:10px">tokens: 748 entrada · 168 salida · 13612 de caché · 3982 ms</div>
+</div></details><details class="conv"><summary><span class="chip g">✓</span> <span class="gid">G04</span> Diciembre en Piedra Mar usa el flyer nov-ene <span class="gid" style="margin-left:auto">Tarifario</span></summary><div class="cuerpo">
+<div class="turno">
+<div class="cli">Buenas, soy Andres</div>
+<div class="bot">¡Hola Andrés, buen día! 😊 Soy *Maria Camila*, asesora de la *Agencia de Viajes Arranquemos Pues*. ¡Un gusto saludarte! 🌴
+
+Te cuento de nuestro plan a *Tolú &amp; Coveñas*: salida el *viernes* y regreso el *lunes*, con hotel, transporte y alimentación desde el desayuno del sábado.
+
+Tenemos tres opciones de hotel: *Amor de Dios*, *Piedra Mar* y *Bohíos* 🏨. Cuéntame, ¿para qué mes estás pensando viajar y cuál hotel te llama más? Así te paso los precios exactos 😊</div>
+<div class="meta">camino: respuesta_libre · herramientas: ninguna</div>
+</div>
+<div class="turno">
+<div class="cli">Para diciembre, hotel Piedra Mar, cuanto sale?</div>
+<div class="bot">Perfecto, Andrés 🙌. Déjame consultar los precios exactos de diciembre en Piedra Mar.</div>
+<div class="bot">Listo, Andrés 🌴. En diciembre en Piedra Mar tenemos varias salidas:
+
+*Plan en semana* (lunes a jueves): desde *$389.000 por persona en múltiple*.
+
+*Fin de semana estándar* (viernes a lunes): desde *$469.000 por persona en múltiple*.
+
+*Fin de semana festivo* (como Navidad y Año Nuevo): desde *$649.000 hasta $899.000 por persona*, según la fecha.
+
+Te dejo el tarifario completo para que veas todas las opciones 👇</div>
+<div class="bot">¿Hay alguna fecha que te llame más? 😊</div>
+<div><span class="med">📎 tarifario_piedramar1.jpeg</span></div>
+<div class="meta">camino: precios_condiciones · herramientas: consultar_tarifario, enviar_media</div>
+</div>
+<div class="checks">
+<span class="">✓ Sin andamiaje de herramientas visible</span>
+<span class="">✓ Sin fail-safe ni error del motor</span>
+<span class="">✓ Envía el flyer «tarifario_piedramar_nov_ene»</span>
+<span class="">✓ NO envía «tarifario_piedramar_jul_oct»</span>
+</div>
+<div class="meta" style="padding-top:10px">tokens: 4246 entrada · 545 salida · 27224 de caché · 9509 ms</div>
+</div></details><details class="conv"><summary><span class="chip g">✓</span> <span class="gid">G05</span> Enero en Amor de Dios usa el flyer dic-ene <span class="gid" style="margin-left:auto">Tarifario</span></summary><div class="cuerpo">
+<div class="turno">
+<div class="cli">Hola soy Paula</div>
+<div class="bot">¡Hola Paula, buen día! 😊 Soy *Maria Camila*, asesora de la *Agencia de Viajes Arranquemos Pues*. ¡Un gusto saludarte! 🌴
+
+Te cuento de nuestro plan a *Tolú &amp; Coveñas*: salida el *viernes* y regreso el *lunes*, con hotel, transporte y alimentación desde el desayuno del sábado.
+
+Tenemos tres opciones de hotel: *Amor de Dios*, *Piedra Mar* y *Bohíos* 🏨. Cuéntame, ¿para qué mes estás pensando viajar y cuál hotel te llama más? Así te paso los precios exactos 😊</div>
+<div class="meta">camino: respuesta_libre · herramientas: ninguna</div>
+</div>
+<div class="turno">
+<div class="cli">Precios de enero en el Amor de Dios</div>
+<div class="bot">¡Perfecto, Paula! 🌴 Déjame consultar los precios de enero en Amor de Dios para ti.</div>
+<div class="bot">¡Mira qué variedad! 😊 Tenemos 7 salidas en enero para *Amor de Dios*, desde *$399.000 por persona en acomodación múltiple* hasta *$799.000*. Todo depende de las fechas que prefieras.
+
+Te dejo el tarifario completo de enero 👇</div>
+<div class="bot">También hay *salidas entre semana todos los lunes con jueves desde $350.000 por persona* 🙌. 
+
+¿Alguna de estas fechas te late, o prefieres que hablemos de otro mes? ✨</div>
+<div><span class="med">📎 tarifario_amordios1.jpeg</span></div>
+<div class="meta">camino: precios_condiciones · herramientas: consultar_tarifario, enviar_media</div>
+</div>
+<div class="checks">
+<span class="">✓ Sin andamiaje de herramientas visible</span>
+<span class="">✓ Sin fail-safe ni error del motor</span>
+<span class="">✓ Envía el flyer «tarifario_amordios_dic_ene»</span>
+<span class="">✓ NO envía «tarifario_amordios_ago_nov»</span>
+</div>
+<div class="meta" style="padding-top:10px">tokens: 3454 entrada · 526 salida · 27224 de caché · 8680 ms</div>
+</div></details><details class="conv"><summary><span class="chip g">✓</span> <span class="gid">G06</span> No vende una salida que ya paso <span class="gid" style="margin-left:auto">Fechas</span></summary><div class="cuerpo">
+<div class="turno">
+<div class="cli">Hola soy Carlos</div>
+<div class="bot">¡Hola Carlos, buen día! 😊 Soy *Maria Camila*, asesora de la *Agencia de Viajes Arranquemos Pues*. Te cuento de nuestro plan a *Tolú &amp; Coveñas* 🌴: salida el *viernes* y regreso el *lunes*, con hotel, transporte y alimentación desde el desayuno del sábado.
+
+Tenemos tres opciones de hotel: *Amor de Dios*, *Piedra Mar* y *Bohíos* 🏨. Cuéntame, ¿para qué mes estás pensando viajar y cuál hotel te llama más? Así te paso los precios exactos 😊</div>
+<div class="meta">camino: respuesta_libre · herramientas: ninguna</div>
+</div>
+<div class="turno">
+<div class="cli">Quiero viajar el 6 de agosto a Covenas, en Amor de Dios</div>
+<div class="bot">¡Perfecto, Carlos! 🙌 Te consulto los precios exactos para agosto en el hotel *Amor de Dios*.</div>
+<div class="bot">Ey Carlos, la fecha del 6 de agosto ya pasó 😅. ¿Para cuál otra fecha de agosto te gustaría viajar? O si prefieres otro mes, me avisa y te doy las salidas disponibles 🌴</div>
+<div class="meta">camino: precios_condiciones · herramientas: consultar_tarifario</div>
+</div>
+<div class="checks">
+<span class="">✓ Sin andamiaje de herramientas visible</span>
+<span class="">✓ Sin fail-safe ni error del motor</span>
+<span class="">✓ NO menciona «6 al 9»</span>
+<span class="">✓ NO menciona «06 al 09»</span>
+</div>
+<div class="meta" style="padding-top:10px">tokens: 1590 entrada · 386 salida · 20418 de caché · 6690 ms</div>
+</div></details><details class="conv"><summary><span class="chip g">✓</span> <span class="gid">G07</span> Fecha sin salida: ofrece cercanas y NO escala <span class="gid" style="margin-left:auto">Fechas</span></summary><div class="cuerpo">
+<div class="turno">
+<div class="cli">Hola soy Diana</div>
+<div class="bot">¡Hola Diana, buen día! 😊 Soy *Maria Camila*, asesora de la *Agencia de Viajes Arranquemos Pues*. ¡Un gusto saludarte! 🌴
+
+Te cuento de nuestro plan a *Tolú &amp; Coveñas*: salida el *viernes* y regreso el *lunes*, con hotel, transporte y alimentación desde el desayuno del sábado.
+
+Tenemos tres opciones de hotel: *Amor de Dios*, *Piedra Mar* y *Bohíos* 🏨. Cuéntame, ¿para qué mes estás pensando viajar y cuál hotel te llama más? Así te paso los precios exactos 😊</div>
+<div class="meta">camino: respuesta_libre · herramientas: ninguna</div>
+</div>
+<div class="turno">
+<div class="cli">Quiero salir el 20 de septiembre en Piedra Mar</div>
+<div class="bot">Perfecto, Diana 🌴. Déjame consultar la disponibilidad y los precios para septiembre en Piedra Mar.</div>
+<div class="bot">¡Perfecto, Diana! 🙌 Para el 20 de septiembre no hay salida exacta ese día, pero muy cerquita tengo dos opciones geniales:
+
+✨ *18 al 21 de septiembre* — múltiple *$469.000* por persona · doble *$516.000*
+✨ *25 al 28 de septiembre* — múltiple *$469.000* por persona · doble *$516.000*
+
+También están las opciones con *Obsequio a Barú* (3 noches en lugar de 2), un poco más costosas.
+
+¿Cuál de estas dos fechas te sirve? 😊 Te dejo el tarifario completo de septiembre 📦</div>
+<div><span class="med">📎 tarifario_piedramar2.jpeg</span></div>
+<div class="meta">camino: precios_condiciones · herramientas: consultar_tarifario, enviar_media</div>
+</div>
+<div class="checks">
+<span class="">✓ Sin andamiaje de herramientas visible</span>
+<span class="">✓ Sin fail-safe ni error del motor</span>
+<span class="">✓ Menciona «18»</span>
+<span class="">✓ Menciona «25»</span>
+<span class="">✓ NO escala al asesor</span>
+</div>
+<div class="meta" style="padding-top:10px">tokens: 3655 entrada · 560 salida · 27224 de caché · 9668 ms</div>
+</div></details><details class="conv"><summary><span class="chip g">✓</span> <span class="gid">G08</span> Amor de Dios no publico julio: no escala, ofrece alternativas <span class="gid" style="margin-left:auto">Fechas</span></summary><div class="cuerpo">
+<div class="turno">
+<div class="cli">Hola soy Sofia</div>
+<div class="bot">¡Hola Sofía, buen día! 😊 Soy *Maria Camila*, asesora de la *Agencia de Viajes Arranquemos Pues*. Te cuento de nuestro plan a *Tolú &amp; Coveñas* 🌴: salida el *viernes* y regreso el *lunes*, con hotel, transporte y alimentación desde el desayuno del sábado.
+
+Tenemos tres opciones de hotel: *Amor de Dios*, *Piedra Mar* y *Bohíos* 🏨 ¿Para qué mes estás pensando viajar y cuál hotel te llama más? Así te paso los precios exactos 😊</div>
+<div class="meta">camino: respuesta_libre · herramientas: ninguna</div>
+</div>
+<div class="turno">
+<div class="cli">Tienen algo en julio en el hotel Amor de Dios?</div>
+<div class="bot">¡Claro que sí! 🌴 Déjame revisar las salidas exactas y los precios de julio en *Amor de Dios* para ti.</div>
+<div class="bot">Sofía, en julio no tenemos salidas publicadas en *Amor de Dios* para fin de semana 😊. Pero te tengo otras opciones muy chévere:
+
+✨ *Salidas entre semana* (lunes a jueves): desde *$350.000 por persona en múltiple* en *Amor de Dios* — *todos los meses*, así que julio sí tiene 🙌
+
+💙 *O si prefieres fin de semana*, tenemos *Amor de Dios* en *agosto, septiembre, octubre, noviembre y diciembre*.
+
+¿Prefieres una salida entre semana en julio o vemos alguno de esos meses cercanos? 😊</div>
+<div class="meta">camino: precios_condiciones · herramientas: consultar_tarifario</div>
+</div>
+<div class="checks">
+<span class="">✓ Sin andamiaje de herramientas visible</span>
+<span class="">✓ Sin fail-safe ni error del motor</span>
+<span class="">✓ NO escala al asesor</span>
+</div>
+<div class="meta" style="padding-top:10px">tokens: 1725 entrada · 481 salida · 20418 de caché · 7126 ms</div>
+</div></details><details class="conv"><summary><span class="chip g">✓</span> <span class="gid">G09</span> Nunca manda el Excel <span class="gid" style="margin-left:auto">Tarifario</span></summary><div class="cuerpo">
+<div class="turno">
+<div class="cli">Hola soy Mateo</div>
+<div class="bot">¡Hola Mateo, buen día! 😊 Soy *Maria Camila*, asesora de la *Agencia de Viajes Arranquemos Pues*. Te cuento de nuestro plan a *Tolú &amp; Coveñas* 🌴: salida el *viernes* y regreso el *lunes*, con hotel, transporte y alimentación desde el desayuno del sábado.
+
+Tenemos tres hoteles: *Amor de Dios*, *Piedra Mar* y *Bohíos* 🏨 ¿Para qué mes estás pensando viajar y cuál hotel te llama más? Así te paso los precios exactos 😊</div>
+<div class="meta">camino: respuesta_libre · herramientas: ninguna</div>
+</div>
+<div class="turno">
+<div class="cli">Me mandas el excel con todos los precios de todos los meses?</div>
+<div class="bot">Te mando el tarifario en imagen para que veas todos los precios 📦 Pero primero cuéntame, ¿para cuál mes te interesa? Los precios cambian mes a mes, así te envío exactamente lo que necesitas 😊</div>
+<div class="meta">camino: precios_condiciones · herramientas: ninguna</div>
+</div>
+<div class="checks">
+<span class="">✓ Sin andamiaje de herramientas visible</span>
+<span class="">✓ Sin fail-safe ni error del motor</span>
+<span class="">✓ NO menciona «excel»</span>
+<span class="">✓ NO menciona «Excel»</span>
+<span class="">✓ NO menciona «xlsx»</span>
+<span class="">✓ NO menciona «archivo de precios»</span>
+</div>
+<div class="meta" style="padding-top:10px">tokens: 860 entrada · 245 salida · 13612 de caché · 6028 ms</div>
+</div></details><details class="conv"><summary><span class="chip g">✓</span> <span class="gid">G10</span> Politica de ninos <span class="gid" style="margin-left:auto">Info</span></summary><div class="cuerpo">
+<div class="turno">
+<div class="cli">Hola soy Laura</div>
+<div class="bot">¡Hola Laura, buen día! 😊 Soy *Maria Camila*, asesora de la *Agencia de Viajes Arranquemos Pues*. Te cuento de nuestro plan a *Tolú &amp; Coveñas* 🌴: salida el *viernes* y regreso el *lunes*, con hotel, transporte y alimentación desde el desayuno del sábado.
+
+Tenemos tres opciones de hotel: *Amor de Dios*, *Piedra Mar* y *Bohíos* 🏨. Cuéntame, ¿para qué mes estás pensando viajar y cuál hotel te llama más? Así te paso los precios exactos 😊</div>
+<div class="meta">camino: respuesta_libre · herramientas: ninguna</div>
+</div>
+<div class="turno">
+<div class="cli">Viajo con un nino de 3 anos y un bebe de 1 ano, pagan?</div>
+<div class="bot">¡Claro! Con gusto te cuento cómo funciona con los peques 🤗
+
+👶 Tu bebé de *1 año* solo paga seguro de viaje: *$55.000*.
+
+🧒 Tu niño de *3 años* paga silla más seguro: *$195.000*.
+
+Ahora bien, para pasarte los precios exactos del plan para ustedes necesito saber: *¿para qué mes estás pensando viajar y cuál de los tres hoteles te llama más?* 😊</div>
+<div class="meta">camino: respuesta_libre · herramientas: ninguna</div>
+</div>
+<div class="checks">
+<span class="">✓ Sin andamiaje de herramientas visible</span>
+<span class="">✓ Sin fail-safe ni error del motor</span>
+<span class="">✓ Menciona «195»</span>
+<span class="">✓ Menciona «55»</span>
+<span class="">✓ NO escala al asesor</span>
+</div>
+<div class="meta" style="padding-top:10px">tokens: 871 entrada · 325 salida · 13612 de caché · 5391 ms</div>
+</div></details><details class="conv"><summary><span class="chip g">✓</span> <span class="gid">G11</span> Presenta los tres hoteles <span class="gid" style="margin-left:auto">Info</span></summary><div class="cuerpo">
+<div class="turno">
+<div class="cli">Hola, que hoteles manejan para Covenas?</div>
+<div class="bot">Hola, ¡Buen día! Espero que se encuentre muy bien el día de hoy, mi nombre es *Maria Camila*, asesora de la *Agencia de Viajes Arranquemos Pues*. ¿Con quién tengo el gusto? 😊
+
+Te cuento que manejamos un plan increíble a *Tolú &amp; Coveñas* 🌴: salida el *viernes* y regreso el *lunes*, con hotel, transporte y alimentación desde el desayuno del sábado.
+
+Tenemos tres opciones de hotel: *Amor de Dios*, *Piedra Mar* y *Bohíos* 🏨. Cuéntame, ¿para qué mes estás pensando viajar y cuál hotel te llama más? Así te paso los precios exactos 😊</div>
+<div class="meta">camino: hotel · herramientas: ninguna</div>
+</div>
+<div class="checks">
+<span class="">✓ Sin andamiaje de herramientas visible</span>
+<span class="">✓ Sin fail-safe ni error del motor</span>
+<span class="">✓ Menciona «Amor de Dios»</span>
+<span class="">✓ Menciona «Piedra Mar»</span>
+<span class="">✓ Menciona «Boh»</span>
+</div>
+<div class="meta" style="padding-top:10px">tokens: 338 entrada · 216 salida · 6806 de caché · 3934 ms</div>
+</div></details><details class="conv"><summary><span class="chip g">✓</span> <span class="gid">G12</span> Reserva en Piedra Mar: handoff con nombre y fecha <span class="gid" style="margin-left:auto">Handoff</span></summary><div class="cuerpo">
+<div class="turno">
+<div class="cli">Hola soy Ricardo</div>
+<div class="bot">¡Hola Ricardo, buen día! 😊 Soy *Maria Camila*, asesora de la *Agencia de Viajes Arranquemos Pues*. ¡Un gusto saludarte! 🌴
+
+Te cuento de nuestro plan a *Tolú &amp; Coveñas*: salida el *viernes* y regreso el *lunes*, con hotel, transporte y alimentación desde el desayuno del sábado. Tenemos tres opciones: *Amor de Dios*, *Piedra Mar* y *Bohíos* 🏨
+
+Cuéntame, ¿para qué mes estás pensando viajar y cuál hotel te llama más? Así te paso los precios exactos 😊</div>
+<div class="meta">camino: respuesta_libre · herramientas: ninguna</div>
+</div>
+<div class="turno">
+<div class="cli">Quiero reservar en Piedra Mar para el 18 de diciembre, 4 personas</div>
+<div class="bot">¡Perfecto, Ricardo! 🙌 Déjame consultar los precios exactos para el 18 de diciembre en Piedra Mar.</div>
+<div class="bot">Entiendo, Ricardo. El 18 de diciembre de este año ya pasó 😊 ¿Para cuándo estabas pensando? ¿Diciembre del próximo año o prefieres otra fecha? Cuéntame y te doy las opciones disponibles 🌴</div>
+<div class="meta">camino: precios_condiciones · herramientas: consultar_tarifario</div>
+</div>
+<div class="turno">
+<div class="cli">Ricardo Alvarez, CC 71234567, 4 personas, 18 de diciembre</div>
+<div class="bot">¡Listo, Ricardo! 🙌 Recibí tus datos. Te conecto con uno de nuestros asesores para confirmar disponibilidad y finalizar tu reserva. En un momento te escriben por aquí 💬</div>
+<div class="hand"><b>→ pasa a un asesor</b> · asignado: <code>(por turno)</code><br><b>resumen para el asesor:</b> Ricardo Álvarez, CC 71234567, 4 personas, hotel Piedra Mar, 18 de diciembre</div>
+<div class="meta">camino: escalar_a_asesor · herramientas: escalar_a_asesor</div>
+</div>
+<div class="checks">
+<span class="">✓ Sin andamiaje de herramientas visible</span>
+<span class="">✓ Sin fail-safe ni error del motor</span>
+<span class="">✓ Escala al asesor</span>
+<span class="">✓ Handoff sin asesor fijo (entra al turno)</span>
+<span class="">✓ El resumen trae «Ricardo»</span>
+<span class="">✓ El resumen trae «diciembre»</span>
+<span class="">✓ El resumen trae «Piedra Mar»</span>
+</div>
+<div class="meta" style="padding-top:10px">tokens: 2294 entrada · 579 salida · 27224 de caché · 10547 ms</div>
+</div></details>
+
+<h2><span class="fase">Propuesta</span>Qué haría, en este orden</h2>
+
+<div class="auth">
+<h3>Los arreglos, del que más plata recupera al que menos</h3>
+<ol>
+<li><b>Decirle al bot qué día es hoy.</b> Inyectar la fecha de Colombia en el
+prompt, igual que ya hace el bot de mascotas, y que la herramienta <b>resuelva
+el año</b> en vez de creerle al modelo: si le llega un 18 de diciembre sin año
+útil, es el próximo 18 de diciembre que exista en el tarifario. Con las dos
+cosas, el hallazgo 1 se cierra por partida doble. <i>(Hallazgo 1)</i></li>
+<li><b>Aceptar <code>claves</code> como texto.</b> Si llega un texto donde se
+esperaba una lista, interpretarlo en vez de recorrerlo letra por letra; y que
+las claves inexistentes queden en el log, porque hoy fallan en silencio.
+<i>(Hallazgo 2)</i></li>
+<li><b>Que la nota de «lunes a jueves desde $350.000» no aparezca cuando el mes
+consultado no tiene salidas</b>, y decir explícitamente que ese mes no tiene
+nada publicado en ese hotel. <i>(Hallazgo 3)</i></li>
+<li><b>Que una fecha vencida devuelva igual las salidas que quedan</b> en ese mes
+y en el siguiente, en vez de cortar. <i>(Hallazgo 4)</i></li>
+<li><b>Ordenar los meses por cercanía real</b>, no de enero a diciembre.
+<i>(Hallazgo 5)</i></li>
+<li><b>Partir el saludo en dos</b>: presentarse y preguntar el nombre; el mes y
+el hotel en el mensaje siguiente. <i>(Hallazgo 6)</i></li>
+<li><b>Volver a correr estos 12 guiones</b> y agregar los casos que hoy no
+existen como test: fecha futura con día exacto, y mes sin salidas.</li>
+</ol>
+</div>
+
+<p style="color:var(--muted);font-size:0.86rem;margin-top:26px">
+Corrida del 19 de agosto de 2026 · bot 12 · task-def 54 · imagen
+<code>:auth2h</code> · 24 turnos · 27,267 tokens de entrada,
+5,319 de salida, 245,016 leídos de caché.</p>
+</main></body></html>
