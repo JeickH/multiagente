@@ -4128,3 +4128,73 @@ responderle a un contacto es de la cuenta dueña del WhatsApp.
 
 Suite: **738 passed, 51 skipped, 1 xfailed** (`TZ=UTC`, worktree limpio).
 Sin migración: no se agregó ni una columna, todo sale de tablas que ya existían.
+
+---
+
+## #376 — Los chats entregados caen en Camila, Julián y Alexandra (2026-08-20)
+
+**Pedido del CEO**: que en la bandeja de Mensajes no aparezca más `asesor_1`,
+sino el nombre del asesor que tiene el chat.
+
+### El diagnóstico: la rotación estaba bien, pero nadie la llamaba
+
+`teams.asesores_rotacion` ya tenía `['Camila','Julián','Alexandra']` en RDS, y
+`test_rotacion_asesores.py` pasaba en verde. Aun así los seis chats reales del
+19-ago cayeron todos en `asesor_1`, y `handoff_turno` seguía en **0**: el reparto
+nunca se había ejecutado ni una vez.
+
+La causa es un campo que **funciona como está diseñado**: el bot traía
+`assignee: "asesor_1"` en su `llm_config`, y un `assignee` explícito **gana**
+sobre el reparto por turnos — para eso existe, para rutas que deban caer siempre
+en la misma persona. Puesto en el bot entero, mandaba todo a la misma casilla.
+Se confirmó leyendo `bot_llm_decisions.escalated_to` de esos seis: `asesor_1`
+en los seis, o sea que el motor ya llevaba el destino resuelto desde el config.
+
+Ya estaba corregido en `app/data/bot_viajes.py` (el `LLM_CONFIG` que se despacha
+no trae `assignee`, con el comentario que explica por qué). Lo que faltaba era
+la prueba de que la cadena completa funciona, que es lo que se agregó.
+
+### Qué se agregó
+
+`tests/test_handoff_reparto.py` (6): prueba la cadena entera —
+`bot_runner.run_turn` → acción `handoff` → `conversation.assigned_to`— y no la
+rotación aislada, que era justamente lo que pasaba en verde mientras producción
+fallaba. Cubre que el chat ya no cae en `asesor_1`, que cuatro chats seguidos se
+reparten `Camila → Julián → Alexandra → Camila`, que un `assignee` explícito
+sigue mandando **sin gastar el turno de los demás**, y que el `LLM_CONFIG` que se
+despacha no trae `assignee`.
+
+Verificado contra la imagen desplegada (rev 56): llama a `siguiente_asesor`, el
+bot no fija `assignee`, y los próximos cuatro chats entregados irían a
+`Camila → Julián → Alexandra → Camila`. **Sin deploy**: no cambió código de
+runtime, la corrección ya estaba desplegada.
+
+### Decisión del CEO sobre los chats viejos
+
+Las 8 conversaciones anteriores (clientes reales, teléfonos `3XXXXXXXXX`) siguen
+guardadas con `asesor_1` y **se dejan así**: nadie registró quién las atendió, y
+repartirlas por turnos le hubiera puesto el nombre de una persona a un chat que
+quizá no atendió. Van a mostrar `asesor_1` hasta que se cierren o un mensaje
+nuevo las reasigne.
+
+### Queda abierto
+
+- **`bot_engine.py:279` tiene el mismo problema latente para los bots de
+  flujo**: `cfg.get("assignee", "asesor_1")` mete el handle por defecto, que
+  después le gana al reparto en `bot_runner`. Hoy no afecta a Arranquemos Pues
+  (su bot es `engine='llm'`), pero el primer bot de flujo que haga handoff va a
+  repetir la historia. No se tocó porque cambia el comportamiento de otros
+  tenants y no era el encargo.
+- El paso visual 14 de `seed_bot_covenas.py` todavía dice `assignee: asesor_1`.
+  No se ejecuta (el bot es LLM, los pasos son solo el dibujo), pero se lee mal
+  en el editor de bots.
+
+### Nota de coordinación
+
+`test_handoff_reparto.py` terminó dentro del commit `0650974` ("consultar el
+tarifario aunque la fecha ya haya pasado"), de otra sesión que hizo `git add` de
+todo el árbol mientras este archivo estaba a medio escribir. El contenido quedó
+íntegro y ya estaba pusheado, así que **no se reescribió la historia** — con otra
+sesión commiteando encima, un `rebase` hace más daño que el commit desordenado.
+Es la tercera vez que pasa lo mismo; sigue valiendo la regla: entre sesiones
+paralelas, archivos distintos y `git status` antes de commitear.
