@@ -62,7 +62,14 @@ export default function Sidebar() {
   const items = [...menu, ...internos];
 
   return (
-    <aside className="bg-gloma-brown text-white w-24 flex flex-col justify-between items-center py-6 min-h-screen font-body">
+    // `sticky top-0 h-screen` y NO `min-h-screen`: como flex item, un aside con
+    // `min-h-screen` se estira a la altura del contenedor, y el contenedor crece
+    // con el contenido — con 100 conversaciones el menú medía 100
+    // conversaciones de alto. Con la altura clavada al viewport y `sticky`, se
+    // queda quieto mientras la página baja.
+    // `overflow-y-auto`: el menú llega a 9 ítems y en una ventana bajita no
+    // cabe; sin esto, "Salir" queda fuera de la pantalla y no hay cómo llegarle.
+    <aside className="bg-gloma-brown text-white w-24 shrink-0 flex flex-col justify-between items-center py-6 sticky top-0 h-screen overflow-y-auto font-body">
       {/* Logo Gloma — mismo que la landing, sin texto acompañante */}
       <div className="flex flex-col items-center mb-8">
         <Image

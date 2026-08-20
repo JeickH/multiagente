@@ -1,9 +1,9 @@
 import os
 import re
 from datetime import datetime
-from typing import Optional, Dict, List
+from typing import Optional, Dict, List, Tuple
 from sqlalchemy.orm import Session
-from sqlalchemy import desc
+from sqlalchemy import desc, func, or_
 from passlib.context import CryptContext
 
 from . import models, schemas
@@ -382,13 +382,59 @@ def get_or_create_conversation(
     return conv
 
 
-def list_conversations(db: Session, team_id: int) -> List[models.Conversation]:
-    return (
-        db.query(models.Conversation)
-        .filter(models.Conversation.team_id == team_id)
-        .order_by(desc(models.Conversation.last_message_at))
+#: Estados válidos de una conversación, para validar el filtro que llega por URL.
+ESTADOS_CONVERSACION = ("open", "pending", "closed")
+
+#: Techo de conversaciones por página. Más que esto vuelve a ser el problema que
+#: la paginación resuelve, solo que del lado del navegador.
+MAX_CONVERSACIONES_POR_PAGINA = 200
+
+
+def list_conversations(
+    db: Session,
+    team_id: int,
+    *,
+    estado: Optional[str] = None,
+    busqueda: Optional[str] = None,
+    limite: int = MAX_CONVERSACIONES_POR_PAGINA,
+    offset: int = 0,
+) -> Tuple[List[models.Conversation], int]:
+    """Una página de conversaciones del team, y cuántas hay en total.
+
+    Los filtros se aplican EN SQL, antes de paginar, y por eso la paginación
+    funciona igual con filtros puestos o sin ellos. Al revés no: filtrar en el
+    navegador sobre una página ya recortada haría que "20 por página" filtrara
+    dentro de esas 20, y el usuario vería una lista vacía teniendo datos que sí
+    existen tres páginas más abajo.
+
+    El `total` es el del filtro, no el de la cuenta: es lo que hace que el
+    contador diga "1-20 de 87 pendientes" y no "de 900".
+    """
+    consulta = db.query(models.Conversation).filter(
+        models.Conversation.team_id == team_id
+    )
+    if estado:
+        consulta = consulta.filter(models.Conversation.status == estado)
+    if busqueda and busqueda.strip():
+        aguja = f"%{busqueda.strip().lower()}%"
+        # El número entra por `contact_wa_id`; el nombre puede ser NULL, y
+        # `lower(NULL) LIKE ...` es NULL, así que sin el OR una conversación sin
+        # nombre nunca aparecería al buscar por su número.
+        consulta = consulta.filter(or_(
+            func.lower(models.Conversation.contact_name).like(aguja),
+            func.lower(models.Conversation.contact_wa_id).like(aguja),
+        ))
+
+    total = consulta.with_entities(
+        func.count(models.Conversation.id)
+    ).scalar() or 0
+    convs = (
+        consulta.order_by(desc(models.Conversation.last_message_at))
+        .limit(limite)
+        .offset(offset)
         .all()
     )
+    return convs, total
 
 
 def get_conversation(db: Session, team_id: int, conversation_id: int) -> Optional[models.Conversation]:
@@ -430,12 +476,41 @@ def add_message(
     return msg
 
 
-def last_message_preview(conv: models.Conversation) -> Optional[str]:
-    if not conv.messages:
-        return None
-    last = conv.messages[-1]
-    text = last.content or ""
-    return text[:80]
+def previews_de_conversaciones(
+    db: Session, conv_ids: List[int]
+) -> Dict[int, str]:
+    """El último mensaje de cada conversación, en UNA consulta.
+
+    Reemplaza a `last_message_preview(conv)`, que leía `conv.messages[-1]` con
+    la relación en modo lazy: una consulta por conversación, y cada una traía
+    TODOS sus mensajes para quedarse solo con el último. Con 600 conversaciones
+    eran 602 consultas por refresco de la bandeja — y la bandeja se refresca
+    sola cada 8 segundos, así que era eso multiplicado por cada pestaña abierta.
+
+    `row_number` sobre la partición se evalúa antes del `WHERE rn = 1` de
+    afuera, así que la base solo devuelve un renglón por conversación. Funciona
+    igual en Postgres y en SQLite (donde corre la suite), a diferencia de
+    `DISTINCT ON`.
+    """
+    if not conv_ids:
+        return {}
+    sub = (
+        db.query(
+            models.Message.conversation_id.label("conv_id"),
+            models.Message.content.label("content"),
+            func.row_number().over(
+                partition_by=models.Message.conversation_id,
+                order_by=(
+                    models.Message.created_at.desc(),
+                    models.Message.id.desc(),
+                ),
+            ).label("rn"),
+        )
+        .filter(models.Message.conversation_id.in_(conv_ids))
+        .subquery()
+    )
+    filas = db.query(sub.c.conv_id, sub.c.content).filter(sub.c.rn == 1).all()
+    return {conv_id: (texto or "")[:80] for conv_id, texto in filas}
 
 
 # ===================== Sprint 8/9: Bots =====================

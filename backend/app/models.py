@@ -275,6 +275,15 @@ class Message(Base):
     error_detail = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
 
+    __table_args__ = (
+        # Casi todo lo que se le pregunta a esta tabla es "los mensajes de esta
+        # conversación, por fecha": la transcripción de un chat, el adelanto de
+        # la bandeja, el conteo de la ventana de supervisión. `conversation_id`
+        # no tenía índice y el de `created_at` suelto no sirve para eso, así que
+        # cada una de esas consultas barría la tabla entera.
+        Index("ix_messages_conversation_created", "conversation_id", "created_at"),
+    )
+
     conversation = relationship("Conversation", back_populates="messages")
     sent_by_user = relationship("User")
 

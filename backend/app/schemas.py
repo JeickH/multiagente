@@ -212,6 +212,20 @@ class ConversationOut(BaseModel):
         from_attributes = True
 
 
+class ConversationPageOut(BaseModel):
+    """Una página de la bandeja, con el total del filtro aplicado.
+
+    `total` es cuántas conversaciones matchean el filtro —no cuántas trae esta
+    página— para que el contador pueda decir "1-20 de 87 pendientes" y para
+    saber si hay página siguiente sin tener que pedirla.
+    """
+
+    conversaciones: List[ConversationOut]
+    total: int
+    pagina: int = 1
+    por_pagina: int = 0
+
+
 class ConversationWithMessages(BaseModel):
     id: int
     contact_wa_id: str
