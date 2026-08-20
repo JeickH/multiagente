@@ -40,6 +40,12 @@ def authenticate_user(db: Session, correo: str, password: str):
         return False
     if not pwd_context.verify(password, user.hashed_password):
         return False
+    # Una cuenta desactivada no entra, aunque la clave sea correcta. El error
+    # que ve el cliente es el mismo de siempre ("credenciales incorrectas"):
+    # decirle "esa cuenta está desactivada" le confirma a un desconocido que el
+    # correo existe (regla de seguridad #6).
+    if not user.activo:
+        return False
     return user
 
 

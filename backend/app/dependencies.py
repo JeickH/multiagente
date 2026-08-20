@@ -42,6 +42,11 @@ def get_current_user(
     user = db.query(models.User).filter(models.User.correo == correo).first()
     if user is None:
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
+    # Se revisa en CADA request y no solo al entrar: el token dura 2 horas, así
+    # que sin esto una cuenta desactivada seguiría trabajando hasta que venza.
+    # Es lo que convierte "desactivar" en algo inmediato.
+    if not user.activo:
+        raise HTTPException(status_code=401, detail="Sesión no válida")
     return user
 
 

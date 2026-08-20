@@ -26,6 +26,12 @@ class User(Base):
     documento = Column(String, unique=True, index=True, nullable=False)
     correo = Column(String, unique=True, index=True, nullable=False)
     hashed_password = Column(String, nullable=False)
+    # Cuenta habilitada. En `False` no puede entrar ni seguir usando un token
+    # ya emitido (lo corta `dependencies.get_current_user`), que es lo que hace
+    # falta para que "desactivar" signifique algo con tokens de 2 horas.
+    # No se borra el usuario: se apaga. Sus mensajes y su historial siguen
+    # colgando de él, y volver a prenderla es un UPDATE.
+    activo = Column(Boolean, nullable=False, default=True, server_default="true")
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     # Sprint 15: estado de tutoriales interactivos por módulo.
     # Llaves esperadas: mi_plan, mensajes, bots, campanas

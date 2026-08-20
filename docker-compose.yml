@@ -28,7 +28,11 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-multiagente_pass}
       SECRET_KEY: ${SECRET_KEY:-cambia-este-secreto-en-produccion}
       ALGORITHM: HS256
-      ACCESS_TOKEN_EXPIRE_MINUTES: 30
+      # 2 horas (decisión del CEO, 19-ago-2026). Estaban en 30 minutos, y con
+      # tres asesores atendiendo todo el día eso era volver a entrar cada media
+      # hora. Lo que hace tolerable subirlo: una cuenta desactivada deja de
+      # servir en el request siguiente, no cuando vence el token.
+      ACCESS_TOKEN_EXPIRE_MINUTES: 120
       # Sprint 7: clave Fernet para cifrar credenciales Meta per-tenant.
       # Se lee del .env de la raíz. El backend falla al arranque si falta.
       APP_ENCRYPTION_KEY: ${APP_ENCRYPTION_KEY:?APP_ENCRYPTION_KEY requerida. Genera con python backend/scripts/gen_encryption_key.py}
