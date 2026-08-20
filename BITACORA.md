@@ -3973,3 +3973,42 @@ Anclada a `/demo_viajes/`.
   regenerarlo, o el bot se queda sin fechas que ofrecer.
 - **Cupos**: el bot sabe qué fechas existen, no si quedan lugares. Eso sigue
   siendo del asesor.
+
+### Cierre del lote (19-ago-2026, 22:50)
+
+| Dónde | Qué quedó |
+|---|---|
+| Commits | `8e3e58f` (lote) + `f16c3ba` (fix de zona horaria) |
+| CI | verde en `f16c3ba` |
+| ECR | `multiagente-backend:viajes3hoteles-tz` |
+| ECS | task-def rev **53**, servicio estable |
+| RDS | bot 12 con 13 medios y `tarifario=covenas`; rotación Camila → Julián → Alexandra; asesor `arranquemospues.ventas@outlook.com` en el team 5 |
+| Local | mismo estado (bot 26, team 9) — paridad conservada |
+| Amplify | job 96, los 13 medios sirven 200 y los 3 retirados 404 |
+
+**Sin migración de esquema**: no se tocó `models.py`. `nota_interna` es un valor
+más de `messages.message_type`, que ya existía.
+
+Prueba punta a punta contra el bot 12 en producción: pregunta mes y hotel,
+llama `consultar_tarifario`, manda `tarifario_piedramar1.jpeg` para diciembre
+(el flyer correcto) y escala con `assignee=''` y
+`resumen='Diana López, CC 43567890, 3 personas, 18 de diciembre, hotel Piedra Mar'`.
+
+### El CI se cayó y no era por el cambio
+
+El push de `8e3e58f` dejó main en rojo por un test **de mascotas** que comparaba
+`date.today()` contra la fecha que el bot escribe en el prompt. El runner corre
+en UTC y el push cayó 22:26 hora de Colombia: para el runner ya era el día 20,
+para el bot era el 19 — y el bot tenía razón. El test venía siendo frágil desde
+antes; fallaba en cualquier corrida entre las 7 pm y la medianoche.
+
+Lo grave era el hermano: `tarifario.py` acababa de nacer con el mismo
+`date.today()`, y ahí sí costaba plata — ECS también corre en UTC, así que a
+partir de las 7 pm el bot habría dado por vencida una salida que todavía se
+podía vender esa noche. Ambos usan ahora la fecha de Colombia
+(`tarifario.hoy_colombia()`), con un test que lo fija y otro que comprueba que
+la salida de **hoy** sigue ofreciéndose (el corte es `< hoy`, no `<= hoy`).
+
+Regla para el futuro: en este proyecto, **toda fecha de negocio es hora de
+Colombia**; `date.today()` en el backend es un bug esperando el turno de la
+noche. La suite se corre con `TZ=UTC` para que el CI no sea el que se entere.
