@@ -4599,3 +4599,66 @@ job 114 de Amplify corriendo. Se esperó a que 114 terminara antes de mergear, y
 se stagearon **solo** los archivos propios. Sus cambios sin commitear quedaron
 intactos. **Regla que conviene mantener:** en este repo el árbol de trabajo es
 compartido — `git add -A` es peligroso, hay que stagear por ruta.
+
+---
+
+## 2026-08-20 — Fotos: el bot avisa que no las lee, y la bandeja muestra las suyas
+
+**Pedido del CEO,** en el mismo hilo de las notas de voz: que el bot de
+Arranquemos Pues avise que **no puede leer el contenido de las imágenes**, y la
+pregunta de si las imágenes se pueden ver también en el chat de la app.
+
+### El aviso del bot va en el contexto de ESE bot, no en el prompt de todos
+
+La regla de las notas de voz es global (`_system_prompt`) porque **ningún** bot
+oye. La de las imágenes **no puede serlo**: el bot de mascotas vive de las fotos
+de las mascotas perdidas. Le llegan por otro camino —`_bloque_mascotas`, con el
+análisis ya hecho, no por el marcador del webhook—, así que una regla global
+diciéndole "no puedes ver imágenes" sería mentirle sobre lo que sí hace. La
+regla quedó en `bot_contexts/demo_viajes.md` y hay un test que comprueba que el
+marcador **no** aparece en el prompt del bot de mascotas.
+
+Las fotos entrantes ahora entran como `[imagen]` (antes `[image]`), y en Twilio
+se deducen del MIME del adjunto igual que los audios.
+
+### Dos correcciones que salieron de leer las respuestas
+
+1. Con la primera versión, a **"les mando el comprobante"** —texto puro, sin
+   adjunto— el bot ya contestaba "por ahora no puedo ver el contenido de las
+   imágenes": se adelantaba a un archivo que nadie había mandado. La regla ahora
+   dice explícitamente que el aviso es para cuando el marcador **llega**.
+2. Un **comprobante de pago** no se contesta con "escríbeme qué necesitas": lo
+   tiene que mirar una persona. Si el cliente dice que la foto es un soporte, el
+   bot agradece y usa `escalar_a_asesor`. *(Criterio agregado por el equipo, no
+   pedido explícitamente: es coherente con que reserva y pagos ya iban al asesor
+   humano. Si el CEO prefiere otra cosa, es una línea del contexto.)*
+
+### Las imágenes en el chat de la app
+
+**Las que manda el bot ya se ven** — y no hizo falta tocar el backend. Cuando el
+bot envía material, `bot_runner._send_media` guarda `caption\nURL` en
+`messages.content` y la URL es pública (es la misma que recibió el cliente por
+WhatsApp). La bandeja ahora la renderiza como imagen o video, con un enlace
+"abrir original".
+
+**Las que manda el cliente no se pueden mostrar todavía**, y no es un problema
+de frontend: de esas no guardamos nada. Meta entrega un **id de media**, no una
+URL; hay que cambiarlo por una URL temporal (~5 min) llamando a la Graph API con
+el token de la cuenta, descargar el archivo y guardarlo en un bucket antes de
+que expire. Para no dejar un `[imagen]` suelto que parece un error, la burbuja
+ahora dice "📎 imagen — el archivo queda en WhatsApp, todavía no se ve aquí".
+
+Lo que costaría hacerlo (queda propuesto, **no** hecho):
+- Columna `messages.media_url` + migración idempotente en local y en RDS.
+- Servicio de descarga en el webhook: `GET /{media_id}` → URL temporal → bajar
+  el archivo → subir al bucket. Hay que hacerlo **dentro del webhook**, antes de
+  que la URL expire.
+- Bucket S3 privado + endpoint autenticado que sirva el archivo, igual que
+  `/mascotas/foto/{codigo}/{id}`, que ya resolvió este mismo problema.
+- **Son fotos de clientes**: el bucket va privado y el endpoint pide sesión.
+
+### Tests
+
+812 gratis (7 nuevos) y 13 guiones contra Bedrock corridos dos veces sin fallas,
+incluido el control de que el bot **sigue** escalando un tema ajeno — el mismo
+que se rompió cuando la regla de audios quedó mal ubicada.

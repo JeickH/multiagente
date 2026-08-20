@@ -123,6 +123,67 @@ function initials(name: string | null, fallback: string): string {
   return src.slice(0, 2).toUpperCase();
 }
 
+/**
+ * Lo que el bot manda como imagen o video se guarda en `content` con el formato
+ * `caption\nURL` (ver `bot_runner._send_media`), así que el archivo se puede
+ * mostrar acá sin tocar el backend: la URL ya es pública, es la misma que se le
+ * envió al cliente por WhatsApp.
+ *
+ * Lo que manda el *cliente* es otra historia: de eso solo guardamos el marcador
+ * (`[imagen]`), porque Meta entrega un id que hay que cambiar por una URL
+ * temporal y descargar antes de que expire. Mientras no exista eso, la burbuja
+ * dice con todas las letras que el archivo está en WhatsApp y no acá — que es
+ * mejor que un "[imagen]" suelto que parece un error.
+ */
+const URL_EN_TEXTO = /https?:\/\/\S+/;
+const TIPOS_VISIBLES = ['image', 'video', 'imagen'];
+
+function Contenido({ mensaje }: { mensaje: Message }) {
+  const tipo = (mensaje.message_type || '').toLowerCase();
+  const encontrada = mensaje.content.match(URL_EN_TEXTO);
+  const url = encontrada ? encontrada[0] : null;
+  const caption = url ? mensaje.content.replace(url, '').trim() : mensaje.content;
+
+  if (url && TIPOS_VISIBLES.includes(tipo) && mensaje.direction === 'outbound') {
+    return (
+      <div className="space-y-1.5">
+        {caption && <div className="text-sm whitespace-pre-wrap break-words">{caption}</div>}
+        {tipo === 'video' ? (
+          <video src={url} controls className="rounded-lg max-h-72 w-full bg-black/10" />
+        ) : (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={url}
+            alt={caption || 'Imagen enviada al cliente'}
+            loading="lazy"
+            className="rounded-lg max-h-72 object-contain bg-white/10"
+          />
+        )}
+        <a
+          href={url}
+          target="_blank"
+          rel="noreferrer"
+          className="block text-[10px] underline opacity-70 hover:opacity-100"
+        >
+          abrir original
+        </a>
+      </div>
+    );
+  }
+
+  // Adjunto del cliente: no lo tenemos guardado, solo sabemos que llegó.
+  if (mensaje.direction === 'inbound' && !url && /^\[.+\]$/.test(mensaje.content.trim())) {
+    const etiqueta = mensaje.content.trim().slice(1, -1);
+    return (
+      <div className="text-sm italic text-gray-500">
+        📎 {etiqueta} — el archivo queda en WhatsApp, todavía no se ve aquí
+      </div>
+    );
+  }
+
+  return <div className="text-sm whitespace-pre-wrap break-words">{mensaje.content}</div>;
+}
+
 export default function Mensajes() {
   const [me, setMe] = useState<TeamMe | null>(null);
   const [meError, setMeError] = useState<string | null>(null);
@@ -520,7 +581,7 @@ export default function Mensajes() {
                               : 'bg-white text-gray-800 rounded-bl-sm border border-gray-100'
                           }`}
                         >
-                          <div className="text-sm whitespace-pre-wrap break-words">{m.content}</div>
+                          <Contenido mensaje={m} />
                           <div
                             className={`text-[10px] mt-1 ${
                               m.direction === 'outbound' ? 'text-gloma-rose-soft' : 'text-gray-400'

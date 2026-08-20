@@ -94,8 +94,12 @@ class NormalizedInbound:
 # de pedir que le escriban cuando ve este marcador (`llm_engine._system_prompt`).
 MARCADOR_NOTA_DE_VOZ = "[nota de voz]"
 
+# Igual para las fotos y capturas: tampoco sabemos leerlas todavía.
+MARCADOR_IMAGEN = "[imagen]"
+
 # Tipos que WhatsApp usa para una nota de voz o un audio adjunto.
 _TIPOS_AUDIO = frozenset({"audio", "voice", "ptt"})
+_TIPOS_IMAGEN = frozenset({"image", "imagen", "photo"})
 
 
 def es_audio(message_type: Optional[str]) -> bool:
@@ -103,14 +107,21 @@ def es_audio(message_type: Optional[str]) -> bool:
     return (message_type or "").strip().lower() in _TIPOS_AUDIO
 
 
+def es_imagen(message_type: Optional[str]) -> bool:
+    """¿Este mensaje entrante es una foto o una captura de pantalla?"""
+    return (message_type or "").strip().lower() in _TIPOS_IMAGEN
+
+
 def marcador_inbound(message_type: Optional[str]) -> str:
     """Texto que representa un mensaje entrante que no trae texto.
 
-    Los audios llevan un marcador explícito porque el bot tiene que reaccionar
-    a ellos; el resto conserva el `[tipo]` histórico.
+    Audios e imágenes llevan un marcador explícito porque el bot tiene que
+    reaccionar a ellos; el resto conserva el `[tipo]` histórico.
     """
     if es_audio(message_type):
         return MARCADOR_NOTA_DE_VOZ
+    if es_imagen(message_type):
+        return MARCADOR_IMAGEN
     return f"[{message_type or 'desconocido'}]"
 
 

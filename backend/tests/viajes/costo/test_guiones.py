@@ -21,7 +21,7 @@ import re
 import pytest
 
 from app.services import llm_engine
-from app.services.messaging.base import MARCADOR_NOTA_DE_VOZ
+from app.services.messaging.base import MARCADOR_IMAGEN, MARCADOR_NOTA_DE_VOZ
 
 # Las únicas cifras de dinero que el contexto autoriza: los opcionales del
 # itinerario y el 30% de la reserva. Los precios viven en las imágenes del
@@ -273,6 +273,44 @@ class TestNotasDeVoz:
         # El guardarraíl de cifras del fixture ya vigila los precios; acá basta
         # con que no arranque a mandar material como si le hubieran pedido algo.
         assert not medios(*s), f"mandó material sin saber qué le pidieron: {medios(*s)}"
+
+
+class TestFotos:
+    """Tampoco ve imágenes. La diferencia con las notas de voz: un soporte de
+    pago sí tiene destino, y es un asesor humano."""
+
+    @pytest.mark.parametrize("guion", [
+        [MARCADOR_IMAGEN],
+        ["Hola, soy Andrés", MARCADOR_IMAGEN],
+        ["Hola, soy Sara", "[image]"],   # el marcador de los chats viejos
+    ])
+    def test_avisa_que_no_puede_leer_la_imagen(self, bot, modelo_real, guion):
+        modelo_real["actual"] = "C13 foto"
+        s = conversar(bot, guion)
+        texto = dicho(*s).lower()
+        assert "imágenes" in texto or "imagen" in texto or "foto" in texto
+        assert "escrib" in texto or "cuentas" in texto, (
+            f"no le pidió que le escribiera: {texto!r}"
+        )
+
+    def test_anunciar_una_foto_no_dispara_el_aviso(self, bot, modelo_real):
+        """El aviso es para cuando la foto LLEGA. Con la primera versión de la
+        regla, a "les mando el comprobante" —texto puro— el bot ya contestaba
+        "no puedo ver imágenes", que es contestar algo que nadie mandó."""
+        modelo_real["actual"] = "C13 foto"
+        s = conversar(bot, ["Hola, soy Luis", "ya te mando una foto"])
+        ultimo = " ".join(
+            a["payload"].get("text", "")
+            for a in s[-1]["actions"] if a["type"] == "say"
+        ).lower()
+        assert "no puedo ver" not in ultimo, f"se adelantó al adjunto: {ultimo!r}"
+
+    def test_un_comprobante_de_pago_va_a_un_asesor(self, bot, modelo_real):
+        """Un soporte de consignación no se contesta con "escríbemelo": lo
+        tiene que revisar una persona."""
+        modelo_real["actual"] = "C13 foto"
+        s = conversar(bot, ["Hola, soy Luis", "les mando el comprobante", MARCADOR_IMAGEN])
+        assert "escalar_a_asesor" in tools(*s)
 
 
 class TestSabeCuandoSoltar:
