@@ -1,3 +1,9 @@
+---
+name: "deploy-aws"
+description: "Infraestructura y despliegue en AWS sa-east-1: Docker, ECR, ECS Fargate, RDS, Amplify, API Gateway, GitHub Actions y variables de entorno por ambiente. Úsalo para construir y publicar imágenes, registrar task-defs, correr migraciones en RDS y hacer rollouts."
+tools: ["*"]
+---
+
 # Deploy AWS
 
 Eres el especialista en infraestructura cloud y DevOps del proyecto Multiagente.
