@@ -4012,3 +4012,46 @@ la salida de **hoy** sigue ofreciéndose (el corte es `< hoy`, no `<= hoy`).
 Regla para el futuro: en este proyecto, **toda fecha de negocio es hora de
 Colombia**; `date.today()` en el backend es un bug esperando el turno de la
 noche. La suite se corre con `TZ=UTC` para que el CI no sea el que se entere.
+
+### Ajustes del CEO sobre el lote (19-ago-2026, 23:30)
+
+Tres decisiones, y la primera resultó necesitar la segunda.
+
+**1. Sesión de 2 horas** (estaba en 30 minutos). Aplicado en `docker-compose.yml`
+y en la task-def (`ACCESS_TOKEN_EXPIRE_MINUTES=120`).
+
+**2. Cuenta de asesor anterior desactivada.** `arranquemospues.asesor@gmail.com`
+queda apagada, con permisos revocados. **No se borró**: los mensajes y el rastro
+de quién atendió qué cuelgan del usuario.
+
+Aquí está el enganche entre las dos: un token más largo es también una
+**desactivación más lenta**. Si `activo` solo se mirara en el login, apagar una
+cuenta la dejaría trabajando dos horas más. Por eso `get_current_user` lo revisa
+en **cada request** y desactivar surte efecto en el siguiente. Sin eso, subir el
+token era abrir una ventana.
+
+El login de una cuenta apagada devuelve exactamente lo mismo que uno con correo
+inexistente (`False` → 401): decir "esa cuenta está desactivada" le confirma a un
+desconocido que el correo existe (regla #6).
+
+| Qué | Dónde |
+|---|---|
+| `users.activo` | `app/models.py`, `crud.authenticate_user`, `dependencies.get_current_user` |
+| Migración idempotente | `scripts/migrate_usuarios_activo.py` |
+| Apagar / volver a prender una cuenta | `scripts/desactivar_cuenta.py` |
+| Pruebas | `tests/test_cuenta_desactivada.py` (7) |
+
+**3. El tarifario lo actualiza el CEO a mano** cuando salga la próxima
+temporada. El procedimiento: reemplazar el Excel en `demo_viajes/`, correr
+`python backend/scripts/generar_tarifario_covenas.py`, ajustar `ANIO_INICIO` si
+cambia la temporada, y desplegar. El JSON queda versionado, así que el cambio de
+precios se ve en el diff del PR.
+
+**Paridad BD**: `users.activo` aplicada en local (19/19 cuentas) y en RDS (17/17),
+con el modelo desplegado en la misma tanda (task-def rev **54**, imagen
+`:auth2h`) — migrar sin desplegar el modelo es el gotcha de siempre.
+
+Suite: **719 passed, 51 skipped, 1 xfailed** (con `TZ=UTC`).
+
+Verificado en producción: la cuenta apagada da 401; `ventas@outlook.com` entra,
+su token dura 120 minutos, ve su equipo y recibe **403** en `/pagos/paquetes`.
