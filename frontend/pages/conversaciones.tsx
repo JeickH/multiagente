@@ -6,6 +6,7 @@ import Paginacion, {
   leerPorPagina,
 } from '../components/Paginacion';
 import { authedFetch } from '../lib/api';
+import { fechaHoraCorta } from '../lib/fechas';
 
 /**
  * Conversaciones — ventana de supervisión de la cuenta administradora.
@@ -67,23 +68,9 @@ type Detalle = {
   completo: boolean;
 };
 
-/** Zona del equipo que opera el panel. Colombia no tiene horario de verano. */
-const ZONA = 'America/Bogota';
-
+/** Hora de Colombia. La conversión vive en `lib/fechas.ts` (la usa toda la app). */
 function fechaCorta(iso: string): string {
-  // El backend guarda en UTC pero serializa sin marcar la zona
-  // ("2026-08-13T22:07:11"), así que el navegador lo tomaría como hora local y
-  // las conversaciones aparecerían 5 horas adelantadas.
-  const texto = /[Zz]$|[+-]\d{2}:?\d{2}$/.test(iso) ? iso : `${iso}Z`;
-  const d = new Date(texto);
-  if (Number.isNaN(d.getTime())) return iso;
-  return d.toLocaleString('es-CO', {
-    timeZone: ZONA,
-    day: '2-digit',
-    month: 'short',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
+  return fechaHoraCorta(iso, iso);
 }
 
 /** Quién habló, y cómo se pinta cada quién en la transcripción. */

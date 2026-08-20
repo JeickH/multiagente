@@ -59,6 +59,7 @@ from typing import Any, Dict, List, Optional
 
 from . import shopify_client, tarifario
 from .crypto import encrypt_secret
+from .messaging.base import MARCADOR_NOTA_DE_VOZ
 
 logger = logging.getLogger(__name__)
 
@@ -437,6 +438,22 @@ def _system_prompt(
         "salvo que te lo pregunten directamente.\n"
         "- Si el cliente escribe algo fuera de tu alcance dos veces seguidas, "
         "usa `escalar_a_asesor`."
+    )
+    # Va en su propia sección y no como un bullet más de las reglas operativas:
+    # metido ahí dentro le robaba atención a la regla de escalar, y el bot pasó
+    # de escalar 4 de 4 veces un tema ajeno (visas, seguros) a 1 de 4. Medido
+    # con `tests/viajes/costo/test_guiones.py`.
+    parts.append(
+        "## Notas de voz\n"
+        "Todavía **no puedes escuchar audios**. Cuando el turno del cliente sea "
+        f"`{MARCADOR_NOTA_DE_VOZ}` (o `[audio]` en chats viejos), es una persona "
+        "que te habló por micrófono: discúlpate con amabilidad y pídele que te "
+        "lo escriba, sin sonar a error de sistema. Por ejemplo: «¡Hola! 😊 De "
+        "momento no puedo escuchar las notas de voz. ¿Me lo escribes por aquí y "
+        "te ayudo de una?». Nunca adivines qué decía el audio ni sigas como si "
+        "no hubiera llegado nada. Se arregla con que te escriba, así que la "
+        "conversación sigue contigo; si insiste con otra nota de voz, vuelve a "
+        "pedírselo con paciencia y otras palabras."
     )
     return "\n\n".join(p for p in parts if p)
 

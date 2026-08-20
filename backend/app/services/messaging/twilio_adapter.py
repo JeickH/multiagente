@@ -240,13 +240,21 @@ def parse_inbound(form: Dict[str, str]) -> Optional[NormalizedInbound]:
         return None
     num_media = int(form.get("NumMedia", "0") or "0")
     media = [form[f"MediaUrl{i}"] for i in range(num_media) if form.get(f"MediaUrl{i}")]
+    # Una nota de voz llega como media sin `Body` y con MIME `audio/ogg`. Se
+    # distingue del resto de adjuntos porque el bot tiene que responderla
+    # pidiendo que le escriban (no sabemos escuchar audio todavía).
+    tipos = [(form.get(f"MediaContentType{i}") or "").lower() for i in range(num_media)]
+    if media:
+        message_type = "audio" if any(t.startswith("audio/") for t in tipos) else "media"
+    else:
+        message_type = "text"
     return NormalizedInbound(
         provider="twilio",
         from_wa_id=from_raw.replace("whatsapp:", "").lstrip("+"),
         to_wa_id=form.get("To", "").replace("whatsapp:", "").lstrip("+"),
         message_id=message_sid,
         text=form.get("Body"),
-        message_type="media" if media else "text",
+        message_type=message_type,
         media_urls=media,
         raw=dict(form),
     )

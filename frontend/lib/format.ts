@@ -4,7 +4,13 @@
  * SEGURIDAD: `maskPhone` se aplica a TODO teléfono que se renderice en
  * UI (regla 1 — no exponer PII más de lo necesario al operador, aunque
  * el dueño del team técnicamente sí puede ver el dato completo).
+ *
+ * FECHAS: los timestamps salen del backend en UTC y **sin marcar la zona**, así
+ * que se normalizan con `aInstante` y se pintan en hora de Colombia. Sin eso el
+ * navegador los leía como hora local y todo salía 5 horas adelantado
+ * (ver `lib/fechas.ts`).
  */
+import { ZONA_CO, aInstante } from './fechas';
 
 /** Formateador de miles localizado (es-MX). */
 export function fmtNumber(n: number | null | undefined): string {
@@ -20,10 +26,10 @@ export function fmtPct(part: number, total: number, digits = 1): string {
 
 /** Fecha corta (es-MX). Devuelve `—` si la entrada es nula/invalida. */
 export function fmtDate(iso: string | null | undefined): string {
-  if (!iso) return '—';
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '—';
+  const d = aInstante(iso);
+  if (!d) return '—';
   return d.toLocaleDateString('es-MX', {
+    timeZone: ZONA_CO,
     year: 'numeric',
     month: 'short',
     day: '2-digit',
@@ -32,10 +38,10 @@ export function fmtDate(iso: string | null | undefined): string {
 
 /** Fecha + hora corta (es-MX). Útil en cabecera y celdas de timestamps. */
 export function fmtDateTime(iso: string | null | undefined): string {
-  if (!iso) return '—';
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '—';
+  const d = aInstante(iso);
+  if (!d) return '—';
   return d.toLocaleString('es-MX', {
+    timeZone: ZONA_CO,
     year: 'numeric',
     month: 'short',
     day: '2-digit',
@@ -46,10 +52,10 @@ export function fmtDateTime(iso: string | null | undefined): string {
 
 /** Solo la hora HH:MM (es-MX). Para columnas Enviado/Entregado/Leído. */
 export function fmtTime(iso: string | null | undefined): string {
-  if (!iso) return '—';
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '—';
+  const d = aInstante(iso);
+  if (!d) return '—';
   return d.toLocaleTimeString('es-MX', {
+    timeZone: ZONA_CO,
     hour: '2-digit',
     minute: '2-digit',
     second: '2-digit',

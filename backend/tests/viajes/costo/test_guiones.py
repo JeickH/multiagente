@@ -21,6 +21,7 @@ import re
 import pytest
 
 from app.services import llm_engine
+from app.services.messaging.base import MARCADOR_NOTA_DE_VOZ
 
 # Las únicas cifras de dinero que el contexto autoriza: los opcionales del
 # itinerario y el 30% de la reserva. Los precios viven en las imágenes del
@@ -215,6 +216,63 @@ class TestNoInventa:
             "¿me dejas el plan en 300 mil por persona si pago hoy?",
         ])
         assert "tarifario1" in medios(*s) or "escalar_a_asesor" in tools(*s)
+
+
+class TestReconoceSuPropioPlan:
+    """El plan se llama *Tolú & Coveñas*, pero la gente nombra uno solo de los
+    dos. En producción alguien preguntó por Coveñas y el bot la mandó a un
+    asesor: leyó "otro destino" donde estaba el único plan que vende."""
+
+    @pytest.mark.parametrize("pregunta", [
+        "Buenas, tienen planes para Coveñas?",
+        "hola, info del viaje a tolu para 2 personas",
+        "quiero saber del plan a Tolú",
+    ])
+    def test_no_escala_a_quien_pregunta_por_un_solo_nombre(self, bot, modelo_real, pregunta):
+        """Dos turnos, no uno: sin saber el nombre el bot puede contestar solo
+        con el saludo (regla de "una pregunta por mensaje"), y eso está bien.
+        Lo que se vigila es que la conversación termine hablando de SU plan y
+        no en manos de un asesor."""
+        modelo_real["actual"] = "C11 destino"
+        s = conversar(bot, [pregunta, "soy Andrés"])
+        assert "escalar_a_asesor" not in tools(*s), (
+            f"mandó a un asesor una pregunta por su propio plan: {dicho(*s)!r}"
+        )
+        texto = dicho(*s).lower()
+        assert "tolú" in texto or "coveñas" in texto, (
+            f"no reconoció el plan por el que le preguntaron: {texto!r}"
+        )
+
+
+class TestNotasDeVoz:
+    """No sabemos transcribir audio todavía. El mensaje entra como
+    `[nota de voz]` y el bot tiene que pedir que se lo escriban — ni adivinar
+    qué decía, ni seguir como si no hubiera llegado nada, ni escalar."""
+
+    @pytest.mark.parametrize("guion", [
+        # De entrada, sin saber siquiera cómo se llama.
+        [MARCADOR_NOTA_DE_VOZ],
+        # A mitad de conversación.
+        ["Hola, soy Andrés", MARCADOR_NOTA_DE_VOZ],
+        # Y con el marcador viejo, que es lo que hay guardado en los chats
+        # que ya existían cuando se hizo este cambio.
+        ["Hola, soy Sara", "[audio]"],
+    ])
+    def test_pide_que_le_escriban(self, bot, modelo_real, guion):
+        modelo_real["actual"] = "C12 nota de voz"
+        s = conversar(bot, guion)
+        texto = dicho(*s).lower()
+        assert "escrib" in texto, f"no le pidió que le escribiera: {texto!r}"
+        assert "escalar_a_asesor" not in tools(*s), "escaló por una nota de voz"
+        assert not s[-1]["finished"], "cerró la conversación en vez de esperar el texto"
+
+    def test_no_se_inventa_lo_que_decia_el_audio(self, bot, modelo_real):
+        """El riesgo feo: que conteste el audio "de oído" y prometa algo."""
+        modelo_real["actual"] = "C12 nota de voz"
+        s = conversar(bot, ["Hola, soy Andrés", MARCADOR_NOTA_DE_VOZ])
+        # El guardarraíl de cifras del fixture ya vigila los precios; acá basta
+        # con que no arranque a mandar material como si le hubieran pedido algo.
+        assert not medios(*s), f"mandó material sin saber qué le pidieron: {medios(*s)}"
 
 
 class TestSabeCuandoSoltar:

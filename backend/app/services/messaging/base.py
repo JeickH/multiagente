@@ -87,6 +87,33 @@ class NormalizedInbound:
     raw: Dict[str, Any] = field(default_factory=dict)
 
 
+# Marcador con el que entra a la conversación un mensaje sin texto legible.
+# Se guarda tal cual en `messages.content`, así que lo lee el asesor humano en
+# la bandeja **y** el bot como turno del cliente: por eso está en español y dice
+# qué pasó, en vez del `[audio]` críptico de antes. El bot tiene instrucciones
+# de pedir que le escriban cuando ve este marcador (`llm_engine._system_prompt`).
+MARCADOR_NOTA_DE_VOZ = "[nota de voz]"
+
+# Tipos que WhatsApp usa para una nota de voz o un audio adjunto.
+_TIPOS_AUDIO = frozenset({"audio", "voice", "ptt"})
+
+
+def es_audio(message_type: Optional[str]) -> bool:
+    """¿Este mensaje entrante es una nota de voz / un audio?"""
+    return (message_type or "").strip().lower() in _TIPOS_AUDIO
+
+
+def marcador_inbound(message_type: Optional[str]) -> str:
+    """Texto que representa un mensaje entrante que no trae texto.
+
+    Los audios llevan un marcador explícito porque el bot tiene que reaccionar
+    a ellos; el resto conserva el `[tipo]` histórico.
+    """
+    if es_audio(message_type):
+        return MARCADOR_NOTA_DE_VOZ
+    return f"[{message_type or 'desconocido'}]"
+
+
 @dataclass
 class NormalizedStatus:
     """Callback de estado normalizado (indep. de proveedor)."""

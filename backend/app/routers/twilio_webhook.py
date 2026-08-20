@@ -40,6 +40,7 @@ from ..dependencies import get_db
 from ..services import bot_router as bot_router_svc
 from ..services import bot_runner
 from ..services.messaging import twilio_adapter
+from ..services.messaging.base import marcador_inbound
 
 logger = logging.getLogger("twilio_webhook")
 
@@ -239,7 +240,7 @@ async def receive_inbound(request: Request, db: Session = Depends(get_db)):
             logger.info("webhook.twilio inbound sin cuenta asociada — ignorado")
             return PlainTextResponse("", status_code=200)
 
-        content = norm.text or f"[{norm.message_type}]"
+        content = norm.text or marcador_inbound(norm.message_type)
         conv = crud.get_or_create_conversation(
             db,
             team_id=account.team_id,

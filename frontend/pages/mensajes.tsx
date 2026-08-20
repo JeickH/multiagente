@@ -6,6 +6,7 @@ import Paginacion, {
   leerPorPagina,
 } from '../components/Paginacion';
 import TutorialOverlay from '../components/TutorialOverlay';
+import { horaCorta } from '../lib/fechas';
 import { getToken } from '../lib/session';
 
 const MENSAJES_TUTORIAL = [
@@ -91,13 +92,9 @@ function authHeaders(): HeadersInit {
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
+/** Hora de Colombia. Ver `lib/fechas.ts`: el backend serializa UTC sin marcarlo. */
 function formatTime(iso: string): string {
-  try {
-    const d = new Date(iso);
-    return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  } catch {
-    return '';
-  }
+  return horaCorta(iso);
 }
 
 function initials(name: string | null, fallback: string): string {

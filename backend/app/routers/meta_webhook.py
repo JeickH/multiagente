@@ -41,6 +41,7 @@ from .. import models, crud
 from ..dependencies import get_db
 from ..services import bot_router as bot_router_svc
 from ..services import bot_runner
+from ..services.messaging.base import marcador_inbound
 
 load_dotenv()
 logger = logging.getLogger("meta_webhook")
@@ -451,7 +452,11 @@ async def receive_webhook(request: Request, db: Session = Depends(get_db)):
                     if msg_type == "text":
                         content = msg.get("text", {}).get("body", "")
                     else:
-                        content = f"[{msg_type}]"
+                        # Sin texto que leer (audio, imagen, sticker...). El
+                        # marcador entra a la conversación como turno del
+                        # cliente: el de audio es explícito para que el bot
+                        # pueda pedirle que le escriba.
+                        content = marcador_inbound(msg_type)
 
                     contact_info = contacts.get(wa_id, {})
                     contact_name = contact_info.get("profile", {}).get("name")

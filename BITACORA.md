@@ -4453,3 +4453,93 @@ todo sigue funcionando, más lento.
 - `/mensajes` sigue haciendo polling cada 8 s. Ahora cuesta 4 consultas en vez de
   602, pero el siguiente paso natural es que el servidor avise (SSE/websocket) en
   vez de que el navegador pregunte.
+
+---
+
+## 2026-08-20 — Coveñas, notas de voz y la hora de Colombia en la bandeja
+
+**Pedido del CEO:** tres cosas del bot de Arranquemos Pues y de la cuenta de
+asesores. (1) Que entienda que "Coveñas" y "Tolú" son el mismo plan —
+recientemente alguien preguntó por Coveñas y el bot la pasó a un asesor, cuando
+esa pregunta la podía responder sola. (2) Que las horas de los mensajes se vean
+en hora de Colombia, incluidos los chats viejos. (3) Que cuando llegue un audio
+pida amablemente que le escriban, porque todavía no sabemos escucharlos.
+
+### 1. "Coveñas" y "Tolú" son el mismo plan
+
+El plan se llama *Tolú & Coveñas*, pero casi nadie lo nombra completo: se
+pregunta por uno de los dos. El contexto del bot mencionaba los dos nombres por
+todos lados y aun así lo tenía escrito como si fueran dos cosas; con la regla de
+"otros destinos van al asesor" a mano, el modelo resolvió que Coveñas era otro
+destino. Ahora hay una sección explícita, arriba del todo, que dice que los dos
+nombres son su único producto (con tilde o sin ella) y que eso no se escala.
+
+### 2. La hora de la bandeja: no era la base, era el navegador
+
+Antes de tocar nada se midió contra RDS. Los datos están **bien**: los mensajes
+se guardan con `datetime.utcnow()` y `created_at` va siempre a la par de
+`now() AT TIME ZONE 'UTC'`. Se buscaron además filas escritas con otro reloj —
+mensajes de una misma conversación cuyo timestamp retrocede respecto al
+anterior— y salieron **0 en toda la base**. No hubo nada que migrar.
+
+Lo que estaba mal es el render. El backend serializa UTC **sin marcar la zona**
+(`2026-08-20T21:26:57`), y el estándar de JavaScript manda leer esa forma como
+hora *local del navegador*: `new Date(...)` en Colombia sumaba 5 horas. Un
+mensaje de las 4:26 p. m. se pintaba a las 9:26 p. m.
+
+La conversión quedó en `frontend/lib/fechas.ts` (`aInstante` le pone la `Z` que
+falta; todo se formatea con `timeZone: 'America/Bogota'`, que no tiene horario de
+verano). La usa `/mensajes` —la bandeja del asesor, que es lo que reportó el
+CEO—, `/conversaciones` (que ya tenía su propia copia de la corrección, ahora
+borrada) y los helpers de Campañas en `lib/format.ts`, que arrastraban el mismo
+error. **Los chats antiguos quedan corregidos solos**: cambió cómo se lee el
+dato, no el dato.
+
+### 3. Notas de voz
+
+Un audio entraba a la conversación como `[audio]`: el asesor no sabía qué había
+pasado y el bot lo leía como un tema fuera de su alcance. Ahora entra como
+`[nota de voz]` (`marcador_inbound`, compartido por los webhooks de Meta y de
+Twilio) y todos los bots LLM tienen instrucciones de disculparse y pedir que se
+lo escriban. Twilio no dice "audio": se deduce del MIME del adjunto
+(`MediaContentType0: audio/ogg`), que antes se ignoraba.
+
+Cubre los chats viejos: la regla nombra los dos marcadores, porque lo que ya
+está guardado en la base dice `[audio]`.
+
+### El hallazgo: dónde se pone una regla cambia el comportamiento de otra
+
+La regla de las notas de voz empezó siendo un bullet más dentro de "Reglas
+operativas", al lado de "si algo está fuera de tu alcance, escala". Con eso, el
+bot dejó de escalar un tema ajeno (visa americana, seguros de viaje): pasó de
+**4 de 12 corridas a 1 de 4**. Reescribirlo en positivo no alcanzó (2 de 4).
+Sacarlo a su propia sección `## Notas de voz` sí: **8 de 12**, mejor que el
+punto de partida. El texto de la regla casi no cambió — cambió el vecindario.
+
+Queda un test que lo vigila (`test_la_regla_va_en_su_propia_sección`): comprueba
+que el marcador no viva dentro de "Reglas operativas" y que esa lista siga
+terminando en `escalar_a_asesor`.
+
+### Tests
+
+805 gratis (17 nuevos en `tests/test_notas_de_voz.py`) y 7 guiones nuevos contra
+Bedrock de verdad, corridos 3 veces seguidas sin una sola falla. Los guiones se
+**leyeron**, no solo se asertaron: fue leyendo las respuestas como se vio que el
+bot no escalaba por Tolú sino que saludaba y pedía el nombre primero — su
+comportamiento correcto de "una pregunta por mensaje" —, así que el guion pasó a
+dos turnos en vez de exigirle todo en el primero.
+
+### Pendientes
+
+- **Cuatro guiones de `tests/viajes/costo/test_guiones.py` están rotos desde
+  antes de este cambio** (verificado corriendo la suite en un worktree en
+  `HEAD`): esperan medios `info_general`, `tarifario1` y `hotel_video`, que
+  dejaron de existir cuando el bot pasó a tres hoteles (commit `8e3e58f`). Hay
+  que actualizarlos a `info_amordios` / `tarifario_amordios_*` / `video_*`.
+- `test_un_tema_ajeno_al_bot_va_a_un_humano` es **inestable por naturaleza**:
+  afirma que el bot llama a `escalar_a_asesor` en un turno concreto, y el bot a
+  veces primero pregunta "¿te conecto?" y escala al turno siguiente. Sale rojo
+  ~1 de cada 3 corridas, con el cambio y sin él.
+- Los bots de flujo (engine `bot_engine`, no LLM) siguen sin saber qué hacer con
+  una nota de voz: el marcador nuevo les llega igual, pero no tienen a quién
+  preguntarle. Hoy no hay ninguno activo atendiendo audios.
