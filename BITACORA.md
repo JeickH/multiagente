@@ -4543,3 +4543,59 @@ dos turnos en vez de exigirle todo en el primero.
 - Los bots de flujo (engine `bot_engine`, no LLM) siguen sin saber qué hacer con
   una nota de voz: el marcador nuevo les llega igual, pero no tienen a quién
   preguntarle. Hoy no hay ninguno activo atendiendo audios.
+
+---
+
+## 2026-08-20 — Agentes registrados y polling de la bandeja a 45 s (PR #4)
+
+### Los agentes del CLAUDE.md no existían para Claude Code
+
+El `CLAUDE.md` describe un equipo donde el PM delega en especialistas, pero un
+archivo de `.claude/agents/` solo se registra como agente invocable si empieza
+con una **cabecera YAML** (`--- name: … description: … ---`). Siete de los ocho
+no la tenían: solo `community-manager.md`. **El protocolo de delegación nunca se
+pudo ejecutar** — incluida la regla de que todo feature que toque credenciales,
+auth o secretos pasa por el agente `seguridad` antes del merge.
+
+Al validar apareció el detalle que faltaba, y es el mismo modo de falla que se
+estaba arreglando: **los dos puntos dentro de una descripción sin comillas rompen
+el YAML.** `description: Modelado y rendimiento de PostgreSQL: schema, …` se
+parsea como un mapping y el archivo se descarta **en silencio**. Van todas
+encomilladas, `community-manager` incluida.
+
+A `seguridad` se le acotaron las herramientas a las de lectura (`Read`, `Grep`,
+`Glob`, `Bash`, `WebFetch`, `WebSearch`). Su propio archivo dice "no escribes
+código: señalas hallazgos, propones la solución y delegas la implementación";
+sin `Edit`/`Write` eso deja de depender de que el agente se acuerde.
+
+### Polling de la bandeja: 8 s → 45 s (decisión del CEO)
+
+Con la lista ya paginada cada pregunta cuesta 4 consultas en vez de 602, pero
+seguían siendo **450 por hora y por pestaña** para oír "nada nuevo" casi siempre.
+A 45 s son 80. Los dos ritmos quedaron como constantes con nombre porque
+responden a preguntas distintas:
+
+| constante | cada | pregunta |
+|---|---|---|
+| `POLL_LISTA_MS` | 45 s | ¿entró alguna conversación nueva? |
+| `POLL_DETALLE_MS` | 5 s | ¿contestó la persona con la que hablo ahora? |
+
+**Costo asumido:** un chat nuevo puede tardar hasta 45 s en aparecer en la
+bandeja. Los mensajes de una conversación **ya abierta no se atrasan** — esos los
+trae el poll del detalle, que no se tocó.
+
+### Despliegue
+
+Solo frontend y tooling: **sin cambios de backend, sin migración, sin rollout de
+ECS**. Amplify **job 115 SUCCEED** (commit `291c2fa`). Verificado en el bundle
+servido en producción: `setInterval(s,45e3)` y `setInterval(t,5e3)`; el `8e3`
+viejo ya no aparece. `app.glomabeauty.com/login` y `/mensajes` → 200.
+
+### Coordinación con sesiones concurrentes
+
+Otra sesión estaba trabajando en el mismo árbol (`twilio_adapter.py`, `base.py`,
+`demo_viajes.md`, tests de adjuntos) y había desplegado **rev 62** de ECS con el
+job 114 de Amplify corriendo. Se esperó a que 114 terminara antes de mergear, y
+se stagearon **solo** los archivos propios. Sus cambios sin commitear quedaron
+intactos. **Regla que conviene mantener:** en este repo el árbol de trabajo es
+compartido — `git add -A` es peligroso, hay que stagear por ruta.
