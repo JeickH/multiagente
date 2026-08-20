@@ -4347,3 +4347,109 @@ consultas de verificación.
   lee mal en el editor de bots y conviene limpiarlo cuando se toque ese código.
 - El reparto sigue siendo por **turno**, no por carga: si una asesora cierra
   rápido y otra no, igual les llega un tercio a cada una.
+
+---
+
+## 2026-08-20 — Paginación de conversaciones y menú lateral fijo (PR #3)
+
+**Pedido del CEO:** que la app no se degrade cuando una cuenta acumula
+conversaciones, y que el menú lateral deje de estirarse al alargarse la ventana.
+
+### Lo que estaba mal
+
+**El menú y el scroll eran el mismo bug.** El `<aside>` era `min-h-screen`
+dentro de un contenedor flex que crece con el contenido, así que se estiraba a
+la altura de la página. Y el `overflow-y-auto` ya escrito en `/conversaciones`
+nunca se activó, porque `Layout` fullscreen mezclaba `min-h-screen` con
+`overflow-hidden` — que se anulan. Sin altura acotada el hijo crecía en vez de
+scrollear. Afectaba a las 7 páginas con esa variante.
+
+**El cuello de botella no estaba donde parecía.** El peor no era
+`/conversaciones` sino `/mensajes`: `crud.last_message_preview(conv)` leía
+`conv.messages[-1]` con la relación en **lazy** — una consulta por conversación,
+y cada una traía *todos* los mensajes de ese chat para quedarse con el último.
+La bandeja se refresca sola cada 8 s, por pestaña abierta. Encima
+`messages.conversation_id` **no tenía índice** (el de `created_at` suelto no
+sirve para eso), así que cada consulta barría la tabla.
+
+`/supervision/conversaciones` traía 5.000 filas de bitácora, todas las
+conversaciones del team y todos sus mensajes a memoria, armaba todos los hilos y
+recién ahí recortaba a 200. `/supervision/cuentas` repetía eso por cada cuenta
+supervisada solo para el número de la pestaña, al abrir la página.
+
+### Medición (600 conversaciones / 12.000 mensajes, Postgres local)
+
+| endpoint | antes | después |
+|---|---|---|
+| `GET /mensajes/conversaciones` | 520 ms · **602 consultas** | 11 ms · **4 consultas** |
+| `GET /supervision/conversaciones` (20) | 117 ms | 11 ms |
+| `GET /supervision/conversaciones` (200) | 117 ms | 55 ms |
+| `GET /supervision/cuentas` | 85 ms | 7 ms |
+
+Lo que importa no es el número sino la pendiente: 4 consultas son 4 con 600
+conversaciones o con 60.000. Contra RDS la diferencia es mayor, porque cada una
+de esas 602 consultas era una ida y vuelta de red.
+
+### Qué cambió
+
+- **Layout**: menú `sticky top-0 h-screen` con scroll propio. `Layout` separa
+  las dos formas de scrollear que estaban mezcladas: `fullscreen` (la ventana
+  baja, como cualquier página web) y `app` (altura clavada al viewport, solo
+  `/mensajes`, que es un chat de dos columnas).
+- **Paginación de servidor** en las dos pantallas, selector 20/50/100/200 que se
+  recuerda por pantalla (`lib/preferencias.ts`, separado de `session.ts` porque
+  la regla #7 dice que la sesión se toca solo desde ahí). El techo vive en el
+  endpoint, no en el `<select>`: `limite` viene de la URL.
+- **Los filtros se aplican en SQL, antes de paginar.** Es lo que hace que la
+  paginación funcione igual con filtros puestos. Al revés, "20 por página"
+  filtraría dentro de esas 20 y la pantalla diría "no hay pendientes" con
+  pendientes tres páginas más abajo — un bug que no se ve.
+- **Supervisión en dos tiempos**: consulta agregada que devuelve como mucho
+  `offset + límite` renglones, e hidratación solo de los hilos visibles. Para la
+  página N de la fusión de dos listas ya ordenadas alcanza con el prefijo de
+  cada una. El agrupado del chat web pasó a SQL sin `to_char` ni `DISTINCT ON`,
+  que no existen en SQLite y la suite corre ahí.
+- **Índice** `messages(conversation_id, created_at)`.
+- **`seed_carga_conversaciones.py`**: cuenta sintética para repetir la medición.
+  No corre con `APP_ENV=production`, exige dominio de prueba, y los teléfonos
+  usan un prefijo no asignable en Colombia (regla #8).
+
+### Despliegue (sa-east-1)
+
+Imagen `multiagente-backend:paginacion1` (linux/amd64) → ECR. Task-def **rev 61**
+(clon de rev 60, solo cambia la imagen). Migración `migrate_indice_mensajes.py`
+en RDS vía `ecs run-task` rev 61 → **exit 0**, índice creado y `indisvalid=true`
+(586 filas). `update-service --task-definition :61 --force-new-deployment` →
+`services-stable` (1/1, zero-downtime). Frontend: Amplify **job 112 SUCCEED**
+(commit `2ac79ff`, auto-build).
+
+**Smoke en producción:** `api.glomabeauty.com/openapi.json` 200 con los
+parámetros nuevos (`estado`, `busqueda`, `limite`, `pagina`) y los schemas
+`ConversationPageOut` / `HilosOut`; `/mensajes/conversaciones` sin token → 401;
+`/meta/webhook` sin firma → 403 (fail-closed); `app.glomabeauty.com/login` 200.
+Contra datos reales: team 5 (Arranquemos Pues) 49 conversaciones, páginas 1 y 2
+de 20 sin solapamiento, 20/20 previews presentes, filtro `open` → 39; team 4
+(demo) 5 conversaciones, página 2 vacía; supervisión mascotas 83 hilos y viajes
+49, páginas 1 y 2 sin solapamiento.
+
+### Tests
+
+782 passed (17 nuevos), reproducidos en worktree limpio con `TZ=UTC` antes de
+pushear. El que más importa **cuenta las consultas** y se cae si alguien vuelve a
+poner `conv.messages[-1]` en el bucle: la única señal de que el N+1 volvió es que
+todo sigue funcionando, más lento.
+
+### Pendientes
+
+- **El frontend de Amplify se desplegó ~1 h antes que el backend** (job 112 salió
+  con el merge; el rollout de ECS fue después). En esa ventana `/mensajes` pedía
+  el formato nuevo a un backend que devolvía el viejo. Es una cuenta interna y no
+  hubo reporte, pero **el orden correcto es backend primero**: cuando un cambio
+  toca el contrato de un endpoint, conviene desplegar ECS antes de que Amplify
+  buildee, o hacer el cambio compatible hacia atrás.
+- Los siete agentes de `.claude/agents/` (todos menos `community-manager`) **no
+  tienen frontmatter YAML**, así que Claude Code no los registra y el flujo de
+  delegación del CLAUDE.md no se está ejecutando. Son 4 líneas por archivo.
+- `/mensajes` sigue haciendo polling cada 8 s. Ahora cuesta 4 consultas en vez de
+  602, pero el siguiente paso natural es que el servidor avise (SSE/websocket) en
+  vez de que el navegador pregunte.
