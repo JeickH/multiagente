@@ -211,11 +211,18 @@ class TestContextoDelBot:
 
     def test_el_prompt_le_dice_qué_día_es_hoy(self):
         """Las mascotas se reportan días o semanas después. Sin la fecha de
-        hoy, el bot calcula mal "se perdió hace tres días"."""
-        from datetime import date
+        hoy, el bot calcula mal "se perdió hace tres días".
 
+        La fecha que se compara es la de **Colombia**, no la del reloj de la
+        máquina: el CI corre en UTC, y entre las 7 pm y la medianoche
+        colombiana `date.today()` ya va un día adelante. Este test falló así en
+        main el 19-ago-2026 sin que nada estuviera roto.
+        """
+        from datetime import datetime
+
+        hoy_co = datetime.now(llm_engine._TZ_CO).date()
         bloque = llm_engine._bloque_mascotas({"mascotas": {}}, [], "hola")
-        assert date.today().isoformat() in bloque
+        assert hoy_co.isoformat() in bloque
 
     @pytest.mark.parametrize(
         "tool",

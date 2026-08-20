@@ -79,6 +79,26 @@ class TestNoVenderElPasado:
         assert planes == []
 
 
+class TestZonaHoraria:
+    """El backend corre en UTC; el negocio vende en Colombia.
+
+    Sin esto, entre las 7 pm y la medianoche colombiana el servidor ya cree que
+    es mañana y el bot deja de ofrecer una salida que todavía se puede vender.
+    Es el mismo error que tumbó el CI el 19-ago-2026 en la suite de mascotas.
+    """
+
+    def test_el_hoy_por_defecto_es_el_de_colombia(self):
+        from datetime import datetime, timedelta, timezone
+
+        esperado = datetime.now(timezone(timedelta(hours=-5))).date()
+        assert tarifario.hoy_colombia() == esperado
+
+    def test_una_salida_de_hoy_todavia_se_ofrece(self):
+        """Hoy mismo aún es vendible: el corte es `< hoy`, no `<= hoy`."""
+        planes = tarifario.planes_de("piedra_mar", 12, hoy=date(2026, 12, 8))
+        assert any("DICIEMBRE 08 AL 11" in p["fecha"] for p in planes)
+
+
 class TestBohios:
     def test_cobra_exactamente_lo_mismo_que_amor_de_dios(self):
         a = tarifario.planes_de("amor_de_dios", 9, hoy=HOY)

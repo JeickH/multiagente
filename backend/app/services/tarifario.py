@@ -26,12 +26,22 @@ from __future__ import annotations
 import json
 import logging
 import unicodedata
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
+
+# Colombia, sin horario de verano. El backend corre en UTC (ECS), así que
+# `date.today()` se adelanta un día entre las 7 pm y la medianoche de allá — y
+# el bot dejaría de ofrecer una salida que todavía se puede vender hoy.
+_TZ_CO = timezone(timedelta(hours=-5))
+
+
+def hoy_colombia() -> date:
+    return datetime.now(_TZ_CO).date()
+
 
 _DATA = Path(__file__).resolve().parent.parent / "data" / "tarifario_covenas.json"
 
@@ -119,7 +129,7 @@ def _pesos(valor: int) -> str:
 
 def planes_de(hotel: str, mes: int, hoy: Optional[date] = None) -> List[Dict[str, Any]]:
     """Planes vigentes de ese hotel en ese mes, del más próximo al más lejano."""
-    hoy = hoy or date.today()
+    hoy = hoy or hoy_colombia()
     fuera = []
     for plan in _datos().get("planes", []):
         if hotel not in plan.get("hoteles", []) or plan.get("mes") != mes:
@@ -228,7 +238,7 @@ def consultar(
     hoy: Optional[date] = None,
 ) -> str:
     """Resultado de `consultar_tarifario` que se le devuelve al modelo."""
-    hoy = hoy or date.today()
+    hoy = hoy or hoy_colombia()
 
     fecha_pedida: Optional[date] = None
     if fecha:
