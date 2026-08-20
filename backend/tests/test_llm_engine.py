@@ -151,7 +151,13 @@ class LlmEngineTests(unittest.TestCase):
         tel = out["telemetry"]
         self.assertEqual(tel["camino"], "failsafe")
         self.assertTrue(tel["failsafe"])
-        self.assertEqual(tel["escalated_to"], "asesor_1")
+        # Sin `assignee` en la config, el asesor lo decide el reparto por turnos
+        # del team cuando `bot_runner` entrega el chat, no el motor.
+        self.assertEqual(tel["escalated_to"], "(por turno)")
+        self.assertEqual(
+            out["actions"][-1]["payload"]["assignee"], "",
+            "un assignee no vacío en el fail-safe anularía el round-robin",
+        )
 
     def test_clasificador_keywords_y_saludo(self):
         cfg = {"caminos": {"sedes": ["tienda", "horario"],

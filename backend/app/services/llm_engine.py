@@ -16,8 +16,11 @@ Un bot usa este motor cuando `bots.engine == 'llm'`. Su configuración vive en
       "model_id": null,                   # override del inference profile
       "media": {                          # catálogo de medios que el LLM puede enviar
         "tarifario1": {"url": "https://...", "media_type": "image",
-                        "descripcion": "precios del plan"}
+                        "descripcion": "precios del plan",
+                        "hotel": "amor_de_dios",    # sólo flyers de tarifario:
+                        "meses": [8, 9, 10, 11]}    # qué meses cubre la imagen
       },
+      "tarifario": "covenas",             # habilita `consultar_tarifario`
       "venta": {                          # sólo si el bot cierra pedidos en el chat
         "producto": "Promo 3 camisetas",
         "valor": "$160.000",
@@ -54,7 +57,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from . import shopify_client
+from . import shopify_client, tarifario
 from .crypto import encrypt_secret
 
 logger = logging.getLogger(__name__)
@@ -421,7 +424,18 @@ def _tools_for(cfg: Dict[str, Any]) -> List[Dict[str, Any]]:
                     "motivo": {
                         "type": "string",
                         "description": "Motivo breve del escalamiento (interno).",
-                    }
+                    },
+                    "resumen": {
+                        "type": "string",
+                        "description": (
+                            "Lo que YA sabes del cliente por la conversación, "
+                            "en una línea, para que el asesor no lo vuelva a "
+                            "preguntar: nombre, fecha o mes de viaje, hotel, "
+                            "número de personas, lo que pidió. Escribe solo lo "
+                            "que el cliente dijo — no inventes ni completes "
+                            "datos que no tengas."
+                        ),
+                    },
                 },
                 "required": ["motivo"],
             },
@@ -560,6 +574,49 @@ def _tools_for(cfg: Dict[str, Any]) -> List[Dict[str, Any]]:
                     "required": [
                         "nombre", "cedula", "telefono", "correo", "direccion",
                     ],
+                },
+            }
+        )
+    if cfg.get("tarifario"):
+        tools.append(
+            {
+                "name": "consultar_tarifario",
+                "description": (
+                    "Consulta los precios reales del plan a Coveñas para un mes "
+                    "(y opcionalmente una fecha) y te dice qué imagen de "
+                    "tarifario mandar. ÚSALA SIEMPRE antes de decir un precio o "
+                    "de enviar un tarifario: los precios cambian por hotel, por "
+                    "mes y por fecha, y los del historial pueden estar vencidos. "
+                    "Nunca cites un valor que no venga de esta herramienta."
+                ),
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "mes": {
+                            "type": "string",
+                            "description": (
+                                "Mes en que quiere viajar, como lo dijo el "
+                                "cliente. Ej: 'septiembre', 'diciembre'."
+                            ),
+                        },
+                        "hotel": {
+                            "type": "string",
+                            "description": (
+                                "'Amor de Dios', 'Piedra Mar' o 'Bohíos'. "
+                                "Omítelo si el cliente todavía no eligió: sin "
+                                "hotel te devuelve la comparación de los dos "
+                                "tarifarios."
+                            ),
+                        },
+                        "fecha": {
+                            "type": "string",
+                            "description": (
+                                "Fecha exacta de salida en formato AAAA-MM-DD, "
+                                "solo si el cliente pidió un día concreto."
+                            ),
+                        },
+                    },
+                    "required": ["mes"],
                 },
             }
         )
@@ -1604,13 +1661,29 @@ def _run_tool(
             {
                 "type": "handoff",
                 "payload": {
-                    "assignee": cfg.get("assignee", "asesor_1"),
+                    # Vacío = que lo reparta el turno del team
+                    # (`crud.siguiente_asesor`). Un `assignee` configurado manda
+                    # sobre el turno: sirve para rutas que deben caer siempre en
+                    # la misma persona.
+                    "assignee": cfg.get("assignee") or "",
                     "text": "",
                     "motivo": str(tool_input.get("motivo", ""))[:300],
+                    "resumen": str(tool_input.get("resumen", ""))[:500],
                 },
             }
         )
         return "conversación transferida al asesor", True
+
+    if name == "consultar_tarifario":
+        return (
+            tarifario.consultar(
+                cfg,
+                hotel=str(tool_input.get("hotel", "")),
+                mes=str(tool_input.get("mes", "")),
+                fecha=str(tool_input.get("fecha", "")),
+            ),
+            False,
+        )
 
     if name == "finalizar_conversacion":
         actions.append({"type": "end", "payload": {"text": ""}})
@@ -1728,6 +1801,8 @@ def _classify_camino(
         return "descarga_listado"
     if "escalar_a_asesor" in tool_names:
         return "escalar_a_asesor"
+    if "consultar_tarifario" in tool_names:
+        return "precios_condiciones"
     if "consultar_pedido_shopify" in tool_names:
         return "estado_pedido"
     if "enviar_catalogo" in tool_names:
@@ -2028,7 +2103,7 @@ def advance(
     except Exception:
         # Fail-safe: el bot nunca deja al cliente colgado ni filtra el error.
         logger.exception("llm_engine: turno falló (bot=%s)", getattr(bot, "id", "?"))
-        assignee = cfg.get("assignee", "asesor_1")
+        assignee = cfg.get("assignee") or ""
         failsafe: List[Dict[str, Any]] = list(actions)
         failsafe.append({"type": "say", "payload": {"text": _FAILSAFE_TEXT}})
         failsafe.append(
@@ -2054,7 +2129,7 @@ def advance(
                 "rounds": 0,
                 "latency_ms": int((time.monotonic() - t0) * 1000),
                 "finished": True,
-                "escalated_to": assignee,
+                "escalated_to": assignee or "(por turno)",
                 "failsafe": True,
             },
         }
@@ -2163,7 +2238,9 @@ def _advance_inner(
                 if name == "entregar_contacto":
                     telefonos_ok.extend(_digitos_de_telefonos(result_text))
                 if name == "escalar_a_asesor":
-                    escalated_to = cfg.get("assignee", "asesor_1")
+                    # Vacío significa "lo decide el turno del team al entregar";
+                    # el asesor concreto lo resuelve `bot_runner`.
+                    escalated_to = cfg.get("assignee") or "(por turno)"
                 finished = finished or ended
                 tool_results.append(
                     {

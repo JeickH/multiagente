@@ -38,7 +38,11 @@ CREDENCIALES*.txt
 # Material crudo de clientes — contiene credenciales de tenant, nunca a git
 talulah bots/
 tallas talulah/
-demo_viajes/
+# Anclado a la raíz a propósito: sin la `/` inicial el patrón también tapaba
+# `frontend/public/demo_viajes/`, que es lo CONTRARIO de material crudo — son
+# los flyers y videos que Amplify sirve al público y que el bot manda por
+# WhatsApp. Tienen que estar versionados o el despliegue queda sin medios.
+/demo_viajes/
 # `marketing/` guarda material crudo (piezas, briefs) que no va a git. La
 # excepción es el publicador de Instagram: es código sin secretos —las
 # credenciales viven en SSM— y necesita historia y respaldo.

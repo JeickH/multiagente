@@ -3855,3 +3855,121 @@ créditos NO se acreditan solos — los habilita el equipo tras conciliar.
   endpoint de consulta de Wompi es público) y la pantalla muestra "recibimos tu
   pago, se habilita en ~1 hora" o "no recibimos el pago". Es informativo: el
   `id` de la URL lo puede escribir cualquiera, así que no acredita nada.
+
+---
+
+## Lote: tres hoteles, precios por mes y tres asesores (2026-08-19)
+
+Pedido del CEO en un mensaje: agregar los hoteles **Piedra Mar** y **Bohíos** al
+plan de Coveñas, que el bot **pregunte el mes** y mande el tarifario que
+corresponde, que sepa los precios por fecha (del Excel), que una fecha sin
+salida **no** termine en un pase al asesor, que el asesor reciba el chat con el
+nombre y la fecha, y una cuenta de asesor compartida por **tres** personas
+(Camila, Julián, Alexandra) con reparto por turnos.
+
+### Lo que entró
+
+| Qué | Dónde |
+|-----|-------|
+| Precios exactos del tarifario, sin memoria del modelo | `app/services/tarifario.py` + `app/data/tarifario_covenas.json` |
+| Generador del JSON desde el Excel del CEO | `scripts/generar_tarifario_covenas.py` |
+| Herramienta `consultar_tarifario` del motor LLM | `app/services/llm_engine.py` |
+| Catálogo de medios de los 3 hoteles (fuente única) | `app/data/bot_viajes.py` |
+| Contexto del bot reescrito: 3 hoteles, mes, niños | `app/bot_contexts/demo_viajes.md` |
+| `resumen` en `escalar_a_asesor` + nota interna en el chat | `llm_engine.py`, `services/bot_runner.py`, `pages/mensajes.tsx` |
+| Actualizador de producción que **no borra** el bot | `scripts/actualizar_bot_viajes.py` |
+| Tres asesores en rotación + cuenta de asesor nueva | `scripts/configurar_arranquemos_pues.py` |
+| Medios de los 3 hoteles publicados | `frontend/public/demo_viajes/` |
+
+Suite: **710 passed, 51 skipped, 1 xfailed**. Frontend: `tsc --noEmit` limpio.
+
+### El bug que nadie había visto: el reparto por turnos no repartía
+
+El lote anterior construyó el round-robin (`crud.siguiente_asesor`) y le quitó
+el `assignee` fijo a los **pasos** del bot. Pero el bot de Arranquemos Pues es
+LLM: su handoff no sale de un paso, sale de `llm_engine`, que hacía
+`cfg.get("assignee", "asesor_1")` sobre el `llm_config` — donde el `assignee`
+seguía puesto. Como `bot_runner` solo reparte cuando el `assignee` llega vacío,
+**todos los chats caían en `asesor_1`** y el round-robin era código muerto.
+
+Arreglo: el motor emite `assignee: ""` cuando la config no fija uno, y el
+default `"asesor_1"` desapareció de los tres call-sites. Verificado en vivo:
+Camila → Julián → Alexandra.
+
+### Por qué los precios no van en el prompt
+
+El tarifario son 102 filas que cambian por hotel, mes y fecha. Metérselas al
+modelo en el contexto es pedirle que recite una tabla, y ahí es donde inventa.
+Ahora vive en `app/data/tarifario_covenas.json` (generado desde el Excel) y el
+modelo lo consulta con una herramienta. Dos reglas quedaron **en código**, no en
+el prompt, porque son las que cuestan plata:
+
+1. **No se ofrece una salida que ya pasó.** El tarifario arranca en julio y el
+   bot sigue vivo en agosto: sin el filtro por fecha vendería la salida del 06
+   de agosto en septiembre.
+2. **Cada mes tiene su imagen**, y qué flyer va con qué mes sale del catálogo de
+   medios (`hotel` + `meses` en cada entrada), no de que el modelo acierte.
+
+**El Excel nunca sale hacia el cliente** — está prohibido en el contexto y el
+resultado de cada consulta lo repite. Copia fuente en S3:
+`s3://gloma-marketing-media-747456040509/arranquemos_pues/tarifarios/`.
+
+### Los nombres de los tarifarios están al revés de lo que parece
+
+El CEO describió "tarifario1 = agosto a noviembre, tarifario2 = diciembre a
+enero". Leyendo las imágenes, para Amor de Dios es **al revés**
+(`tarifario_amordios1` es dic–ene y `tarifario_amordios2` es ago–nov), y Piedra
+Mar ni siquiera parte igual (`piedramar2` es jul–oct, `piedramar1` es nov–ene).
+El mapeo se hizo por el **contenido** de cada imagen, no por su nombre, y quedó
+declarado en `app/data/bot_viajes.py` con un test que lo fija. Si algún día se
+renombran los archivos, hay que tocar ese dict.
+
+`tarifario3.jpeg` (abril–julio) salió del catálogo: está vencido.
+
+### Bohíos comparte tarifa y flyer con Amor de Dios
+
+En el Excel es una sola fila para los dos ("HOTEL AMOR DE DIOS y HOTEL BOHIOS").
+Bohíos no tiene imagen de info general, solo video. Cuando alguien pregunta por
+Bohíos, el bot manda el flyer de Amor de Dios **avisando que la imagen sale a
+nombre del otro hotel pero el precio aplica igual** — el aviso lo inyecta la
+herramienta, no depende de que el modelo se acuerde.
+
+### El asesor ya no hereda un chat en blanco
+
+`escalar_a_asesor` recibió un campo `resumen` opcional que el bot llena con lo
+que el cliente ya dijo. `bot_runner` lo guarda como un mensaje
+`message_type='nota_interna'`: **no pasa por `_send_text`**, que es el único
+camino hacia Meta/Twilio, así que el cliente no la ve. En la bandeja sale
+centrada y en ámbar, con "solo visible para el equipo".
+
+Verificado en vivo: `resumen='Andrés Ruiz, CC 1020304050, 2 personas, hotel
+Amor de Dios, del 18 al 21 de septiembre'`.
+
+### Varias sesiones desde la misma cuenta
+
+No hubo nada que habilitar: el JWT no guarda estado en el servidor y no hay
+tabla de sesiones, así que N logins del mismo correo conviven. Lo que **sí**
+conviene revisar: `ACCESS_TOKEN_EXPIRE_MINUTES` está en 30, o sea que los tres
+asesores tienen que volver a entrar cada media hora. Queda anotado abajo.
+
+### Un `.gitignore` que tapaba de más
+
+La regla `demo_viajes/` (sin `/` inicial) ignoraba **cualquier** carpeta con ese
+nombre, incluida `frontend/public/demo_viajes/` — la que Amplify sirve. Los
+archivos viejos estaban versionados de antes de la regla, así que nadie lo
+notó hasta que hubo que agregar imágenes nuevas y no aparecían en `git status`.
+Anclada a `/demo_viajes/`.
+
+### Pendientes
+
+- **`ACCESS_TOKEN_EXPIRE_MINUTES=30`**: con tres asesores en turno todo el día,
+  reloguearse cada media hora es fricción real. Subirlo (¿8 horas?) o meter
+  refresh token. Decisión del CEO.
+- **Cuenta de asesor anterior** `arranquemospues.asesor@gmail.com` sigue activa
+  con permisos de asesor. El script la reporta pero no la toca: desactivarla
+  sin avisar dejaría por fuera a quien la esté usando. Confirmar con el CEO.
+- **Temporada del tarifario**: el JSON cubre julio 2026 – enero 2027 y el año lo
+  asigna el generador (`ANIO_INICIO`). Cuando salga el tarifario nuevo hay que
+  regenerarlo, o el bot se queda sin fechas que ofrecer.
+- **Cupos**: el bot sabe qué fechas existen, no si quedan lugares. Eso sigue
+  siendo del asesor.

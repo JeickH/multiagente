@@ -400,30 +400,47 @@ export default function Mensajes() {
                     Sin mensajes en esta conversación.
                   </div>
                 ) : (
-                  detail.messages.map((m) => (
-                    <div
-                      key={m.id}
-                      className={`flex ${m.direction === 'outbound' ? 'justify-end' : 'justify-start'}`}
-                    >
-                      <div
-                        className={`max-w-md px-4 py-2 rounded-2xl shadow-sm ${
-                          m.direction === 'outbound'
-                            ? 'bg-gloma-brown text-white rounded-br-sm'
-                            : 'bg-white text-gray-800 rounded-bl-sm border border-gray-100'
-                        }`}
-                      >
-                        <div className="text-sm whitespace-pre-wrap break-words">{m.content}</div>
-                        <div
-                          className={`text-[10px] mt-1 ${
-                            m.direction === 'outbound' ? 'text-gloma-rose-soft' : 'text-gray-400'
-                          }`}
-                        >
-                          {formatTime(m.created_at)}
-                          {m.status === 'failed' && ' • falló'}
+                  detail.messages.map((m) =>
+                    /* La nota interna la escribe el bot al pasar el chat a un
+                       asesor. NO se le envió al cliente: se muestra centrada y
+                       con aviso, para que nadie la confunda con un mensaje del
+                       chat y le responda "como ya le dije...". */
+                    m.message_type === 'nota_interna' ? (
+                      <div key={m.id} className="flex justify-center">
+                        <div className="max-w-lg w-full px-4 py-2.5 rounded-xl border border-amber-200 bg-amber-50">
+                          <div className="text-sm whitespace-pre-wrap break-words text-amber-900">
+                            {m.content}
+                          </div>
+                          <div className="text-[10px] mt-1 text-amber-600">
+                            {formatTime(m.created_at)} • solo visible para el equipo
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  ))
+                    ) : (
+                      <div
+                        key={m.id}
+                        className={`flex ${m.direction === 'outbound' ? 'justify-end' : 'justify-start'}`}
+                      >
+                        <div
+                          className={`max-w-md px-4 py-2 rounded-2xl shadow-sm ${
+                            m.direction === 'outbound'
+                              ? 'bg-gloma-brown text-white rounded-br-sm'
+                              : 'bg-white text-gray-800 rounded-bl-sm border border-gray-100'
+                          }`}
+                        >
+                          <div className="text-sm whitespace-pre-wrap break-words">{m.content}</div>
+                          <div
+                            className={`text-[10px] mt-1 ${
+                              m.direction === 'outbound' ? 'text-gloma-rose-soft' : 'text-gray-400'
+                            }`}
+                          >
+                            {formatTime(m.created_at)}
+                            {m.status === 'failed' && ' • falló'}
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  )
                 )}
                 <div ref={messagesEndRef} />
               </div>

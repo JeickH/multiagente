@@ -99,7 +99,8 @@ class TestElRestoDeLaCorrida:
     def test_el_adjunto_sigue_siendo_el_desempate(self, bot):
         """Cuando la persona no dice nada clasificable, el medio enviado sigue
         siendo la mejor pista disponible."""
-        assert camino(bot, "listo, muéstrame", media=["tarifario1"]) == \
+        assert camino(bot, "listo, muéstrame",
+                      media=["tarifario_amordios_ago_nov"]) == \
             "precios_condiciones"
 
 
@@ -107,7 +108,7 @@ class TestConfigDelBot:
     """La config que este test asume es la que el seed va a escribir."""
 
     def test_el_hotel_apunta_a_su_propio_camino(self, bot):
-        assert bot.cfg["media"]["hotel_video"]["camino"] == "hotel"
+        assert bot.cfg["media"]["video_amordios"]["camino"] == "hotel"
 
     def test_todo_camino_de_un_medio_existe_en_la_tabla(self, bot):
         """Un medio que apunte a un camino que no existe deja un chip huérfano

@@ -51,9 +51,20 @@ from app.database import SessionLocal  # type: ignore
 
 CORREO_VIEJO = "arranquemospues.contacto@gmail.com"
 CORREO_ADMIN = "arranquemospues.marketing@gmail.com"
-CORREO_ASESOR = "arranquemospues.asesor@gmail.com"
-NOMBRE_ASESOR = "Asesor Arranquemos Pues"
-ASESORES = ["Julián", "Camila"]
+# Un solo login para los tres asesores, por decisión del CEO (19-ago-2026): se
+# conectan a la vez desde esa cuenta y a veces el admin también. El JWT no
+# guarda estado en el servidor, así que N sesiones simultáneas del mismo correo
+# conviven sin pisarse — no hay nada que habilitar para eso.
+CORREO_ASESOR = "arranquemospues.ventas@outlook.com"
+NOMBRE_ASESOR = "Asesores Arranquemos Pues"
+DOCUMENTO_ASESOR = "ASESORAP02"
+# Cuenta de asesor anterior. Se deja viva a propósito: desactivarla sin avisar
+# dejaría por fuera a quien la esté usando ahora mismo. El script solo la
+# reporta para que el CEO decida.
+CORREO_ASESOR_PREVIO = "arranquemospues.asesor@gmail.com"
+# Orden del reparto por turnos del handoff: primer chat a Camila, el siguiente
+# a Julián, el siguiente a Alexandra, y vuelve a empezar.
+ASESORES = ["Camila", "Julián", "Alexandra"]
 
 
 def _password_hash() -> str:
@@ -122,7 +133,7 @@ def main() -> int:
                 nombre=NOMBRE_ASESOR,
                 correo=CORREO_ASESOR,
                 tipo_documento="CC",
-                documento="ASESORAP01",
+                documento=DOCUMENTO_ASESOR,
                 hashed_password=_password_hash(),
             )
             db.add(asesor)
@@ -171,6 +182,15 @@ def main() -> int:
             print(f"  ✓ {tocados} paso(s) handoff sin asesor fijo → entran al turno")
         else:
             print("  · ningún paso handoff tenía asesor fijo")
+
+        # ── 6. Aviso sobre la cuenta de asesor anterior ─────────────────
+        previo = crud.get_user_by_email(db, CORREO_ASESOR_PREVIO)
+        if previo is not None and previo.id != asesor.id:
+            print(
+                f"\n  ⚠ OJO: sigue activa la cuenta de asesor anterior "
+                f"{CORREO_ASESOR_PREVIO}. Este script NO la toca. Si ya nadie "
+                f"la usa, pídele al equipo que la desactive."
+            )
 
         # ── Resumen ─────────────────────────────────────────────────────
         print("\nResumen del team:")

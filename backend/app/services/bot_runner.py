@@ -205,6 +205,7 @@ def run_turn(
             conversation.assigned_to = assignee
             db.add(conversation)
             db.commit()
+            _nota_de_handoff(db, conversation, payload)
             text = payload.get("text", "")
             if text and text.strip():
                 _send_text(db, conversation, bot, meta_account, text)
@@ -221,6 +222,55 @@ def run_turn(
 
     _persist_state(db, session, next_state, finished, waiting)
     return session
+
+
+def _nota_de_handoff(
+    db: Session,
+    conversation: models.Conversation,
+    payload: dict,
+) -> None:
+    """Deja en el chat lo que el bot ya averiguó, para el asesor que lo recibe.
+
+    Se guarda como `message_type='nota_interna'`: queda en la conversación y se
+    ve en la bandeja, pero **no viaja al cliente** — a propósito no pasa por
+    `_send_text`, que es el único camino hacia Meta/Twilio.
+
+    Motivo (pedido del CEO, 19-ago-2026): antes el asesor heredaba el chat sin
+    contexto y le volvía a preguntar el nombre y la fecha a alguien que ya los
+    había dado dos veces. El `resumen` lo redacta el propio bot con lo que el
+    cliente dijo.
+    """
+    resumen = (payload.get("resumen") or "").strip()
+    motivo = (payload.get("motivo") or "").strip()
+    if not resumen and not motivo:
+        return
+
+    lineas = ["📋 *Resumen del bot para el asesor*"]
+    nombre = (conversation.contact_name or "").strip()
+    if nombre:
+        lineas.append(f"Contacto: {nombre}")
+    if resumen:
+        lineas.append(resumen)
+    if motivo:
+        lineas.append(f"Motivo del pase: {motivo}")
+
+    try:
+        crud.add_message(
+            db,
+            conversation,
+            direction="outbound",
+            content="\n".join(lineas),
+            message_type="nota_interna",
+            status="sent",
+            sent_by_user_id=None,
+        )
+    except Exception:
+        # Una nota que falle no puede tumbar el handoff: el chat ya cambió de
+        # dueño y eso es lo que no se puede perder.
+        logger.exception(
+            "bot_runner: no se pudo guardar la nota de handoff conv=%s",
+            conversation.id,
+        )
 
 
 def _send_text(

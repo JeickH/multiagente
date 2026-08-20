@@ -61,7 +61,7 @@ STEPS = [
         "mode": "extract", "variable": "nombre"}},
     # 4 — info general (imagen + caption)
     {"step_type": "send_media", "label": "Info general del tour", "config": {
-        "media_type": "image", "url": f"{M}/info_general.jpeg",
+        "media_type": "image", "url": f"{M}/hotel_amordios.jpeg",
         "caption": "¡Un gusto, {nombre}! 🙌 Con gusto te cuento sobre nuestro "
                    "*Plan a Tolú & Coveñas* 🌴: salida el viernes y regreso el "
                    "lunes, con hotel, alimentación y transporte ida y regreso "
@@ -80,13 +80,14 @@ STEPS = [
          "caption": "Estos son los tours incluidos en tu plan 🏝️"},
         {"media_type": "video", "url": f"{M}/tour.mp4",
          "caption": "Y mira un adelanto en video 🎥"}]}},
-    # 8 — precios + condiciones + hotel (tarifario1/2/3 + video, todo junto)
+    # 8 — precios + condiciones + hotel (tarifarios + video, todo junto).
+    # Este bot de flujo manda los dos tarifarios de Amor de Dios sin elegir por
+    # mes: eso solo lo sabe hacer el bot LLM, que consulta `consultar_tarifario`.
     {"step_type": "send_media", "label": "Precios y condiciones", "config": {"items": [
-        {"media_type": "image", "url": f"{M}/tarifario1.jpeg",
+        {"media_type": "image", "url": f"{M}/tarifario_amordios2.jpeg",
          "caption": "💰 *Precios y tarifas* del plan a Tolú & Coveñas:"},
-        {"media_type": "image", "url": f"{M}/tarifario2.jpeg"},
-        {"media_type": "image", "url": f"{M}/tarifario3.jpeg"},
-        {"media_type": "video", "url": f"{M}/hotel.mp4",
+        {"media_type": "image", "url": f"{M}/tarifario_amordios1.jpeg"},
+        {"media_type": "video", "url": f"{M}/hotel_amor_dios.mp4",
          "caption": "🏨 Así es el hotel donde te hospedarás.\n\n"
                     "Se reserva con el *30% del valor total por persona* y debe "
                     "estar cancelado de 10 a 8 días hábiles antes del viaje 🤗"}]}},

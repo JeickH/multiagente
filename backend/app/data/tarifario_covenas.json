@@ -1,0 +1,1389 @@
+{
+  "_fuente": "Tarifario_Covenas_Amor_de_Dios_y_Piedra_Mar.xlsx",
+  "_generado_por": "backend/scripts/generar_tarifario_covenas.py",
+  "vigencia": "Temporada julio 2026 – enero 2027. Regenerar con el Excel de la próxima temporada.",
+  "notas": [
+    "Los valores son POR PERSONA y en pesos colombianos.",
+    "VALOR MÚLTIPLE = acomodación múltiple; VALOR DOBLE = acomodación doble.",
+    "Bohíos cobra exactamente la misma tarifa que Amor de Dios.",
+    "Amor de Dios: todos los lunes con jueves hay salidas desde $350.000 por persona en múltiple.",
+    "Piedra Mar: todos los lunes con jueves hay salidas desde $389.000 por persona en múltiple (no aplica para lunes festivos)."
+  ],
+  "planes": [
+    {
+      "hoteles": [
+        "piedra_mar"
+      ],
+      "mes": 7,
+      "inicio": "2026-07-17",
+      "fecha": "JULIO 17 AL 20 FESTIVO",
+      "multiple": 570000,
+      "doble": 627000,
+      "noches": 2,
+      "dias": 3,
+      "plan": "Fin de semana festivo"
+    },
+    {
+      "hoteles": [
+        "piedra_mar"
+      ],
+      "mes": 7,
+      "inicio": "2026-07-24",
+      "fecha": "JULIO 24 AL 27",
+      "multiple": 469000,
+      "doble": 516000,
+      "noches": 2,
+      "dias": 3,
+      "plan": "Plan estándar"
+    },
+    {
+      "hoteles": [
+        "piedra_mar"
+      ],
+      "mes": 7,
+      "inicio": "2026-07-24",
+      "fecha": "JULIO 24 AL 28 (Obsequio a Barú)",
+      "multiple": 620000,
+      "doble": 682000,
+      "noches": 3,
+      "dias": 4,
+      "plan": "Obsequio a Barú"
+    },
+    {
+      "hoteles": [
+        "piedra_mar"
+      ],
+      "mes": 7,
+      "inicio": "2026-07-31",
+      "fecha": "JULIO 31 AL 03 DE AGOSTO",
+      "multiple": 469000,
+      "doble": 516000,
+      "noches": 2,
+      "dias": 3,
+      "plan": "Plan estándar"
+    },
+    {
+      "hoteles": [
+        "amor_de_dios",
+        "bohios"
+      ],
+      "mes": 8,
+      "inicio": "2026-08-06",
+      "fecha": "AGOSTO 06 AL 09 (SÚPER PROMO)",
+      "multiple": 459000,
+      "doble": 505000,
+      "noches": 2,
+      "dias": 3,
+      "plan": "Fin de semana festivo"
+    },
+    {
+      "hoteles": [
+        "amor_de_dios",
+        "bohios"
+      ],
+      "mes": 8,
+      "inicio": "2026-08-06",
+      "fecha": "AGOSTO 06 AL 10 (Obsequio a Barú)",
+      "multiple": 550000,
+      "doble": 605000,
+      "noches": 3,
+      "dias": 4,
+      "plan": "Plan estándar"
+    },
+    {
+      "hoteles": [
+        "piedra_mar"
+      ],
+      "mes": 8,
+      "inicio": "2026-08-06",
+      "fecha": "AGOSTO 06 AL 09 (SÚPER PROMO)",
+      "multiple": 469000,
+      "doble": 516000,
+      "noches": 2,
+      "dias": 3,
+      "plan": "Fin de semana festivo"
+    },
+    {
+      "hoteles": [
+        "piedra_mar"
+      ],
+      "mes": 8,
+      "inicio": "2026-08-06",
+      "fecha": "AGOSTO 06 AL 10 (Obsequio a Barú)",
+      "multiple": 620000,
+      "doble": 682000,
+      "noches": 3,
+      "dias": 4,
+      "plan": "Obsequio a Barú"
+    },
+    {
+      "hoteles": [
+        "amor_de_dios",
+        "bohios"
+      ],
+      "mes": 8,
+      "inicio": "2026-08-14",
+      "fecha": "AGOSTO 14 AL 17 FESTIVO",
+      "multiple": 559000,
+      "doble": 615000,
+      "noches": 2,
+      "dias": 3,
+      "plan": "Fin de semana festivo"
+    },
+    {
+      "hoteles": [
+        "piedra_mar"
+      ],
+      "mes": 8,
+      "inicio": "2026-08-14",
+      "fecha": "AGOSTO 14 AL 17 FESTIVO",
+      "multiple": 570000,
+      "doble": 627000,
+      "noches": 2,
+      "dias": 3,
+      "plan": "Fin de semana festivo"
+    },
+    {
+      "hoteles": [
+        "amor_de_dios",
+        "bohios"
+      ],
+      "mes": 8,
+      "inicio": "2026-08-21",
+      "fecha": "AGOSTO 21 AL 24",
+      "multiple": 459000,
+      "doble": 505000,
+      "noches": 2,
+      "dias": 3,
+      "plan": "Plan estándar"
+    },
+    {
+      "hoteles": [
+        "amor_de_dios",
+        "bohios"
+      ],
+      "mes": 8,
+      "inicio": "2026-08-21",
+      "fecha": "AGOSTO 21 AL 25 (Obsequio a Barú)",
+      "multiple": 550000,
+      "doble": 605000,
+      "noches": 3,
+      "dias": 4,
+      "plan": "Plan estándar"
+    },
+    {
+      "hoteles": [
+        "piedra_mar"
+      ],
+      "mes": 8,
+      "inicio": "2026-08-21",
+      "fecha": "AGOSTO 21 AL 24",
+      "multiple": 469000,
+      "doble": 516000,
+      "noches": 2,
+      "dias": 3,
+      "plan": "Plan estándar"
+    },
+    {
+      "hoteles": [
+        "piedra_mar"
+      ],
+      "mes": 8,
+      "inicio": "2026-08-21",
+      "fecha": "AGOSTO 21 AL 25 (Obsequio a Barú)",
+      "multiple": 620000,
+      "doble": 682000,
+      "noches": 3,
+      "dias": 4,
+      "plan": "Obsequio a Barú"
+    },
+    {
+      "hoteles": [
+        "amor_de_dios",
+        "bohios"
+      ],
+      "mes": 8,
+      "inicio": "2026-08-28",
+      "fecha": "AGOSTO 28 AL 31",
+      "multiple": 459000,
+      "doble": 505000,
+      "noches": 2,
+      "dias": 3,
+      "plan": "Plan estándar"
+    },
+    {
+      "hoteles": [
+        "piedra_mar"
+      ],
+      "mes": 8,
+      "inicio": "2026-08-28",
+      "fecha": "AGOSTO 28 AL 31",
+      "multiple": 469000,
+      "doble": 516000,
+      "noches": 2,
+      "dias": 3,
+      "plan": "Plan estándar"
+    },
+    {
+      "hoteles": [
+        "amor_de_dios",
+        "bohios"
+      ],
+      "mes": 9,
+      "inicio": "2026-09-04",
+      "fecha": "SEPTIEMBRE 04 AL 07",
+      "multiple": 459000,
+      "doble": 505000,
+      "noches": 2,
+      "dias": 3,
+      "plan": "Plan estándar"
+    },
+    {
+      "hoteles": [
+        "amor_de_dios",
+        "bohios"
+      ],
+      "mes": 9,
+      "inicio": "2026-09-04",
+      "fecha": "SEPTIEMBRE 04 AL 08 (Obsequio a Barú)",
+      "multiple": 550000,
+      "doble": 605000,
+      "noches": 3,
+      "dias": 4,
+      "plan": "Obsequio a Barú"
+    },
+    {
+      "hoteles": [
+        "piedra_mar"
+      ],
+      "mes": 9,
+      "inicio": "2026-09-04",
+      "fecha": "SEPTIEMBRE 04 AL 07",
+      "multiple": 469000,
+      "doble": 516000,
+      "noches": 2,
+      "dias": 3,
+      "plan": "Plan estándar"
+    },
+    {
+      "hoteles": [
+        "piedra_mar"
+      ],
+      "mes": 9,
+      "inicio": "2026-09-04",
+      "fecha": "SEPTIEMBRE 04 AL 08 (Obsequio a Barú)",
+      "multiple": 620000,
+      "doble": 682000,
+      "noches": 3,
+      "dias": 4,
+      "plan": "Obsequio a Barú"
+    },
+    {
+      "hoteles": [
+        "amor_de_dios",
+        "bohios"
+      ],
+      "mes": 9,
+      "inicio": "2026-09-11",
+      "fecha": "SEPTIEMBRE 11 AL 14",
+      "multiple": 459000,
+      "doble": 505000,
+      "noches": 2,
+      "dias": 3,
+      "plan": "Plan estándar"
+    },
+    {
+      "hoteles": [
+        "amor_de_dios",
+        "bohios"
+      ],
+      "mes": 9,
+      "inicio": "2026-09-11",
+      "fecha": "SEPTIEMBRE 11 AL 15 (Obsequio a Barú)",
+      "multiple": 550000,
+      "doble": 605000,
+      "noches": 3,
+      "dias": 4,
+      "plan": "Obsequio a Barú"
+    },
+    {
+      "hoteles": [
+        "piedra_mar"
+      ],
+      "mes": 9,
+      "inicio": "2026-09-11",
+      "fecha": "SEPTIEMBRE 11 AL 14",
+      "multiple": 469000,
+      "doble": 516000,
+      "noches": 2,
+      "dias": 3,
+      "plan": "Plan estándar"
+    },
+    {
+      "hoteles": [
+        "piedra_mar"
+      ],
+      "mes": 9,
+      "inicio": "2026-09-11",
+      "fecha": "SEPTIEMBRE 11 AL 15 (Obsequio a Barú)",
+      "multiple": 620000,
+      "doble": 682000,
+      "noches": 3,
+      "dias": 4,
+      "plan": "Obsequio a Barú"
+    },
+    {
+      "hoteles": [
+        "amor_de_dios",
+        "bohios"
+      ],
+      "mes": 9,
+      "inicio": "2026-09-18",
+      "fecha": "SEPTIEMBRE 18 AL 21",
+      "multiple": 459000,
+      "doble": 505000,
+      "noches": 2,
+      "dias": 3,
+      "plan": "Plan estándar"
+    },
+    {
+      "hoteles": [
+        "amor_de_dios",
+        "bohios"
+      ],
+      "mes": 9,
+      "inicio": "2026-09-18",
+      "fecha": "SEPTIEMBRE 18 AL 22 (Obsequio a Barú)",
+      "multiple": 550000,
+      "doble": 605000,
+      "noches": 3,
+      "dias": 4,
+      "plan": "Obsequio a Barú"
+    },
+    {
+      "hoteles": [
+        "piedra_mar"
+      ],
+      "mes": 9,
+      "inicio": "2026-09-18",
+      "fecha": "SEPTIEMBRE 18 AL 21",
+      "multiple": 469000,
+      "doble": 516000,
+      "noches": 2,
+      "dias": 3,
+      "plan": "Plan estándar"
+    },
+    {
+      "hoteles": [
+        "piedra_mar"
+      ],
+      "mes": 9,
+      "inicio": "2026-09-18",
+      "fecha": "SEPTIEMBRE 18 AL 22 (Obsequio a Barú)",
+      "multiple": 620000,
+      "doble": 682000,
+      "noches": 3,
+      "dias": 4,
+      "plan": "Obsequio a Barú"
+    },
+    {
+      "hoteles": [
+        "amor_de_dios",
+        "bohios"
+      ],
+      "mes": 9,
+      "inicio": "2026-09-25",
+      "fecha": "SEPTIEMBRE 25 AL 28",
+      "multiple": 459000,
+      "doble": 505000,
+      "noches": 2,
+      "dias": 3,
+      "plan": "Plan estándar"
+    },
+    {
+      "hoteles": [
+        "amor_de_dios",
+        "bohios"
+      ],
+      "mes": 9,
+      "inicio": "2026-09-25",
+      "fecha": "SEPTIEMBRE 25 AL 29 (Obsequio a Barú)",
+      "multiple": 550000,
+      "doble": 605000,
+      "noches": 3,
+      "dias": 4,
+      "plan": "Obsequio a Barú"
+    },
+    {
+      "hoteles": [
+        "piedra_mar"
+      ],
+      "mes": 9,
+      "inicio": "2026-09-25",
+      "fecha": "SEPTIEMBRE 25 AL 28",
+      "multiple": 469000,
+      "doble": 516000,
+      "noches": 2,
+      "dias": 3,
+      "plan": "Plan estándar"
+    },
+    {
+      "hoteles": [
+        "piedra_mar"
+      ],
+      "mes": 9,
+      "inicio": "2026-09-25",
+      "fecha": "SEPTIEMBRE 25 AL 29 (Obsequio a Barú)",
+      "multiple": 620000,
+      "doble": 682000,
+      "noches": 3,
+      "dias": 4,
+      "plan": "Obsequio a Barú"
+    },
+    {
+      "hoteles": [
+        "amor_de_dios",
+        "bohios"
+      ],
+      "mes": 10,
+      "inicio": "2026-10-02",
+      "fecha": "OCTUBRE 02 AL 05",
+      "multiple": 459000,
+      "doble": 505000,
+      "noches": 2,
+      "dias": 3,
+      "plan": "Plan estándar"
+    },
+    {
+      "hoteles": [
+        "piedra_mar"
+      ],
+      "mes": 10,
+      "inicio": "2026-10-02",
+      "fecha": "OCTUBRE 02 AL 05",
+      "multiple": 469000,
+      "doble": 516000,
+      "noches": 2,
+      "dias": 3,
+      "plan": "Plan estándar"
+    },
+    {
+      "hoteles": [
+        "amor_de_dios",
+        "bohios"
+      ],
+      "mes": 10,
+      "inicio": "2026-10-09",
+      "fecha": "OCTUBRE 09 AL 12 FESTIVO",
+      "multiple": 559000,
+      "doble": 615000,
+      "noches": 2,
+      "dias": 3,
+      "plan": "Fin de semana festivo"
+    },
+    {
+      "hoteles": [
+        "piedra_mar"
+      ],
+      "mes": 10,
+      "inicio": "2026-10-09",
+      "fecha": "OCTUBRE 09 AL 12 FESTIVO",
+      "multiple": 570000,
+      "doble": 627000,
+      "noches": 2,
+      "dias": 3,
+      "plan": "Fin de semana festivo"
+    },
+    {
+      "hoteles": [
+        "amor_de_dios",
+        "bohios"
+      ],
+      "mes": 10,
+      "inicio": "2026-10-16",
+      "fecha": "OCTUBRE 16 AL 19",
+      "multiple": 459000,
+      "doble": 505000,
+      "noches": 2,
+      "dias": 3,
+      "plan": "Plan estándar"
+    },
+    {
+      "hoteles": [
+        "amor_de_dios",
+        "bohios"
+      ],
+      "mes": 10,
+      "inicio": "2026-10-16",
+      "fecha": "OCTUBRE 16 AL 20 (Obsequio a Barú)",
+      "multiple": 550000,
+      "doble": 605000,
+      "noches": 3,
+      "dias": 4,
+      "plan": "Obsequio a Barú"
+    },
+    {
+      "hoteles": [
+        "piedra_mar"
+      ],
+      "mes": 10,
+      "inicio": "2026-10-16",
+      "fecha": "OCTUBRE 16 AL 19",
+      "multiple": 469000,
+      "doble": 516000,
+      "noches": 2,
+      "dias": 3,
+      "plan": "Plan estándar"
+    },
+    {
+      "hoteles": [
+        "piedra_mar"
+      ],
+      "mes": 10,
+      "inicio": "2026-10-16",
+      "fecha": "OCTUBRE 16 AL 20 (Obsequio a Barú)",
+      "multiple": 620000,
+      "doble": 682000,
+      "noches": 3,
+      "dias": 4,
+      "plan": "Obsequio a Barú"
+    },
+    {
+      "hoteles": [
+        "amor_de_dios",
+        "bohios"
+      ],
+      "mes": 10,
+      "inicio": "2026-10-23",
+      "fecha": "OCTUBRE 23 AL 26",
+      "multiple": 459000,
+      "doble": 505000,
+      "noches": 2,
+      "dias": 3,
+      "plan": "Plan estándar"
+    },
+    {
+      "hoteles": [
+        "piedra_mar"
+      ],
+      "mes": 10,
+      "inicio": "2026-10-23",
+      "fecha": "OCTUBRE 23 AL 26",
+      "multiple": 469000,
+      "doble": 516000,
+      "noches": 2,
+      "dias": 3,
+      "plan": "Plan estándar"
+    },
+    {
+      "hoteles": [
+        "amor_de_dios",
+        "bohios"
+      ],
+      "mes": 10,
+      "inicio": "2026-10-30",
+      "fecha": "OCTUBRE 30 AL 02 DE NOVIEMBRE FESTIVO",
+      "multiple": 559000,
+      "doble": 615000,
+      "noches": 2,
+      "dias": 3,
+      "plan": "Fin de semana festivo"
+    },
+    {
+      "hoteles": [
+        "piedra_mar"
+      ],
+      "mes": 10,
+      "inicio": "2026-10-30",
+      "fecha": "OCTUBRE 30 AL 02 DE NOVIEMBRE FESTIVO",
+      "multiple": 570000,
+      "doble": 627000,
+      "noches": 2,
+      "dias": 3,
+      "plan": "Fin de semana festivo"
+    },
+    {
+      "hoteles": [
+        "amor_de_dios",
+        "bohios"
+      ],
+      "mes": 11,
+      "inicio": "2026-11-06",
+      "fecha": "NOVIEMBRE 06 AL 09",
+      "multiple": 459000,
+      "doble": 505000,
+      "noches": 2,
+      "dias": 3,
+      "plan": "Plan estándar"
+    },
+    {
+      "hoteles": [
+        "amor_de_dios",
+        "bohios"
+      ],
+      "mes": 11,
+      "inicio": "2026-11-06",
+      "fecha": "NOVIEMBRE 06 AL 10 (Obsequio a Barú)",
+      "multiple": 550000,
+      "doble": 605000,
+      "noches": 3,
+      "dias": 4,
+      "plan": "Obsequio a Barú"
+    },
+    {
+      "hoteles": [
+        "piedra_mar"
+      ],
+      "mes": 11,
+      "inicio": "2026-11-06",
+      "fecha": "NOVIEMBRE 06 AL 09",
+      "multiple": 469000,
+      "doble": 516000,
+      "noches": 2,
+      "dias": 3,
+      "plan": "Plan estándar"
+    },
+    {
+      "hoteles": [
+        "piedra_mar"
+      ],
+      "mes": 11,
+      "inicio": "2026-11-06",
+      "fecha": "NOVIEMBRE 06 AL 10 (Obsequio a Barú)",
+      "multiple": 620000,
+      "doble": 682000,
+      "noches": 3,
+      "dias": 4,
+      "plan": "Obsequio a Barú"
+    },
+    {
+      "hoteles": [
+        "amor_de_dios",
+        "bohios"
+      ],
+      "mes": 11,
+      "inicio": "2026-11-13",
+      "fecha": "NOVIEMBRE 13 AL 16 FESTIVO",
+      "multiple": 559000,
+      "doble": 615000,
+      "noches": 2,
+      "dias": 3,
+      "plan": "Fin de semana festivo"
+    },
+    {
+      "hoteles": [
+        "piedra_mar"
+      ],
+      "mes": 11,
+      "inicio": "2026-11-13",
+      "fecha": "NOVIEMBRE 13 AL 16 FESTIVO",
+      "multiple": 570000,
+      "doble": 627000,
+      "noches": 2,
+      "dias": 3,
+      "plan": "Fin de semana festivo"
+    },
+    {
+      "hoteles": [
+        "amor_de_dios",
+        "bohios"
+      ],
+      "mes": 11,
+      "inicio": "2026-11-20",
+      "fecha": "NOVIEMBRE 20 AL 23",
+      "multiple": 459000,
+      "doble": 505000,
+      "noches": 2,
+      "dias": 3,
+      "plan": "Plan estándar"
+    },
+    {
+      "hoteles": [
+        "amor_de_dios",
+        "bohios"
+      ],
+      "mes": 11,
+      "inicio": "2026-11-20",
+      "fecha": "NOVIEMBRE 20 AL 24 (Obsequio a Barú)",
+      "multiple": 550000,
+      "doble": 605000,
+      "noches": 3,
+      "dias": 4,
+      "plan": "Obsequio a Barú"
+    },
+    {
+      "hoteles": [
+        "piedra_mar"
+      ],
+      "mes": 11,
+      "inicio": "2026-11-20",
+      "fecha": "NOVIEMBRE 20 AL 23",
+      "multiple": 469000,
+      "doble": 516000,
+      "noches": 2,
+      "dias": 3,
+      "plan": "Plan estándar"
+    },
+    {
+      "hoteles": [
+        "piedra_mar"
+      ],
+      "mes": 11,
+      "inicio": "2026-11-20",
+      "fecha": "NOVIEMBRE 20 AL 24 (Obsequio a Barú)",
+      "multiple": 620000,
+      "doble": 682000,
+      "noches": 3,
+      "dias": 4,
+      "plan": "Obsequio a Barú"
+    },
+    {
+      "hoteles": [
+        "amor_de_dios",
+        "bohios"
+      ],
+      "mes": 11,
+      "inicio": "2026-11-27",
+      "fecha": "NOVIEMBRE 27 AL 30",
+      "multiple": 459000,
+      "doble": 505000,
+      "noches": 2,
+      "dias": 3,
+      "plan": "Plan estándar"
+    },
+    {
+      "hoteles": [
+        "amor_de_dios",
+        "bohios"
+      ],
+      "mes": 11,
+      "inicio": "2026-11-27",
+      "fecha": "NOVIEMBRE 27 AL 01 DE DICIEMBRE (Obsequio a Barú)",
+      "multiple": 550000,
+      "doble": 605000,
+      "noches": 3,
+      "dias": 4,
+      "plan": "Obsequio a Barú"
+    },
+    {
+      "hoteles": [
+        "piedra_mar"
+      ],
+      "mes": 11,
+      "inicio": "2026-11-27",
+      "fecha": "NOVIEMBRE 27 AL 30",
+      "multiple": 469000,
+      "doble": 516000,
+      "noches": 2,
+      "dias": 3,
+      "plan": "Plan estándar"
+    },
+    {
+      "hoteles": [
+        "piedra_mar"
+      ],
+      "mes": 11,
+      "inicio": "2026-11-27",
+      "fecha": "NOVIEMBRE 27 AL 01 DE DICIEMBRE (Obsequio a Barú)",
+      "multiple": 620000,
+      "doble": 682000,
+      "noches": 3,
+      "dias": 4,
+      "plan": "Obsequio a Barú"
+    },
+    {
+      "hoteles": [
+        "amor_de_dios",
+        "bohios"
+      ],
+      "mes": 11,
+      "inicio": "2026-11-30",
+      "fecha": "NOVIEMBRE 30 AL 03 DE DICIEMBRE",
+      "multiple": 459000,
+      "doble": 505000,
+      "noches": 2,
+      "dias": 3,
+      "plan": "Plan estándar"
+    },
+    {
+      "hoteles": [
+        "piedra_mar"
+      ],
+      "mes": 11,
+      "inicio": "2026-11-30",
+      "fecha": "NOVIEMBRE 30 AL 03 DE DICIEMBRE",
+      "multiple": 469000,
+      "doble": 516000,
+      "noches": 2,
+      "dias": 3,
+      "plan": "Plan estándar"
+    },
+    {
+      "hoteles": [
+        "amor_de_dios",
+        "bohios"
+      ],
+      "mes": 12,
+      "inicio": "2026-12-04",
+      "fecha": "DICIEMBRE 04 AL 07",
+      "multiple": 459000,
+      "doble": 505000,
+      "noches": 2,
+      "dias": 3,
+      "plan": "Plan estándar"
+    },
+    {
+      "hoteles": [
+        "amor_de_dios",
+        "bohios"
+      ],
+      "mes": 12,
+      "inicio": "2026-12-04",
+      "fecha": "DICIEMBRE 04 AL 08",
+      "multiple": 559000,
+      "doble": 615000,
+      "noches": 3,
+      "dias": 4,
+      "plan": "Fin de semana festivo"
+    },
+    {
+      "hoteles": [
+        "piedra_mar"
+      ],
+      "mes": 12,
+      "inicio": "2026-12-04",
+      "fecha": "DICIEMBRE 04 AL 07",
+      "multiple": 469000,
+      "doble": 516000,
+      "noches": 2,
+      "dias": 3,
+      "plan": "Plan estándar"
+    },
+    {
+      "hoteles": [
+        "piedra_mar"
+      ],
+      "mes": 12,
+      "inicio": "2026-12-04",
+      "fecha": "DICIEMBRE 04 AL 08",
+      "multiple": 570000,
+      "doble": 627000,
+      "noches": 3,
+      "dias": 4,
+      "plan": "Fin de semana festivo"
+    },
+    {
+      "hoteles": [
+        "amor_de_dios",
+        "bohios"
+      ],
+      "mes": 12,
+      "inicio": "2026-12-08",
+      "fecha": "DICIEMBRE 08 AL 11",
+      "multiple": 369000,
+      "doble": 406000,
+      "noches": 2,
+      "dias": 3,
+      "plan": "Obsequio a Rincón del Mar"
+    },
+    {
+      "hoteles": [
+        "piedra_mar"
+      ],
+      "mes": 12,
+      "inicio": "2026-12-08",
+      "fecha": "DICIEMBRE 08 AL 11",
+      "multiple": 389000,
+      "doble": 428000,
+      "noches": 2,
+      "dias": 3,
+      "plan": "Plan en semana"
+    },
+    {
+      "hoteles": [
+        "amor_de_dios",
+        "bohios"
+      ],
+      "mes": 12,
+      "inicio": "2026-12-11",
+      "fecha": "DICIEMBRE 11 AL 14",
+      "multiple": 459000,
+      "doble": 505000,
+      "noches": 2,
+      "dias": 3,
+      "plan": "Plan estándar"
+    },
+    {
+      "hoteles": [
+        "amor_de_dios",
+        "bohios"
+      ],
+      "mes": 12,
+      "inicio": "2026-12-11",
+      "fecha": "DICIEMBRE 11 AL 15 (Obsequio a Barú)",
+      "multiple": 550000,
+      "doble": 605000,
+      "noches": 3,
+      "dias": 4,
+      "plan": "Obsequio a Barú"
+    },
+    {
+      "hoteles": [
+        "piedra_mar"
+      ],
+      "mes": 12,
+      "inicio": "2026-12-11",
+      "fecha": "DICIEMBRE 11 AL 14",
+      "multiple": 469000,
+      "doble": 516000,
+      "noches": 2,
+      "dias": 3,
+      "plan": "Plan estándar"
+    },
+    {
+      "hoteles": [
+        "piedra_mar"
+      ],
+      "mes": 12,
+      "inicio": "2026-12-11",
+      "fecha": "DICIEMBRE 11 AL 15 (Obsequio a Barú)",
+      "multiple": 620000,
+      "doble": 682000,
+      "noches": 3,
+      "dias": 4,
+      "plan": "Obsequio a Barú"
+    },
+    {
+      "hoteles": [
+        "amor_de_dios",
+        "bohios"
+      ],
+      "mes": 12,
+      "inicio": "2026-12-14",
+      "fecha": "DICIEMBRE 14 AL 17",
+      "multiple": 369000,
+      "doble": 406000,
+      "noches": 2,
+      "dias": 3,
+      "plan": "Obsequio a Rincón del Mar"
+    },
+    {
+      "hoteles": [
+        "piedra_mar"
+      ],
+      "mes": 12,
+      "inicio": "2026-12-14",
+      "fecha": "DICIEMBRE 14 AL 17",
+      "multiple": 389000,
+      "doble": 428000,
+      "noches": 2,
+      "dias": 3,
+      "plan": "Plan en semana"
+    },
+    {
+      "hoteles": [
+        "amor_de_dios",
+        "bohios"
+      ],
+      "mes": 12,
+      "inicio": "2026-12-18",
+      "fecha": "DICIEMBRE 18 AL 21",
+      "multiple": 459000,
+      "doble": 505000,
+      "noches": 2,
+      "dias": 3,
+      "plan": "Plan estándar"
+    },
+    {
+      "hoteles": [
+        "amor_de_dios",
+        "bohios"
+      ],
+      "mes": 12,
+      "inicio": "2026-12-18",
+      "fecha": "DICIEMBRE 18 AL 22 (Obsequio a Barú)",
+      "multiple": 550000,
+      "doble": 605000,
+      "noches": 3,
+      "dias": 4,
+      "plan": "Obsequio a Barú"
+    },
+    {
+      "hoteles": [
+        "piedra_mar"
+      ],
+      "mes": 12,
+      "inicio": "2026-12-18",
+      "fecha": "DICIEMBRE 18 AL 21",
+      "multiple": 469000,
+      "doble": 516000,
+      "noches": 2,
+      "dias": 3,
+      "plan": "Plan estándar"
+    },
+    {
+      "hoteles": [
+        "piedra_mar"
+      ],
+      "mes": 12,
+      "inicio": "2026-12-18",
+      "fecha": "DICIEMBRE 18 AL 22 (Obsequio a Barú)",
+      "multiple": 620000,
+      "doble": 682000,
+      "noches": 3,
+      "dias": 4,
+      "plan": "Obsequio a Barú"
+    },
+    {
+      "hoteles": [
+        "amor_de_dios",
+        "bohios"
+      ],
+      "mes": 12,
+      "inicio": "2026-12-23",
+      "fecha": "DICIEMBRE 23 AL 26 (Cena Navideña)",
+      "multiple": 599000,
+      "doble": 659000,
+      "noches": 2,
+      "dias": 3,
+      "plan": "Fin de semana festivo"
+    },
+    {
+      "hoteles": [
+        "amor_de_dios",
+        "bohios"
+      ],
+      "mes": 12,
+      "inicio": "2026-12-23",
+      "fecha": "DICIEMBRE 23 AL 27 (Cena Navideña)",
+      "multiple": 699000,
+      "doble": 769000,
+      "noches": 3,
+      "dias": 4,
+      "plan": "Fin de semana festivo"
+    },
+    {
+      "hoteles": [
+        "piedra_mar"
+      ],
+      "mes": 12,
+      "inicio": "2026-12-23",
+      "fecha": "DICIEMBRE 23 AL 26 (Cena Navideña)",
+      "multiple": 649000,
+      "doble": 714000,
+      "noches": 2,
+      "dias": 3,
+      "plan": "Fin de semana festivo"
+    },
+    {
+      "hoteles": [
+        "piedra_mar"
+      ],
+      "mes": 12,
+      "inicio": "2026-12-23",
+      "fecha": "DICIEMBRE 23 AL 27 (Cena Navideña)",
+      "multiple": 749000,
+      "doble": 824000,
+      "noches": 3,
+      "dias": 4,
+      "plan": "Fin de semana festivo"
+    },
+    {
+      "hoteles": [
+        "amor_de_dios",
+        "bohios"
+      ],
+      "mes": 12,
+      "inicio": "2026-12-25",
+      "fecha": "DICIEMBRE 25 AL 28",
+      "multiple": 599000,
+      "doble": 659000,
+      "noches": 2,
+      "dias": 3,
+      "plan": "Fin de semana festivo"
+    },
+    {
+      "hoteles": [
+        "amor_de_dios",
+        "bohios"
+      ],
+      "mes": 12,
+      "inicio": "2026-12-25",
+      "fecha": "DICIEMBRE 25 AL 29",
+      "multiple": 699000,
+      "doble": 769000,
+      "noches": 3,
+      "dias": 4,
+      "plan": "Fin de semana festivo"
+    },
+    {
+      "hoteles": [
+        "piedra_mar"
+      ],
+      "mes": 12,
+      "inicio": "2026-12-25",
+      "fecha": "DICIEMBRE 25 AL 28",
+      "multiple": 649000,
+      "doble": 714000,
+      "noches": 2,
+      "dias": 3,
+      "plan": "Fin de semana festivo"
+    },
+    {
+      "hoteles": [
+        "piedra_mar"
+      ],
+      "mes": 12,
+      "inicio": "2026-12-25",
+      "fecha": "DICIEMBRE 25 AL 29",
+      "multiple": 749000,
+      "doble": 824000,
+      "noches": 3,
+      "dias": 4,
+      "plan": "Fin de semana festivo"
+    },
+    {
+      "hoteles": [
+        "amor_de_dios",
+        "bohios"
+      ],
+      "mes": 12,
+      "inicio": "2026-12-29",
+      "fecha": "DICIEMBRE 29 AL 02 DE ENERO (Fin de Año)",
+      "multiple": 799000,
+      "doble": 879000,
+      "noches": 3,
+      "dias": 4,
+      "plan": "Fin de semana festivo"
+    },
+    {
+      "hoteles": [
+        "piedra_mar"
+      ],
+      "mes": 12,
+      "inicio": "2026-12-29",
+      "fecha": "DICIEMBRE 29 AL 02 DE ENERO (Fin de Año)",
+      "multiple": 899000,
+      "doble": 989000,
+      "noches": 3,
+      "dias": 4,
+      "plan": "Fin de semana festivo"
+    },
+    {
+      "hoteles": [
+        "amor_de_dios",
+        "bohios"
+      ],
+      "mes": 12,
+      "inicio": "2026-12-30",
+      "fecha": "DICIEMBRE 30 AL 02 DE ENERO (Fin de Año)",
+      "multiple": 699000,
+      "doble": 769000,
+      "noches": 2,
+      "dias": 3,
+      "plan": "Fin de semana festivo"
+    },
+    {
+      "hoteles": [
+        "piedra_mar"
+      ],
+      "mes": 12,
+      "inicio": "2026-12-30",
+      "fecha": "DICIEMBRE 30 AL 02 DE ENERO (Fin de Año)",
+      "multiple": 799000,
+      "doble": 879000,
+      "noches": 2,
+      "dias": 3,
+      "plan": "Fin de semana festivo"
+    },
+    {
+      "hoteles": [
+        "amor_de_dios",
+        "bohios"
+      ],
+      "mes": 1,
+      "inicio": "2027-01-04",
+      "fecha": "ENERO 04 AL 07",
+      "multiple": 699000,
+      "doble": 769000,
+      "noches": 2,
+      "dias": 3,
+      "plan": "Obsequio a Rincón del Mar"
+    },
+    {
+      "hoteles": [
+        "amor_de_dios",
+        "bohios"
+      ],
+      "mes": 1,
+      "inicio": "2027-01-04",
+      "fecha": "ENERO 04 AL 08",
+      "multiple": 799000,
+      "doble": 879000,
+      "noches": 3,
+      "dias": 4,
+      "plan": "Obsequio a Rincón del Mar"
+    },
+    {
+      "hoteles": [
+        "piedra_mar"
+      ],
+      "mes": 1,
+      "inicio": "2027-01-04",
+      "fecha": "ENERO 04 AL 07",
+      "multiple": 749000,
+      "doble": 824000,
+      "noches": 2,
+      "dias": 3,
+      "plan": "Plan en semana"
+    },
+    {
+      "hoteles": [
+        "piedra_mar"
+      ],
+      "mes": 1,
+      "inicio": "2027-01-04",
+      "fecha": "ENERO 04 AL 08",
+      "multiple": 849000,
+      "doble": 934000,
+      "noches": 3,
+      "dias": 4,
+      "plan": "Plan en semana"
+    },
+    {
+      "hoteles": [
+        "amor_de_dios",
+        "bohios"
+      ],
+      "mes": 1,
+      "inicio": "2027-01-08",
+      "fecha": "ENERO 08 AL 11 (Puente de Reyes)",
+      "multiple": 699000,
+      "doble": 769000,
+      "noches": 2,
+      "dias": 3,
+      "plan": "Fin de semana festivo"
+    },
+    {
+      "hoteles": [
+        "amor_de_dios",
+        "bohios"
+      ],
+      "mes": 1,
+      "inicio": "2027-01-08",
+      "fecha": "ENERO 08 AL 12 (Puente de Reyes)",
+      "multiple": 799000,
+      "doble": 879000,
+      "noches": 3,
+      "dias": 4,
+      "plan": "Fin de semana festivo"
+    },
+    {
+      "hoteles": [
+        "piedra_mar"
+      ],
+      "mes": 1,
+      "inicio": "2027-01-08",
+      "fecha": "ENERO 08 AL 11 (Puente de Reyes)",
+      "multiple": 799000,
+      "doble": 879000,
+      "noches": 2,
+      "dias": 3,
+      "plan": "Fin de semana festivo"
+    },
+    {
+      "hoteles": [
+        "piedra_mar"
+      ],
+      "mes": 1,
+      "inicio": "2027-01-08",
+      "fecha": "ENERO 08 AL 12 (Puente de Reyes)",
+      "multiple": 899000,
+      "doble": 989000,
+      "noches": 3,
+      "dias": 4,
+      "plan": "Fin de semana festivo"
+    },
+    {
+      "hoteles": [
+        "amor_de_dios",
+        "bohios"
+      ],
+      "mes": 1,
+      "inicio": "2027-01-12",
+      "fecha": "ENERO 12 AL 15",
+      "multiple": 399000,
+      "doble": 439000,
+      "noches": 2,
+      "dias": 3,
+      "plan": "Obsequio a Rincón del Mar"
+    },
+    {
+      "hoteles": [
+        "piedra_mar"
+      ],
+      "mes": 1,
+      "inicio": "2027-01-12",
+      "fecha": "ENERO 12 AL 15",
+      "multiple": 419000,
+      "doble": 461000,
+      "noches": 2,
+      "dias": 3,
+      "plan": "Plan en semana"
+    },
+    {
+      "hoteles": [
+        "amor_de_dios",
+        "bohios"
+      ],
+      "mes": 1,
+      "inicio": "2027-01-15",
+      "fecha": "ENERO 15 AL 18",
+      "multiple": 499000,
+      "doble": 549000,
+      "noches": 2,
+      "dias": 3,
+      "plan": "Plan estándar"
+    },
+    {
+      "hoteles": [
+        "amor_de_dios",
+        "bohios"
+      ],
+      "mes": 1,
+      "inicio": "2027-01-15",
+      "fecha": "ENERO 15 AL 19 (Obsequio a Barú)",
+      "multiple": 599000,
+      "doble": 659000,
+      "noches": 3,
+      "dias": 4,
+      "plan": "Obsequio a Barú"
+    },
+    {
+      "hoteles": [
+        "piedra_mar"
+      ],
+      "mes": 1,
+      "inicio": "2027-01-15",
+      "fecha": "ENERO 15 AL 18",
+      "multiple": 519000,
+      "doble": 571000,
+      "noches": 2,
+      "dias": 3,
+      "plan": "Plan estándar"
+    },
+    {
+      "hoteles": [
+        "piedra_mar"
+      ],
+      "mes": 1,
+      "inicio": "2027-01-15",
+      "fecha": "ENERO 15 AL 19 (Obsequio a Barú)",
+      "multiple": 670000,
+      "doble": 737000,
+      "noches": 3,
+      "dias": 4,
+      "plan": "Obsequio a Barú"
+    }
+  ]
+}

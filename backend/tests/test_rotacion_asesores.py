@@ -110,3 +110,30 @@ def test_team_sin_asesores_cae_al_handle_historico(db_session):
 
     assert crud.asesores_del_team(db_session, team) == ["asesor_1"]
     assert crud.siguiente_asesor(db_session, team) == "asesor_1"
+
+
+def test_reparte_entre_tres_uno_por_uno(db_session, team_con_asesores):
+    """Arranquemos Pues, desde el 19-ago-2026: Camila, Julián y Alexandra."""
+    team_con_asesores.asesores_rotacion = ["Camila", "Julián", "Alexandra"]
+    db_session.add(team_con_asesores)
+    db_session.commit()
+
+    turnos = [crud.siguiente_asesor(db_session, team_con_asesores) for _ in range(7)]
+    assert turnos == [
+        "Camila", "Julián", "Alexandra",
+        "Camila", "Julián", "Alexandra",
+        "Camila",
+    ]
+
+
+def test_pasar_de_dos_a_tres_asesores_no_saltea_a_nadie(db_session, team_con_asesores):
+    """Al agregar un tercero, el turno guardado sigue siendo un índice válido y
+    nadie se queda sin recibir chats."""
+    crud.siguiente_asesor(db_session, team_con_asesores)   # turno queda en 1
+
+    team_con_asesores.asesores_rotacion = ["Camila", "Julián", "Alexandra"]
+    db_session.add(team_con_asesores)
+    db_session.commit()
+
+    turnos = [crud.siguiente_asesor(db_session, team_con_asesores) for _ in range(3)]
+    assert sorted(turnos) == ["Alexandra", "Camila", "Julián"]

@@ -23,96 +23,13 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 
 from app.database import SessionLocal  # type: ignore
 from app import crud, models  # type: ignore
+# El catálogo de medios y la config del bot viven en `app/data/bot_viajes.py`
+# para que el actualizador de producción pueda importarlos (ver ese módulo).
+from app.data.bot_viajes import LLM_CONFIG  # type: ignore
 
 
 AGENCY_EMAIL = os.environ.get("DEMO_AGENCY_EMAIL", "agencia@demo.com")
-ASESOR_HANDLE = "asesor_1"
 BOT_NAME = "Plan Tolú & Coveñas (IA)"
-
-M = os.environ.get("MEDIA_BASE", "https://app.glomabeauty.com").rstrip("/")
-
-MEDIA = {
-    "info_general": {
-        "url": f"{M}/demo_viajes/info_general.jpeg", "media_type": "image",
-        "descripcion": "imagen con la información general del plan Tolú & Coveñas",
-        "camino": "info_general",
-    },
-    "tours": {
-        "url": f"{M}/demo_viajes/tours.jpeg", "media_type": "image",
-        "descripcion": "imagen con los tours incluidos en el plan",
-        "camino": "tours",
-    },
-    "tour_video": {
-        "url": f"{M}/demo_viajes/tour.mp4", "media_type": "video",
-        "descripcion": "video adelanto de los tours",
-        "camino": "tours",
-    },
-    "tarifario1": {
-        "url": f"{M}/demo_viajes/tarifario1.jpeg", "media_type": "image",
-        "descripcion": "tarifario 1 de 3: precios del plan",
-        "camino": "precios_condiciones",
-    },
-    "tarifario2": {
-        "url": f"{M}/demo_viajes/tarifario2.jpeg", "media_type": "image",
-        "descripcion": "tarifario 2 de 3: precios del plan",
-        "camino": "precios_condiciones",
-    },
-    "tarifario3": {
-        "url": f"{M}/demo_viajes/tarifario3.jpeg", "media_type": "image",
-        "descripcion": "tarifario 3 de 3: precios del plan",
-        "camino": "precios_condiciones",
-    },
-    "hotel_video": {
-        "url": f"{M}/demo_viajes/hotel.mp4", "media_type": "video",
-        "descripcion": "video del hotel 'El Amor de Dios' donde se hospedan",
-        "camino": "hotel",
-    },
-    "medios_pago": {
-        "url": f"{M}/demo_viajes/medios_pago.jpeg", "media_type": "image",
-        "descripcion": "imagen con los métodos de pago (Bre-B, bancos, efectivo, tarjetas)",
-        "camino": "pagos",
-    },
-    "formulario_reserva": {
-        "url": f"{M}/demo_viajes/fomulario_reserva.jpeg", "media_type": "image",
-        "descripcion": "imagen con los datos que se piden para reservar",
-        "camino": "reserva",
-    },
-}
-
-# #255 observabilidad: clasificador de camino por la pregunta de la persona.
-# Orden = prioridad de matcheo (el dict conserva el orden de escritura), así
-# que lo específico va ANTES que lo genérico.
-CAMINOS = {
-    "reserva": ["reserva", "reservar", "apartar", "separar", "cedula", "cédula",
-                 "cupo"],
-    # Va de primero: "¿tienen plan a San Andrés?" caía en info_general por la
-    # palabra "plan", y es justo el caso que debe ir a un asesor humano.
-    "otros_destinos": ["san andres", "san andrés", "cartagena", "santa marta",
-                        "guajira", "eje cafetero", "providencia", "otro destino",
-                        "otros destinos", "otro plan", "otros planes",
-                        "otro viaje", "otros viajes"],
-    "hotel": ["hotel", "hospedaje", "alojamiento", "habitacion", "habitación",
-               "amor de dios"],
-    "itinerario": ["itinerario", "agenda", "cronograma", "dia a dia", "día a día",
-                    "actividades", "que hacemos", "qué hacemos", "a que hora",
-                    "a qué hora"],
-    "precios_condiciones": ["precio", "precios", "cuesta", "cuanto", "cuánto",
-                             "valor", "tarifa", "condicion", "condición",
-                             "descuento", "rebaja", "abono", "reembolso",
-                             "cancelacion", "cancelación"],
-    "pagos": ["pago", "pagar", "pse", "transferencia", "tarjeta", "nequi",
-               "daviplata", "bre-b", "breb", "bancolombia", "davivienda",
-               "bbva", "efectivo", "codensa", "metodo", "método"],
-    "tours": ["tour", "tours", "caimanera", "cienaga", "ciénaga", "paseo",
-               "incluye", "incluido", "playa"],
-    # Frases, no palabras sueltas: "persona" a secas marcaba como `asesor` un
-    # "¿eres una persona real o un bot?", que no es una petición de humano.
-    "asesor": ["hablar con una persona", "con una persona", "asesor humano",
-                "un asesor", "una asesora", "un humano", "con alguien",
-                "atencion humana", "atención humana"],
-    "info_general": ["informacion", "información", "info", "plan", "covenas",
-                      "coveñas", "tolu", "tolú", "promo"],
-}
 
 
 # ---------------------------------------------------------------------------
@@ -123,22 +40,25 @@ STEPS = [
     # 1 — bloque LLM de entrada
     {"step_type": "llm", "label": "🤖 LLM · Maria Camila decide el camino",
      "config": {"mode": "route", "intents": [], "default_step_id": None}},
-    {"step_type": "llm", "label": "Info general del plan", "config": {
-        "mode": "accion", "accion": "media", "fuente": "info_general.jpeg",
+    {"step_type": "llm", "label": "Info general + los 3 hoteles", "config": {
+        "mode": "accion", "accion": "media",
+        "fuente": "info_amordios.jpeg / info_piedramar.jpeg + videos",
         "mensaje": "¡Un gusto! 🙌 Te cuento sobre nuestro *Plan a Tolú & "
                    "Coveñas* 🌴: salida el viernes y regreso el lunes, con "
-                   "hotel, alimentación y transporte ida y regreso incluidos. "
-                   "Aquí te dejo la info general 👆"}},
+                   "hotel, transporte y alimentación desde el desayuno del "
+                   "sábado. Tenemos tres hoteles: *Amor de Dios*, *Piedra Mar* "
+                   "y *Bohíos* 🏨 ¿Para qué mes viajas y cuál te llama más?"}},
     {"step_type": "llm", "label": "Tours incluidos", "config": {
         "mode": "accion", "accion": "media", "fuente": "tours.jpeg + tour.mp4",
         "mensaje": "Estos son los tours incluidos en tu plan 🏝️ (Ciénaga de "
                    "La Caimanera y Tolú). Y mira un adelanto en video 🎥"}},
-    {"step_type": "llm", "label": "Precios y condiciones", "config": {
-        "mode": "accion", "accion": "media",
-        "fuente": "tarifario1-3.jpeg + hotel.mp4",
-        "mensaje": "💰 *Precios y tarifas* del plan a Tolú & Coveñas + 🏨 así "
-                   "es el hotel. Se reserva con el *30% del valor por persona* "
-                   "y se paga completo de 10 a 8 días hábiles antes del viaje 🤗"}},
+    {"step_type": "llm", "label": "Precios · consulta el tarifario", "config": {
+        "mode": "accion", "accion": "consulta",
+        "fuente": "herramienta consultar_tarifario (mes + hotel)",
+        "mensaje": "💰 Pregunta el *mes* y el *hotel*, consulta los precios "
+                   "reales de esas fechas y manda la imagen del tarifario que "
+                   "corresponde a ese mes. Se reserva con el *30% del valor por "
+                   "persona* y se paga completo de 8 a 10 días hábiles antes 🤗"}},
     {"step_type": "llm", "label": "Itinerario", "config": {
         "mode": "accion", "accion": "info", "fuente": "contexto a priori",
         "mensaje": "🌴✨ ITINERARIO: 🚌 Viernes viaje (salida 6-9pm, Estación "
@@ -169,9 +89,9 @@ STEPS = [
         "mensaje": "La IA lee la respuesta: si trae un nuevo tema lo enruta al "
                    "camino correspondiente; si solo agradece o se despide, "
                    "cierra la conversación."}},
-    # 10 — handoff
-    {"step_type": "handoff", "label": "Pasar a asesor humano", "config": {
-        "assignee": ASESOR_HANDLE,
+    # 10 — handoff. Sin `assignee`: se reparte por turnos entre los asesores
+    # del team (`teams.asesores_rotacion`). Fijar uno aquí anula el reparto.
+    {"step_type": "handoff", "label": "Pasar a asesor humano (por turnos)", "config": {
         "text": "¡Listo! 🙌 Te conecto con uno de nuestros asesores para "
                 "finalizar tu reserva. En un momento te escriben por aquí 💬"}},
     # 11 — fin
@@ -246,12 +166,7 @@ def main() -> int:
                         "plan Tolú & Coveñas — misma estrategia LLM que Talulah.",
             channels=["whatsapp"], trigger_type=models.BOT_TRIGGER_DEFAULT,
             steps=STEPS, engine="llm",
-            llm_config={
-                "context_key": "demo_viajes",
-                "assignee": ASESOR_HANDLE,
-                "media": MEDIA,
-                "caminos": CAMINOS,
-            },
+            llm_config=LLM_CONFIG,
         )
         _wire(db, bot)
         print(f"OK: bot LLM creado id={bot.id} con {len(bot.steps)} bloques visuales")
