@@ -9,6 +9,8 @@ de Arranquemos Pues, reemplazada por `arranquemospues.ventas@outlook.com`.
 """
 from __future__ import annotations
 
+from unittest.mock import patch
+
 import pytest
 from fastapi import HTTPException
 from sqlalchemy import create_engine
@@ -16,8 +18,25 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app import crud, dependencies, models, schemas
+from app.routers import auth as auth_router
 
 CLAVE = "Clave-De-Prueba-1"
+
+
+@pytest.fixture
+def jwt_de_prueba():
+    """Firma y verificación con una llave propia del test.
+
+    `SECRET_KEY` y `ALGORITHM` se leen del entorno al importar el módulo, y en
+    el CI no hay `.env`: sin esto, `ALGORITHM` llega en `None` y firmar el token
+    revienta con "Algorithm None not supported". El test no tiene por qué
+    depender de la configuración de la máquina donde corre.
+    """
+    with patch.object(auth_router, "SECRET_KEY", "secreto-de-prueba"), \
+         patch.object(auth_router, "ALGORITHM", "HS256"), \
+         patch.object(dependencies, "SECRET_KEY", "secreto-de-prueba"), \
+         patch.object(dependencies, "ALGORITHM", "HS256"):
+        yield
 
 
 @pytest.fixture
@@ -72,12 +91,12 @@ class TestDesactivada:
         inexistente = crud.authenticate_user(db_session, "nadie@test.com", CLAVE)
         assert desactivada == inexistente == False   # noqa: E712
 
-    def test_el_token_que_ya_tenia_deja_de_servir(self, db_session, asesor):
+    def test_el_token_que_ya_tenia_deja_de_servir(
+        self, db_session, asesor, jwt_de_prueba
+    ):
         """El corazón del cambio: con tokens de 2 horas, revisar `activo` solo
         en el login dejaría a la cuenta trabajando dos horas más."""
-        from app.routers.auth import create_access_token
-
-        token = create_access_token({"sub": asesor.correo})
+        token = auth_router.create_access_token({"sub": asesor.correo})
         credenciales = type("C", (), {"credentials": token})()
 
         # Con la cuenta activa, el token vale.
