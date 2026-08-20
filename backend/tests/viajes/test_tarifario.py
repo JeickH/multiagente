@@ -207,6 +207,13 @@ class TestBohios:
         assert "tarifario_amordios_ago_nov" in out
         assert "Amor de Dios" in out and "aplican igual para Bohíos" in out
 
+    def test_mandar_el_flyer_no_es_opcional(self):
+        """En la re-corrida el bot listó los precios de Bohíos en texto y no
+        mandó la imagen: la instrucción era sugerencia, ahora es obligación."""
+        out = tarifario.consultar(CFG, hotel="Bohíos", mes="octubre", hoy=HOY)
+        assert "OBLIGATORIO" in out
+        assert "No basta con listar los precios en texto" in out
+
 
 class TestLaImagenCorrespondeAlMes:
     @pytest.mark.parametrize(
@@ -250,6 +257,16 @@ class TestFechaSinSalida:
         assert "no hay salida que arranque el 2026-09-20" in out
         assert "NO escales" in out
         assert "SEPTIEMBRE 18 AL 21" in out and "SEPTIEMBRE 25 AL 28" in out
+
+    def test_las_dos_cercanas_son_dos_dias_distintos(self):
+        """Varios planes arrancan el mismo día (el estándar y el de Barú): sin
+        deduplicar, «las más cercanas» eran el mismo día ofrecido dos veces."""
+        out = tarifario.consultar(
+            CFG, hotel="Piedra Mar", mes="septiembre",
+            fecha="2026-09-20", hoy=HOY,
+        )
+        linea = [l for l in out.split("\n") if "Las más cercanas" in l][0]
+        assert linea.count("SEPTIEMBRE 18") == 1, linea
 
     def test_una_fecha_exacta_queda_marcada(self):
         out = tarifario.consultar(

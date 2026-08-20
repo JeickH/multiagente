@@ -254,8 +254,15 @@ def _bloque_hotel(
     if fecha is not None and not any(
         date.fromisoformat(p["inicio"]) == fecha for p in planes
     ):
+        # Una por fecha de salida: varios planes arrancan el mismo día (el
+        # estándar y el de Barú), y sin deduplicar las "dos más cercanas"
+        # terminaban siendo el mismo día ofrecido dos veces.
+        por_inicio: Dict[str, Dict[str, Any]] = {}
+        for p in sorted(planes, key=lambda p: p["inicio"]):
+            por_inicio.setdefault(p["inicio"], p)
         cercanos = sorted(
-            planes, key=lambda p: abs((date.fromisoformat(p["inicio"]) - fecha).days)
+            por_inicio.values(),
+            key=lambda p: abs((date.fromisoformat(p["inicio"]) - fecha).days),
         )[:2]
         lineas.append(
             f"  OJO: no hay salida que arranque el {fecha.isoformat()} en "
@@ -266,12 +273,18 @@ def _bloque_hotel(
 
     clave = clave_imagen(cfg, hotel, mes)
     if clave:
-        lineas.append(f"  Imagen para ese mes: envía `{clave}` con `enviar_media`.")
+        # Imperativo y no "por si acaso": listar los precios en texto y no
+        # mandar el flyer deja al cliente sin el documento que le sirve para
+        # decidir, y es lo que pasó con Bohíos en la prueba del 19-ago-2026.
+        lineas.append(
+            f"  OBLIGATORIO: en esta misma respuesta envía `{clave}` con "
+            "`enviar_media`. No basta con listar los precios en texto."
+        )
         if hotel == "bohios":
             lineas.append(
-                "  IMPORTANTE: esa imagen dice 'Hotel amor de Dios'. Avísale al "
-                "cliente que el flyer sale a nombre de Amor de Dios pero los "
-                "precios aplican igual para Bohíos."
+                "  Y al mandarla, avísale que el flyer sale a nombre de *Amor de "
+                "Dios* pero los precios aplican igual para Bohíos — si no se lo "
+                "dices, va a creer que le mandaste el hotel equivocado."
             )
     return lineas
 
