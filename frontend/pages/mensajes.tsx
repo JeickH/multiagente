@@ -1,5 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import Layout from '../components/Layout';
+import Paginacion, {
+  OPCIONES_POR_PAGINA,
+  guardarPorPagina,
+  leerPorPagina,
+} from '../components/Paginacion';
 import TutorialOverlay from '../components/TutorialOverlay';
 import { getToken } from '../lib/session';
 
@@ -43,6 +48,13 @@ type Message = {
   message_type: string;
   status: string;
   created_at: string;
+};
+
+type ConversationPage = {
+  conversaciones: Conversation[];
+  total: number;
+  pagina: number;
+  por_pagina: number;
 };
 
 type ConversationDetail = {
@@ -99,6 +111,11 @@ export default function Mensajes() {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [filter, setFilter] = useState<string>('todas');
   const [search, setSearch] = useState('');
+  // Lo que se escribió vs. lo que ya se le pidió al backend (ver el debounce).
+  const [searchAplicado, setSearchAplicado] = useState('');
+  const [pagina, setPagina] = useState(1);
+  const [porPagina, setPorPagina] = useState(OPCIONES_POR_PAGINA[0]);
+  const [total, setTotal] = useState(0);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [detail, setDetail] = useState<ConversationDetail | null>(null);
   const [draft, setDraft] = useState('');
@@ -111,6 +128,13 @@ export default function Mensajes() {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
 
+  // El "por página" elegido se recuerda entre visitas. Se lee en un efecto y
+  // no en el `useState` porque `localStorage` no existe en el render del
+  // servidor y Next.js marcaría el HTML como distinto al del cliente.
+  useEffect(() => {
+    setPorPagina(leerPorPagina('mensajes.porPagina'));
+  }, []);
+
   // Cargar /teams/me
   useEffect(() => {
     fetch('/api/teams/me', { headers: authHeaders() })
@@ -122,15 +146,43 @@ export default function Mensajes() {
       .catch((err) => setMeError(err.message || 'Error cargando equipo'));
   }, []);
 
-  // Cargar conversaciones (poll cada 8s)
+  // La búsqueda no dispara una consulta por tecla: se espera a que la persona
+  // deje de escribir. Sin esto, "marcela" son siete consultas y seis se tiran.
+  useEffect(() => {
+    const t = setTimeout(() => setSearchAplicado(search.trim()), 300);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  // Cambiar de filtro, de búsqueda o de tamaño de página vuelve a la primera.
+  // Si no, se queda uno en la página 7 de un resultado que tiene 2 y la
+  // pantalla aparece vacía sin explicar por qué.
+  useEffect(() => {
+    setPagina(1);
+  }, [filter, searchAplicado, porPagina]);
+
+  // Cargar conversaciones (poll cada 8s).
+  //
+  // El filtro y la búsqueda viajan al backend en vez de aplicarse sobre lo que
+  // ya se descargó: si se recortaran acá, "20 por página" filtraría dentro de
+  // esas 20 y el usuario vería "no hay pendientes" teniendo pendientes tres
+  // páginas más abajo.
   useEffect(() => {
     if (!me) return;
     let active = true;
+    const params = new URLSearchParams({
+      limite: String(porPagina),
+      pagina: String(pagina),
+    });
+    if (filter !== 'todas') params.set('estado', filter);
+    if (searchAplicado) params.set('busqueda', searchAplicado);
+
     const load = () =>
-      fetch('/api/mensajes/conversaciones', { headers: authHeaders() })
-        .then((res) => (res.ok ? res.json() : []))
-        .then((data: Conversation[]) => {
-          if (active) setConversations(data);
+      fetch(`/api/mensajes/conversaciones?${params.toString()}`, { headers: authHeaders() })
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data: ConversationPage | null) => {
+          if (!active || !data) return;
+          setConversations(data.conversaciones || []);
+          setTotal(data.total || 0);
         })
         .catch(() => {});
     load();
@@ -139,7 +191,7 @@ export default function Mensajes() {
       active = false;
       clearInterval(t);
     };
-  }, [me]);
+  }, [me, filter, searchAplicado, pagina, porPagina]);
 
   // Cargar detalle al seleccionar (poll cada 5s)
   useEffect(() => {
@@ -170,15 +222,8 @@ export default function Mensajes() {
 
   const canReply = me?.member.permissions?.can_reply_messages === true;
 
-  const filteredConversations = conversations.filter((c) => {
-    if (filter !== 'todas' && c.status !== filter) return false;
-    if (search) {
-      const q = search.toLowerCase();
-      const hay = `${c.contact_name || ''} ${c.contact_wa_id} ${c.last_message_preview || ''}`.toLowerCase();
-      if (!hay.includes(q)) return false;
-    }
-    return true;
-  });
+  // Ya no se filtra acá: `conversations` es la página que devolvió el backend
+  // con el filtro y la búsqueda ya aplicados.
 
   const sendMessage = async () => {
     if (!detail || !draft.trim() || !canReply) return;
@@ -226,10 +271,21 @@ export default function Mensajes() {
       setShowNew(false);
       setNewPhone('');
       setNewName('');
-      const r2 = await fetch('/api/mensajes/conversaciones', { headers: authHeaders() });
+      // La conversación recién creada es la más reciente, así que está en la
+      // primera página. Se vuelve a ella y se limpian los filtros: si quedara
+      // puesto "Cerrado", el chat que se acaba de abrir no aparecería y daría
+      // la impresión de que no se creó.
+      setFilter('todas');
+      setSearch('');
+      setPagina(1);
+      const r2 = await fetch('/api/mensajes/conversaciones?limite=20&pagina=1', {
+        headers: authHeaders(),
+      });
       if (r2.ok) {
-        const list: Conversation[] = await r2.json();
+        const page: ConversationPage = await r2.json();
+        const list = page.conversaciones || [];
         setConversations(list);
+        setTotal(page.total || 0);
         const found = list.find((c) => c.contact_wa_id === newPhone.replace(/\D/g, ''));
         if (found) setSelectedId(found.id);
       }
@@ -307,14 +363,16 @@ export default function Mensajes() {
             {meError && (
               <div className="p-4 text-sm text-red-600">Error cargando equipo: {meError}</div>
             )}
-            {filteredConversations.length === 0 ? (
+            {conversations.length === 0 ? (
               <div className="p-8 text-center text-gray-400 text-sm">
-                {conversations.length === 0
-                  ? 'Sin conversaciones todavía. Inicia una con el botón + arriba.'
-                  : 'No hay resultados con el filtro actual.'}
+                {/* Con el filtro puesto, "sin conversaciones todavía" sería
+                    mentira: las hay, solo que no de este tipo. */}
+                {filter !== 'todas' || searchAplicado
+                  ? 'No hay resultados con el filtro actual.'
+                  : 'Sin conversaciones todavía. Inicia una con el botón + arriba.'}
               </div>
             ) : (
-              filteredConversations.map((c) => {
+              conversations.map((c) => {
                 const selected = c.id === selectedId;
                 return (
                   <button
@@ -364,6 +422,22 @@ export default function Mensajes() {
                 );
               })
             )}
+          </div>
+
+          {/* Paginación al pie de la lista: fuera del área que scrollea, para
+              que no haya que bajar hasta el final para cambiar de página. */}
+          <div className="px-4 border-t border-gloma-rose-soft">
+            <Paginacion
+              pagina={pagina}
+              porPagina={porPagina}
+              total={total}
+              onPagina={setPagina}
+              onPorPagina={(n) => {
+                setPorPagina(n);
+                guardarPorPagina('mensajes.porPagina', n);
+              }}
+              etiqueta="chats"
+            />
           </div>
         </aside>
 

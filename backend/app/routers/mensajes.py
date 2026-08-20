@@ -1,6 +1,6 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
-from typing import List
+from typing import List, Optional
 
 from .. import models, schemas, crud
 from ..dependencies import get_db, get_current_membership, require_permission
@@ -9,24 +9,59 @@ from ..services import messaging
 router = APIRouter(prefix="/mensajes", tags=["mensajes"])
 
 
-@router.get("/conversaciones", response_model=List[schemas.ConversationOut])
+@router.get("/conversaciones", response_model=schemas.ConversationPageOut)
 def list_conversations(
+    estado: Optional[str] = Query(
+        None, description="open | pending | closed. Vacío = todas."
+    ),
+    busqueda: Optional[str] = Query(
+        None, description="nombre o número del contacto"
+    ),
+    limite: int = Query(
+        20, ge=1, le=crud.MAX_CONVERSACIONES_POR_PAGINA,
+        description="cuántas conversaciones por página",
+    ),
+    pagina: int = Query(1, ge=1, description="página, empezando en 1"),
     db: Session = Depends(get_db),
     member: models.TeamMember = Depends(get_current_membership),
 ):
-    convs = crud.list_conversations(db, member.team_id)
-    return [
-        schemas.ConversationOut(
-            id=c.id,
-            contact_wa_id=c.contact_wa_id,
-            contact_name=c.contact_name,
-            status=c.status,
-            assigned_to=getattr(c, "assigned_to", "bot") or "bot",
-            last_message_at=c.last_message_at,
-            last_message_preview=crud.last_message_preview(c),
-        )
-        for c in convs
-    ]
+    """Una página de la bandeja del team, de la más reciente a la más vieja.
+
+    El filtro y la búsqueda se resuelven en la base junto con la paginación: son
+    parte de la misma consulta, así que "20 por página" siempre significa las 20
+    primeras de lo filtrado.
+    """
+    if estado and estado not in crud.ESTADOS_CONVERSACION:
+        raise HTTPException(status_code=400, detail="Estado no válido")
+
+    convs, total = crud.list_conversations(
+        db,
+        member.team_id,
+        estado=estado,
+        busqueda=busqueda,
+        limite=limite,
+        offset=(pagina - 1) * limite,
+    )
+    # Un solo golpe a `messages` para los adelantos de toda la página, en vez de
+    # uno por conversación.
+    previews = crud.previews_de_conversaciones(db, [c.id for c in convs])
+    return schemas.ConversationPageOut(
+        conversaciones=[
+            schemas.ConversationOut(
+                id=c.id,
+                contact_wa_id=c.contact_wa_id,
+                contact_name=c.contact_name,
+                status=c.status,
+                assigned_to=getattr(c, "assigned_to", "bot") or "bot",
+                last_message_at=c.last_message_at,
+                last_message_preview=previews.get(c.id),
+            )
+            for c in convs
+        ],
+        total=total,
+        pagina=pagina,
+        por_pagina=limite,
+    )
 
 
 @router.get("/conversaciones/{conversation_id}", response_model=schemas.ConversationWithMessages)
