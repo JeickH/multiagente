@@ -147,6 +147,50 @@ class TestElAssigneeExplicitoSigueMandando:
         assert otra.assigned_to == "Camila"
 
 
+class TestElPlaceholderNoLeGanaAlTurno:
+    """`asesor_1` no es una persona: es el handle que quedó del MVP.
+
+    `bot_engine` lo mete por defecto cuando el paso no fija asesor, y los seeds
+    viejos lo escriben tal cual. Antes eso le ganaba al reparto (un `assignee`
+    explícito manda) y volvía a poner `asesor_1` en la bandeja. Si el team ya
+    dijo quiénes atienden, el placeholder entra al turno como si no estuviera.
+    """
+
+    def test_un_assignee_asesor_1_entra_al_turno(self, db_session, agencia):
+        team, bot = agencia
+        conv = _conversacion(db_session, team, "573004440001")
+        _correr_handoff(db_session, bot, conv, assignee="asesor_1")
+        assert conv.assigned_to == "Camila"
+
+    @pytest.mark.parametrize("handle", ["asesor_2", "ASESOR_1", "asesor-3", " asesor_1 "])
+    def test_cualquier_variante_del_handle_tambien(self, db_session, agencia, handle):
+        team, bot = agencia
+        conv = _conversacion(db_session, team, "573004440002")
+        _correr_handoff(db_session, bot, conv, assignee=handle)
+        assert conv.assigned_to in ASESORES
+
+    def test_un_team_sin_asesores_configurados_no_cambia(self, db_session):
+        """El resto de tenants sigue igual: sin rotación, el placeholder es el
+        único destino que hay y se respeta."""
+        owner = crud.create_user(
+            db_session,
+            schemas.UserCreate(
+                nombre="Otro", correo="otro_tenant@test.com",
+                tipo_documento="CC", documento="OTRO0001", password="Clave-De-Prueba-1",
+            ),
+        )
+        team = models.Team(nombre="Otro tenant", owner_user_id=owner.id)
+        db_session.add(team)
+        db_session.flush()
+        bot = models.Bot(user_id=owner.id, team_id=team.id, name="Bot", engine="llm")
+        db_session.add(bot)
+        db_session.commit()
+
+        conv = _conversacion(db_session, team, "573005550001")
+        _correr_handoff(db_session, bot, conv, assignee="asesor_1")
+        assert conv.assigned_to == "asesor_1"
+
+
 class TestLaConfigQueSeDespacha:
     def test_el_bot_de_viajes_no_fija_assignee(self):
         """La regresión concreta: con `assignee` puesto, los 6 chats reales del

@@ -276,6 +276,9 @@ def advance(
                 {
                     "type": "handoff",
                     "payload": {
+                        # `asesor_1` es el handle histórico, no una persona. Si
+                        # el team ya declaró sus asesores, `crud.resolver_asesor`
+                        # lo descarta y reparte por turnos.
                         "assignee": cfg.get("assignee", "asesor_1"),
                         "text": _fmt(cfg.get("text", ""), variables),
                     },

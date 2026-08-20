@@ -194,13 +194,11 @@ def run_turn(
             # los asesores del team (`teams.asesores_rotacion`): primero uno,
             # después el otro. Un `assignee` explícito en el paso manda sobre el
             # turno — sirve para rutas que deben caer siempre en la misma
-            # persona (ej. un camino de reclamos).
-            assignee = payload.get("assignee")
-            if not assignee:
-                team = db.query(models.Team).get(conversation.team_id)
-                assignee = (
-                    crud.siguiente_asesor(db, team) if team is not None else "asesor_1"
-                )
+            # persona (ej. un camino de reclamos). La única excepción es el
+            # placeholder `asesor_N`, que en un team con asesores configurados
+            # entra al turno igual: ver `crud.resolver_asesor`.
+            team = db.query(models.Team).get(conversation.team_id)
+            assignee = crud.resolver_asesor(db, team, payload.get("assignee"))
             conversation.status = "pending"
             conversation.assigned_to = assignee
             db.add(conversation)

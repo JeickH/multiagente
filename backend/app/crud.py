@@ -1,4 +1,5 @@
 import os
+import re
 from datetime import datetime
 from typing import Optional, Dict, List
 from sqlalchemy.orm import Session
@@ -190,6 +191,45 @@ def siguiente_asesor(db: Session, team: models.Team) -> str:
     db.add(team)
     db.commit()
     return elegido
+
+
+# Handles heredados del MVP: `asesor_1`, `asesor_2`, `asesor-3`… No son personas,
+# son el placeholder que se guardaba cuando el team todavía no había dicho quién
+# atiende. Los seeds viejos y `bot_engine` los siguen inyectando por defecto.
+_HANDLE_PLACEHOLDER = re.compile(r"^asesor[_\- ]?\d+$", re.IGNORECASE)
+
+
+def es_handle_placeholder(assignee: Optional[str]) -> bool:
+    """¿`assignee` es un handle genérico y no el nombre de una persona?"""
+    return bool(assignee) and bool(_HANDLE_PLACEHOLDER.match(assignee.strip()))
+
+
+def resolver_asesor(
+    db: Session, team: Optional[models.Team], assignee: Optional[str] = None
+) -> str:
+    """A quién se le entrega el chat cuando el bot hace handoff.
+
+    Un `assignee` explícito manda sobre el reparto por turnos — para eso existe,
+    para rutas que deban caer siempre en la misma persona (ej. reclamos).
+
+    La excepción es el placeholder: si el team ya declaró sus asesores en
+    `teams.asesores_rotacion`, un `asesor_1` NO puede ganarle al turno. Ese
+    nombre no existe para el negocio y llegaría tal cual a la etiqueta 👤 de la
+    bandeja — que fue exactamente lo que pasó (#376, #377): el handle por
+    defecto de `bot_engine.py` y de los seeds viejos le ganaba al reparto y
+    mandaba todos los chats a una casilla que no es de nadie.
+
+    Un team sin `asesores_rotacion` conserva el comportamiento de siempre: el
+    placeholder se respeta, porque ahí sí es el único destino que hay.
+    """
+    nombre = (assignee or "").strip()
+    if team is None:
+        return nombre or "asesor_1"
+
+    hay_rotacion = bool([n for n in (team.asesores_rotacion or []) if n])
+    if nombre and not (hay_rotacion and es_handle_placeholder(nombre)):
+        return nombre
+    return siguiente_asesor(db, team)
 
 
 # ===================== Meta Account =====================
