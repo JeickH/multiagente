@@ -205,6 +205,9 @@ class ConversationOut(BaseModel):
     contact_name: Optional[str] = None
     status: str
     assigned_to: str = "bot"
+    # Marca del sistema sobre la conversación (ej. "conversación abandonada").
+    # None = sin etiqueta.
+    etiqueta: Optional[str] = None
     last_message_at: datetime
     last_message_preview: Optional[str] = None
 
@@ -232,6 +235,7 @@ class ConversationWithMessages(BaseModel):
     contact_name: Optional[str] = None
     status: str
     assigned_to: str = "bot"
+    etiqueta: Optional[str] = None
     last_message_at: datetime
     messages: List[MessageOut] = []
 

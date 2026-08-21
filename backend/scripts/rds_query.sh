@@ -14,7 +14,13 @@ set -euo pipefail
 SQL="${1:?Uso: rds_query.sh \"SELECT ...\"}"
 REGION="sa-east-1"
 CLUSTER="multiagente-cluster"
-TASKDEF="${TASKDEF:-multiagente-backend:15}"
+# Igual que en `rds_exec.sh`: la revisión viva, no una clavada. Ver el
+# comentario de allá para saber por qué.
+TASKDEF="${TASKDEF:-$(aws ecs describe-services \
+  --cluster multiagente-cluster --services multiagente-backend-service \
+  --region sa-east-1 --query 'services[0].taskDefinition' --output text \
+  | sed 's|.*/||')}"
+TASKDEF="${TASKDEF:-multiagente-backend:64}"
 SUBNETS="subnet-07829afbd13c5bb8f,subnet-00f56d6ce74d72a2e"
 SG="sg-0499ec72831ef7da9"
 

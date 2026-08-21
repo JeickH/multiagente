@@ -4844,3 +4844,134 @@ Un hallazgo que dejó el mock: el par `MC-00308 ↔ MC-00309` son códigos
 consecutivos con descripción casi idéntica (gato criollo parecido al siamés,
 gris claro). Huele a **la misma mascota importada dos veces**, una como perdida
 y otra como encontrada, más que a un reencuentro. Queda para la revisión.
+
+---
+
+## Adjuntos salientes + continuidad del bot de Arranquemos Pues (2026-08-21)
+
+Dos pedidos del CEO en el mismo día: que un asesor pueda **responder con
+imágenes, audio, documentos y emojis** desde la ventana de Mensajes, y seis
+arreglos al bot de Arranquemos Pues que salieron de leer una conversación real.
+
+### La conversación que originó todo
+
+Del chat del 20-ago-2026, 21:06–21:15 (número enmascarado, `3XXXXXXXXX`). La
+persona se presentó a los dos minutos. A las 21:10 dijo "mañana te respondo, que
+debo consultar con mi esposo"; el bot se despidió y usó `finalizar_conversacion`.
+Desde ahí, **cada mensaje suyo recibió el saludo inicial completo**:
+
+> Hola, ¡Buen día! … mi nombre es *Maria Camila* … ¿Con quién tengo el gusto? 😊
+
+Cuatro veces (21:11, 21:12, 21:14, 21:15). Ella contestó "ya me atendistes", "ya
+ya me atendieron", y al final: *"No que pereza, por eso no me gusta agregar al
+guasap porque son muy intensos"*.
+
+**La causa es una sola.** Al cerrar, la sesión queda `finished`; el siguiente
+mensaje entrante no encuentra sesión activa y `bot_router` **arranca una sesión
+nueva con el historial vacío**. El bot no se "activaba dos veces": empezaba de
+cero cada vez. De ahí salen los seis síntomas, incluido que `contact_name` quedó
+vacío pese a que ella dijo su nombre — vivía solo en el historial que se
+descartaba.
+
+### Los seis cambios (todos detrás de flags en `bots.llm_config`)
+
+Los flags (`seguimiento`, `recordar_nombre`, `retomar`) están encendidos **solo
+para este bot**: `llm_engine.py` es compartido con el bot de mascotas y el
+institucional, y una regla global les cambia el comportamiento. Ya pasó (ver el
+commit `1a7d385` y la sección "Notas de voz" del prompt).
+
+| # | Pedido | Cómo quedó |
+|---|--------|-----------|
+| B1 | Si la persona cierra, no escribir más | `finalizar_conversacion` ahora cierra la conversación; tool `no_responder` para que el modelo pueda callarse; y un atajo determinista que ni llama a Bedrock cuando lo único que llega es cortesía sobre un chat cerrado |
+| B2 | Registrar el nombre y no repreguntarlo | Tool `registrar_nombre` → `conversations.contact_name`. Sobrevive al fin de la sesión, que es lo que fallaba |
+| B3 | No activarse dos veces; retomar | `bot_router` devuelve la sesión cerrada como **retomable** dentro de `retomar.horas` (24) y se revive conservando el historial |
+| B4 | Seguimiento a los 15 min de silencio | `BotPendingAction` de tipo `seguimiento`. **No se programa si el bot cerró** — B1 manda sobre B4 |
+| B5 | Etiqueta "conversación abandonada" | A los 15 min del seguimiento sin respuesta: se etiqueta y se cierra, **en silencio** |
+| B6 | "un compañero", no "asesor humano" | Solo en los textos que lee el cliente. El nombre de la tool y el handle del asesor no se tocan: son internos |
+
+**La distinción que se agregó al prompt**: un adiós explícito ("chao") sí cierra;
+un desinterés blando ("mañana te confirmo", "lo pienso") **no** cierra — se
+responde con cariño y el seguimiento de los 15 minutos hace su trabajo. Sin esa
+separación, B1 y B4 se contradicen.
+
+**La trampa que casi se cuela**: `process_pending_action` llamaba `run_turn(
+user_input=None)`, y para un bot LLM eso dispara `_FIRST_TURN_PROMPT`, o sea
+**un saludo**. Los tipos de acción nuevos no pasan por ahí: mandan texto fijo
+(que además no cuesta un turno de Bedrock). Si se olvidaba, el bot le saludaba a
+la persona que se fue — exactamente el bug que se estaba arreglando.
+
+### Adjuntos salientes
+
+El puerto de mensajería ya sabía mandar media (`messaging.send_media`); faltaba
+dónde alojar el archivo y la interfaz. Servicio nuevo `services/adjuntos.py`,
+calcado del patrón de `services/mascotas.py`: S3 privado en producción, disco en
+local, servido por un endpoint público (`GET /mensajes/adjunto/...`) porque quien
+descarga es el servidor de Meta o Twilio, que no manda token.
+
+- **Sin migración**: el mensaje se persiste como `content = "pie\nURL"` con
+  `message_type` = categoría, que es lo que ya hacía el bot con los tarifarios.
+- **Imágenes** comprimidas con `services.imagenes.comprimir`, el mismo camino
+  rápido de las fotos de mascotas.
+- **Audio**: Chrome graba en `audio/webm`, que **WhatsApp no acepta**. Se agregó
+  `ffmpeg` a `Dockerfile.backend` y se transcodifica a OGG/Opus, que llega como
+  nota de voz. Si ffmpeg falta (dev sin rebuild) no revienta: avisa.
+- **Documentos** (pedido posterior del CEO): PDF, Word, Excel, PowerPoint, TXT y
+  CSV. Se exige que el archivo **sea de la familia que dice ser** (ZIP para los
+  formatos nuevos de Office, OLE2 para los viejos), porque el `Content-Type` lo
+  pone quien sube. Excepción cuidada: Windows declara los `.csv` como
+  `application/vnd.ms-excel`, y rechazarlos sería rechazar archivos buenos.
+- **El nombre del archivo importa**: la carpeta es el uuid (lo impredecible) y el
+  último tramo de la URL es el nombre legible, porque **eso es lo que WhatsApp le
+  muestra a quien recibe un documento**. Un `8f3c9a…pdf` parece basura, no la
+  cotización que le acaban de mandar.
+- **Emojis**: selector propio (`components/SelectorEmoji.tsx`), sin librería —
+  un paquete de emojis pesa cientos de KB por el catálogo Unicode completo, y lo
+  que se usa respondiendo por WhatsApp cabe en una lista escrita a mano. Inserta
+  en la posición del cursor, no al final. Hay tests de que los emojis con
+  modificador (🏝️) y los compuestos (🇨🇴, 👩‍💻) llegan intactos al proveedor.
+
+### Base de datos
+
+`conversations.etiqueta` (`VARCHAR NULL`), aplicada en local y en RDS el mismo
+día, con el script idempotente `migrate_conversaciones_etiqueta.py` corrido dos
+veces para probarlo. Paridad verificada columna por columna (9 en ambos lados).
+
+### Infraestructura — el bloqueante que nadie había visto
+
+**Nada invocaba `POST /internal/bot-scheduler/tick` en producción.** Es el gap
+G1 que documentó el Sprint 14 (§ `sprint14_aws_analisis.md`) y que nunca se
+cerró: `aws events list-rules` vacío y el único schedule era el de mascotas,
+apagado. Sin ese cron, B4 y B5 quedan perfectos en el código y **no ocurren
+jamás**.
+
+Se provisionó EventBridge Scheduler `multiagente-bot-tick` → Lambda homónima →
+`https://api.glomabeauty.com/internal/bot-scheduler/tick`, `rate(1 minute)`. El
+secreto se lee de SSM (`/multiagente/prod/INTERNAL_API_KEY`, SecureString): en la
+Lambda solo vive el **nombre** del parámetro, nunca el valor.
+
+**Creado DISABLED a propósito.** Encenderlo es lo que hace que el bot le empiece
+a escribir solo a clientes reales; esa decisión es del CEO y va junto con el
+despliegue.
+
+```bash
+# encender          aws scheduler update-schedule --name multiagente-bot-tick --region sa-east-1 ... --state ENABLED
+# apagar            ... --state DISABLED
+```
+
+### De paso
+
+`rds_exec.sh` y `rds_query.sh` tenían clavada la task-def `multiagente-backend:15`
+mientras el servicio corre la `:64` — 49 revisiones atrás. Correr una migración
+contra una imagen vieja es una trampa silenciosa: el `models.py` viejo no ve las
+columnas nuevas y los scripts **reportan cero filas en vez de fallar**. Ahora
+resuelven la revisión viva del servicio.
+
+### Pendiente antes de que esto sirva en producción
+
+1. Desplegar el backend (imagen + task-def). **La columna ya está en RDS pero el
+   ORM desplegado no la ve**: SQLAlchemy se traga la asignación sin error y no
+   persiste nada.
+2. Encender el schedule (comando arriba) — decisión del CEO.
+3. Definir `ADJUNTOS_BUCKET` (o dejar que caiga al de mascotas) en la task-def.
+4. Follow-up: el endpoint de subida no tiene rate-limit propio (sí exige auth y
+   permiso `can_reply_messages`), a diferencia del de fotos de mascotas.

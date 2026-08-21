@@ -18,7 +18,16 @@ PYFILE="${1:?Uso: rds_exec.sh <script.py> [VAR=valor ...]}"
 shift
 REGION="sa-east-1"
 CLUSTER="multiagente-cluster"
-TASKDEF="${TASKDEF:-multiagente-backend:15}"
+# La revisión que corre el servicio ahora mismo, no una fija. Estaba clavada en
+# `:15` mientras el servicio iba en la `:64`: correr una migración contra una
+# imagen de 49 revisiones atrás es una trampa silenciosa — el `models.py` viejo
+# ni ve las columnas nuevas y los scripts reportan cero filas en vez de fallar.
+# Se puede seguir forzando una revisión con `TASKDEF=multiagente-backend:N`.
+TASKDEF="${TASKDEF:-$(aws ecs describe-services \
+  --cluster multiagente-cluster --services multiagente-backend-service \
+  --region sa-east-1 --query 'services[0].taskDefinition' --output text \
+  | sed 's|.*/||')}"
+TASKDEF="${TASKDEF:-multiagente-backend:64}"
 SUBNETS="subnet-07829afbd13c5bb8f,subnet-00f56d6ce74d72a2e"
 SG="sg-0499ec72831ef7da9"
 

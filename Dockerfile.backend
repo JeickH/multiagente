@@ -2,6 +2,15 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
+# ffmpeg: convierte a OGG/Opus las notas de voz que el asesor graba desde la
+# ventana de Mensajes. Chrome las entrega en `audio/webm` y WhatsApp no acepta
+# ese formato, así que sin esto el audio no se puede enviar
+# (`services/adjuntos.transcodificar_a_ogg`). Va antes del `pip install` para
+# que quede en una capa que no se invalida al cambiar las dependencias.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY backend/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 

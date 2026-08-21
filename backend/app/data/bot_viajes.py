@@ -145,5 +145,24 @@ LLM_CONFIG = {
     "media": MEDIA,
     "caminos": CAMINOS,
     "tarifario": "covenas",   # habilita la herramienta `consultar_tarifario`
+    # ── Continuidad de la conversación (#377) ───────────────────────────────
+    # Los tres flags viven aquí y no en el motor: `llm_engine.py` lo comparten
+    # el bot de mascotas y el institucional, y una regla global les cambiaría
+    # el comportamiento (ya pasó — commit 1a7d385).
+    #
+    # `seguimiento` es la política de cierre de este bot: cerrar la
+    # conversación cuando el bot se despide, reenganchar a los 15 minutos de
+    # silencio y, si tampoco así contesta, cerrar y etiquetar sin escribirle.
+    # Habilita además la herramienta `no_responder`.
+    "seguimiento": {
+        "minutos": 15,
+        "etiqueta_abandono": "conversación abandonada",
+    },
+    # Guarda el nombre en `conversations.contact_name` con `registrar_nombre`,
+    # para no volver a preguntarlo aunque se acabe la sesión.
+    "recordar_nombre": True,
+    # Si vuelve a escribir dentro de estas horas, se retoma la MISMA sesión
+    # (con su historial) en vez de arrancar una nueva y saludar de cero.
+    "retomar": {"horas": 24},
 }
 

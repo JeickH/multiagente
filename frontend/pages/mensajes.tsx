@@ -1,11 +1,22 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import GrabadorVoz from '../components/GrabadorVoz';
 import Layout from '../components/Layout';
+import SelectorEmoji from '../components/SelectorEmoji';
 import Paginacion, {
   OPCIONES_POR_PAGINA,
   guardarPorPagina,
   leerPorPagina,
 } from '../components/Paginacion';
 import TutorialOverlay from '../components/TutorialOverlay';
+import {
+  ACCEPT_ADJUNTO,
+  ClaseAdjunto,
+  MAX_CAPTION,
+  etiquetaDeClase,
+  mensajeDeErrorEnvio,
+  tamanoLegible,
+  validarAdjunto,
+} from '../lib/adjuntos';
 import { horaCorta } from '../lib/fechas';
 import { getToken } from '../lib/session';
 
@@ -23,7 +34,7 @@ const MENSAJES_TUTORIAL = [
   {
     selector: '[data-tour="reply-composer"]',
     title: 'Responder manualmente',
-    body: 'Cuando selecciones una conversación, escribe aquí tu respuesta y pulsa "Enviar" (o Enter). El mensaje sale por la cuenta de WhatsApp conectada en Mi Plan.',
+    body: 'Cuando selecciones una conversación, escribe aquí tu respuesta y pulsa "Enviar" (o Enter). Con el clip 📎 adjuntas una foto, un video o un PDF, y con el micrófono 🎤 grabas una nota de voz. El mensaje sale por la cuenta de WhatsApp conectada en Mi Plan.',
   },
   {
     selector: '[data-tour="user-badge"]',
@@ -40,6 +51,12 @@ type Conversation = {
   assigned_to?: string;
   last_message_at: string;
   last_message_preview: string | null;
+  /**
+   * Etiqueta que el bot le pone a la conversación. Hoy la única es
+   * "conversación abandonada" (la pone el seguimiento cuando la persona no
+   * volvió a escribir). `null` = sin etiqueta, y entonces no se pinta nada.
+   */
+  etiqueta?: string | null;
 };
 
 type Message = {
@@ -65,7 +82,18 @@ type ConversationDetail = {
   status: string;
   assigned_to?: string;
   last_message_at: string;
+  etiqueta?: string | null;
   messages: Message[];
+};
+
+/** Un archivo elegido o grabado, todavía sin enviar. */
+type AdjuntoLocal = {
+  archivo: File;
+  clase: ClaseAdjunto;
+  /** `URL.createObjectURL` para la vista previa. Se revoca al soltarlo. */
+  url: string;
+  /** Lo que se muestra: el nombre del archivo, o "Nota de voz" si se grabó. */
+  titulo: string;
 };
 
 type TeamMe = {
@@ -124,10 +152,11 @@ function initials(name: string | null, fallback: string): string {
 }
 
 /**
- * Lo que el bot manda como imagen o video se guarda en `content` con el formato
- * `caption\nURL` (ver `bot_runner._send_media`), así que el archivo se puede
- * mostrar acá sin tocar el backend: la URL ya es pública, es la misma que se le
- * envió al cliente por WhatsApp.
+ * Lo que sale de la plataforma como imagen, audio, video o documento se guarda
+ * en `content` con el formato `caption\nURL` (ver `bot_runner._send_media`, y
+ * ahora también el endpoint `/adjunto` que usa el composer de abajo), así que
+ * el archivo se puede mostrar acá sin columnas nuevas: la URL ya es pública, es
+ * exactamente la misma que se le envió al cliente por WhatsApp.
  *
  * Lo que manda el *cliente* es otra historia: de eso solo guardamos el marcador
  * (`[imagen]`), porque Meta entrega un id que hay que cambiar por una URL
@@ -136,7 +165,7 @@ function initials(name: string | null, fallback: string): string {
  * mejor que un "[imagen]" suelto que parece un error.
  */
 const URL_EN_TEXTO = /https?:\/\/\S+/;
-const TIPOS_VISIBLES = ['image', 'video', 'imagen'];
+const TIPOS_VISIBLES = ['image', 'imagen', 'video', 'audio', 'document', 'documento'];
 
 function Contenido({ mensaje }: { mensaje: Message }) {
   const tipo = (mensaje.message_type || '').toLowerCase();
@@ -145,11 +174,23 @@ function Contenido({ mensaje }: { mensaje: Message }) {
   const caption = url ? mensaje.content.replace(url, '').trim() : mensaje.content;
 
   if (url && TIPOS_VISIBLES.includes(tipo) && mensaje.direction === 'outbound') {
+    const esDocumento = tipo === 'document' || tipo === 'documento';
     return (
       <div className="space-y-1.5">
         {caption && <div className="text-sm whitespace-pre-wrap break-words">{caption}</div>}
         {tipo === 'video' ? (
           <video src={url} controls className="rounded-lg max-h-72 w-full bg-black/10" />
+        ) : tipo === 'audio' ? (
+          // Una nota de voz se escucha, no se lee. El reproductor nativo trae
+          // play, barra y volumen sin librerías; `preload="metadata"` baja solo
+          // la cabecera para poder mostrar la duración sin descargar el audio
+          // de cada burbuja del historial.
+          <audio src={url} controls preload="metadata" className="w-60 max-w-full" />
+        ) : esDocumento ? (
+          <div className="flex items-center gap-2 rounded-lg bg-white/10 px-3 py-2">
+            <span className="text-lg leading-none">📄</span>
+            <span className="text-sm">Documento enviado</span>
+          </div>
         ) : (
           // eslint-disable-next-line @next/next/no-img-element
           <img
@@ -165,7 +206,7 @@ function Contenido({ mensaje }: { mensaje: Message }) {
           rel="noreferrer"
           className="block text-[10px] underline opacity-70 hover:opacity-100"
         >
-          abrir original
+          {esDocumento ? 'abrir documento' : 'abrir original'}
         </a>
       </div>
     );
@@ -182,6 +223,75 @@ function Contenido({ mensaje }: { mensaje: Message }) {
   }
 
   return <div className="text-sm whitespace-pre-wrap break-words">{mensaje.content}</div>;
+}
+
+/**
+ * Lo que está a punto de salir. Se ve ANTES de enviar y con el mismo control
+ * con que se verá en la burbuja (imagen, `<video>`, `<audio>`): mandarle una
+ * foto equivocada a un cliente no se puede deshacer, así que la pantalla
+ * muestra el archivo, su peso y una equis para arrepentirse.
+ */
+function VistaPreviaAdjunto({
+  adjunto,
+  subiendo,
+  onQuitar,
+}: {
+  adjunto: AdjuntoLocal;
+  subiendo: boolean;
+  onQuitar: () => void;
+}) {
+  return (
+    <div className="mb-2 flex items-start gap-3 p-3 rounded-lg border border-gloma-rose-soft bg-gloma-rose-soft/40">
+      <div className="flex-shrink-0">
+        {adjunto.clase === 'image' ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={adjunto.url}
+            alt={adjunto.titulo}
+            className="h-20 w-20 object-cover rounded-lg bg-white"
+          />
+        ) : adjunto.clase === 'video' ? (
+          <video src={adjunto.url} controls className="h-20 rounded-lg bg-black/10" />
+        ) : adjunto.clase === 'audio' ? (
+          <audio src={adjunto.url} controls className="w-64 max-w-full" />
+        ) : (
+          <div className="h-20 w-20 rounded-lg bg-white flex items-center justify-center text-3xl">
+            📄
+          </div>
+        )}
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="text-sm font-medium text-gray-800 truncate">{adjunto.titulo}</div>
+        <div className="text-xs text-gray-500">
+          {etiquetaDeClase(adjunto.clase)} · {tamanoLegible(adjunto.archivo.size)}
+        </div>
+        {adjunto.clase === 'audio' ? (
+          <div className="text-xs text-gray-500 mt-1">
+            Escúchala antes de enviarla. Las notas de voz salen sin texto.
+          </div>
+        ) : (
+          <div className="text-xs text-gray-500 mt-1">
+            Puedes escribir abajo un comentario para acompañarla (opcional).
+          </div>
+        )}
+        {subiendo && (
+          <div className="text-xs text-gloma-brown font-medium mt-1" aria-live="polite">
+            Enviando…
+          </div>
+        )}
+      </div>
+      <button
+        type="button"
+        onClick={onQuitar}
+        disabled={subiendo}
+        aria-label="Quitar el archivo adjunto"
+        title="Quitar"
+        className="text-gray-400 hover:text-gray-700 text-lg leading-none px-1 disabled:opacity-40"
+      >
+        ×
+      </button>
+    </div>
+  );
 }
 
 export default function Mensajes() {
@@ -205,7 +315,15 @@ export default function Mensajes() {
   const [newTemplate, setNewTemplate] = useState('plantilla_prueba_1');
   const [newLang, setNewLang] = useState('es_CO');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [adjunto, setAdjunto] = useState<AdjuntoLocal | null>(null);
+  const [grabando, setGrabando] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
+  const fileRef = useRef<HTMLInputElement | null>(null);
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  // Espejo del adjunto para poder revocar su object URL sin meter un efecto
+  // secundario dentro del updater de `setState` (React lo llama dos veces en
+  // desarrollo).
+  const adjuntoRef = useRef<AdjuntoLocal | null>(null);
 
   // El "por página" elegido se recuerda entre visitas. Se lee en un efecto y
   // no en el `useState` porque `localStorage` no existe en el render del
@@ -304,6 +422,152 @@ export default function Mensajes() {
   // Ya no se filtra acá: `conversations` es la página que devolvió el backend
   // con el filtro y la búsqueda ya aplicados.
 
+  /**
+   * Cambia el archivo pendiente y libera el anterior. Los object URL no los
+   * recoge el recolector de basura solo: sin el `revoke`, una jornada eligiendo
+   * fotos deja el blob de cada una en memoria hasta que se recargue la página.
+   */
+  const ponerAdjunto = useCallback((nuevo: AdjuntoLocal | null) => {
+    const previo = adjuntoRef.current;
+    if (previo && previo.url !== nuevo?.url) URL.revokeObjectURL(previo.url);
+    adjuntoRef.current = nuevo;
+    setAdjunto(nuevo);
+  }, []);
+
+  // Cambiar de chat suelta el archivo pendiente. Es a propósito: un adjunto que
+  // sobrevive al cambio de conversación termina en el chat equivocado, y una
+  // foto enviada a un cliente que no era no se puede devolver.
+  useEffect(() => {
+    ponerAdjunto(null);
+    setErrorMsg(null);
+  }, [selectedId, ponerAdjunto]);
+
+  useEffect(() => {
+    return () => {
+      if (adjuntoRef.current) URL.revokeObjectURL(adjuntoRef.current.url);
+    };
+  }, []);
+
+  /** Toma el archivo (del clip o del grabador), lo valida y lo deja listo. */
+  const aceptarArchivo = useCallback(
+    (archivo: File, titulo?: string) => {
+      const revision = validarAdjunto(archivo);
+      if (revision.estado !== 'ok') {
+        setErrorMsg(revision.motivo);
+        return;
+      }
+      setErrorMsg(null);
+      ponerAdjunto({
+        archivo,
+        clase: revision.clase,
+        url: URL.createObjectURL(archivo),
+        titulo: titulo || archivo.name,
+      });
+    },
+    [ponerAdjunto],
+  );
+
+  const alElegirArchivo = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const archivo = e.target.files?.[0];
+    e.target.value = ''; // para poder volver a elegir el mismo archivo
+    if (archivo) aceptarArchivo(archivo);
+  };
+
+  /**
+   * Inserta el emoji donde está el cursor, no al final: si la asesora escribió
+   * "Listo, te confirmo" y se devolvió a poner una carita después de "Listo",
+   * pegarla al final sería ignorar lo que pidió.
+   */
+  const insertarEmoji = (emoji: string) => {
+    const el = textareaRef.current;
+    const inicio = el?.selectionStart ?? draft.length;
+    const fin = el?.selectionEnd ?? draft.length;
+    const nuevo = draft.slice(0, inicio) + emoji + draft.slice(fin);
+    // Con un adjunto en curso el texto es el pie, y el pie tiene tope.
+    if (adjunto && nuevo.length > MAX_CAPTION) return;
+    setDraft(nuevo);
+    // Después del re-render: si se mueve el cursor antes, React lo pisa al
+    // repintar el textarea con el valor nuevo.
+    requestAnimationFrame(() => {
+      const destino = textareaRef.current;
+      if (!destino) return;
+      destino.focus();
+      const pos = inicio + emoji.length;
+      destino.setSelectionRange(pos, pos);
+    });
+  };
+
+  /**
+   * Lo que graba el micrófono llega sin nombre útil
+   * (`nota-de-voz-1755812345.webm`), así que se muestra con un título humano.
+   */
+  const alGrabarNota = useCallback(
+    (archivo: File) => {
+      const esGrabacion = archivo.name.startsWith('nota-de-voz-');
+      aceptarArchivo(archivo, esGrabacion ? 'Nota de voz' : archivo.name);
+    },
+    [aceptarArchivo],
+  );
+
+  const recargarDetalle = async (conversationId: number) => {
+    const res = await fetch(`/api/mensajes/conversaciones/${conversationId}`, {
+      headers: authHeaders(),
+    });
+    if (res.ok) setDetail(await res.json());
+  };
+
+  /**
+   * Sube el archivo y lo manda por WhatsApp en un solo paso
+   * (`POST /mensajes/conversaciones/{id}/adjunto`).
+   *
+   * No usa `authedFetch` ni el `Content-Type` de `sendMessage`: en un
+   * `multipart/form-data` el boundary lo pone el navegador, y escribir el
+   * header a mano lo borra y el backend recibe un cuerpo que no puede parsear.
+   * `authHeaders()` solo agrega `Authorization`, que es justo lo que hace falta
+   * (regla #7: el token sale de `lib/session.ts`, nunca de `localStorage`).
+   */
+  const enviarAdjunto = async () => {
+    if (!detail || !adjunto || !canReply || sending) return;
+    // El caption no aplica a las notas de voz (contrato de API): se manda solo
+    // el audio y el texto se queda escrito para el mensaje siguiente.
+    const caption = adjunto.clase === 'audio' ? '' : draft.trim().slice(0, MAX_CAPTION);
+    setSending(true);
+    setErrorMsg(null);
+    try {
+      const form = new FormData();
+      form.append('archivo', adjunto.archivo);
+      if (caption) form.append('caption', caption);
+
+      const res = await fetch(`/api/mensajes/conversaciones/${detail.id}/adjunto`, {
+        method: 'POST',
+        headers: authHeaders(),
+        body: form,
+      });
+      if (!res.ok) {
+        const cuerpo = await res.json().catch(() => null);
+        throw new Error(mensajeDeErrorEnvio(res.status, cuerpo?.detail));
+      }
+      ponerAdjunto(null);
+      if (caption) setDraft('');
+      await recargarDetalle(detail.id);
+    } catch (e: any) {
+      // El archivo NO se suelta cuando falla: casi siempre el reintento es el
+      // mismo archivo, y volver a buscarlo en el disco es trabajo perdido.
+      setErrorMsg(e?.message || 'Error temporal al enviar el archivo. Inténtalo de nuevo.');
+    } finally {
+      setSending(false);
+    }
+  };
+
+  /** El botón "Enviar" es uno solo: manda el archivo si hay, si no el texto. */
+  const enviar = () => {
+    if (adjunto) {
+      void enviarAdjunto();
+    } else {
+      void sendMessage();
+    }
+  };
+
   const sendMessage = async () => {
     if (!detail || !draft.trim() || !canReply) return;
     setSending(true);
@@ -319,8 +583,7 @@ export default function Mensajes() {
         throw new Error(data.detail || `Error ${res.status}`);
       }
       setDraft('');
-      const r2 = await fetch(`/api/mensajes/conversaciones/${detail.id}`, { headers: authHeaders() });
-      if (r2.ok) setDetail(await r2.json());
+      await recargarDetalle(detail.id);
     } catch (e: any) {
       setErrorMsg(e.message || 'Error enviando mensaje');
     } finally {
@@ -496,6 +759,19 @@ export default function Mensajes() {
                           🤖 bot
                         </span>
                       )}
+                      {/* Etiqueta que puso el bot (hoy: "conversación
+                          abandonada"). Sin valor no se pinta nada: una fila con
+                          un chip vacío se lee como un dato que falta. Va en
+                          ámbar, el mismo tono que la nota interna, porque las
+                          dos dicen "esto lo escribió el sistema, míralo". */}
+                      {c.etiqueta && (
+                        <span
+                          title={`Etiqueta: ${c.etiqueta}`}
+                          className="inline-block mt-1 ml-1 px-2 py-0.5 text-[10px] rounded-full bg-amber-50 text-amber-700 border border-amber-200"
+                        >
+                          🏷️ {c.etiqueta}
+                        </span>
+                      )}
                     </div>
                   </button>
                 );
@@ -606,28 +882,91 @@ export default function Mensajes() {
                   </div>
                 )}
                 {canReply ? (
-                  <div className="flex gap-2">
-                    <textarea
-                      rows={2}
-                      value={draft}
-                      onChange={(e) => setDraft(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' && !e.shiftKey) {
-                          e.preventDefault();
-                          sendMessage();
-                        }
-                      }}
-                      placeholder="Escribe un mensaje (Enter para enviar)..."
-                      className="flex-1 px-3 py-2 border border-gray-200 rounded-lg resize-none focus:outline-none focus:border-gloma-rose text-sm"
+                  <>
+                    {adjunto && (
+                      <VistaPreviaAdjunto
+                        adjunto={adjunto}
+                        subiendo={sending}
+                        onQuitar={() => ponerAdjunto(null)}
+                      />
+                    )}
+                    <input
+                      ref={fileRef}
+                      type="file"
+                      accept={ACCEPT_ADJUNTO}
+                      onChange={alElegirArchivo}
+                      className="hidden"
                     />
-                    <button
-                      onClick={sendMessage}
-                      disabled={sending || !draft.trim()}
-                      className="px-5 bg-gloma-brown text-white font-medium rounded-lg hover:bg-gloma-brown-dark disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      {sending ? '...' : 'Enviar'}
-                    </button>
-                  </div>
+                    <div className="flex gap-2 items-end">
+                      {/* Mientras se graba, la barra del grabador se queda con
+                          toda la fila: no hay nada que escribir ni que enviar
+                          hasta decidir si la nota sirve. */}
+                      {!grabando && (
+                        <button
+                          type="button"
+                          onClick={() => fileRef.current?.click()}
+                          disabled={sending}
+                          title="Adjuntar imagen, video o documento"
+                          aria-label="Adjuntar imagen, video o documento"
+                          className="w-10 h-10 flex-shrink-0 self-end rounded-lg border border-gray-200 text-lg leading-none flex items-center justify-center text-gloma-brown hover:bg-gloma-rose-soft hover:border-gloma-rose transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          📎
+                        </button>
+                      )}
+                      <GrabadorVoz
+                        deshabilitado={sending}
+                        onGrabado={alGrabarNota}
+                        onError={setErrorMsg}
+                        onEstadoChange={setGrabando}
+                      />
+                      {!grabando && (
+                        <>
+                          {/* Con una nota de voz lista no hay texto que
+                              acompañar, así que tampoco emoji que insertar. */}
+                          <SelectorEmoji
+                            onElegir={insertarEmoji}
+                            deshabilitado={sending || adjunto?.clase === 'audio'}
+                          />
+                          <textarea
+                            ref={textareaRef}
+                            rows={2}
+                            value={draft}
+                            onChange={(e) => setDraft(e.target.value)}
+                            disabled={adjunto?.clase === 'audio'}
+                            maxLength={adjunto ? MAX_CAPTION : undefined}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter' && !e.shiftKey) {
+                                e.preventDefault();
+                                enviar();
+                              }
+                            }}
+                            placeholder={
+                              adjunto?.clase === 'audio'
+                                ? 'La nota de voz se envía sola; tu texto queda aquí para después.'
+                                : adjunto
+                                ? 'Comentario para acompañar el archivo (opcional)...'
+                                : 'Escribe un mensaje (Enter para enviar)...'
+                            }
+                            className="flex-1 px-3 py-2 border border-gray-200 rounded-lg resize-none focus:outline-none focus:border-gloma-rose text-sm disabled:bg-gray-50 disabled:text-gray-400"
+                          />
+                          <button
+                            onClick={enviar}
+                            disabled={sending || (!adjunto && !draft.trim())}
+                            className="px-5 h-[42px] self-end bg-gloma-brown text-white font-medium rounded-lg hover:bg-gloma-brown-dark disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            {sending ? (adjunto ? 'Enviando…' : '...') : 'Enviar'}
+                          </button>
+                        </>
+                      )}
+                    </div>
+                    {/* El tope del caption es del backend (900). Se avisa cerca
+                        del límite, no desde el primer carácter. */}
+                    {adjunto && adjunto.clase !== 'audio' && draft.length > MAX_CAPTION - 100 && (
+                      <div className="mt-1 text-right text-[11px] text-gray-500">
+                        {draft.length}/{MAX_CAPTION} caracteres
+                      </div>
+                    )}
+                  </>
                 ) : (
                   <div className="text-center text-sm text-gray-500 py-3">
                     No tienes permiso para responder mensajes en este equipo.

@@ -127,6 +127,180 @@ def _parse_llm_config(bot) -> Dict[str, Any]:
     return data if isinstance(data, dict) else {}
 
 
+# ---------------------------------------------------------------------------
+# Continuidad de la conversación (#377): que el bot no salude cuatro veces
+# ---------------------------------------------------------------------------
+#
+# Todo lo de esta sección va detrás de flags en `bots.llm_config` y hoy sólo
+# está encendido para el bot de Arranquemos Pues. `llm_engine.py` lo comparten
+# el bot de mascotas y el institucional: una regla global les cambiaría el
+# comportamiento, que es exactamente lo que pasó con el aviso de "no leo
+# imágenes" (commit 1a7d385) y por eso esa regla vive en el contexto del bot.
+#
+#   "seguimiento":     {"minutos": 15, "etiqueta_abandono": "conversación abandonada"}
+#   "recordar_nombre": true
+#   "retomar":         {"horas": 24}
+
+SEGUIMIENTO_MINUTOS_DEFAULT = 15
+ETIQUETA_ABANDONO_DEFAULT = "conversación abandonada"
+RETOMAR_HORAS_DEFAULT = 24
+#: Lo que se le escribe a alguien que lleva 15 minutos sin contestar. Es texto
+#: fijo a propósito: llamar al modelo para redactar "¿te quedó alguna duda?"
+#: cuesta plata y no aporta nada — nadie escribió nada nuevo que interpretar.
+TEXTO_SEGUIMIENTO_DEFAULT = (
+    "¿Te quedó alguna otra pregunta para seguir con la reserva? 😊 Si prefieres "
+    "lo dejamos hasta aquí y me escribes cuando quieras 🌴"
+)
+
+
+def config_de(bot) -> Dict[str, Any]:
+    """La `llm_config` del bot ya parseada. Público: lo usan `bot_runner` y
+    `bot_router`, que necesitan leer los flags sin volver a parsear JSON."""
+    return _parse_llm_config(bot)
+
+
+def seguimiento_de(bot_o_cfg) -> Optional[Dict[str, Any]]:
+    """La política de cierre y seguimiento del bot, o None si no la tiene.
+
+    Un solo bloque manda sobre tres cosas que son la misma decisión de negocio:
+    cerrar la conversación cuando el bot se despide (B1), reenganchar tras el
+    silencio (B4) y etiquetarla como abandonada si tampoco así contesta (B5).
+    """
+    cfg = bot_o_cfg if isinstance(bot_o_cfg, dict) else _parse_llm_config(bot_o_cfg)
+    seg = cfg.get("seguimiento")
+    return seg if isinstance(seg, dict) else None
+
+
+def minutos_de_seguimiento(seg: Optional[Dict[str, Any]]) -> int:
+    try:
+        return max(1, int((seg or {}).get("minutos") or SEGUIMIENTO_MINUTOS_DEFAULT))
+    except (TypeError, ValueError):
+        return SEGUIMIENTO_MINUTOS_DEFAULT
+
+
+def etiqueta_de_abandono(seg: Optional[Dict[str, Any]]) -> str:
+    return str((seg or {}).get("etiqueta_abandono") or ETIQUETA_ABANDONO_DEFAULT)[:120]
+
+
+def texto_de_seguimiento(seg: Optional[Dict[str, Any]]) -> str:
+    return str((seg or {}).get("texto") or TEXTO_SEGUIMIENTO_DEFAULT)
+
+
+def horas_para_retomar(bot_o_cfg) -> Optional[float]:
+    """Cuántas horas después de cerrada se puede retomar la sesión, o None."""
+    cfg = bot_o_cfg if isinstance(bot_o_cfg, dict) else _parse_llm_config(bot_o_cfg)
+    ret = cfg.get("retomar")
+    if not isinstance(ret, dict):
+        return None
+    try:
+        return max(0.0, float(ret.get("horas") or RETOMAR_HORAS_DEFAULT))
+    except (TypeError, ValueError):
+        return float(RETOMAR_HORAS_DEFAULT)
+
+
+#: Frases con las que alguien cierra por cortesía y que **no piden respuesta**.
+#: Con la conversación ya cerrada, contestarlas es lo que hizo que una clienta
+#: real escribiera «por eso no me gusta agregar al guasap porque son muy
+#: intensos» (20-ago-2026, chat de un número 3XXXXXXXXX enmascarado por la
+#: regla #8). Con la conversación viva, "gracias" se contesta normal.
+_CORTESIA_PALABRAS = frozenset({
+    "gracias", "muchas", "mil", "ok", "oka", "okay", "okey", "listo", "lista",
+    "bueno", "buenas", "dale", "chao", "chau", "adios", "bye", "igualmente",
+    "igual", "si", "no", "ya", "vale", "perfecto", "excelente", "genial",
+    "amen", "bendiciones", "saludos", "de", "nada", "por", "todo", "lo",
+    "mismo", "para", "ti", "usted", "tambien", "un", "abrazo", "feliz", "dia",
+    "tarde", "noche", "que", "estes", "bien", "con", "gusto",
+})
+#: Frases completas que se aceptan aunque alguna palabra suelta no esté arriba.
+_CORTESIA_FRASES = frozenset({
+    "muchas gracias por todo", "gracias por todo", "mil gracias por todo",
+    "lo mismo para ti", "igualmente para ti", "que dios te bendiga",
+    "ok listo gracias", "listo muchas gracias", "ya me atendieron",
+    "ya me atendiste", "ya me atendistes",
+})
+_SOLO_SIMBOLOS_RE = re.compile(r"^[^0-9A-Za-zÁÉÍÓÚÜÑáéíóúüñ]+$")
+
+
+def _normaliza_cortesia(texto: str) -> str:
+    """Minúsculas, sin tildes y sin puntuación. `¡Muchas gracias!!` → `muchas gracias`."""
+    import unicodedata
+
+    sin_tildes = "".join(
+        c for c in unicodedata.normalize("NFD", (texto or "").lower())
+        if unicodedata.category(c) != "Mn"
+    )
+    return " ".join(re.sub(r"[^a-z0-9ñ ]+", " ", sin_tildes).split())
+
+
+def es_cortesia(texto: str) -> bool:
+    """¿El mensaje es puro agradecimiento/despedida, sin nada que resolver?
+
+    Se usa como **atajo determinista**: con la conversación ya cerrada, un
+    mensaje así no llega siquiera a Bedrock. Deliberadamente conservador — ante
+    la duda devuelve False y el modelo decide, que es el camino caro pero
+    seguro.
+    """
+    crudo = (texto or "").strip()
+    if not crudo:
+        return False
+    # Sólo emojis o signos ("👍", "🙏🙏"): es un cierre, no una pregunta.
+    if len(crudo) <= 8 and _SOLO_SIMBOLOS_RE.match(crudo):
+        return True
+    normalizado = _normaliza_cortesia(crudo)
+    if not normalizado:
+        return len(crudo) <= 8
+    if normalizado in _CORTESIA_FRASES:
+        return True
+    palabras = normalizado.split()
+    # Cinco y no cuatro por un mensaje concreto del chat real: "Gracias lo
+    # mismo para ti". El filtro duro no es el largo sino el vocabulario — las
+    # cinco palabras tienen que estar TODAS en la lista de cortesía, así que
+    # cualquier sustantivo ("precio", "cupo", "diciembre") lo descarta.
+    if len(palabras) > 5:
+        return False
+    return all(p in _CORTESIA_PALABRAS for p in palabras)
+
+
+#: Un nombre no tiene dígitos: si el modelo manda un teléfono creyendo que es
+#: el nombre, la bandeja acabaría mostrando el número como si fuera la persona.
+_NOMBRE_PROHIBIDO_RE = re.compile(r"[\d@]")
+
+
+def nombre_saneado(valor: Any) -> str:
+    """El nombre de contacto listo para guardar, o "" si no sirve.
+
+    Máx 60 caracteres, una sola línea, sin dígitos ni arrobas. Se aplica en el
+    motor (antes de emitir la acción) y otra vez en `bot_runner` antes de
+    escribir en la base: son dos capas baratas sobre un dato que sale de un LLM
+    y termina a la vista del asesor.
+    """
+    texto = " ".join(str(valor or "").split())[:60].strip(" .,;:-")
+    if len(texto) < 2 or _NOMBRE_PROHIBIDO_RE.search(texto):
+        return ""
+    return texto
+
+
+def hace_cuanto(desde: Optional[datetime], ahora: Optional[datetime] = None) -> str:
+    """"hace 20 minutos", "hace 3 horas", "ayer". Para contarle al modelo cuánto
+    tiempo pasó desde que la conversación se cerró."""
+    if desde is None:
+        return "hace un rato"
+    ahora = ahora or datetime.utcnow()
+    try:
+        minutos = int((ahora - desde).total_seconds() // 60)
+    except (TypeError, ValueError):
+        return "hace un rato"
+    if minutos < 2:
+        return "hace un momento"
+    if minutos < 60:
+        return f"hace {minutos} minutos"
+    horas = minutos // 60
+    if horas < 24:
+        return f"hace {horas} hora{'s' if horas > 1 else ''}"
+    dias = horas // 24
+    return "ayer" if dias == 1 else f"hace {dias} días"
+
+
 def _lista_de_claves(valor: Any) -> List[str]:
     """Las claves de `enviar_media`, venga una lista o el texto de una lista.
 
@@ -455,7 +629,60 @@ def _system_prompt(
         "conversación sigue contigo; si insiste con otra nota de voz, vuelve a "
         "pedírselo con paciencia y otras palabras."
     )
+    continuidad = _bloque_continuidad(cfg)
+    if continuidad:
+        # Va de últimas a propósito: es lo último que el modelo lee antes del
+        # historial, y es la instrucción que en producción se le olvidaba.
+        parts.append(continuidad)
     return "\n\n".join(p for p in parts if p)
+
+
+def _bloque_continuidad(cfg: Dict[str, Any]) -> str:
+    """Lo que el bot ya sabe de esta persona y de esta conversación (#377).
+
+    Sale de `runtime`, no del historial: el nombre vive en
+    `conversations.contact_name` y por eso sobrevive a que la sesión se acabe.
+    Sin esto, cuando la sesión terminaba el bot arrancaba con el historial en
+    blanco y volvía a soltar "¿Con quién tengo el gusto?" — cuatro veces
+    seguidas en el chat real del 20-ago-2026.
+
+    Ojo con el caché de Bedrock: este bloque va dentro del `system`, que es el
+    prefijo cacheado. Dentro de una misma conversación es estable (cachea
+    igual), pero deja de compartirse entre conversaciones distintas. Se aceptó
+    ese costo: la alternativa era seguir repreguntando el nombre.
+    """
+    runtime = cfg.get("_runtime") or {}
+    lineas: List[str] = []
+
+    if cfg.get("recordar_nombre"):
+        nombre = nombre_saneado(runtime.get("contact_name"))
+        if nombre:
+            lineas.append(
+                f"Ya sabes que la persona se llama **{nombre}**. Salúdala por su "
+                "nombre y **NO le preguntes cómo se llama** — ya te lo dijo, y "
+                "volver a preguntarlo es lo que más delata a un bot. Tampoco "
+                "uses `registrar_nombre`: ya está guardado."
+            )
+        else:
+            lineas.append(
+                "Todavía no sabes cómo se llama. En cuanto se presente, llama "
+                "`registrar_nombre` en ESE mismo turno para no volver a "
+                "preguntárselo nunca más."
+            )
+
+    if cfg.get("retomar") and runtime.get("retomada"):
+        lineas.append(
+            "Esta conversación **ya se había cerrado** y la persona vuelve a "
+            f"escribir ({runtime.get('desde') or 'hace un rato'}). Arriba tienes "
+            "lo que ya hablaron. **No la saludes como si fuera la primera vez, "
+            "no te presentes de nuevo y no repitas el saludo de apertura**: "
+            "retoma donde quedaron, como quien continúa un chat que estaba "
+            "abierto."
+        )
+
+    if not lineas:
+        return ""
+    return "## Con quién estás hablando\n" + "\n".join(f"- {l}" for l in lineas)
 
 
 # ---------------------------------------------------------------------------
@@ -503,6 +730,50 @@ def _tools_for(cfg: Dict[str, Any]) -> List[Dict[str, Any]]:
             "input_schema": {"type": "object", "properties": {}},
         },
     ]
+    if cfg.get("recordar_nombre"):
+        tools.append(
+            {
+                "name": "registrar_nombre",
+                "description": (
+                    "Guarda el nombre de la persona en su ficha de contacto. "
+                    "Llámala EN EL MISMO TURNO en que se presenta ('soy Luz', "
+                    "'habla con Diana', 'Andrés'). Guardado queda para siempre, "
+                    "así que ya no tendrás que volver a preguntárselo aunque el "
+                    "chat se cierre y ella escriba días después. Escribe también "
+                    "tu respuesta normal en ese turno: la herramienta no le "
+                    "manda nada a la persona."
+                ),
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "nombre": {
+                            "type": "string",
+                            "description": (
+                                "Sólo el nombre, tal como se presentó. Sin "
+                                "números ni frases: de «soy Luz» va «Luz»."
+                            ),
+                        },
+                    },
+                    "required": ["nombre"],
+                },
+            }
+        )
+    if seguimiento_de(cfg) is not None:
+        tools.append(
+            {
+                "name": "no_responder",
+                "description": (
+                    "Cierra el turno SIN enviarle nada a la persona. Úsala "
+                    "cuando la conversación ya está terminada y lo único que "
+                    "llega es cortesía ('gracias', 'ok', 'listo', 'igualmente', "
+                    "'que estés bien'): no hay nada que resolver y contestar "
+                    "vuelve pesado el chat. Si la usas, NO escribas texto en "
+                    "ese turno. No la uses si la persona pregunta algo, aunque "
+                    "lo mezcle con un agradecimiento."
+                ),
+                "input_schema": {"type": "object", "properties": {}},
+            }
+        )
     if _media_catalog(cfg):
         tools.append(
             {
@@ -1743,6 +2014,35 @@ def _run_tool(
         actions.append({"type": "end", "payload": {"text": ""}})
         return "conversación finalizada", True
 
+    if name == "registrar_nombre":
+        nombre = nombre_saneado(tool_input.get("nombre"))
+        if not nombre:
+            # Sin PII en el log (regla #1): no se escribe lo que mandó.
+            logger.info("llm_engine: registrar_nombre descartado (no parece un nombre)")
+            return (
+                "no guardé nada: eso no parece un nombre (llegó vacío, con "
+                "números o demasiado largo). Sigue la conversación normal y no "
+                "se lo vuelvas a preguntar si ya te lo dijo."
+            ), False
+        # El runner lo escribe en `conversations.contact_name` sólo si está
+        # vacío: el nombre que venga del canal (el perfil de WhatsApp) manda.
+        actions.append({"type": "perfil", "payload": {"nombre": nombre}})
+        if notas is not None:
+            notas.append(f"guardaste que la persona se llama {nombre}")
+        return (
+            f"listo, quedó guardado que se llama {nombre}. No se lo vuelvas a "
+            "preguntar nunca más, ni siquiera si el chat se cierra y vuelve a "
+            "escribir otro día."
+        ), False
+
+    if name == "no_responder":
+        # Mismo camino que `finalizar_conversacion` (acción `end` con texto
+        # vacío → el runner no envía nada y cierra la conversación), pero el
+        # motor además descarta cualquier texto que el modelo haya escrito en
+        # este turno: "no responder" es no responder.
+        actions.append({"type": "end", "payload": {"text": "", "silencioso": True}})
+        return "listo: no se le envió nada y la conversación queda cerrada", True
+
     if name == "enviar_media":
         media = _media_catalog(cfg)
         claves = _lista_de_claves(tool_input.get("claves"))
@@ -1867,6 +2167,8 @@ def _classify_camino(
         return "estado_pedido"
     if "enviar_catalogo" in tool_names:
         return "catalogo"
+    if "no_responder" in tool_names:
+        return "sin_respuesta"
     if "finalizar_conversacion" in tool_names:
         return "fin"
     text = (user_input or "").lower()
@@ -2341,6 +2643,16 @@ def _advance_inner(
         working.append({"role": "assistant", "content": content})
         working.append({"role": "user", "content": tool_results})
 
+    # `no_responder` manda sobre todo lo demás del turno: el modelo a veces
+    # llama la herramienta y ADEMÁS escribe un "¡con gusto! 🤗", que es
+    # exactamente el mensaje que no se quería mandar. Se descarta aquí, que es
+    # el único punto por el que pasan los tres canales.
+    if any(t.get("tool") == "no_responder" for t in tools_called):
+        del actions[:]
+        actions.append({"type": "end", "payload": {"text": "", "silencioso": True}})
+        del say_texts[:]
+        del sent_media_log[:]
+
     # Historial aplanado: texto del asistente + marcas de medios enviados.
     assistant_summary = "\n\n".join(say_texts)
     if sent_media_log:
@@ -2351,7 +2663,15 @@ def _advance_inner(
     history.append({"role": "assistant", "content": assistant_summary or "(sin texto)"})
     history = history[-_MAX_HISTORY_MESSAGES:]
 
-    next_state = None if finished else {"history": history}
+    # Con `retomar` encendido el historial se conserva **aunque la sesión
+    # termine**: es lo que permite que, si la persona vuelve a escribir dentro
+    # de la ventana, el bot siga donde quedaron en vez de saludar de cero.
+    # Sin el flag se mantiene el comportamiento de siempre (estado a None al
+    # cerrar), que es lo que esperan el bot de mascotas y el institucional.
+    if finished and horas_para_retomar(cfg) is None:
+        next_state = None
+    else:
+        next_state = {"history": history}
     telemetry = {
         "user_input": user_input,
         "bookings": bookings,   # #276: las persiste el caller con record_booking()

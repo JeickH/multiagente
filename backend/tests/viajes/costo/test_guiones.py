@@ -494,11 +494,16 @@ class TestSabeCuandoSoltar:
         )
 
     def test_la_despedida_cierra_la_conversacion(self, bot, modelo_real):
+        """El guion decía "luego te escribo para reservar" y esperaba el cierre.
+        Desde #377 eso ya **no** cierra: es una venta en pausa, y cerrarla
+        apaga el seguimiento de los 15 minutos (lo comprueba el guion hermano
+        de `test_guiones_continuidad.py`). Lo que sí cierra es un adiós
+        explícito, que es lo que se prueba aquí."""
         modelo_real["actual"] = "C10 despedida"
         s = conversar(bot, [
             "Hola, soy Luis",
             "¿Qué tours incluye?",
-            "Listo, gracias! luego te escribo para reservar",
+            "Listo, muchas gracias, chao 👋",
         ])
         assert "finalizar_conversacion" in tools(*s)
         assert s[-1]["finished"]

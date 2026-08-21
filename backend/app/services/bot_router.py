@@ -19,11 +19,16 @@ Futuro:
 from __future__ import annotations
 
 import json
+import logging
+from datetime import datetime, timedelta
 from typing import Optional
 
 from sqlalchemy.orm import Session
 
 from .. import models
+from . import llm_engine
+
+logger = logging.getLogger(__name__)
 
 
 def _keywords_for(bot: models.Bot) -> list[str]:
@@ -56,6 +61,32 @@ def get_active_session(
     )
 
 
+def ultima_sesion_cerrada(
+    db: Session, conversation_id: int
+) -> Optional[models.BotSession]:
+    """La última sesión ya terminada de la conversación, si la hay."""
+    return (
+        db.query(models.BotSession)
+        .filter(
+            models.BotSession.conversation_id == conversation_id,
+            models.BotSession.status.in_(
+                [models.BOT_SESSION_FINISHED, models.BOT_SESSION_CANCELLED]
+            ),
+        )
+        .order_by(models.BotSession.updated_at.desc())
+        .first()
+    )
+
+
+def _dentro_de_la_ventana(
+    session: models.BotSession, horas: float, ahora: Optional[datetime] = None
+) -> bool:
+    referencia = session.updated_at or session.finished_at or session.started_at
+    if referencia is None:
+        return False
+    return (ahora or datetime.utcnow()) - referencia <= timedelta(hours=horas)
+
+
 def resolve_bot_for_incoming_message(
     db: Session,
     *,
@@ -81,6 +112,41 @@ def resolve_bot_for_incoming_message(
     active = get_active_session(db, conversation_id)
     if active and active.bot:
         return active.bot, active
+
+    # 1-bis) #377: no hay sesión activa, pero puede haber una **cerrada hace
+    # poco**. Antes esto arrancaba una sesión nueva con el historial en blanco,
+    # y el bot soltaba "Hola, ¿con quién tengo el gusto?" a alguien que llevaba
+    # diez minutos hablando con él. Pasó cuatro veces en el chat del 20-ago-2026.
+    ultima = ultima_sesion_cerrada(db, conversation_id)
+    if ultima is not None and ultima.bot is not None:
+        bot = ultima.bot
+        cfg = llm_engine.config_de(bot)
+
+        # a) Atajo determinista (B1): la conversación ya se cerró y lo que llega
+        #    es pura cortesía. No se corre el bot — ni un turno de Bedrock, ni
+        #    un mensaje de vuelta. Sin el contenido del mensaje en el log
+        #    (regla de seguridad #1).
+        if llm_engine.seguimiento_de(cfg) is not None and llm_engine.es_cortesia(
+            message_text
+        ):
+            logger.info(
+                "bot_router: cortesía tras el cierre, el bot no responde conv=%s bot=%s",
+                conversation_id, bot.id,
+            )
+            return None, None
+
+        # b) Retomar (B3): dentro de la ventana se revive ESA sesión, con su
+        #    historial. `bot_runner` la vuelve a poner en marcha.
+        horas = llm_engine.horas_para_retomar(cfg)
+        if (
+            horas is not None
+            and getattr(bot, "status", "active") == "active"
+            and _dentro_de_la_ventana(ultima, horas)
+        ):
+            logger.info(
+                "bot_router: se retoma la sesión %s (conv=%s)", ultima.id, conversation_id
+            )
+            return bot, ultima
 
     # 2) Keyword match entre bots del owner del team.
     owner_id = team.owner_user_id

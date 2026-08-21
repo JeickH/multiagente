@@ -12,6 +12,9 @@ Qué hace (todo idempotente, se puede re-ejecutar):
   5. Le quita al paso `handoff` del bot el asesor fijo, para que entre a
      repartir por turnos (`crud.siguiente_asesor`). Un paso que conserve su
      `assignee` sigue mandando sobre el turno: eso es a propósito.
+  6. Enciende en los bots LLM de la cuenta los flags de continuidad (#377):
+     `seguimiento`, `recordar_nombre` y `retomar`. Sólo agrega las claves que
+     falten — si alguien ajustó los minutos desde el panel, no se los pisa.
 
 La contraseña del asesor NO va en el código (este repo es PÚBLICO, regla 8):
 se pasa por la variable de entorno `ASESOR_PASSWORD`.
@@ -46,6 +49,7 @@ for _ruta in _CANDIDATOS:
 from sqlalchemy.orm.attributes import flag_modified  # type: ignore
 
 from app import crud, models  # type: ignore
+from app.data.bot_viajes import LLM_CONFIG  # type: ignore
 from app.database import SessionLocal  # type: ignore
 
 
@@ -65,6 +69,15 @@ CORREO_ASESOR_PREVIO = "arranquemospues.asesor@gmail.com"
 # Orden del reparto por turnos del handoff: primer chat a Camila, el siguiente
 # a Julián, el siguiente a Alexandra, y vuelve a empezar.
 ASESORES = ["Camila", "Julián", "Alexandra"]
+
+# Flags de continuidad (#377). Los valores se importan de la fuente de verdad
+# del bot de viajes para que no puedan quedar en desacuerdo con lo que despacha
+# el actualizador: dos copias de la misma política terminan en desacuerdo.
+FLAGS_CONTINUIDAD = {
+    clave: LLM_CONFIG[clave]
+    for clave in ("seguimiento", "recordar_nombre", "retomar")
+    if clave in LLM_CONFIG
+}
 
 
 def _password_hash() -> str:
@@ -183,7 +196,38 @@ def main() -> int:
         else:
             print("  · ningún paso handoff tenía asesor fijo")
 
-        # ── 6. Aviso sobre la cuenta de asesor anterior ─────────────────
+        # ── 6. Flags de continuidad del bot LLM (#377) ──────────────────
+        # Por qué acá y no sólo en `app/data/bot_viajes.py`: ese módulo es la
+        # fuente de verdad del bot de viajes, pero sólo se aplica cuando se
+        # corre el seed o el actualizador (que reescriben `llm_config` entera).
+        # Este script se puede correr sobre la cuenta tal como está, sin tocar
+        # medios ni caminos, que es lo que se quiere para encender un flag.
+        encendidos = 0
+        for bot in bots:
+            if getattr(bot, "engine", "flow") != "llm":
+                continue
+            try:
+                cfg_llm = json.loads(bot.llm_config or "{}")
+            except (ValueError, TypeError):
+                print(f"  ⚠ el bot {bot.id} tiene llm_config ilegible: no se toca")
+                continue
+            if not isinstance(cfg_llm, dict):
+                continue
+            faltantes = [k for k in FLAGS_CONTINUIDAD if k not in cfg_llm]
+            if not faltantes:
+                continue
+            for clave in faltantes:
+                cfg_llm[clave] = FLAGS_CONTINUIDAD[clave]
+            bot.llm_config = json.dumps(cfg_llm, ensure_ascii=False)
+            db.add(bot)
+            encendidos += 1
+            print(f"  ✓ bot {bot.id}: {', '.join(faltantes)}")
+        if encendidos:
+            db.commit()
+        else:
+            print("  · los bots LLM ya tenían los flags de continuidad")
+
+        # ── 7. Aviso sobre la cuenta de asesor anterior ─────────────────
         previo = crud.get_user_by_email(db, CORREO_ASESOR_PREVIO)
         if previo is not None and previo.id != asesor.id:
             print(

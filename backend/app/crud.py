@@ -476,6 +476,32 @@ def add_message(
     return msg
 
 
+def hay_entrante_despues(
+    db: Session, conversation_id: int, desde: Optional[datetime]
+) -> bool:
+    """¿Entró algún mensaje del contacto después de `desde`?
+
+    Es la pregunta que decide si el bot manda el recordatorio de seguimiento o
+    se queda callado (#377): si la persona ya escribió, el silencio se rompió y
+    escribirle igual es exactamente la insistencia que molestó a una clienta
+    real el 20-ago-2026.
+
+    Sin `desde` responde True (conservador): ante la duda, no se le escribe.
+    """
+    if desde is None:
+        return True
+    return (
+        db.query(models.Message.id)
+        .filter(
+            models.Message.conversation_id == conversation_id,
+            models.Message.direction == "inbound",
+            models.Message.created_at > desde,
+        )
+        .first()
+        is not None
+    )
+
+
 def previews_de_conversaciones(
     db: Session, conv_ids: List[int]
 ) -> Dict[int, str]:

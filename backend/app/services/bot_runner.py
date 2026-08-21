@@ -73,10 +73,143 @@ def _schedule_delay(
     pa = models.BotPendingAction(
         session_id=session.id,
         scheduled_at=datetime.utcnow() + timedelta(seconds=max(seconds, 1)),
-        action_type="resume_session",
+        action_type=models.BOT_PENDING_ACTION_RESUME,
         status=models.BOT_PENDING_STATUS_PENDING,
     )
     db.add(pa)
+    db.commit()
+
+
+# ---------------------------------------------------------------------------
+# Seguimiento y abandono (#377): las dos acciones programadas del bot LLM
+# ---------------------------------------------------------------------------
+
+#: Los dos tipos que NO pueden pasar por `run_turn`. Está escrito aquí y no
+#: suelto en cada `if` porque olvidarlo es el error caro: `run_turn` con
+#: `user_input=None` le manda `_FIRST_TURN_PROMPT` al modelo, que es un saludo
+#: — y saludaríamos a quien se fue, que es justo el bug que esto arregla.
+_ACCIONES_DE_SILENCIO = (
+    models.BOT_PENDING_ACTION_SEGUIMIENTO,
+    models.BOT_PENDING_ACTION_ABANDONO,
+)
+
+
+def _cancelar_pendientes(db: Session, session: models.BotSession) -> int:
+    """Da por cerradas las acciones de seguimiento/abandono de esta sesión.
+
+    Se llama en cada turno: si la persona escribió, el silencio se rompió y el
+    recordatorio que estaba agendado ya no tiene sentido. Sin esto se acumulan
+    y la persona recibe dos o tres "¿te quedó alguna duda?" seguidos.
+    """
+    pendientes = (
+        db.query(models.BotPendingAction)
+        .filter(
+            models.BotPendingAction.session_id == session.id,
+            models.BotPendingAction.status == models.BOT_PENDING_STATUS_PENDING,
+            models.BotPendingAction.action_type.in_(_ACCIONES_DE_SILENCIO),
+        )
+        .all()
+    )
+    ahora = datetime.utcnow()
+    for pa in pendientes:
+        pa.status = models.BOT_PENDING_STATUS_DONE
+        pa.processed_at = ahora
+        pa.last_error = None
+    if pendientes:
+        db.commit()
+    return len(pendientes)
+
+
+def _programar(
+    db: Session,
+    session: models.BotSession,
+    action_type: str,
+    minutos: int,
+) -> models.BotPendingAction:
+    """Agenda una acción de silencio, reemplazando la que hubiera."""
+    _cancelar_pendientes(db, session)
+    pa = models.BotPendingAction(
+        session_id=session.id,
+        scheduled_at=datetime.utcnow() + timedelta(minutes=max(1, minutos)),
+        action_type=action_type,
+        status=models.BOT_PENDING_STATUS_PENDING,
+    )
+    db.add(pa)
+    db.commit()
+    db.refresh(pa)
+    return pa
+
+
+def _cerrar_conversacion(
+    db: Session,
+    conversation: models.Conversation,
+    *,
+    etiqueta: Optional[str] = None,
+) -> None:
+    """Deja la conversación cerrada en la bandeja (y opcionalmente etiquetada).
+
+    Antes, cuando el bot se despedía, la conversación quedaba `open` para
+    siempre: la del 20-ago-2026 sigue abierta en la bandeja aunque la clienta
+    se despidió cuatro veces.
+    """
+    conversation.status = "closed"
+    if etiqueta is not None:
+        conversation.etiqueta = etiqueta
+    db.add(conversation)
+    db.commit()
+
+
+def _reabrir_conversacion(db: Session, conversation: models.Conversation) -> None:
+    """La persona volvió a escribir: la conversación vuelve a la bandeja y
+    pierde la etiqueta de abandono, que ya no describe lo que está pasando."""
+    cambio = False
+    if conversation.status == "closed":
+        conversation.status = "open"
+        cambio = True
+    if getattr(conversation, "etiqueta", None):
+        conversation.etiqueta = None
+        cambio = True
+    if cambio:
+        db.add(conversation)
+        db.commit()
+
+
+def _guardar_nombre(
+    db: Session, conversation: models.Conversation, valor: str
+) -> None:
+    """Escribe el nombre en la ficha del contacto, **sólo si está vacío**.
+
+    El nombre que venga del canal (el perfil de WhatsApp) manda sobre el que
+    dedujo el modelo. Se vuelve a sanear aquí aunque el motor ya lo hizo: es un
+    dato que sale de un LLM y termina a la vista del asesor en la bandeja.
+    """
+    nombre = llm_engine.nombre_saneado(valor)
+    if not nombre or (conversation.contact_name or "").strip():
+        return
+    conversation.contact_name = nombre
+    db.add(conversation)
+    db.commit()
+    # Sin el nombre en el log (regla #1): es un dato personal.
+    logger.info("bot_runner: nombre de contacto registrado conv=%s", conversation.id)
+
+
+def _apuntar_en_el_historial(
+    db: Session, session: models.BotSession, texto: str
+) -> None:
+    """Deja en el historial de la sesión lo que el bot mandó por su cuenta.
+
+    Sin esto, el mensaje de seguimiento no existe para el modelo: si la persona
+    contesta "sí, tengo una duda", el bot no sabe a qué le está contestando.
+    """
+    estado = _load_state(session) or {}
+    historial = estado.get("history")
+    if not isinstance(historial, list):
+        historial = []
+    historial.append({"role": "assistant", "content": texto})
+    estado["history"] = historial[-llm_engine._MAX_HISTORY_MESSAGES:]
+    session.state = json.dumps(estado)
+    session.updated_at = datetime.utcnow()
+    db.add(session)
     db.commit()
 
 
@@ -101,15 +234,50 @@ def run_turn(
 
     Idempotencia: el caller debe haber deduplicado por meta_message_id.
     """
-    if session is None:
-        session = _create_session(db, bot, conversation.id)
-
-    state = _load_state(session)
     # Sprint 19: cada bot declara su motor. 'llm' = conversacional (Bedrock);
     # 'flow' = pasos clásicos. Mismo contrato de actions/next_state/finished.
     is_llm = getattr(bot, "engine", "flow") == "llm"
+    cfg = llm_engine.config_de(bot) if is_llm else {}
+    seguimiento = llm_engine.seguimiento_de(cfg) if is_llm else None
+
+    # #377: `bot_router` puede devolver una sesión ya cerrada para **retomarla**
+    # (dentro de la ventana `retomar.horas`). Se revive conservando su `state`,
+    # que es el historial: con el historial cargado el modelo ya no saluda de
+    # cero ni vuelve a preguntar el nombre.
+    retomada = session is not None and session.status in (
+        models.BOT_SESSION_FINISHED,
+        models.BOT_SESSION_CANCELLED,
+    )
+    cerrada_desde = session.updated_at if retomada else None
+    if session is None:
+        session = _create_session(db, bot, conversation.id)
+    elif retomada:
+        session.status = models.BOT_SESSION_RUNNING
+        session.finished_at = None
+        db.add(session)
+        db.commit()
+
+    if user_input:
+        # La persona escribió: el chat vuelve a la bandeja y deja de estar
+        # marcado como abandonado.
+        _reabrir_conversacion(db, conversation)
+
+    state = _load_state(session)
     if is_llm:
-        result = llm_engine.advance(bot, state, user_input)
+        result = llm_engine.advance(
+            bot,
+            state,
+            user_input,
+            runtime={
+                "bot_id": getattr(bot, "id", None),
+                "source": "whatsapp",
+                "conversation_id": conversation.id,
+                # Lo que hace que el nombre sobreviva a que se acabe la sesión.
+                "contact_name": (conversation.contact_name or "").strip() or None,
+                "retomada": retomada,
+                "desde": llm_engine.hace_cuanto(cerrada_desde) if retomada else None,
+            },
+        )
         # #255: registrar la decisión del turno (camino, tools, latencia) en
         # bot_llm_decisions. Nunca rompe el turno (record_decision es defensivo).
         llm_engine.record_decision(
@@ -179,12 +347,20 @@ def run_turn(
                     logger.exception("bot_runner: envío de catálogo falló bot=%s", bot.id)
             if not sent:
                 _send_text(db, conversation, bot, meta_account, cuerpo or "🛍️ Catálogo")
+        elif atype == "perfil":
+            # #377 (B2): el modelo registró el nombre de la persona.
+            _guardar_nombre(db, conversation, payload.get("nombre", ""))
         elif atype == "ask":
             # El `ask` en sí no viaja al contacto: el prompt ya se envió como
             # `say` inmediatamente antes. Solo marca que el motor espera input.
             pass
         elif atype == "end":
             _send_text(db, conversation, bot, meta_account, payload.get("text", ""))
+            # #377 (B1): el bot se despidió → la conversación se cierra. Detrás
+            # del flag `seguimiento` porque el bot de mascotas y el
+            # institucional también emiten `end` y su bandeja no funciona así.
+            if seguimiento is not None:
+                _cerrar_conversacion(db, conversation)
         elif atype == "handoff":
             # El bot entrega el chat a un humano: marcamos la conversación como
             # pendiente y la reasignamos del "bot" al asesor indicado. La UI de
@@ -219,6 +395,19 @@ def run_turn(
             logger.warning("bot_runner: acción desconocida %s", atype)
 
     _persist_state(db, session, next_state, finished, waiting)
+
+    # #377 (B4): el silencio también es una respuesta. Si el turno deja la
+    # sesión esperando, se agenda el reenganche; si el bot cerró, NO se agenda
+    # nada — sería contradictorio con B1 y es justo lo que el CEO no quiere.
+    if seguimiento is not None:
+        _cancelar_pendientes(db, session)
+        if not finished:
+            _programar(
+                db,
+                session,
+                models.BOT_PENDING_ACTION_SEGUIMIENTO,
+                llm_engine.minutos_de_seguimiento(seguimiento),
+            )
     return session
 
 
@@ -393,8 +582,18 @@ def process_pending_action(
     """Procesa una BotPendingAction vencida: resume la sesión sin user_input.
 
     Marca la acción como done/failed según resultado.
+
+    ⚠️ `seguimiento` y `abandono` (#377) **no pasan por `run_turn`**: para un bot
+    LLM, `run_turn(user_input=None)` le manda `_FIRST_TURN_PROMPT` al modelo, que
+    es literalmente "saluda al cliente". Mandarlas por ahí haría que el bot
+    saludara a alguien que se fue — el bug que este sprint arregla. Se atienden
+    antes, en `_procesar_silencio`.
     """
     pa.attempts += 1
+    if (pa.action_type or models.BOT_PENDING_ACTION_RESUME) in _ACCIONES_DE_SILENCIO:
+        _procesar_silencio(db, pa)
+        return
+
     session = pa.session
     if session is None or session.status in (
         models.BOT_SESSION_FINISHED,
@@ -433,3 +632,83 @@ def process_pending_action(
         pa.last_error = str(exc)[:500]
     pa.processed_at = datetime.utcnow()
     db.commit()
+
+
+def _cerrar_accion(
+    db: Session, pa: models.BotPendingAction, motivo: str
+) -> None:
+    """Da la acción por atendida sin hacer nada más. `motivo` va al log, nunca
+    al cliente."""
+    pa.status = models.BOT_PENDING_STATUS_DONE
+    pa.processed_at = datetime.utcnow()
+    db.commit()
+    logger.info("bot_runner: acción %s sin efecto (%s)", pa.action_type, motivo)
+
+
+def _procesar_silencio(db: Session, pa: models.BotPendingAction) -> None:
+    """Atiende un `seguimiento` o un `abandono` vencido. NUNCA llama al modelo.
+
+    - `seguimiento`: si la persona no volvió a escribir, se le manda UN texto
+      fijo y se agenda el `abandono`.
+    - `abandono`: si tampoco contestó a eso, la conversación se cierra y queda
+      etiquetada. **No se le envía nada.**
+
+    Cualquier señal de que la conversación siguió viva (mensaje entrante nuevo,
+    sesión ya finalizada, chat en manos de un asesor) cancela la acción.
+    """
+    session = pa.session
+    conversation = session.conversation if session is not None else None
+    bot = session.bot if session is not None else None
+    if session is None or conversation is None or bot is None:
+        pa.status = models.BOT_PENDING_STATUS_FAILED
+        pa.last_error = "session sin conversation/bot"
+        pa.processed_at = datetime.utcnow()
+        db.commit()
+        return
+
+    seguimiento = llm_engine.seguimiento_de(bot)
+    if seguimiento is None:
+        return _cerrar_accion(db, pa, "el bot ya no tiene política de seguimiento")
+    if session.status in (models.BOT_SESSION_FINISHED, models.BOT_SESSION_CANCELLED):
+        # El bot cerró después de programarlo: B1 manda sobre B4.
+        return _cerrar_accion(db, pa, "la sesión ya está cerrada")
+    if (conversation.assigned_to or "bot") != "bot":
+        return _cerrar_accion(db, pa, "el chat lo tomó una persona")
+    if crud.hay_entrante_despues(db, conversation.id, pa.created_at):
+        return _cerrar_accion(db, pa, "la persona ya escribió")
+
+    if pa.action_type == models.BOT_PENDING_ACTION_SEGUIMIENTO:
+        texto = llm_engine.texto_de_seguimiento(seguimiento)
+        account = crud.get_meta_account_for_team(db, conversation.team_id)
+        _send_text(db, conversation, bot, account, texto)
+        _apuntar_en_el_historial(db, session, texto)
+        _programar(
+            db,
+            session,
+            models.BOT_PENDING_ACTION_ABANDONO,
+            llm_engine.minutos_de_seguimiento(seguimiento),
+        )
+        # `_programar` canceló las pendientes de la sesión, incluida ésta.
+        pa.status = models.BOT_PENDING_STATUS_DONE
+        pa.processed_at = datetime.utcnow()
+        db.commit()
+        logger.info(
+            "bot_runner: seguimiento enviado conv=%s bot=%s", conversation.id, bot.id
+        )
+        return
+
+    # Abandono: se cierra y se etiqueta, en silencio.
+    _cerrar_conversacion(
+        db, conversation, etiqueta=llm_engine.etiqueta_de_abandono(seguimiento)
+    )
+    session.status = models.BOT_SESSION_FINISHED
+    session.finished_at = datetime.utcnow()
+    session.updated_at = datetime.utcnow()
+    db.add(session)
+    pa.status = models.BOT_PENDING_STATUS_DONE
+    pa.processed_at = datetime.utcnow()
+    db.commit()
+    logger.info(
+        "bot_runner: conversación marcada como abandonada conv=%s bot=%s",
+        conversation.id, bot.id,
+    )

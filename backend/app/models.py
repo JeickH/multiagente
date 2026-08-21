@@ -243,6 +243,11 @@ class Conversation(Base):
     assigned_to = Column(
         String, nullable=False, default="bot", server_default="bot"
     )
+    # Marca libre sobre la conversación, puesta por el sistema (hoy sólo
+    # "conversación abandonada", cuando el cliente deja de contestarle al bot).
+    # NULL = sin etiqueta; no hay default a propósito, para que "sin marcar" y
+    # "marcada" sean distinguibles sin inventar un valor centinela.
+    etiqueta = Column(String, nullable=True)
     last_message_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
@@ -411,6 +416,16 @@ BOT_PENDING_STATUS_PENDING = "pending"
 BOT_PENDING_STATUS_DONE = "done"
 BOT_PENDING_STATUS_FAILED = "failed"
 
+# Tipos de acción programada (`bot_pending_actions.action_type`).
+# RESUME es el histórico: retomar una sesión detenida en un paso `delay`.
+# SEGUIMIENTO y ABANDONO son del bot LLM: reenganchar tras 15 min de silencio y,
+# si tampoco contesta a eso, cerrar y etiquetar la conversación.
+# OJO: SEGUIMIENTO y ABANDONO **no** pueden procesarse vía `run_turn(user_input=None)`
+# — para un bot LLM ese camino genera un saludo, y saludaríamos a alguien que se fue.
+BOT_PENDING_ACTION_RESUME = "resume_session"  # valor ya existente en base: no cambiar
+BOT_PENDING_ACTION_SEGUIMIENTO = "seguimiento"
+BOT_PENDING_ACTION_ABANDONO = "abandono"
+
 
 class BotSession(Base):
     """Conversación activa entre un bot y un contacto.
@@ -528,7 +543,7 @@ class BotPendingAction(Base):
         index=True,
     )
     scheduled_at = Column(DateTime, nullable=False, index=True)
-    action_type = Column(String(32), nullable=False, default="resume_session")
+    action_type = Column(String(32), nullable=False, default=BOT_PENDING_ACTION_RESUME)
     payload = Column(Text, nullable=True)
     status = Column(
         String(16), nullable=False, default=BOT_PENDING_STATUS_PENDING
