@@ -381,6 +381,301 @@ function Visor({
   );
 }
 
+/** Una fila del comparador. `clave` es el campo del desglose del cruce. */
+type FilaComparada = { clave: string | null; label: string; valor: string | null };
+
+function filasDe(r: Reporte): FilaComparada[] {
+  const especie = r.especie === 'otra' && r.especie_otra ? r.especie_otra : r.especie;
+  const zona = [r.barrio, r.ubicacion].filter(Boolean).join(' · ');
+  return [
+    { clave: 'especie', label: 'Especie', valor: especie },
+    { clave: 'raza', label: 'Raza', valor: r.raza },
+    { clave: 'color', label: 'Color', valor: r.color },
+    { clave: 'tamano', label: 'Tamaño', valor: r.tamano },
+    { clave: 'sexo', label: 'Sexo', valor: r.sexo },
+    { clave: 'edad', label: 'Edad', valor: r.edad },
+    { clave: 'nombre', label: 'Nombre', valor: r.nombre },
+    { clave: 'senas', label: 'Señas', valor: r.senas },
+    { clave: 'zona', label: 'Zona', valor: zona || null },
+    { clave: null, label: 'Fecha del hecho', valor: r.fecha_evento },
+    { clave: null, label: 'Notas', valor: r.notas },
+  ];
+}
+
+/** Fotos de un lado del comparador: una grande y la tira para cambiarla. */
+function LadoFotos({
+  reporte,
+  titulo,
+  tono,
+  fondo,
+  indice,
+  onElegir,
+  onAmpliar,
+}: {
+  reporte: Reporte;
+  titulo: string;
+  tono: string;
+  fondo: string;
+  indice: number;
+  onElegir: (i: number) => void;
+  onAmpliar: () => void;
+}) {
+  const foto = reporte.fotos[indice];
+  return (
+    <div className="rounded-xl border overflow-hidden" style={{ borderColor: '#E5E7EB' }}>
+      <div
+        className="px-3 py-2 text-xs font-bold uppercase tracking-wide"
+        style={{ backgroundColor: fondo, color: tono }}
+      >
+        {titulo} · {reporte.codigo}
+      </div>
+
+      {/* `object-contain` a propósito: recortar la foto puede esconder justo la
+          mancha o el collar por el que se decide si es la misma mascota. */}
+      <button
+        type="button"
+        onClick={() => reporte.fotos.length && onAmpliar()}
+        className="block w-full"
+        style={{ backgroundColor: '#F9FAFB', height: 260 }}
+        title={reporte.fotos.length ? 'Ver a pantalla completa' : 'Sin fotos'}
+      >
+        {foto ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={foto.url}
+            alt={`Foto de ${reporte.codigo}`}
+            className="w-full h-full object-contain"
+          />
+        ) : (
+          <div className="w-full h-full flex flex-col items-center justify-center gap-1 text-gray-400">
+            <span className="text-4xl">{ESPECIE_EMOJI[reporte.especie] || '🐾'}</span>
+            <span className="text-xs">Este reporte no tiene fotos</span>
+          </div>
+        )}
+      </button>
+
+      {reporte.fotos.length > 1 && (
+        <div className="flex gap-1.5 p-2 overflow-x-auto" style={{ backgroundColor: '#F9FAFB' }}>
+          {reporte.fotos.map((f, i) => (
+            <button
+              key={f.id}
+              type="button"
+              onClick={() => onElegir(i)}
+              className="shrink-0 rounded-md overflow-hidden border-2 transition-opacity"
+              style={{
+                width: 44,
+                height: 44,
+                borderColor: i === indice ? tono : 'transparent',
+                opacity: i === indice ? 1 : 0.6,
+              }}
+              aria-label={`Foto ${i + 1} de ${reporte.codigo}`}
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={f.url} alt="" className="w-full h-full object-cover" />
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Comparador lado a lado de un par del cruce.
+ *
+ * La tarjeta de la lista alcanza para descartar lo obvio, pero decidir si son
+ * *la misma* mascota exige ver las fotos grandes y las descripciones completas
+ * al tiempo. Antes tocaba abrir cada ficha por aparte y recordar la otra.
+ *
+ * Los campos van en una sola tabla de tres columnas (campo · buscada ·
+ * encontrada) para que queden alineados aunque un texto sea mucho más largo que
+ * el otro, y los que el cruce contó como parecidos quedan resaltados: el equipo
+ * tiene que poder juzgar el puntaje, no solo creérselo.
+ */
+function Comparador({
+  coincidencia,
+  onCerrar,
+  onEstado,
+  onAmpliar,
+  escActivo,
+}: {
+  coincidencia: Coincidencia;
+  onCerrar: () => void;
+  onEstado: (estado: string) => void;
+  onAmpliar: (reporte: Reporte, indice: number) => void;
+  /** false mientras el visor está encima: si no, un Escape cerraría los dos. */
+  escActivo: boolean;
+}) {
+  const { perdida, encontrada, detalle } = coincidencia;
+  const [iPerdida, setIPerdida] = useState(0);
+  const [iEncontrada, setIEncontrada] = useState(0);
+
+  useEffect(() => {
+    if (!escActivo) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onCerrar();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onCerrar, escActivo]);
+
+  const filasP = filasDe(perdida);
+  const filasE = filasDe(encontrada);
+
+  const contacto = (r: Reporte) => {
+    if (r.contacto_telefono) {
+      return `📞 ${r.contacto_telefono}${r.contacto_nombre ? ` · ${r.contacto_nombre}` : ''}`;
+    }
+    return null;
+  };
+
+  return (
+    <div
+      role="dialog"
+      aria-label={`Comparar ${perdida.codigo} con ${encontrada.codigo}`}
+      className="fixed inset-0 z-50 flex items-start justify-center p-3 sm:p-6 overflow-y-auto"
+      style={{ backgroundColor: 'rgba(0,0,0,0.75)' }}
+      onClick={onCerrar}
+    >
+      <div
+        className="relative bg-white rounded-2xl w-full max-w-5xl my-2"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Encabezado y pie pegados: la tabla es larga, y tanto el puntaje como
+            los botones de decisión tienen que estar siempre a la mano. */}
+        <div className="sticky top-0 z-10 flex flex-wrap items-center gap-2 px-4 sm:px-5 py-3 border-b border-gray-100 bg-white rounded-t-2xl">
+          <span className="text-sm font-bold text-gray-800">¿Es la misma mascota?</span>
+          <Badge estado={coincidencia.estado} styles={MATCH_STYLE} />
+          <span
+            className="text-xs font-semibold px-2 py-1 rounded-full"
+            style={{ backgroundColor: '#F3F4F6', color: '#374151' }}
+          >
+            {coincidencia.score} puntos de parecido
+          </span>
+          <button
+            type="button"
+            onClick={onCerrar}
+            className="ml-auto rounded-full w-8 h-8 flex items-center justify-center text-lg font-bold hover:bg-gray-100"
+            style={{ color: '#374151' }}
+            aria-label="Cerrar"
+          >
+            ✕
+          </button>
+        </div>
+
+        <div className="p-4 sm:p-5">
+          <div className="grid sm:grid-cols-2 gap-4">
+            <LadoFotos
+              reporte={perdida}
+              titulo="La están buscando"
+              tono="#92400E"
+              fondo="#FFFBEB"
+              indice={iPerdida}
+              onElegir={setIPerdida}
+              onAmpliar={() => onAmpliar(perdida, iPerdida)}
+            />
+            <LadoFotos
+              reporte={encontrada}
+              titulo="La encontraron"
+              tono="#1E40AF"
+              fondo="#EFF6FF"
+              indice={iEncontrada}
+              onElegir={setIEncontrada}
+              onAmpliar={() => onAmpliar(encontrada, iEncontrada)}
+            />
+          </div>
+
+          <div className="mt-4 overflow-x-auto">
+            <table className="w-full text-xs sm:text-sm border-collapse">
+              <thead>
+                <tr className="text-left text-gray-400">
+                  <th className="font-medium py-1 pr-2 w-32 whitespace-nowrap">Campo</th>
+                  <th className="font-medium py-1 px-2">Buscada</th>
+                  <th className="font-medium py-1 px-2">Encontrada</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filasP.map((fila, i) => {
+                  const otro = filasE[i];
+                  // Sin dato en ninguno de los dos lados: la fila solo estorba.
+                  if (!fila.valor && !otro.valor) return null;
+                  const puntos = fila.clave ? detalle[fila.clave] : undefined;
+                  const coincide = typeof puntos === 'number';
+                  return (
+                    <tr
+                      key={fila.label}
+                      className="align-top border-t border-gray-100"
+                      style={coincide ? { backgroundColor: '#F0FDF4' } : undefined}
+                    >
+                      <td className="py-1.5 pr-2 text-gray-500">
+                        {fila.label}
+                        {coincide && (
+                          <span
+                            className="ml-1 text-[10px] font-bold px-1 rounded"
+                            style={{ backgroundColor: '#DCFCE7', color: '#166534' }}
+                            title={`Este campo aportó ${puntos} punto(s) al parecido`}
+                          >
+                            +{puntos}
+                          </span>
+                        )}
+                      </td>
+                      <td className="py-1.5 px-2 text-gray-800">{fila.valor || '—'}</td>
+                      <td className="py-1.5 px-2 text-gray-800">{otro.valor || '—'}</td>
+                    </tr>
+                  );
+                })}
+                <tr className="align-top border-t border-gray-100">
+                  <td className="py-1.5 pr-2 text-gray-500">A quién llamar</td>
+                  {[perdida, encontrada].map((r) => (
+                    <td key={r.codigo} className="py-1.5 px-2 font-medium text-gray-800">
+                      {contacto(r) ||
+                        (r.origen_url ? (
+                          <a
+                            href={r.origen_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="underline"
+                            style={{ color: '#008069' }}
+                          >
+                            🤝 Ficha en {r.origen_nombre} ↗
+                          </a>
+                        ) : (
+                          '—'
+                        ))}
+                    </td>
+                  ))}
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div className="sticky bottom-0 z-10 flex flex-wrap gap-2 px-4 sm:px-5 py-3 border-t border-gray-100 bg-white rounded-b-2xl">
+          {([
+            ['confirmada', '🎉 Es la misma'],
+            ['revisada', '👀 Ya la revisé'],
+            ['descartada', '✕ No es'],
+          ] as [string, string][]).map(([estado, label]) => (
+            <button
+              key={estado}
+              type="button"
+              onClick={() => onEstado(estado)}
+              disabled={coincidencia.estado === estado}
+              className="px-3 py-2 rounded-lg text-xs font-semibold border transition-colors hover:bg-gray-50 disabled:opacity-40"
+              style={{ borderColor: '#D1D5DB', color: '#374151' }}
+            >
+              {label}
+            </button>
+          ))}
+          <span className="text-xs text-gray-400 ml-auto self-center">
+            Marcar el par no le avisa a nadie: el aviso a las familias se hace a mano.
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /**
  * Celda compacta de fotos: una miniatura con el contador encima. Ampliar abre
  * el visor — así la tabla se mantiene legible aunque un reporte traiga 6 fotos.
@@ -699,6 +994,10 @@ export default function MascotasPanel() {
   const [filtroBarrio, setFiltroBarrio] = useState('');
   const [filtroConFoto, setFiltroConFoto] = useState(false);
   const [visor, setVisor] = useState<{ reporte: Reporte; indice: number } | null>(null);
+  // Comparador abierto. Se guarda el id y no el objeto: así, cuando marcar el
+  // par recarga el panel, el modal muestra el estado nuevo en vez de quedarse
+  // con una copia vieja.
+  const [comparandoId, setComparandoId] = useState<number | null>(null);
   const [editando, setEditando] = useState<Reporte | null>(null);
   // Registro de conversaciones: la lista trae solo el resumen; los mensajes se
   // piden al desplegar un hilo, para no traer miles de turnos sin que nadie
@@ -903,6 +1202,11 @@ export default function MascotasPanel() {
   const descartadas = useMemo(
     () => (data?.coincidencias || []).filter((c) => c.estado === 'descartada').length,
     [data]
+  );
+
+  const comparando = useMemo(
+    () => (data?.coincidencias || []).find((c) => c.id === comparandoId) || null,
+    [data, comparandoId]
   );
 
   /** ¿Queda algún reporte de prueba? El botón de purga solo aparece si sí. */
@@ -1116,9 +1420,10 @@ export default function MascotasPanel() {
         {seccion === 'coincidencias' && (
           <>
             <p className="text-sm text-gray-500 mb-3">
-              El sistema compara todos los días a las 12:00 cada mascota que se busca
-              contra cada mascota encontrada. Estos son los pares que más se parecen:
-              revísalos y llama a las dos personas si cuadran.
+              El cruce compara cada mascota que se busca contra cada mascota encontrada
+              y deja acá los pares que más se parecen. <strong>Nadie recibe aviso
+              automático:</strong> estos pares son para revisión manual — ábrelos con
+              “⇔ Comparar fotos y datos” y, si cuadran, llama tú a las dos personas.
             </p>
 
             {descartadas > 0 && (
@@ -1221,6 +1526,16 @@ export default function MascotasPanel() {
                   </div>
 
                   <div className="flex flex-wrap gap-2 mt-4 pt-3 border-t border-gray-100">
+                    {/* Primero comparar, después decidir: por eso va de primero
+                        y es el único botón resaltado de la fila. */}
+                    <button
+                      type="button"
+                      onClick={() => setComparandoId(c.id)}
+                      className="px-3 py-1.5 rounded-lg text-xs font-semibold text-white transition-opacity hover:opacity-90"
+                      style={{ backgroundColor: '#008069' }}
+                    >
+                      ⇔ Comparar fotos y datos
+                    </button>
                     {([
                       ['confirmada', '🎉 Es la misma'],
                       ['revisada', '👀 Ya la revisé'],
@@ -1581,6 +1896,16 @@ export default function MascotasPanel() {
             onGuardar={(cambios) => guardarEdicion(editando.codigo, cambios)}
             onCerrar={() => setEditando(null)}
             onEliminar={() => void eliminarReporte(editando)}
+          />
+        )}
+
+        {comparando && (
+          <Comparador
+            coincidencia={comparando}
+            onCerrar={() => setComparandoId(null)}
+            onEstado={(estado) => void actualizarCoincidencia(comparando.id, estado)}
+            onAmpliar={(reporte, indice) => setVisor({ reporte, indice })}
+            escActivo={visor === null}
           />
         )}
 
