@@ -24,7 +24,9 @@ MEDIA = {
     "info_amordios": {
         "url": f"{M}/demo_viajes/hotel_amordios.jpeg", "media_type": "image",
         "descripcion": "info del plan en el hotel Amor de Dios: qué incluye, "
-                       "qué no, condiciones y política de niños",
+                       "qué no, condiciones y política de niños. Es también la "
+                       "info de Bohíos, que no tiene flyer propio: el plan es "
+                       "el mismo y el precio también",
         "camino": "hotel",
     },
     "info_piedramar": {
@@ -45,8 +47,8 @@ MEDIA = {
     },
     "video_bohios": {
         "url": f"{M}/demo_viajes/hotel_bohios.mp4", "media_type": "video",
-        "descripcion": "video del hotel Bohíos (único material propio de este "
-                       "hotel: no tiene imagen de info general)",
+        "descripcion": "video del hotel Bohíos (cada hotel tiene el suyo; la "
+                       "info general de Bohíos es la de Amor de Dios)",
         "camino": "hotel",
     },
     "tarifario_amordios_ago_nov": {

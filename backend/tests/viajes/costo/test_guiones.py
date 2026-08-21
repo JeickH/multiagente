@@ -16,12 +16,78 @@ no invente características del hotel y no cierre puertas comerciales.
 """
 from __future__ import annotations
 
+import json
 import re
+from datetime import date, timedelta
+from pathlib import Path
 
 import pytest
 
+from app.data.bot_viajes import MEDIA
 from app.services import llm_engine
 from app.services.messaging.base import MARCADOR_IMAGEN, MARCADOR_NOTA_DE_VOZ
+
+# Las claves salen del catálogo, no escritas a mano. Cuando el bot pasó de dos
+# hoteles a tres, `info_general`, `tarifario1` y `hotel_video` dejaron de
+# existir y cuatro guiones se quedaron pidiendo material fantasma: verdes en
+# apariencia hasta que alguien los corrió. Derivándolas, un rename las arrastra.
+CLAVES_MEDIA = set(MEDIA)
+CLAVES_TARIFARIO = {k for k, v in MEDIA.items() if v.get("meses")}
+CLAVES_VIDEO_HOTEL = {
+    k for k, v in MEDIA.items()
+    if v.get("camino") == "hotel" and v.get("media_type") == "video"
+}
+CLAVES_INFO_HOTEL = {
+    k for k, v in MEDIA.items()
+    if v.get("camino") == "hotel" and v.get("media_type") == "image"
+}
+
+
+def _precios_del_tarifario() -> set:
+    """Todas las cifras que el tarifario autoriza a decir, sacadas del JSON que
+    genera el Excel — la misma fuente que lee `consultar_tarifario`.
+
+    Se leen del archivo y no se escriben acá para que subir un tarifario nuevo
+    no deje este guardarraíl marcando precios legítimos como inventados.
+    """
+    ruta = Path(__file__).resolve().parents[3] / "app" / "data" / "tarifario_covenas.json"
+    numeros = set(re.findall(r"\d[\d.,]*", ruta.read_text(encoding="utf-8")))
+    return {re.sub(r"\D", "", n) for n in numeros if re.sub(r"\D", "", n)}
+
+
+PRECIOS_DEL_TARIFARIO = _precios_del_tarifario()
+
+_MESES_ES = [
+    "enero", "febrero", "marzo", "abril", "mayo", "junio",
+    "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre",
+]
+
+
+def _proxima_salida() -> str:
+    """Una fecha de viaje futura y real, en el habla del cliente ("7 de
+    septiembre"), sacada de las salidas del tarifario.
+
+    Estaba escrita a mano como "7 de agosto" y el guion se pudrió con el
+    calendario: pasado el 7 de agosto el bot dejó de escalar, y con razón —
+    ofrece las salidas que quedan en vez de mandar a un asesor una fecha que ya
+    no se vende. El test medía el almanaque, no al bot.
+
+    Se piden **10 días de margen** y no "la próxima": la próxima puede ser
+    mañana, y ahí el bot pregunta si de verdad es para mañana antes de escalar
+    — que también es lo correcto, pero convierte el guion en una moneda al aire.
+    """
+    ruta = Path(__file__).resolve().parents[3] / "app" / "data" / "tarifario_covenas.json"
+    datos = json.loads(ruta.read_text(encoding="utf-8"))
+    limite = date.today() + timedelta(days=10)
+    futuras = sorted(
+        date.fromisoformat(p["inicio"])
+        for p in datos.get("planes", [])
+        if p.get("inicio") and date.fromisoformat(p["inicio"]) >= limite
+    )
+    if not futuras:
+        pytest.skip("el tarifario cargado no tiene salidas futuras: hay que regenerarlo")
+    d = futuras[0]
+    return f"{d.day} de {_MESES_ES[d.month - 1]}"
 
 # Las únicas cifras de dinero que el contexto autoriza: los opcionales del
 # itinerario y el 30% de la reserva. Los precios viven en las imágenes del
@@ -110,8 +176,12 @@ def sin_inventos(monkeypatch):
     ]
     assert not telefonos, f"teléfono inventado: {telefonos}"
     # Igual con el dinero: repetirle su "300 mil" para explicarle que el precio
-    # no se negocia no es inventar nada.
-    permitidas = CIFRAS_OK | {
+    # no se negocia no es inventar nada. Y **los precios del tarifario tampoco**:
+    # desde que existe `consultar_tarifario`, decir "$459.000" es exactamente lo
+    # que se le pide al bot. Antes este guardarraíl daba por inventada cualquier
+    # cifra que no estuviera en el contexto, porque los precios vivían solo en
+    # las imágenes; con la herramienta esa premisa dejó de ser cierta.
+    permitidas = CIFRAS_OK | PRECIOS_DEL_TARIFARIO | {
         re.sub(r"\D", "", m.group(0))
         for p in preguntado for m in _MONEDA.finditer(p)
     }
@@ -141,22 +211,44 @@ class TestPrimerContacto:
         assert "cuál es tu nombre" not in texto
 
     def test_toda_imagen_va_anunciada_en_el_texto(self, bot, modelo_real):
-        """Una imagen suelta, sin una línea que diga qué es, se lee como spam."""
+        """Una imagen suelta, sin una línea que diga qué es, se lee como spam.
+
+        El guion llega hasta el hotel a propósito: es donde el bot manda
+        material de verdad. Antes preguntaba solo "cuéntame más" y esperaba un
+        `info_general` que ya no existe — con tres hoteles, el primer mensaje
+        pregunta el nombre y el mes, no manda flyers."""
         modelo_real["actual"] = "C2 publicidad"
-        s = conversar(
-            bot, ["Hola, soy Camilo, vi la publicidad del viaje a Coveñas, cuéntame más"]
+        s = conversar(bot, [
+            "Hola, soy Camilo, vi la publicidad del viaje a Coveñas, cuéntame más",
+            "para septiembre",
+            "en Piedra Mar",
+        ])
+        enviados = medios(*s)
+        assert enviados, "no mandó nada de material en toda la conversación"
+        assert set(enviados) <= CLAVES_MEDIA, (
+            f"inventó una clave de media que no está en el catálogo: "
+            f"{set(enviados) - CLAVES_MEDIA}"
         )
-        assert "info_general" in medios(*s)
         assert dicho(*s).strip(), "mandó medios sin una sola línea de texto"
 
 
 class TestNoInventa:
     def test_no_cita_precios_de_memoria(self, bot, modelo_real):
         """El guardarraíl de cifras del fixture es el que juzga; acá se fija
-        además que la respuesta correcta sea mandar los tarifarios."""
+        además que la respuesta correcta sea consultar el tarifario y mandar el
+        flyer del mes. El mes va en el guion porque sin mes no hay precio: si no
+        se lo dan, la respuesta correcta es preguntarlo, no mandar una imagen."""
         modelo_real["actual"] = "C3 precios"
-        s = conversar(bot, ["Hola, soy Andrés", "¿Cuánto cuesta el plan por persona?"])
-        assert "tarifario1" in medios(*s)
+        s = conversar(bot, [
+            "Hola, soy Andrés",
+            "¿Cuánto cuesta el plan por persona?",
+            "para septiembre",
+        ])
+        assert "consultar_tarifario" in tools(*s), "citó precios sin consultar"
+        enviados = set(medios(*s))
+        assert enviados & CLAVES_TARIFARIO, (
+            f"no mandó el flyer del mes; mandó {enviados or 'nada'}"
+        )
 
     def test_del_hotel_solo_dice_el_nombre(self, bot, modelo_real):
         """En la corrida del 2026-08-18 se inventó "hotel 3 estrellas". El
@@ -171,7 +263,11 @@ class TestNoInventa:
             r"(\d|una|dos|tres|cuatro|cinco)\s*(y media\s*)?estrella", texto
         )
         assert not categoria, f"le puso categoría a un hotel que no la declara: {texto!r}"
-        assert "hotel_video" in medios(*s) or "escalar_a_asesor" in tools(*s)
+        enviados = set(medios(*s))
+        assert (
+            enviados & (CLAVES_VIDEO_HOTEL | CLAVES_INFO_HOTEL)
+            or "escalar_a_asesor" in tools(*s)
+        ), f"ni mostró material del hotel ni pasó al asesor: {enviados or 'nada'}"
 
     @pytest.mark.parametrize("guion", [
         # El "¿qué incluye?" explícito...
@@ -215,7 +311,39 @@ class TestNoInventa:
             "Hola, soy Sara",
             "¿me dejas el plan en 300 mil por persona si pago hoy?",
         ])
-        assert "tarifario1" in medios(*s) or "escalar_a_asesor" in tools(*s)
+        texto = dicho(*s).lower()
+        # Sin mes no hay flyer que mandar, así que la respuesta correcta es
+        # sostener el precio (y ofrecer el asesor si insiste), no una imagen.
+        sostiene = "no" in texto and ("descuento" in texto or "precio" in texto)
+        assert (
+            sostiene
+            or set(medios(*s)) & CLAVES_TARIFARIO
+            or "escalar_a_asesor" in tools(*s)
+        ), f"ni sostuvo el precio ni ofreció salida: {texto!r}"
+
+
+class TestBohios:
+    """Bohíos comparte flyer con Amor de Dios (mismo plan, mismo precio) y solo
+    tiene video propio. Lo que no puede pasar es que el bot se quede sin nada
+    que mostrar, o que mande la imagen sin avisar que dice otro nombre."""
+
+    def test_muestra_material_y_avisa_del_nombre(self, bot, modelo_real):
+        modelo_real["actual"] = "C14 bohios"
+        s = conversar(bot, [
+            "Hola, soy Camilo",
+            "para septiembre, en Bohíos",
+            "¿y cómo es el hotel? mándame la info",
+        ])
+        enviados = set(medios(*s))
+        assert enviados, "no le mostró nada de Bohíos"
+        assert set(enviados) <= CLAVES_MEDIA, (
+            f"clave fuera del catálogo: {enviados - CLAVES_MEDIA}"
+        )
+        texto = dicho(*s).lower()
+        if enviados & {"info_amordios"} or enviados & CLAVES_TARIFARIO:
+            assert "amor de dios" in texto, (
+                f"mandó el flyer de Amor de Dios sin avisar por qué: {texto!r}"
+            )
 
 
 class TestReconoceSuPropioPlan:
@@ -316,11 +444,17 @@ class TestFotos:
 class TestSabeCuandoSoltar:
     def test_los_datos_de_reserva_van_a_un_humano(self, bot, modelo_real):
         modelo_real["actual"] = "C7 reserva"
+        # El tercer turno solo corre si el bot no escaló ya (`conversar` corta
+        # cuando la conversación se cierra): cubre el caso en que pide confirmar
+        # la fecha antes de soltar el chat, que es correcto y pasaba a veces.
         s = conversar(bot, [
             "Hola, quiero reservar para ir con mi esposa",
-            "Carlos Gómez, CC 79456123, 2 personas, 7 de agosto",
+            f"Carlos Gómez, CC 79456123, 2 personas, {_proxima_salida()}",
+            "sí, esa fecha, conéctame con el asesor por favor",
         ])
-        assert "escalar_a_asesor" in tools(*s)
+        assert "escalar_a_asesor" in tools(*s), (
+            f"se quedó con la reserva en vez de pasarla: {dicho(*s)!r}"
+        )
         assert s[-1]["finished"]
 
     def test_pedir_un_humano_escala_de_una(self, bot, modelo_real):
@@ -341,13 +475,23 @@ class TestSabeCuandoSoltar:
 
     def test_un_tema_ajeno_al_bot_va_a_un_humano(self, bot, modelo_real):
         """El catch-all que pidió el CEO: si el mensaje no cae en ninguno de
-        los ocho caminos, no se improvisa — se pasa a un asesor."""
+        los ocho caminos, no se improvisa — se pasa a un asesor.
+
+        El "sí, por favor" del final no es relleno: el bot a veces ofrece
+        primero ("¿te conecto con un asesor?") y escala al turno siguiente, que
+        es tan correcto como escalar de una. Exigiendo la herramienta en un
+        turno exacto, este guion salía rojo 1 de cada 3 corridas sin que nada
+        estuviera roto — el mismo patrón que ya usaba
+        `test_otro_destino_va_a_un_humano`."""
         modelo_real["actual"] = "catch-all"
         s = conversar(bot, [
             "Hola",
             "¿ustedes tramitan la visa americana o venden seguros de viaje?",
+            "sí, por favor, pásame con un asesor",
         ])
-        assert "escalar_a_asesor" in tools(*s)
+        assert "escalar_a_asesor" in tools(*s), (
+            f"nunca llegó a un humano: {dicho(*s)!r}"
+        )
 
     def test_la_despedida_cierra_la_conversacion(self, bot, modelo_real):
         modelo_real["actual"] = "C10 despedida"

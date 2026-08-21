@@ -4662,3 +4662,102 @@ Lo que costaría hacerlo (queda propuesto, **no** hecho):
 812 gratis (7 nuevos) y 13 guiones contra Bedrock corridos dos veces sin fallas,
 incluido el control de que el bot **sigue** escalando un tema ajeno — el mismo
 que se rompió cuando la regla de audios quedó mal ubicada.
+
+---
+
+## 2026-08-20 — Verificación del catálogo de medios y la suite de costo en verde
+
+**Pedido del CEO:** confirmar que las imágenes que él subió a `demo_viajes/`
+son las que el bot está usando de verdad, y arreglar los cuatro guiones que
+quedaron pidiendo material que ya no existe.
+
+### Verificación: sí, son esas
+
+Hay **dos carpetas** y conviene no confundirlas:
+
+- `demo_viajes/` en la raíz — **git-ignoreada** (`.gitignore:45`). Es la carpeta
+  de trabajo del CEO; ahí vive también el Excel del tarifario.
+- `frontend/public/demo_viajes/` — versionada, y **esta es la que sirve
+  Amplify** en `app.glomabeauty.com/demo_viajes/...`, que es la URL que el bot
+  le manda al cliente por WhatsApp.
+
+Se compararon las dos por MD5: **13 de 13 archivos idénticos**. Después se bajó
+cada URL del catálogo desde producción y se comparó contra el archivo local:
+**13 de 13 devuelven 200 y son byte a byte el mismo archivo**. Y el bot 12 en
+RDS tiene exactamente esas 13 claves en su `llm_config`. Nada desactualizado.
+
+Qué flyer sale por mes, resuelto por `tarifario.clave_imagen` (no por el
+modelo):
+
+| | Amor de Dios / Bohíos | Piedra Mar |
+|---|---|---|
+| jul | — | `tarifario_piedramar2` |
+| ago–oct | `tarifario_amordios2` | `tarifario_piedramar2` |
+| nov | `tarifario_amordios2` | `tarifario_piedramar1` |
+| dic–ene | `tarifario_amordios1` | `tarifario_piedramar1` |
+| feb–jun | — sin tarifario — | — sin tarifario — |
+
+`tarifario3.jpeg` está en la carpeta de la raíz, no está publicado y **no lo usa
+nadie**: quedó de la temporada anterior.
+
+### Bohíos: sí tiene info general, es la de Amor de Dios
+
+El contexto decía "Bohíos **no tiene** imagen de info general", así que a quien
+preguntaba por ese hotel el bot le mostraba solo el video. El CEO aclaró que la
+info general de Bohíos **es la de Amor de Dios** —mismo plan, mismo precio— y
+que lo único propio es el video. Corregido en el contexto y en la descripción
+del catálogo, con el mismo aviso que ya se usaba para el tarifario: la imagen
+sale a nombre de *Amor de Dios* pero aplica igual.
+
+### Los guiones rotos, y por qué estaban rotos
+
+Cuatro pedían `info_general`, `tarifario1` y `hotel_video`, que dejaron de
+existir con los tres hoteles. Ahora **las claves se derivan del catálogo**
+(`CLAVES_MEDIA`, `CLAVES_TARIFARIO`, `CLAVES_VIDEO_HOTEL`, `CLAVES_INFO_HOTEL`):
+un rename las arrastra en vez de dejarlas pidiendo fantasmas.
+
+Aparecieron dos podredumbres más, que el rojo anterior tapaba:
+
+1. **El guardarraíl de plata daba por inventados los precios reales.** Se
+   escribió cuando los precios vivían solo en las imágenes; desde
+   `consultar_tarifario`, decir "$459.000" es justo lo que se le pide al bot.
+   Ahora las cifras autorizadas se leen de `app/data/tarifario_covenas.json` —
+   la misma fuente que lee la herramienta—, así que subir un tarifario nuevo no
+   deja el guardarraíl marcando precios legítimos.
+2. **Un guion medía el almanaque.** Pedía reservar "7 de agosto"; pasado el 7 de
+   agosto el bot dejó de escalar y empezó a ofrecer las salidas que quedaban —
+   que es lo correcto. La fecha ahora sale del tarifario, con **10 días de
+   margen**: pidiendo "la próxima" cae en mañana y ahí el bot pregunta si de
+   verdad es para mañana antes de escalar, lo cual también está bien pero vuelve
+   el test una moneda al aire.
+
+### Un tercer arreglo, que salió de no creerle a una sola corrida
+
+La primera corrida completa dio **30 de 30** y estuvo a punto de quedar
+escrito así. La segunda, con el mismo código, dio 27. Lo que fallaba no era el
+bot sino la forma de preguntar: dos guiones exigían que `escalar_a_asesor`
+saliera **en un turno exacto**, y el bot muchas veces ofrece primero ("¿te
+conecto con un asesor?") y escala al siguiente — que es tan correcto como
+escalar de una. Ahora el guion incluye el "sí, por favor" que daría un cliente
+real, igual que ya hacía `test_otro_destino_va_a_un_humano`. Se mide que el caso
+**llegue a un humano**, no en qué turno.
+
+El mismo método destapó un hueco de verdad en el bot, este sí de producto: en la
+secuencia real —*"les mando el comprobante"* y en el mensaje siguiente la foto—
+el bot contestaba el anuncio, seguía con el mes y, cuando llegaba la imagen, ya
+no la conectaba con el pago: la trataba como una foto cualquiera y preguntaba
+"¿qué necesitas?". Pasaba 1 de cada 2 veces. El contexto ahora dice explícito
+que **esa imagen ES el comprobante aunque entre los dos mensajes se haya hablado
+de otra cosa**. Verificado: escala 4 de 4.
+
+### Estado
+
+Tres corridas completas seguidas: **29, 30 y 30 de 30**. El rojo suelto fue
+`test_del_hotel_solo_dice_el_nombre`, otro de juicio blando. La suite venía con
+4 rojos fijos por las claves y 1 por la fecha; ahora lo que queda es ruido
+ocasional de un test que le pide a un modelo una decisión de criterio. Costo:
+US$ 0,146 por corrida, con 94% de la entrada servida por caché.
+
+**Regla que deja este episodio**: en esta suite, una corrida verde no significa
+nada. Para afirmar que algo quedó arreglado —o roto— hay que correrla varias
+veces, y comparar contra un worktree en `HEAD`.

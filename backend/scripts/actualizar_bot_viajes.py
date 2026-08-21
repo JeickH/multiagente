@@ -92,16 +92,31 @@ def main() -> int:
                     "llm_config → los chats entran al reparto por turnos"
                 )
 
-            claves_antes = sorted((anterior.get("media") or {}).keys())
-            claves_ahora = sorted((nueva.get("media") or {}).keys())
-            if claves_antes != claves_ahora:
-                fuera = [k for k in claves_antes if k not in claves_ahora]
-                entra = [k for k in claves_ahora if k not in claves_antes]
-                if fuera:
-                    print(f"  ✓ medios retirados: {', '.join(fuera)}")
-                if entra:
-                    print(f"  ✓ medios nuevos:    {', '.join(entra)}")
-            else:
+            # El reporte mira el catálogo COMPLETO, no solo las claves: la URL y
+            # la descripción de un medio cambian sin que entre ni salga ninguna
+            # clave, y comparando solo los nombres el script escribía los datos
+            # nuevos mientras imprimía "ya estaba al día". Un mensaje así no es
+            # cosmética: es lo único que se ve desde afuera para saber si la
+            # corrida contra producción hizo algo.
+            medios_antes = anterior.get("media") or {}
+            medios_ahora = nueva.get("media") or {}
+            fuera = [k for k in medios_antes if k not in medios_ahora]
+            entra = [k for k in medios_ahora if k not in medios_antes]
+            cambian = [
+                k for k in medios_ahora
+                if k in medios_antes and medios_antes[k] != medios_ahora[k]
+            ]
+            if fuera:
+                print(f"  ✓ medios retirados: {', '.join(sorted(fuera))}")
+            if entra:
+                print(f"  ✓ medios nuevos:    {', '.join(sorted(entra))}")
+            for k in sorted(cambian):
+                campos = sorted(
+                    c for c in set(medios_antes[k]) | set(medios_ahora[k])
+                    if medios_antes[k].get(c) != medios_ahora[k].get(c)
+                )
+                print(f"  ✓ medio actualizado: {k} ({', '.join(campos)})")
+            if not (fuera or entra or cambian):
                 print("  · el catálogo de medios ya estaba al día")
 
             if not anterior.get("tarifario"):
