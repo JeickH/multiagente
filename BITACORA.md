@@ -4761,3 +4761,86 @@ US$ 0,146 por corrida, con 94% de la entrada servida por caché.
 **Regla que deja este episodio**: en esta suite, una corrida verde no significa
 nada. Para afirmar que algo quedó arreglado —o roto— hay que correrla varias
 veces, y comparar contra un worktree en `HEAD`.
+
+---
+
+## 2026-08-21 — Coincidencias de mascotas: comparador para revisión manual
+
+### El script ya existía, y ya había corrido
+
+El pedido era "ejecutemos una búsqueda de coincidencias y que aparezcan en el
+dash". Antes de escribir nada: el cruce ya está hecho
+(`scripts/job_coincidencias_mascotas.py`), es el mismo que dispara el botón
+"🔗 Buscar coincidencias" del panel. Se corrió contra producción — 175 perdidas
+× 130 encontradas = **22.750 pares** — y devolvió `0 nuevas, 0 actualizadas`.
+
+No porque no haya coincidencias: porque **ya había 349**, creadas la noche
+anterior (2026-08-21 02:44 UTC) desde el botón del panel. El cruce es
+idempotente y lo único que hizo fue confirmarlo. El EventBridge
+`mascotas-cruce-diario` sigue en DISABLED, como estaba decidido.
+
+De los 22.750 pares, 1.245 pasan el umbral 12; quedan 349 guardados por el tope
+de **3 candidatas por mascota buscada**. Ese tope es a propósito (con umbral 6
+daban 5.284 y el panel era inservible).
+
+### El gotcha que costó una conclusión equivocada
+
+La primera consulta —`SELECT estado, count(*) FROM mascota_coincidencias`— por
+`rds_query.sh` devolvió el encabezado y ninguna fila, y se reportó "cero
+coincidencias, el panel está vacío". Era falso.
+
+`rds_query.sh` lee el resultado con `aws logs get-log-events` apenas para la
+task; si CloudWatch todavía no volcó los eventos, imprime las columnas y nada
+más — **indistinguible de una tabla vacía**. Se destapó al notar que 1.245 pares
+pasaban el umbral pero el job insistía en `nuevas=0`: las dos cosas solo son
+compatibles si las filas ya estaban.
+
+**Regla**: un resultado vacío de `rds_query.sh` no es evidencia de que no hay
+datos. Si la respuesta cambia el rumbo del trabajo, confirmarla con
+`rds_exec.sh` y un `print()` explícito del conteo.
+
+### Lo que faltaba de verdad: comparar
+
+Las coincidencias ya se veían. Lo que no se podía era **decidir**: la tarjeta de
+la lista alcanza para descartar lo obvio, pero para saber si son la misma
+mascota tocaba abrir cada ficha por aparte y recordar la otra.
+
+El comparador (`frontend/pages/mascotas-panel.tsx`) abre el par completo:
+
+- Fotos grandes lado a lado con tira de miniaturas. `object-contain`, no
+  `object-cover`: recortar puede esconder justo la mancha o el collar por el que
+  se decide.
+- Los campos en **una sola tabla de tres columnas** (campo · buscada ·
+  encontrada), no dos fichas sueltas — así quedan alineados aunque un texto sea
+  mucho más largo que el otro.
+- Los campos que el cruce contó como parecidos van resaltados con su puntaje
+  (`Raza +5`). El equipo tiene que poder juzgar el puntaje, no solo creérselo.
+- Encabezado y pie pegados: la tabla es larga y los botones de decisión tienen
+  que estar siempre a la mano.
+
+Ampliar una foto abre el visor de siempre encima, en la foto que se estaba
+viendo. Mientras el visor esté abierto el comparador no escucha Escape — si no,
+un solo Escape cerraba los dos.
+
+### Nadie recibe aviso
+
+Requisito explícito del CEO: por ahora, ninguna coincidencia dispara un mensaje.
+Se verificó por construcción, no por suposición: nada en el camino del cruce
+(`cruzar_reportes`, el job, `POST /panel/cruzar`, el PATCH de estado) toca
+Twilio, WhatsApp ni correo. El texto de la sección ahora lo dice en pantalla, y
+el pie del comparador lo repite. El aviso automático sigue siendo el **#348**,
+abierto.
+
+### Verificación
+
+No solo `tsc` y `npm run build`. Se levantó el panel en Chrome con un backend
+simulado y datos inventados, y se comprobó en el navegador: fotos y miniaturas,
+superposición del visor, que Escape cierre solo el modal de encima, y que marcar
+"Es la misma" actualice la insignia en vivo sin cerrar el comparador. El
+comparador se alimenta del id y no de una copia del objeto, justamente para que
+recargar el panel no lo deje mostrando un estado viejo.
+
+Un hallazgo que dejó el mock: el par `MC-00308 ↔ MC-00309` son códigos
+consecutivos con descripción casi idéntica (gato criollo parecido al siamés,
+gris claro). Huele a **la misma mascota importada dos veces**, una como perdida
+y otra como encontrada, más que a un reencuentro. Queda para la revisión.

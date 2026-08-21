@@ -269,6 +269,10 @@ a esas personas hay que ir a su sitio y usar su botón de contacto.
 
 - **Coincidencias**: pares del cruce, con puntaje y qué campos coincidieron. Las
   descartadas quedan **archivadas** (ocultas, con un botón para verlas).
+  **"⇔ Comparar fotos y datos"** abre el par lado a lado: fotos grandes con tira
+  de miniaturas y los campos en una tabla alineada, con los que aportaron al
+  puntaje resaltados (`Raza +5`). Marcar un par **no le avisa a nadie** — el
+  aviso a las familias es manual mientras el #348 siga abierto.
 - **Se buscan / Encontradas**: tablas con filtros (texto, especie, zona, estado, solo con
   foto), visor de fotos a pantalla completa con la ruta `s3://`, edición completa,
   borrado y **subida de fotos** (`+ foto`).
@@ -300,6 +304,13 @@ TASKDEF=multiagente-backend:<rev> ./backend/scripts/rds_exec.sh <script.py> [VAR
 ```
 
 ⚠️ `rds_exec.sh` manda el archivo como `python -c`: **el script no puede usar `__file__`**.
+Por eso `job_coincidencias_mascotas.py` (que sí lo usa) se corre con `run-task` y
+`command=["python","scripts/job_coincidencias_mascotas.py"]`, no con `rds_exec.sh`.
+
+⚠️ `rds_query.sh` lee el resultado apenas para la task: si CloudWatch no ha volcado
+los eventos, imprime las columnas y **ninguna fila**, igualito a una tabla vacía.
+Un resultado vacío ahí no prueba que no haya datos — si la respuesta cambia lo que
+vas a hacer, confírmala con `rds_exec.sh` y un `print()` del conteo.
 
 **Env vars propias del módulo** (task-def): `MASCOTAS_BUCKET`, `MASCOTAS_PUBLIC_BASE`,
 `AWS_REGION`.
