@@ -4975,3 +4975,54 @@ resuelven la revisión viva del servicio.
 3. Definir `ADJUNTOS_BUCKET` (o dejar que caiga al de mascotas) en la task-def.
 4. Follow-up: el endpoint de subida no tiene rate-limit propio (sí exige auth y
    permiso `can_reply_messages`), a diferencia del de fotos de mascotas.
+
+---
+
+## Rotación de `SECRET_KEY` — la clave de sesión estaba publicada (2026-08-21)
+
+Salió de una pregunta del CEO ("¿es una falla de seguridad?") sobre unas
+credenciales que aparecieron en texto plano en la task-def de ECS. Al
+verificarlas una por una, la respuesta fue distinta para cada una:
+
+| Secreto | ¿Dónde estaba? | Gravedad |
+|---|---|---|
+| `POSTGRES_PASSWORD` | Solo en la task-def. **Nunca se commiteó** | Mala práctica |
+| `SECRET_KEY` (firma de los JWT) | En la task-def **y en `PRUEBAS_SPRINT_7.md`, en el repo PÚBLICO**, desde el Sprint 7 | **Crítica** |
+
+La segunda es la que importaba. El backend firma los tokens de sesión con
+HS256 usando esa clave, así que **cualquiera que leyera el repo podía firmarse
+un token válido y entrar como cualquier usuario, sin contraseña**. La ironía es
+que la línea que la exponía era la tarea pendiente que decía "S-26: rotar
+`SECRET_KEY`, es placeholder débil".
+
+### Cómo se comprobó que era explotable de verdad
+
+No se asumió: se fabricó un token con la clave publicada y se pidió
+`/usuario/me` en producción. Devolvió **404** — "usuario no encontrado". Eso es
+la prueba: una firma inválida devuelve **401**, así que el 404 significa que la
+firma **fue aceptada** y solo falló la búsqueda del correo (el `sub` de prueba
+era `"1"`, no un correo). Con un correo real habría sido 200 y sesión ajena.
+
+### Qué se hizo
+
+1. Clave nueva de 64 bytes generada y guardada en SSM SecureString
+   (`/multiagente/prod/SECRET_KEY`). Nunca pasó por pantalla ni por un archivo.
+2. `SECRET_KEY` **sale** de las variables en texto plano de la task-def y entra
+   como `secrets`, junto a `APP_ENCRYPTION_KEY` y las de Twilio (task-def `:67`).
+3. Desplegada. Verificado: el mismo token forjado con la clave vieja ahora
+   devuelve **401**.
+4. La clave se borró de `PRUEBAS_SPRINT_7.md` y la línea explica qué pasó.
+   **Borrarla no era el arreglo** — sigue en el historial público de git; el
+   arreglo es la rotación (regla #8 de CLAUDE.md, al pie de la letra).
+
+El CEO autorizó explícitamente el cierre de todas las sesiones abiertas, que es
+el efecto colateral: todo el mundo vuelve a entrar.
+
+### Queda abierto
+
+- **`POSTGRES_PASSWORD` y `SECRET_KEY`… falta la primera**: la contraseña de
+  RDS sigue en texto plano en la task-def. No está publicada, así que no urge,
+  pero la ve cualquiera con lectura sobre ECS. Moverla a SSM es el mismo
+  procedimiento de arriba y no cierra sesiones.
+- Revisar si hay otros secretos en el historial público (se buscaron estos dos;
+  no un barrido completo con algo tipo `gitleaks`).

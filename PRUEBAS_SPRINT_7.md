@@ -300,7 +300,7 @@ Checklist (marca cada uno cuando lo validas):
 
 - **S-13**: rate limiting en `POST /register` y `POST /usuario/me/meta-account` (slowapi o contador en memoria).
 - **S-14**: importar `app.config.settings` desde `main.py` para fail-fast al arranque del backend (hoy solo se valida cuando algún módulo importa `config`).
-- **S-26**: rotar `SECRET_KEY` del backend en ECS (actual es placeholder “multiagente-aws-secret-key-2026”, débil).
+- **S-26**: ✅ **HECHO (21-ago-2026)**. `SECRET_KEY` rotada y movida a SSM SecureString (`/multiagente/prod/SECRET_KEY`), fuera de las variables en texto plano de la task-def. La clave anterior estaba escrita en esta misma línea y este repositorio es público: quien la tuviera podía **firmarse un token válido y entrar como cualquier usuario**. Se rotó, que es lo único que arregla un secreto publicado — borrarlo del archivo no sirve, queda en el historial de git.
 - **S-28**: añadir reintentos + timeout a `get_phone_number_info` en `services/meta_whatsapp.py`.
 - **Alembic**: adoptar migraciones versionadas. Mientras tanto, cada PR que toque `models.py` debe traer su propio script idempotente en `backend/scripts/`.
 - **AWS Secrets Manager**: migrar `APP_ENCRYPTION_KEY` de SSM Parameter Store a Secrets Manager (S-06).
