@@ -207,6 +207,44 @@ def send_media(
     return _post_message(account, data)
 
 
+def download_media(account, media_url: str) -> Optional[Tuple[bytes, str]]:
+    """Baja un archivo que **entró** por WhatsApp. `(bytes, content_type)`.
+
+    Las `MediaUrl` de un webhook de Twilio no son públicas: piden las mismas
+    credenciales de la cuenta que se usan para enviar. Y no viven para siempre
+    — por eso el archivo se baja en el momento en que llega y se guarda en
+    nuestro storage, en vez de anotar el enlace y confiar en que siga ahí.
+
+    Devuelve `None` ante cualquier problema: que no se pueda bajar una foto no
+    puede tumbar el webhook, porque detrás viene el turno del bot. El mensaje
+    queda con su marcador (`[imagen]`) y la conversación sigue.
+    """
+    url = (media_url or "").strip()
+    if not url:
+        return None
+
+    creds = _resolve_creds(account)
+    if not creds.complete:
+        logger.warning("twilio.media credenciales incompletas — no se baja el adjunto")
+        return None
+
+    try:
+        with httpx.Client(timeout=30.0, follow_redirects=True) as client:
+            resp = client.get(url, auth=(creds.account_sid, creds.auth_token))
+            resp.raise_for_status()
+            contenido = resp.content
+            tipo = (resp.headers.get("content-type") or "").split(";")[0].strip()
+    except Exception as exc:
+        # Sin la URL ni el cuerpo en el log (reglas #1 y #6): solo el tipo de
+        # falla, que es lo que sirve para diagnosticar.
+        logger.warning("twilio.media no se pudo bajar el adjunto: %s", type(exc).__name__)
+        return None
+
+    if not contenido:
+        return None
+    return contenido, tipo
+
+
 def send_template(
     account,
     to_wa_id: str,

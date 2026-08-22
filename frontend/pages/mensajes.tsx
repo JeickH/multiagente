@@ -158,11 +158,15 @@ function initials(name: string | null, fallback: string): string {
  * el archivo se puede mostrar acá sin columnas nuevas: la URL ya es pública, es
  * exactamente la misma que se le envió al cliente por WhatsApp.
  *
- * Lo que manda el *cliente* es otra historia: de eso solo guardamos el marcador
- * (`[imagen]`), porque Meta entrega un id que hay que cambiar por una URL
- * temporal y descargar antes de que expire. Mientras no exista eso, la burbuja
- * dice con todas las letras que el archivo está en WhatsApp y no acá — que es
- * mejor que un "[imagen]" suelto que parece un error.
+ * Lo que manda el *cliente* llega igual desde que el webhook lo baja del
+ * proveedor y lo guarda como nuestro: el contenido queda `[imagen]\nURL`, con
+ * el marcador delante porque es lo que lee el bot. Por eso el caption de un
+ * entrante se descarta al pintarlo — decir "[imagen]" encima de la imagen
+ * sobra.
+ *
+ * Si la descarga falló (o es un mensaje viejo, anterior a esto), no hay URL y
+ * queda solo el marcador: ahí la burbuja lo dice con todas las letras en vez de
+ * mostrar un "[imagen]" suelto que parece un error.
  */
 const URL_EN_TEXTO = /https?:\/\/\S+/;
 const TIPOS_VISIBLES = ['image', 'imagen', 'video', 'audio', 'document', 'documento'];
@@ -173,11 +177,15 @@ function Contenido({ mensaje }: { mensaje: Message }) {
   const url = encontrada ? encontrada[0] : null;
   const caption = url ? mensaje.content.replace(url, '').trim() : mensaje.content;
 
-  if (url && TIPOS_VISIBLES.includes(tipo) && mensaje.direction === 'outbound') {
+  if (url && TIPOS_VISIBLES.includes(tipo)) {
     const esDocumento = tipo === 'document' || tipo === 'documento';
+    const entrante = mensaje.direction === 'inbound';
+    // En un entrante el "caption" es el marcador que lee el bot (`[imagen]`),
+    // no algo que el cliente escribió: no se pinta.
+    const pie = entrante ? '' : caption;
     return (
       <div className="space-y-1.5">
-        {caption && <div className="text-sm whitespace-pre-wrap break-words">{caption}</div>}
+        {pie && <div className="text-sm whitespace-pre-wrap break-words">{pie}</div>}
         {tipo === 'video' ? (
           <video src={url} controls className="rounded-lg max-h-72 w-full bg-black/10" />
         ) : tipo === 'audio' ? (
@@ -189,13 +197,15 @@ function Contenido({ mensaje }: { mensaje: Message }) {
         ) : esDocumento ? (
           <div className="flex items-center gap-2 rounded-lg bg-white/10 px-3 py-2">
             <span className="text-lg leading-none">📄</span>
-            <span className="text-sm">Documento enviado</span>
+            <span className="text-sm">
+              {entrante ? 'Documento del cliente' : 'Documento enviado'}
+            </span>
           </div>
         ) : (
           // eslint-disable-next-line @next/next/no-img-element
           <img
             src={url}
-            alt={caption || 'Imagen enviada al cliente'}
+            alt={entrante ? 'Imagen que envió el cliente' : caption || 'Imagen enviada al cliente'}
             loading="lazy"
             className="rounded-lg max-h-72 object-contain bg-white/10"
           />
@@ -736,6 +746,15 @@ export default function Mensajes() {
                           {formatTime(c.last_message_at)}
                         </span>
                       </div>
+                      {/* El número debajo del nombre: el asesor lo necesita para
+                          buscar a la persona en su celular, y sin esto había que
+                          abrir el chat para verlo. Si no sabemos el nombre, el
+                          número ya está arriba y repetirlo sobra. */}
+                      {c.contact_name && (
+                        <div className="text-[11px] text-gray-400 truncate">
+                          +{c.contact_wa_id}
+                        </div>
+                      )}
                       <div className="text-xs text-gray-500 truncate">
                         {c.last_message_preview || '(sin mensajes)'}
                       </div>
@@ -808,7 +827,11 @@ export default function Mensajes() {
                   <div className="font-semibold text-gray-800">
                     {detail.contact_name || `+${detail.contact_wa_id}`}
                   </div>
-                  <div className="text-xs text-gray-500">+{detail.contact_wa_id}</div>
+                  {/* Sin nombre, el número ya está arriba: mostrarlo dos veces
+                      seguidas se veía como un error de la pantalla. */}
+                  {detail.contact_name && (
+                    <div className="text-xs text-gray-500">+{detail.contact_wa_id}</div>
+                  )}
                 </div>
                 <div className="ml-auto text-xs">
                   {detail.assigned_to && detail.assigned_to !== 'bot' ? (

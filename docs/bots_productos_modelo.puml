@@ -1,0 +1,156 @@
+@startuml
+' ============================================================
+' Modelo de datos propuesto — productos de una cuenta
+' Propuesta (PLAN_CATALOGO_DATOS_BOTS.html). Nada de esto existe todavía.
+' Render: java -jar plantuml.jar -tsvg docs/bots_productos_modelo.puml
+' ============================================================
+!pragma layout smetana
+title Modelo propuesto — lo que vende cada cuenta, en la base
+
+skinparam backgroundColor #FFFFFF
+skinparam shadowing false
+skinparam padding 3
+skinparam defaultFontName Helvetica
+skinparam defaultFontSize 12
+skinparam linetype ortho
+skinparam nodesep 26
+skinparam ranksep 42
+skinparam wrapWidth 220
+skinparam class {
+  BorderColor #2B3330
+  BackgroundColor #FFFFFF
+  ArrowColor #2B3330
+  FontColor #1C2321
+  AttributeFontColor #3E4A45
+  AttributeFontSize 11
+  StereotypeFontSize 10
+}
+skinparam packageBackgroundColor #F7F9F8
+skinparam packageBorderColor #9AA5A0
+skinparam noteBackgroundColor #DCEFE8
+skinparam noteBorderColor #12866A
+skinparam noteFontSize 11
+
+class teams <<existe>> #F1F4F2 {
+  id : int <<PK>>
+  nombre : str
+}
+
+class bots <<existe · +2 columnas>> #F1F4F2 {
+  id : int <<PK>>
+  team_id : int <<FK>>
+  engine : str  ' flow | llm
+  llm_config : json  ' solo lo técnico
+  --
+  <b>+ instrucciones : text</b>  ' nivel 2
+  <b>+ instrucciones_version : int</b>
+}
+
+package "Productos de la cuenta — tablas nuevas" {
+
+  class bot_productos <<nueva>> #DCEFE8 {
+    id : int <<PK>>
+    team_id : int <<FK>>
+    slug : str
+    tipo : str  ' plan | producto | catalogo_externo | ficha
+    nombre : str
+    estado : str  ' borrador | publicado | archivado
+    resumen : varchar(240)  ' va al índice del prompt
+    <b>instrucciones : text</b>  ' nivel 3
+    atributos : jsonb
+    vigencia_desde / vigencia_hasta : date
+    --
+    UNIQUE (team_id, slug)
+  }
+
+  class bot_producto_variantes <<nueva>> {
+    id : int <<PK>>
+    producto_id : int <<FK>>
+    slug : str  ' amor_de_dios
+    nombre : str
+    instrucciones : text  ' notas cortas
+    atributos : jsonb
+    precios_de_variante_id : int <<FK self>>
+    activo : bool · orden : int
+    --
+    UNIQUE (producto_id, slug)
+  }
+
+  class bot_producto_filas <<nueva>> #DCEFE8 {
+    id : bigint <<PK>>
+    producto_id : int <<FK>>
+    variante_id : int <<FK, null>>
+    tipo : str  ' salida | precio | sede | envio | faq
+    etiqueta : str  ' AGOSTO 21 AL 24
+    inicio / fin : date
+    valores : jsonb  ' {multiple, doble}
+    nota : str · orden : int · activo : bool
+    externo_id : str  ' id en el Excel
+    --
+    UNIQUE (producto_id, variante_id, externo_id)
+    INDEX (producto_id, inicio) WHERE activo
+    INDEX GIN (valores)
+  }
+
+  class bot_producto_medios <<nueva>> {
+    producto_id : int <<FK>>
+    variante_id : int <<FK, null>>
+    clave : str · url : str · tipo : str
+    descripcion : str
+    aplica : jsonb  ' {"meses":[8,9,10,11]}
+  }
+
+  class bot_producto_alias <<nueva>> {
+    producto_id : int <<FK>>
+    nivel : str  ' producto | variante
+    ref_id : int · alias : str
+    --
+    UNIQUE (producto_id, nivel, alias)
+  }
+
+  class bot_producto_bots <<nueva>> {
+    bot_id : int <<FK>>
+    producto_id : int <<FK>>
+    activo : bool · orden : int
+    --
+    UNIQUE (bot_id, producto_id)
+  }
+
+  class bot_producto_cargas <<nueva>> {
+    producto_id : int <<FK>>
+    archivo : str · hash_sha256 : str
+    filas_nuevas / cambiadas / retiradas : int
+    estado : str  ' revision | aplicado | rechazado
+    diff : jsonb
+    aprobado_por_user_id : int <<FK>>
+  }
+}
+
+teams "1" *-- "N" bots
+teams "1" *-- "N" bot_productos
+bots "1" -- "N" bot_producto_bots
+bot_productos "1" -- "N" bot_producto_bots
+bot_productos "1" *-- "N" bot_producto_variantes
+bot_productos "1" *-- "N" bot_producto_filas
+bot_productos "1" *-- "N" bot_producto_medios
+bot_productos "1" *-- "N" bot_producto_alias
+bot_productos "1" *-- "N" bot_producto_cargas
+bot_producto_variantes "0..1" <-- "N" bot_producto_filas : aplica a
+bot_producto_variantes "0..1" <-- "N" bot_producto_medios : ilustra a
+bot_producto_variantes "0..1" --> "1" bot_producto_variantes : comparte precio con
+
+note bottom of bot_productos
+  Todo cuelga de <b>teams</b>: la capa de acceso
+  filtra siempre por el team_id del bot.
+  Un producto nunca es visible para otra cuenta.
+end note
+
+note bottom of bot_producto_filas
+  Una sola tabla de filas para todos los negocios:
+  para viajes son salidas con fecha y precio;
+  para Talulah, sedes y tiempos de envío.
+  Lo que se filtra y ordena son columnas;
+  lo que solo se muestra va en <b>valores</b> (JSONB).
+end note
+
+@enduml

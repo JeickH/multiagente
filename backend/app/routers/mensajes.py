@@ -51,12 +51,18 @@ def list_conversations(
     # Un solo golpe a `messages` para los adelantos de toda la página, en vez de
     # uno por conversación.
     previews = crud.previews_de_conversaciones(db, [c.id for c in convs])
+    # Si la conversación no tiene nombre, se busca en la agenda del team: el
+    # asesor ve "Marcela" en vez de un número, aunque el nombre lo haya guardado
+    # el bot en Contactos o venga de una importación. Una sola consulta.
+    de_agenda = crud.nombres_de_agenda(
+        db, member.team_id, [c.contact_wa_id for c in convs if not c.contact_name]
+    )
     return schemas.ConversationPageOut(
         conversaciones=[
             schemas.ConversationOut(
                 id=c.id,
                 contact_wa_id=c.contact_wa_id,
-                contact_name=c.contact_name,
+                contact_name=c.contact_name or de_agenda.get(c.contact_wa_id),
                 status=c.status,
                 assigned_to=getattr(c, "assigned_to", "bot") or "bot",
                 # `getattr` con default: la columna la agrega la migración de
@@ -83,10 +89,14 @@ def get_conversation(
     conv = crud.get_conversation(db, member.team_id, conversation_id)
     if not conv:
         raise HTTPException(status_code=404, detail="Conversación no encontrada")
+    # Mismo respaldo que en la bandeja: el nombre puede vivir en la agenda.
+    nombre = conv.contact_name or crud.nombres_de_agenda(
+        db, member.team_id, [conv.contact_wa_id]
+    ).get(conv.contact_wa_id)
     return schemas.ConversationWithMessages(
         id=conv.id,
         contact_wa_id=conv.contact_wa_id,
-        contact_name=conv.contact_name,
+        contact_name=nombre,
         status=conv.status,
         assigned_to=getattr(conv, "assigned_to", "bot") or "bot",
         etiqueta=getattr(conv, "etiqueta", None),

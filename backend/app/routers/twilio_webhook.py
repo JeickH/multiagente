@@ -37,8 +37,8 @@ from sqlalchemy.orm import Session
 
 from .. import crud, models
 from ..dependencies import get_db
-from ..services import bot_router as bot_router_svc
-from ..services import bot_runner
+from ..services import adjuntos, bot_router as bot_router_svc
+from ..services import bot_runner, messaging
 from ..services.messaging import twilio_adapter
 from ..services.messaging.base import marcador_inbound
 
@@ -185,6 +185,27 @@ def process_twilio_status(db: Session, form: Dict[str, str]) -> bool:
     return True
 
 
+def _guardar_adjunto_entrante(account, norm):
+    """Baja el primer adjunto del mensaje y lo guarda como nuestro.
+
+    Solo el primero: por WhatsApp cada archivo llega como su propio mensaje, y
+    los `MediaUrl1+` son casi siempre la miniatura o una variante del mismo.
+
+    Nunca levanta. Si algo falla, el mensaje se queda con su marcador y la
+    conversación sigue — detrás de esto viene el turno del bot, que es lo que
+    de verdad no se puede perder.
+    """
+    try:
+        bajado = messaging.download_media(account, norm.media_urls[0])
+        if bajado is None:
+            return None
+        data, content_type = bajado
+        return adjuntos.guardar_entrante(account.team_id, data, content_type)
+    except Exception:
+        logger.exception("webhook.twilio: no se pudo guardar el adjunto entrante")
+        return None
+
+
 def _resolve_account_by_to(db: Session, to_wa_id: str) -> Optional[models.MetaAccount]:
     """Resuelve la cuenta Twilio por el número destino (el de la marca).
 
@@ -228,18 +249,33 @@ async def receive_inbound(request: Request, db: Session = Depends(get_db)):
     if not _verify_signature(_public_url(request), form, signature):
         return PlainTextResponse("Firma inválida", status_code=403 if _is_production() else 401)
 
+    process_twilio_inbound(db, form)
+    return PlainTextResponse("", status_code=200)
+
+
+def process_twilio_inbound(db: Session, form: Dict[str, str]) -> None:
+    """Procesa un mensaje entrante ya verificado.
+
+    Separado del endpoint por lo mismo que `process_twilio_status`: acá adentro
+    pasan cosas que hay que poder probar (guardar el adjunto, elegir qué lee el
+    bot, el dedupe) y armar un `Request` firmado para cada caso no prueba nada
+    de eso.
+    """
     try:
         norm = twilio_adapter.parse_inbound(form)
         if norm is None:
-            return PlainTextResponse("", status_code=200)
+            return
 
         account = _resolve_account_by_to(db, norm.to_wa_id)
         if account is None or account.team is None:
             # Aún sin cuenta Twilio conectada a este número: no-op (queda listo
             # para el cutover). No se loggea el número en limpio.
             logger.info("webhook.twilio inbound sin cuenta asociada — ignorado")
-            return PlainTextResponse("", status_code=200)
+            return
 
+        # Lo que lee el BOT. Para un adjunto es el marcador (`[imagen]`,
+        # `[nota de voz]`), nunca la URL: el bot tiene reglas escritas sobre
+        # esos marcadores y una URL suelta en su turno lo despistaría.
         content = norm.text or marcador_inbound(norm.message_type)
         conv = crud.get_or_create_conversation(
             db,
@@ -255,13 +291,23 @@ async def receive_inbound(request: Request, db: Session = Depends(get_db)):
             .first()
         ):
             logger.info("webhook.twilio dedupe inbound conversation_id=%s", conv.id)
-            return PlainTextResponse("", status_code=200)
+            return
+
+        # Lo que ve el ASESOR. Si vino un adjunto se baja del proveedor y se
+        # guarda como nuestro: el enlace de Twilio es privado y temporal, así
+        # que anotarlo sería dejar en la bandeja un enlace muerto. Va después
+        # del dedupe a propósito — un reintento de Twilio no vuelve a bajarlo.
+        contenido_guardado = content
+        if norm.media_urls:
+            guardado = _guardar_adjunto_entrante(account, norm)
+            if guardado is not None:
+                contenido_guardado = f"{content}\n{guardado.url}"
 
         crud.add_message(
             db,
             conv,
             direction="inbound",
-            content=content,
+            content=contenido_guardado,
             message_type=norm.message_type,
             meta_message_id=norm.message_id,
             status="received",
@@ -288,4 +334,4 @@ async def receive_inbound(request: Request, db: Session = Depends(get_db)):
     except Exception:
         logger.exception("Error procesando webhook Twilio")
 
-    return PlainTextResponse("", status_code=200)
+    return

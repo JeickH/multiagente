@@ -64,6 +64,22 @@ def send_media(
     )
 
 
+def download_media(account, media_url: str) -> Optional[Tuple[bytes, str]]:
+    """Baja un archivo que entró por webhook. `(bytes, content_type)` o `None`.
+
+    Lo que llega en el webhook es un enlace del proveedor: privado (pide sus
+    credenciales) y temporal. Para que el asesor pueda ver la foto que le mandó
+    el cliente hay que bajarla en el momento y guardarla como propia.
+
+    Nunca levanta: `None` significa "no se pudo, sigue con el marcador".
+    """
+    adaptador = _adapter(account)
+    descargar = getattr(adaptador, "download_media", None)
+    if descargar is None:
+        return None
+    return descargar(account, media_url)
+
+
 def send_template(
     account,
     to_wa_id: str,

@@ -573,6 +573,30 @@ def guardar(
     )
 
 
+def guardar_entrante(
+    team_id: int, data: bytes, content_type: str, filename: Optional[str] = None
+) -> Optional[Adjunto]:
+    """Guarda un archivo que **mandó el cliente**, para que el asesor lo vea.
+
+    Pasa por la misma validación que lo que sale (`preparar`): lista blanca,
+    firma real y tope de tamaño. Que el archivo venga del proveedor no lo hace
+    confiable — lo subió un desconocido desde su celular, y termina servido por
+    un endpoint público nuestro.
+
+    Devuelve `None` si no se pudo: el webhook sigue igual y el mensaje se queda
+    con su marcador. Perder una foto es feo; perder el turno del bot, peor.
+    """
+    preparado, problema = preparar(data, content_type, filename)
+    if preparado is None:
+        logger.info("adjuntos: entrante descartado (%s)", problema)
+        return None
+    try:
+        return guardar(team_id, preparado, filename)
+    except Exception:
+        logger.exception("adjuntos: no se pudo guardar un entrante team=%s", team_id)
+        return None
+
+
 def leer(team_id: int, carpeta: str, nombre: str) -> Optional[Tuple[bytes, str]]:
     """Bytes + content-type de un adjunto. `None` si no existe o si la ruta no
     tiene la forma exacta que emitimos.

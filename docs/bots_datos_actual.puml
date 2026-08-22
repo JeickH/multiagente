@@ -1,0 +1,101 @@
+@startuml
+' ============================================================
+' Cómo un bot LLM obtiene los datos y responde — ESTADO ACTUAL
+' Fuente real: routers/twilio_webhook.py · services/bot_runner.py
+'              services/llm_engine.py · services/tarifario.py
+'              app/data/tarifario_covenas.json · app/bot_contexts/*.md
+' Render: java -jar plantuml.jar -tsvg docs/bots_datos_actual.puml
+' ============================================================
+title Hoy — el bot pregunta por un precio y los datos están dentro de la imagen
+
+skinparam backgroundColor #FFFFFF
+skinparam shadowing false
+skinparam padding 3
+skinparam defaultFontName Helvetica
+skinparam defaultFontSize 12
+skinparam sequenceMessageAlign left
+skinparam maxMessageSize 165
+skinparam wrapWidth 190
+skinparam ArrowColor #2B3330
+skinparam ArrowFontColor #2B3330
+skinparam sequence {
+  LifeLineBorderColor #9AA5A0
+  LifeLineBackgroundColor #EEF2F0
+  ParticipantBorderColor #2B3330
+  ParticipantBackgroundColor #F1F4F2
+  ParticipantFontColor #1C2321
+  ActorBorderColor #2B3330
+  ActorBackgroundColor #F1F4F2
+  GroupBorderColor #9AA5A0
+  GroupBackgroundColor #F1F4F2
+  DividerBackgroundColor #F1F4F2
+  DividerBorderColor #9AA5A0
+}
+skinparam noteBackgroundColor #FBE7DC
+skinparam noteBorderColor #C2410C
+skinparam noteFontSize 11
+skinparam databaseBackgroundColor #DCEFE8
+skinparam databaseBorderColor #12866A
+skinparam collectionsBackgroundColor #FBE7DC
+skinparam collectionsBorderColor #C2410C
+
+actor "Cliente\npor WhatsApp" as C
+participant "webhook\nTwilio / Meta" as W
+participant "bot_runner\nrun_turn()" as R
+participant "llm_engine\nadvance()" as E
+participant "services/tarifario\nconsultar()" as T
+collections "DENTRO DE LA IMAGEN\nbot_contexts/demo_viajes.md\ntarifario_covenas.json" as F
+database "Postgres (RDS)\nbots · bot_sessions\nbot_llm_decisions" as DB
+participant "Bedrock\nClaude Haiku" as B
+
+autonumber "<b>0."
+C -> W : "¿cuánto vale en octubre?"
+W -> DB : carga bot, conversación y\nel historial (bot_sessions.state)
+W -> R : run_turn(bot, conversación, texto)
+R -> E : advance(bot, state, user_input)
+
+group Armado del prompt — _build_system()
+  E -> F : lee bot_contexts/<clave>.md
+  note right of F
+    17,4 KB · ~5.000 tokens.
+    Tono, política, los 3 hoteles,
+    itinerario, niños y hasta
+    precios sueltos: todo junto.
+    Para cambiar una coma:
+    commit + build + deploy.
+  end note
+  F --> E : texto completo (@lru_cache)
+  E -> E : + catálogo de medios (llm_config)\n+ qué día es hoy + reglas de la plataforma
+end
+
+E -> B : system (marcado para caché) + herramientas + historial
+B --> E : tool_use  consultar_tarifario(mes="octubre")
+
+group Consulta de datos — ronda 2 de 5 como máximo
+  E -> T : consultar(cfg, mes, hotel, fecha)
+  T -> F : lee tarifario_covenas.json
+  F --> T : 102 filas (@lru_cache)
+  T -> T : normaliza el hotel con un diccionario\nCABLEADO en el código (amor_de_dios,\npiedra_mar, bohios) · descarta fechas vencidas\n· elige el flyer del mes desde llm_config.media
+  note right of T
+    Este archivo solo sabe de
+    Coveñas. Otra agencia obliga
+    a copiarlo y editarlo.
+  end note
+  T --> E : texto con las filas + "envía tarifario_X"
+end
+
+E -> B : tool_result
+B --> E : respuesta + tool_use enviar_media
+E --> R : actions [say, say_media]
+R -> W : envía los mensajes al canal
+W -> C : precios y flyer del mes
+R -> DB : guarda mensajes, estado de la sesión\ny la decisión (camino, tools, tokens, rounds)
+
+note over F #FBE7DC
+  <b>El cuello de botella</b>
+  Los datos y las instrucciones viven en archivos versionados.
+  Cambiar un precio = commit + build de la imagen + despliegue en ECS,
+  y además invalida el prefijo cacheado de TODAS las conversaciones.
+end note
+
+@enduml

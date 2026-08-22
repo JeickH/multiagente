@@ -1,0 +1,104 @@
+@startuml
+' ============================================================
+' Cómo obtendría los datos y respondería un bot — CON PRODUCTOS
+' Propuesta (PLAN_CATALOGO_DATOS_BOTS.html). Nada de esto existe todavía.
+' Piezas nuevas: services/productos.py + tablas bot_productos*
+' Render: java -jar plantuml.jar -tsvg docs/bots_datos_productos.puml
+' ============================================================
+title Con productos — las instrucciones y los precios salen de la base, filtrados por cuenta
+
+skinparam backgroundColor #FFFFFF
+skinparam shadowing false
+skinparam padding 3
+skinparam defaultFontName Helvetica
+skinparam defaultFontSize 12
+skinparam sequenceMessageAlign left
+skinparam maxMessageSize 165
+skinparam wrapWidth 190
+skinparam ArrowColor #2B3330
+skinparam ArrowFontColor #2B3330
+skinparam sequence {
+  LifeLineBorderColor #9AA5A0
+  LifeLineBackgroundColor #EEF2F0
+  ParticipantBorderColor #2B3330
+  ParticipantBackgroundColor #F1F4F2
+  ParticipantFontColor #1C2321
+  ActorBorderColor #2B3330
+  ActorBackgroundColor #F1F4F2
+  GroupBorderColor #9AA5A0
+  GroupBackgroundColor #F1F4F2
+  DividerBackgroundColor #F1F4F2
+  DividerBorderColor #9AA5A0
+}
+skinparam noteBackgroundColor #DCEFE8
+skinparam noteBorderColor #12866A
+skinparam noteFontSize 11
+skinparam databaseBackgroundColor #DCEFE8
+skinparam databaseBorderColor #12866A
+
+actor "Cliente\npor WhatsApp" as C
+participant "webhook\nTwilio / Meta" as W
+participant "bot_runner\nrun_turn()" as R
+participant "llm_engine\nadvance()" as E
+participant "services/productos\n<i>NUEVO</i>" as P
+database "Postgres (RDS)\nbots.instrucciones\nbot_productos · _variantes\n_filas · _medios · _alias" as DB
+participant "Bedrock\nClaude Haiku" as B
+
+autonumber "<b>0."
+C -> W : "¿qué fechas tienen en octubre?"
+W -> DB : carga bot, conversación y el historial
+W -> R : run_turn(bot, conversación, texto)
+R -> E : advance(bot, state, user_input)
+
+group Armado del prompt — prefijo estable
+  E -> P : indice(team_id = bot.team_id)
+  P -> DB : SELECT productos publicados y vigentes\nde ESA cuenta (slug, nombre, resumen)
+  DB --> P : 1 producto: «Plan Tolú & Coveñas»
+  P --> E : índice de 2 líneas por producto
+  note right of E
+    system = reglas de la plataforma
+    + bots.instrucciones (nivel 2, de la BD)
+    + índice de productos.
+    No cambia cuando cambia un precio,
+    así que la caché sobrevive.
+  end note
+end
+
+E -> B : system (marcado para caché) + herramientas derivadas del producto
+B --> E : tool_use  fechas_disponibles(producto, mes="octubre")
+
+group Consulta de datos — una sola llamada
+  E -> P : consultar(team_id, producto, variante, mes)
+  P -> DB : normaliza el alias contra bot_producto_alias
+  P -> DB : SELECT filas WHERE producto_id = ? AND activo\nAND inicio >= hoy(America/Bogota)\nORDER BY inicio LIMIT tope
+  note right of DB
+    Índice (producto_id, inicio) WHERE activo.
+    Caché en proceso de 60 s, invalidada
+    por MAX(updated_at) del producto.
+    <b>Todo filtrado por team_id:</b> un bot nunca
+    ve los precios de otra cuenta.
+  end note
+  DB --> P : filas vigentes + medios que aplican al mes
+  P --> E : calendario compacto + ficha del producto si hacía falta
+end
+
+E -> B : tool_result <i>(va después del prefijo: no lo invalida)</i>
+B --> E : respuesta + tool_use enviar_media
+E --> R : actions [say, say_media]
+R -> W : envía los mensajes al canal
+W -> C : fechas de octubre y flyer del mes
+R -> DB : guarda mensajes, sesión y decisión (tokens, rounds, camino)
+
+== Actualizar un precio, en paralelo y sin desplegar ==
+
+actor "Dueño de\nla cuenta" as O
+O -> P : importar_producto.py --revisar  (Excel del cliente)
+P --> O : diff en HTML: qué entra, qué cambia, qué se retira
+O -> P : --cargar  (solo si lo aprueba)
+P -> DB : UPDATE / INSERT filas + registro en bot_producto_cargas
+note over DB #DCEFE8
+  El turno siguiente ya cotiza con el valor nuevo.
+  Sin commit, sin build, sin despliegue — y sin perder la caché del prompt.
+end note
+
+@enduml

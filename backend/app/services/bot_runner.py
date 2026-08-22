@@ -184,13 +184,22 @@ def _guardar_nombre(
     dato que sale de un LLM y termina a la vista del asesor en la bandeja.
     """
     nombre = llm_engine.nombre_saneado(valor)
-    if not nombre or (conversation.contact_name or "").strip():
+    if not nombre:
         return
-    conversation.contact_name = nombre
-    db.add(conversation)
-    db.commit()
-    # Sin el nombre en el log (regla #1): es un dato personal.
-    logger.info("bot_runner: nombre de contacto registrado conv=%s", conversation.id)
+
+    if not (conversation.contact_name or "").strip():
+        conversation.contact_name = nombre
+        db.add(conversation)
+        db.commit()
+        # Sin el nombre en el log (regla #1): es un dato personal.
+        logger.info("bot_runner: nombre de contacto registrado conv=%s", conversation.id)
+
+    # Y en la agenda del team, junto al teléfono (pedido del CEO). Va aparte de
+    # la ficha de la conversación a propósito: aunque el nombre de la burbuja ya
+    # estuviera puesto, el contacto puede no existir todavía en Contactos.
+    crud.registrar_contacto_desde_bot(
+        db, conversation.team_id, conversation.contact_wa_id, nombre
+    )
 
 
 def _apuntar_en_el_historial(

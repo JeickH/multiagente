@@ -898,6 +898,103 @@ def delete_contact(db: Session, team_id: int, contact_id: int) -> bool:
     return True
 
 
+#: Mismo formato que exige el CHECK de `contacts.phone_e164`. Se valida antes
+#: de insertar porque en `conversations` hay identificadores que no son
+#: teléfonos (algún canal entrega cosas como `CO.98381…`) y el INSERT
+#: reventaría dentro del webhook.
+_RE_E164 = re.compile(r"^\+[1-9][0-9]{6,18}$")
+
+
+def nombres_de_agenda(
+    db: Session, team_id: int, wa_ids: List[str]
+) -> Dict[str, str]:
+    """`{contact_wa_id: nombre}` para los que estén en Contactos con nombre.
+
+    Sirve para que la bandeja muestre "Marcela" y no un número pelado cuando el
+    nombre lo tiene la agenda del team (importada por la agencia, o guardada por
+    el bot) pero la conversación no.
+
+    Es **una sola** consulta para toda la página, no una por fila: la bandeja ya
+    tuvo un N+1 y se paga caro (PR #3).
+    """
+    if not wa_ids:
+        return {}
+    telefonos = {
+        (w if w.startswith("+") else f"+{w}"): w for w in wa_ids if w
+    }
+    filas = (
+        db.query(models.Contact.phone_e164, models.Contact.name)
+        .filter(
+            models.Contact.team_id == team_id,
+            models.Contact.phone_e164.in_(list(telefonos.keys())),
+            models.Contact.name.isnot(None),
+        )
+        .all()
+    )
+    return {
+        telefonos[tel]: nombre
+        for tel, nombre in filas
+        if tel in telefonos and (nombre or "").strip()
+    }
+
+
+def registrar_contacto_desde_bot(
+    db: Session, team_id: int, contact_wa_id: str, nombre: str
+) -> Optional[models.Contact]:
+    """Guarda en la agenda el nombre que la persona le dio al bot.
+
+    Pedido del CEO (21-ago-2026): si alguien se presenta en el chat, ese nombre
+    tiene que quedar junto a su teléfono en Contactos, no solo en la burbuja de
+    la conversación.
+
+    **No pisa un nombre que ya exista**: el que puso un humano (o una
+    importación de la agencia) vale más que el que dedujo un modelo. Y nunca
+    levanta: esto corre dentro del webhook, detrás viene el turno del bot.
+    """
+    nombre = (nombre or "").strip()
+    if not nombre:
+        return None
+
+    crudo = (contact_wa_id or "").strip()
+    telefono = crudo if crudo.startswith("+") else f"+{crudo}"
+    if not _RE_E164.match(telefono):
+        _log.info("contactos: identificador que no es teléfono — no se agenda")
+        return None
+
+    try:
+        contacto = (
+            db.query(models.Contact)
+            .filter(
+                models.Contact.team_id == team_id,
+                models.Contact.phone_e164 == telefono,
+            )
+            .first()
+        )
+        if contacto is None:
+            contacto = models.Contact(
+                team_id=team_id,
+                phone_e164=telefono,
+                name=nombre[:120],
+                attributes={},
+                opt_in=True,
+                opt_in_source="bot",
+            )
+            db.add(contacto)
+        elif not (contacto.name or "").strip():
+            contacto.name = nombre[:120]
+            contacto.updated_at = datetime.utcnow()
+        else:
+            return contacto
+        db.commit()
+        db.refresh(contacto)
+        return contacto
+    except Exception:
+        db.rollback()
+        # Sin nombre ni teléfono en el log (regla #1): son datos personales.
+        _log.exception("contactos: no se pudo agendar el contacto team=%s", team_id)
+        return None
+
+
 def import_contacts_csv(
     db: Session, team_id: int, csv_text: str
 ) -> schemas.ContactBulkImportResult:
