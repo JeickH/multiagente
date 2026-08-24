@@ -5026,3 +5026,58 @@ el efecto colateral: todo el mundo vuelve a entrar.
   procedimiento de arriba y no cierra sesiones.
 - Revisar si hay otros secretos en el historial público (se buscaron estos dos;
   no un barrido completo con algo tipo `gitleaks`).
+
+---
+
+## Barrido de secretos del historial + la contraseña de RDS a SSM (2026-08-24)
+
+Los dos pendientes que quedaron de la rotación de `SECRET_KEY`.
+
+### `POSTGRES_PASSWORD` ya no viaja en texto plano
+
+Estaba como variable de entorno normal en la task-def: no publicada, pero
+visible para cualquiera con lectura sobre ECS. Se movió a
+`/multiagente/prod/POSTGRES_PASSWORD` (SecureString) **con el mismo valor** —
+no hacía falta rotarla porque nunca se commiteó (se verificó). Task-def `:68`.
+
+Verificado después del despliegue: `POST /login` con credenciales falsas
+devuelve `401 Credenciales incorrectas`. Ese 401 sale de **consultar la base**,
+así que el backend está leyendo la contraseña de SSM y conectando bien.
+
+Ahora **ningún secreto queda en las variables en claro** de la task-def. Los
+únicos nombres que suenan a secreto y siguen ahí son `ACCESS_TOKEN_EXPIRE_MINUTES`
+y `LLM_MAX_TOKENS`, que son números de configuración.
+
+### El barrido: 1 hallazgo real de 4
+
+No hay `gitleaks` en el equipo, así que se escribió
+`backend/scripts/barrido_secretos.py`: recorre **todos los blobs de todas las
+ramas** (887 de texto, 151 commits) contra patrones de alta señal, e imprime los
+hallazgos **enmascarados** — el objetivo es saber qué rotar, no volver a exponer
+el secreto en otra pantalla.
+
+| Hallazgo | Veredicto |
+|---|---|
+| `backend/app/database.py` — URL de Postgres con contraseña | **Falso positivo**: es un f-string con `{POSTGRES_PASSWORD}` |
+| `backend/scripts/migrate_sprint13_campanas.py` — URL con contraseña | **Falso positivo**: ejemplo de uso en el docstring |
+| `backend/tests/test_meta_account_flow.py` — `password=...` | **Falso positivo**: fixture de prueba |
+| `BITACORA.md` — contraseña de `demo@gmail.com` | ⚠️ **REAL** |
+
+### ⚠️ La contraseña de `demo@gmail.com` está en 79 commits públicos
+
+En HEAD ya aparece redactada como «en el gestor del CEO» — alguien la borró en
+su momento. **Eso no arregló nada**: sigue en 79 commits del historial, y el
+repositorio es público. Es exactamente el caso que la regla #8 de CLAUDE.md
+describe, y la razón por la que esa regla dice "hay que **rotarlo**".
+
+`demo@gmail.com` es una cuenta **viva** de la plataforma. Rotarla es decisión
+del CEO porque se usa en demostraciones con clientes; queda pendiente de su
+visto bueno. Camino propuesto, sin que la clave nueva pase por una pantalla:
+generarla al azar, aplicarla con el script que ya existe
+(`backend/scripts/reset_demo_password.py`) y dejarla en SSM para que el CEO la
+saque de ahí.
+
+**Lección que ya está escrita en la regla #8 y que este barrido confirma**: una
+contraseña que se commitea no se arregla borrándola del archivo. El archivo se
+limpia igual —para que nadie la copie de HEAD— pero lo único que cierra la fuga
+es cambiarla.
