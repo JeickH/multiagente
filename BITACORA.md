@@ -5081,3 +5081,64 @@ saque de ahí.
 contraseña que se commitea no se arregla borrándola del archivo. El archivo se
 limpia igual —para que nadie la copie de HEAD— pero lo único que cierra la fuga
 es cambiarla.
+
+---
+
+## Rotada la contraseña de `demo@gmail.com` (2026-08-24)
+
+Cierre del hallazgo del barrido: la contraseña de esa cuenta estaba en **79
+commits** del historial público. En HEAD ya aparecía redactada, lo que no sirve
+de nada — el arreglo es rotarla.
+
+### Cómo se hizo, sin que la clave pasara por ninguna pantalla
+
+1. Se generó al azar (24 caracteres) **directo dentro de** `aws ssm
+   put-parameter`, con el valor como sustitución de comando: nunca se imprimió
+   ni quedó en un archivo. Vive en `/multiagente/prod/DEMO_PASSWORD`
+   (SecureString).
+2. Se aplicó en RDS con `backend/scripts/rotar_demo_password.py`, corriendo
+   dentro de una task de ECS vía `rds_exec.sh` (RDS no está expuesta).
+   **El script lee la clave de SSM él mismo**, no la recibe por variable de
+   entorno: `rds_exec.sh` mete las env vars en el `containerOverrides` de la
+   llamada a la API, así que pasarla por ahí la habría dejado escrita en
+   CloudTrail y en el `describe-tasks`.
+3. Para eso el task role necesitaba leer ese parámetro. Se le dio un permiso
+   **de un solo parámetro, de solo lectura**, y se le **revocó al terminar**:
+   el backend no tiene ninguna razón para poder leer esa contraseña.
+
+### Verificación
+
+Login real contra producción, con la clave vieja sacada del historial —
+exactamente lo que podría hacer cualquiera que clone el repo:
+
+```
+clave VIEJA (la del repo público): HTTP 401
+clave NUEVA (la de SSM)          : HTTP 200
+```
+
+### Dónde saca el CEO la clave
+
+```bash
+aws ssm get-parameter --region sa-east-1 \
+  --name /multiagente/prod/DEMO_PASSWORD --with-decryption \
+  --query Parameter.Value --output text
+```
+
+De ahí a su gestor. **No se escribió en ningún archivo del repo** — que es lo
+que originó todo esto.
+
+### Estado final de los secretos
+
+| Secreto | Dónde vive | Estado |
+|---|---|---|
+| `SECRET_KEY` | SSM SecureString | Rotada 21-ago |
+| `POSTGRES_PASSWORD` | SSM SecureString | Movida 24-ago (nunca se commiteó) |
+| `INTERNAL_API_KEY`, `APP_ENCRYPTION_KEY`, `TWILIO_*` | SSM SecureString | Ya estaban |
+| Contraseña de `demo@gmail.com` | SSM SecureString | Rotada 24-ago |
+
+Ningún secreto queda en las variables en texto plano de la task-def.
+
+**Sigue pendiente**: los valores viejos siguen en el historial público y ahí van
+a quedar. Están rotados, que es lo que los vuelve inofensivos. Si alguna vez se
+decide limpiar el historial, es reescribirlo entero (`git filter-repo`) y
+forzar el push, con todo lo que eso rompe para quien tenga un clon.
