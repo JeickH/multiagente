@@ -940,8 +940,21 @@ def _tools_for(cfg: Dict[str, Any]) -> List[Dict[str, Any]]:
                                 "solo si el cliente pidió un día concreto."
                             ),
                         },
+                        "presupuesto": {
+                            "type": "string",
+                            "description": (
+                                "Cuánto quiere gastar POR PERSONA, si lo dijo: "
+                                "'450 mil', '$400.000', 'menos de 400'. Te "
+                                "devuelve qué fechas caben en ese presupuesto, "
+                                "y si no cabe ninguna, la más económica que hay."
+                            ),
+                        },
                     },
-                    "required": ["mes"],
+                    # `mes` NO es obligatorio a propósito: un cliente puede abrir
+                    # con "¿qué tienes por $400.000?" sin decir mes, y forzar el
+                    # campo obligaría al modelo a inventarse uno. `consultar()`
+                    # degrada bien: sin mes ni presupuesto pide el mes.
+                    "required": [],
                 },
             }
         )
@@ -2006,6 +2019,7 @@ def _run_tool(
                 hotel=str(tool_input.get("hotel", "")),
                 mes=str(tool_input.get("mes", "")),
                 fecha=str(tool_input.get("fecha", "")),
+                presupuesto=str(tool_input.get("presupuesto", "")),
             ),
             False,
         )

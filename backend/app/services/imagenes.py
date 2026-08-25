@@ -36,6 +36,19 @@ MARCA = "v1"
 
 MAX_LADO = 2000       # px del lado largo; nadie ve una foto de mascota a 4000px
 CALIDAD_SUBIDA = 85   # calidad fija del camino rápido
+
+# Techo de resolución de ENTRADA (auditoría de seguridad #1: bomba de
+# descompresión). Un PNG de color sólido de 12000×12000 pesa 435 KB pero
+# decodifica a ~570 MB de RAM y tumba la task de 512 MB —con ella, todos los
+# tenants—. El límite en bytes (5 MB para imagen) no protege: los píxeles, no
+# los bytes, son los que revientan la memoria. Una foto REAL de esa resolución
+# jamás baja de 5 MB, así que este techo solo caza bombas, no fotos legítimas.
+# Pillow además avisa (no rompe) entre 1× y 2× `MAX_IMAGE_PIXELS`, así que lo
+# bajamos explícitamente para que el backstop exista aunque alguien no llame a
+# `dimensiones()` antes.
+MAX_PIXELES_ENTRADA = 50_000_000   # 50 MP ≈ 150 MB decodificados en RGB
+MAX_LADO_ENTRADA = 12_000
+Image.MAX_IMAGE_PIXELS = MAX_PIXELES_ENTRADA
 # Escalera del camino lento, de menor a mayor: gana la primera que pasa el SSIM.
 CALIDADES = (78, 82, 85, 88, 92, 95)
 # Umbral calibrado sobre las fotos reales del bucket (BITACORA #359). El SSIM se
@@ -58,6 +71,46 @@ def _cola_en_blanco(img: Image.Image) -> bool:
     alto = max(1, round(img.height * 0.03))
     cola = np.asarray(img.convert("L"), dtype=np.float64)[-alto:, :]
     return float(cola.std()) < 1.0
+
+
+def dimensiones(data: bytes) -> Optional[Tuple[int, int]]:
+    """`(ancho, alto)` en píxeles leyendo SOLO el header, sin decodificar.
+
+    `Image.open` no toca los píxeles: para PNG/JPEG/WebP el tamaño vive en los
+    primeros bytes, así que esto es barato y —lo importante— **no dispara la
+    bomba de descompresión**. Devuelve None si el tamaño no se puede leer; quien
+    llama decide (hoy: `adjuntos.preparar`, que rechaza lo que se pase del tope).
+    """
+    # Se desactiva el chequeo de bomba SOLO para leer el header: `Image.open`
+    # lo dispara a 2× `MAX_IMAGE_PIXELS` y haría fallar la lectura justo en las
+    # bombas más grandes, que es cuando más falta medirlas. Leer ancho/alto no
+    # decodifica píxeles —no asigna memoria—, así que es seguro; la decisión de
+    # rechazar la toma `excede_resolucion` con el tamaño ya en mano.
+    limite_previo = Image.MAX_IMAGE_PIXELS
+    Image.MAX_IMAGE_PIXELS = None
+    try:
+        with Image.open(io.BytesIO(data)) as img:
+            w, h = img.size
+        return int(w), int(h)
+    except Exception:
+        return None
+    finally:
+        Image.MAX_IMAGE_PIXELS = limite_previo
+
+
+def excede_resolucion(data: bytes) -> bool:
+    """¿La imagen se pasa del techo de resolución de entrada? (seguridad #1).
+
+    True también si no se pueden leer las dimensiones **pero** el área declarada
+    en el header es absurda: ante la duda, no se decodifica. Si el header no se
+    puede leer en absoluto, devuelve False y deja que el resto del pipeline
+    (firma, bytes) decida — una bomba real siempre trae dimensiones legibles.
+    """
+    dims = dimensiones(data)
+    if dims is None:
+        return False
+    w, h = dims
+    return (w * h) > MAX_PIXELES_ENTRADA or max(w, h) > MAX_LADO_ENTRADA
 
 
 def abrir(data: bytes, lado_objetivo: Optional[int] = None) -> Image.Image:

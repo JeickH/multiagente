@@ -18,6 +18,7 @@ import {
   validarAdjunto,
 } from '../lib/adjuntos';
 import { horaCorta } from '../lib/fechas';
+import { formatearWhatsapp } from '../lib/formatoWhatsapp';
 import { getToken } from '../lib/session';
 
 const MENSAJES_TUTORIAL = [
@@ -185,7 +186,9 @@ function Contenido({ mensaje }: { mensaje: Message }) {
     const pie = entrante ? '' : caption;
     return (
       <div className="space-y-1.5">
-        {pie && <div className="text-sm whitespace-pre-wrap break-words">{pie}</div>}
+        {pie && (
+          <div className="text-sm whitespace-pre-wrap break-words">{formatearWhatsapp(pie)}</div>
+        )}
         {tipo === 'video' ? (
           <video src={url} controls className="rounded-lg max-h-72 w-full bg-black/10" />
         ) : tipo === 'audio' ? (
@@ -232,7 +235,16 @@ function Contenido({ mensaje }: { mensaje: Message }) {
     );
   }
 
-  return <div className="text-sm whitespace-pre-wrap break-words">{mensaje.content}</div>;
+  // `formatearWhatsapp` pinta `*negrilla*`, `_cursiva_`, `~tachado~` y
+  // `` `mono` `` como los ve el cliente en su celular — antes se veían los
+  // asteriscos crudos. Devuelve nodos de React, nunca HTML: el texto lo escribe
+  // un tercero (ver `lib/formatoWhatsapp.ts`). `whitespace-pre-wrap` se queda:
+  // los saltos de línea siguen viviendo dentro del texto.
+  return (
+    <div className="text-sm whitespace-pre-wrap break-words">
+      {formatearWhatsapp(mensaje.content)}
+    </div>
+  );
 }
 
 /**
@@ -755,8 +767,13 @@ export default function Mensajes() {
                           +{c.contact_wa_id}
                         </div>
                       )}
+                      {/* El adelanto va con el mismo formato que la burbuja: si
+                          el recorte parte una negrilla, el asterisco suelto se
+                          queda escrito (igual que antes), no se come nada. */}
                       <div className="text-xs text-gray-500 truncate">
-                        {c.last_message_preview || '(sin mensajes)'}
+                        {c.last_message_preview
+                          ? formatearWhatsapp(c.last_message_preview)
+                          : '(sin mensajes)'}
                       </div>
                       <span
                         className={`inline-block mt-1 px-2 py-0.5 text-[10px] rounded-full ${
@@ -861,7 +878,7 @@ export default function Mensajes() {
                       <div key={m.id} className="flex justify-center">
                         <div className="max-w-lg w-full px-4 py-2.5 rounded-xl border border-amber-200 bg-amber-50">
                           <div className="text-sm whitespace-pre-wrap break-words text-amber-900">
-                            {m.content}
+                            {formatearWhatsapp(m.content)}
                           </div>
                           <div className="text-[10px] mt-1 text-amber-600">
                             {formatTime(m.created_at)} • solo visible para el equipo

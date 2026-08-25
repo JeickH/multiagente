@@ -111,8 +111,15 @@ CAMINOS = {
                         "otro viaje", "otros viajes"],
     "hotel": ["hotel", "hospedaje", "alojamiento", "habitacion", "habitación",
                "amor de dios", "piedra mar", "piedramar", "bohios", "bohíos"],
+    # "cada dia" / "que se hace" entraron con el primer mensaje unificado
+    # (Sprint 24 F3): ahora el itinerario sale ya en la apertura, así que quien
+    # lo vuelve a preguntar casi nunca usa la palabra "itinerario" — dice "¿qué
+    # se hace cada día?". Sin estas frases ese turno se marcaba
+    # `respuesta_libre` y el panel del tenant no veía que el camino se sigue
+    # pidiendo después de la apertura.
     "itinerario": ["itinerario", "agenda", "cronograma", "dia a dia", "día a día",
-                    "actividades", "que hacemos", "qué hacemos", "a que hora",
+                    "cada dia", "cada día", "actividades", "que hacemos",
+                    "qué hacemos", "que se hace", "qué se hace", "a que hora",
                     "a qué hora"],
     "precios_condiciones": ["precio", "precios", "cuesta", "cuanto", "cuánto",
                              "valor", "tarifa", "condicion", "condición",

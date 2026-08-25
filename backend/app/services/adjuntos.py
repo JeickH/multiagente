@@ -501,6 +501,16 @@ def preparar(
         )
 
     if categoria == IMAGEN:
+        # Rechazo explícito de la bomba de descompresión ANTES de decodificar
+        # (auditoría de seguridad #1). Tiene que ir aquí, no en `comprimir`:
+        # `comprimir` se traga cualquier error y devuelve None, con lo que se
+        # guardaría el original —la bomba— en vez de rechazarlo. Se lee solo el
+        # header, así que esto no dispara la descompresión.
+        if imagenes.excede_resolucion(data):
+            return None, (
+                "La imagen tiene una resolución demasiado alta. "
+                "Envíala más pequeña (máximo 50 megapíxeles)."
+            )
         # Mismo camino rápido que la subida de fotos de mascotas: una pasada a
         # calidad fija. Si no gana nada, `comprimir` devuelve None y se guarda
         # el original.

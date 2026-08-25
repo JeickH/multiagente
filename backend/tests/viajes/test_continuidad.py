@@ -165,11 +165,31 @@ def entra_mensaje(db, team, texto: str, wa_id: str = WA_ID):
 
 
 def salientes(db, conv) -> list:
+    """Lo que se le envió al CLIENTE, en orden.
+
+    Excluye `nota_interna`: desde el Sprint 24 el abandono deja una nota para el
+    asesor que se guarda como outbound pero **no viaja a WhatsApp**. Estos tests
+    cuentan salientes para saber si al contacto le llegó algo, así que una nota
+    interna no cuenta. Lo interno se verifica aparte, con `notas_internas()`.
+    """
     return (
         db.query(models.Message)
         .filter(
             models.Message.conversation_id == conv.id,
             models.Message.direction == "outbound",
+            models.Message.message_type != "nota_interna",
+        )
+        .order_by(models.Message.id)
+        .all()
+    )
+
+
+def notas_internas(db, conv) -> list:
+    return (
+        db.query(models.Message)
+        .filter(
+            models.Message.conversation_id == conv.id,
+            models.Message.message_type == "nota_interna",
         )
         .order_by(models.Message.id)
         .all()
@@ -726,7 +746,12 @@ class TestConversacionAbandonada:
         _vencer(db, abandono)
         return conv, abandono
 
-    def test_etiqueta_cierra_y_no_le_escribe_nada(self, db_session, agencia, modelo):
+    def test_abandono_etiqueta_asigna_asesor_y_no_le_escribe_nada(
+        self, db_session, agencia, modelo
+    ):
+        """Sprint 24: el abandono ya no cierra en seco. Etiqueta, pasa a
+        `pending` y se lo entrega a un asesor (aquí `asesor_1`, porque el team
+        no tiene rotación configurada) — pero al CLIENTE no le escribe nada."""
         team, _ = agencia
         conv, abandono = self._hasta_el_abandono(db_session, team, modelo)
         antes = len(salientes(db_session, conv))
@@ -735,9 +760,12 @@ class TestConversacionAbandonada:
         db_session.refresh(conv)
 
         assert conv.etiqueta == "conversación abandonada"
-        assert conv.status == "closed"
+        assert conv.status == "pending"
+        assert conv.assigned_to == "asesor_1", "quedó a nombre de un asesor"
         assert sesion_de(db_session, conv).status == models.BOT_SESSION_FINISHED
-        assert len(salientes(db_session, conv)) == antes, "le escribió al despedirse"
+        assert len(salientes(db_session, conv)) == antes, "le escribió al cliente"
+        # La única huella nueva en el chat es la nota para el asesor, interna.
+        assert len(notas_internas(db_session, conv)) == 1
         assert pendientes(db_session, conv) == []
 
     def test_si_contesto_al_recordatorio_no_se_etiqueta(
@@ -757,18 +785,33 @@ class TestConversacionAbandonada:
         assert conv.etiqueta is None
         assert conv.status == "open"
 
-    def test_si_vuelve_a_escribir_la_etiqueta_se_cae(self, db_session, agencia, modelo):
-        """La etiqueta describe lo que está pasando ahora, no lo que pasó."""
+    def test_si_vuelve_a_escribir_el_chat_ya_es_del_asesor(
+        self, db_session, agencia, modelo
+    ):
+        """Sprint 24: como el abandono asignó la conversación a un asesor, quien
+        vuelve a escribir le llega al ASESOR, no al bot. El bot no se lo quita:
+        la etiqueta y el `pending` se quedan, que son las dos señales con las que
+        el asesor encuentra ese chat frío en su bandeja.
+
+        (El caso de un chat que sigue siendo del bot sí se reabre y pierde la
+        etiqueta — eso lo cubre `test_abandono_asignacion.py`, del lado del dev.)
+        """
         team, _ = agencia
         conv, abandono = self._hasta_el_abandono(db_session, team, modelo)
         bot_runner.process_pending_action(db_session, abandono)
         db_session.refresh(conv)
         assert conv.etiqueta == "conversación abandonada"
+        assert conv.assigned_to == "asesor_1"
 
         modelo.guion = [_respuesta(_texto("¡Claro! 🌴"))]
-        conv, _ = entra_mensaje(db_session, team, "hola, ¿me confirmas los precios?")
-        assert conv.etiqueta is None
-        assert conv.status == "open"
+        conv, bot = entra_mensaje(db_session, team, "hola, ¿me confirmas los precios?")
+
+        # El router corta antes de resolver bot cuando el chat ya tiene dueño
+        # humano (bot_router.py:108), así que el bot ni corre.
+        assert bot is None, "el bot no debe volver a meterse en un chat asignado"
+        assert conv.etiqueta == "conversación abandonada"
+        assert conv.status == "pending"
+        assert conv.assigned_to == "asesor_1"
 
 
 # ---------------------------------------------------------------------------

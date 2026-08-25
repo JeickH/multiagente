@@ -215,20 +215,23 @@ def _subir(
     filename: str = "archivo.bin",
     caption: Optional[str] = None,
 ):
-    """Llama al endpoint como lo haría el frontend (multipart)."""
+    """Llama al endpoint como lo haría el frontend (multipart).
+
+    El endpoint es `def` (no `async`) a propósito —FastAPI lo corre en el
+    threadpool para no bloquear el event loop, ver auditoría de seguridad #2—,
+    así que se invoca directo, sin `asyncio.run`.
+    """
     archivo = UploadFile(
         file=io.BytesIO(data),
         filename=filename,
         headers=Headers({"content-type": content_type}),
     )
-    return asyncio.run(
-        mensajes.send_attachment_in_conversation(
-            conversation_id=conversation_id,
-            archivo=archivo,
-            caption=caption,
-            db=db,
-            member=member,
-        )
+    return mensajes.send_attachment_in_conversation(
+        conversation_id=conversation_id,
+        archivo=archivo,
+        caption=caption,
+        db=db,
+        member=member,
     )
 
 
@@ -308,6 +311,67 @@ class TestEnviarImagen:
         data, content_type = encontrado
         assert data[:3] == b"\xff\xd8\xff"
         assert content_type == "image/jpeg"
+
+
+class TestBombaDeDescompresion:
+    """Auditoría de seguridad #1: una imagen de pocos bytes pero millones de
+    píxeles decodifica a cientos de MB y tumba la task de 512 MB —y con ella a
+    todos los tenants—. El tope en bytes (5 MB) no la ve; el de píxeles sí."""
+
+    @staticmethod
+    def _bomba_png(ancho: int = 13000, alto: int = 8400) -> bytes:
+        """PNG de color sólido: se comprime a pocos KB pero pesa `ancho×alto`
+        píxeles. 13000×8400 ≈ 109 MP, por encima de los 100 MP en que Pillow
+        rompe al abrir: prueba que la resolución se mide igual (header, sin
+        decodificar) en vez de tragarse el error y dejar pasar la bomba."""
+        from PIL import Image
+
+        buf = io.BytesIO()
+        Image.new("RGB", (ancho, alto), (0, 0, 0)).save(
+            buf, format="PNG", compress_level=9
+        )
+        return buf.getvalue()
+
+    def test_la_bomba_se_rechaza_y_no_se_guarda_el_original(
+        self, db_session, equipo, conversacion, enviados
+    ):
+        from app.services import imagenes
+
+        bomba = self._bomba_png()
+        assert len(bomba) < adjuntos.LIMITES[adjuntos.IMAGEN], (
+            "la bomba pasa el tope de bytes: por eso hace falta el de píxeles"
+        )
+        # El header se lee aunque el área supere el 2× de Pillow.
+        assert imagenes.excede_resolucion(bomba) is True
+
+        with pytest.raises(HTTPException) as e:
+            _subir(db_session, equipo, conversacion.id, bomba, "image/png", "b.png")
+
+        assert e.value.status_code == 400
+        assert "resolución" in e.value.detail.lower()
+        assert not enviados, "no debió salir nada al cliente"
+
+    def test_una_imagen_normal_grande_sigue_pasando(
+        self, db_session, equipo, conversacion, enviados
+    ):
+        """El guardarraíl caza bombas, no fotos legítimas: una foto de 8 MP
+        (con contenido real, no color plano) entra sin problema."""
+        import os
+
+        from PIL import Image
+
+        buf = io.BytesIO()
+        # Ruido: no se comprime como el color plano, pero 8 MP < 50 MP de tope.
+        Image.frombytes("RGB", (3264, 2448), os.urandom(3264 * 2448 * 3)).save(
+            buf, format="JPEG", quality=70
+        )
+        foto = buf.getvalue()
+        # Si la foto se pasara de 5 MB la cortaría el tope de bytes, no el de px.
+        assert len(foto) < adjuntos.LIMITES[adjuntos.IMAGEN]
+
+        msg = _subir(db_session, equipo, conversacion.id, foto, "image/jpeg", "f.jpg")
+        assert msg.message_type == "image"
+        assert enviados, "una foto legítima sí debe salir"
 
 
 class TestEnviarAudio:

@@ -7,6 +7,7 @@ import Paginacion, {
 } from '../components/Paginacion';
 import { authedFetch } from '../lib/api';
 import { fechaHoraCorta } from '../lib/fechas';
+import { formatearWhatsapp } from '../lib/formatoWhatsapp';
 
 /**
  * Conversaciones — ventana de supervisión de la cuenta administradora.
@@ -120,8 +121,13 @@ function Turnos({ detalle }: { detalle: Detalle }) {
               ))}
               <span className="ml-auto text-[11px] text-gray-300">{fechaCorta(t.fecha)}</span>
             </div>
+            {/* Son los mismos mensajes que se leen en /mensajes: se pintan con
+                el formato de WhatsApp (`*negrilla*`) por la misma razón, y
+                porque tener las dos ventanas distintas confundiría a quien
+                supervisa. Nodos de React, nunca HTML: el texto lo escribió un
+                cliente (ver `lib/formatoWhatsapp.ts`). */}
             <p className="text-sm text-gray-700 whitespace-pre-wrap break-words">
-              {t.texto}
+              {formatearWhatsapp(t.texto)}
               {t.truncado && <span className="text-gray-400"> […]</span>}
             </p>
             {t.error && (
@@ -386,7 +392,9 @@ export default function Conversaciones() {
               </button>
 
               {h.preview && abierto !== h.hilo_id && (
-                <p className="px-4 pb-3 -mt-1 text-xs text-gray-400 truncate">{h.preview}</p>
+                <p className="px-4 pb-3 -mt-1 text-xs text-gray-400 truncate">
+                  {formatearWhatsapp(h.preview)}
+                </p>
               )}
 
               {abierto === h.hilo_id && (

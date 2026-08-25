@@ -157,7 +157,7 @@ def send_message_in_conversation(
 
 
 @router.post("/conversaciones/{conversation_id}/adjunto", response_model=schemas.MessageOut)
-async def send_attachment_in_conversation(
+def send_attachment_in_conversation(
     conversation_id: int,
     archivo: UploadFile = File(...),
     caption: Optional[str] = Form(default=None),
@@ -191,8 +191,12 @@ async def send_attachment_in_conversation(
         )
 
     # Un byte más que el tope: alcanza para saber que se pasó sin cargar en
-    # memoria un archivo de cualquier tamaño.
-    data = await archivo.read(adjuntos.MAX_BYTES + 1)
+    # memoria un archivo de cualquier tamaño. Lectura SÍNCRONA (`.file.read`) a
+    # propósito: este endpoint es `def`, no `async`, para que FastAPI corra todo
+    # el trabajo bloqueante (ffmpeg, PIL, S3, el POST a Twilio) en el threadpool
+    # y no congele el event loop —la bandeja de todos los tenants y los webhooks
+    # entrantes— mientras se procesa un adjunto. Ver auditoría de seguridad #2.
+    data = archivo.file.read(adjuntos.MAX_BYTES + 1)
     preparado, problema = adjuntos.preparar(
         data, archivo.content_type, archivo.filename
     )

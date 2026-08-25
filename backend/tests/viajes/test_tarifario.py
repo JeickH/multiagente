@@ -10,6 +10,7 @@ empieza a fallar sola cuando pase la última salida del tarifario.
 """
 from __future__ import annotations
 
+import re
 from datetime import date
 
 import pytest
@@ -21,6 +22,45 @@ CFG = LLM_CONFIG
 
 # Mitad de la temporada: quedan salidas por delante y ya quedaron unas atrás.
 HOY = date(2026, 8, 19)
+
+# Meses que la temporada publica, de agosto a enero.
+MESES_PUBLICADOS = (8, 9, 10, 11, 12, 1)
+
+
+def pesos(valor: int) -> str:
+    return f"${valor:,.0f}".replace(",", ".")
+
+
+def minimo_crudo(hotel: str, mes=None, hoy: date = HOY):
+    """El mínimo en múltiple leído del JSON, sin pasar por el código que se prueba.
+
+    A propósito no se usa `tarifario.planes_vigentes`: si el filtro por `hoy` o
+    la selección del mínimo se rompieran, un test que reusara esas funciones se
+    rompería igual y no habría manera de notarlo. Y a propósito tampoco se
+    escriben las cifras a mano: es el mismo error que se está arreglando.
+    """
+    valores = [
+        p["multiple"]
+        for p in tarifario._datos()["planes"]
+        if hotel in p["hoteles"]
+        and (mes is None or p["mes"] == mes)
+        and date.fromisoformat(p["inicio"]) >= hoy
+    ]
+    return min(valores) if valores else None
+
+
+def precios_publicados() -> set:
+    """Todo valor en pesos que el tarifario puede honrar (múltiple y doble)."""
+    return {
+        v
+        for p in tarifario._datos()["planes"]
+        for v in (p["multiple"], p["doble"])
+    }
+
+
+def cifras_de(texto: str) -> set:
+    """Los montos en pesos que aparecen en una respuesta de la herramienta."""
+    return {int(c.replace(".", "")) for c in re.findall(r"\$([\d.]+)", texto)}
 
 
 class TestNormalizacion:
@@ -172,14 +212,17 @@ class TestMesSinSalidas:
         out = tarifario.consultar(
             CFG, hotel="Amor de Dios", mes="julio", hoy=HOY
         )
-        assert "$350.000" not in out
         assert "NO aplica a un mes sin fechas publicadas" in out
+        # Julio no tiene NADA en este hotel: la respuesta no puede traer ni una
+        # sola cifra, venga de donde venga. Antes traía «desde $350.000».
+        assert "$" not in out
 
     def test_la_promo_si_sale_en_un_mes_publicado(self):
         out = tarifario.consultar(
             CFG, hotel="Amor de Dios", mes="septiembre", hoy=HOY
         )
-        assert "$350.000" in out
+        assert "«desde» de Septiembre" in out
+        assert pesos(minimo_crudo("amor_de_dios", 9)) in out
 
     def test_los_meses_van_del_mas_proximo_al_mas_lejano(self):
         """Hallazgo 5: recorriendo enero→diciembre, «Enero» salía de primero en
@@ -296,11 +339,13 @@ class TestRespuestaAlModelo:
         out = tarifario.consultar(CFG, hotel="Amor de Dios", mes="septiembre", hoy=HOY)
         assert "$459.000" in out and "$505.000" in out
 
-    def test_recuerda_la_promo_de_entre_semana_de_cada_hotel(self):
+    def test_el_desde_de_cada_hotel_es_el_suyo_y_no_el_del_otro(self):
         amor = tarifario.consultar(CFG, hotel="Amor de Dios", mes="septiembre", hoy=HOY)
         piedra = tarifario.consultar(CFG, hotel="Piedra Mar", mes="septiembre", hoy=HOY)
-        assert "$350.000" in amor and "$389.000" not in amor
-        assert "$389.000" in piedra and "$350.000" not in piedra
+        min_amor = pesos(minimo_crudo("amor_de_dios", 9))
+        min_piedra = pesos(minimo_crudo("piedra_mar", 9))
+        assert min_amor in amor and min_piedra not in amor
+        assert min_piedra in piedra and min_amor not in piedra
 
     def test_prohibe_mandar_el_excel_en_cada_respuesta(self):
         out = tarifario.consultar(CFG, mes="diciembre", hoy=HOY)
@@ -315,3 +360,285 @@ class TestRespuestaAlModelo:
         out = tarifario.consultar(CFG, hotel="Hotel Hilton", mes="septiembre", hoy=HOY)
         assert "No reconozco el hotel" in out
         assert "$" not in out
+
+
+class TestElDesdeEsDelMesQuePidioElCliente:
+    """Bug del CEO (Sprint 24, F7).
+
+    Un cliente dijo que le interesaba **septiembre**, preguntó precios, y el bot
+    le contestó un «desde» que era el mínimo de TODOS los meses. No lo inventó:
+    la herramienta le pegaba al final de la respuesta dos líneas con `$350.000`
+    y `$389.000` escritos a mano, y el modelo las leía como el «desde» del mes
+    que tenía delante. En septiembre eso son $109.000 de diferencia contra el
+    precio real — una cotización que revienta cuando el cliente va a pagar.
+    """
+
+    @pytest.mark.parametrize("hotel,clave", [
+        ("Amor de Dios", "amor_de_dios"),
+        ("Piedra Mar", "piedra_mar"),
+        ("Bohíos", "bohios"),
+    ])
+    @pytest.mark.parametrize("mes,num", [
+        ("septiembre", 9), ("octubre", 10), ("noviembre", 11),
+        ("diciembre", 12), ("enero", 1),
+    ])
+    def test_el_desde_coincide_con_el_minimo_real_del_mes(self, hotel, clave, mes, num):
+        out = tarifario.consultar(CFG, hotel=hotel, mes=mes, hoy=HOY)
+        esperado = minimo_crudo(clave, num)
+        linea = [l for l in out.split("\n") if "«desde» de" in l][0]
+        assert pesos(esperado) in linea, linea
+
+    def test_septiembre_no_devuelve_el_desde_de_diciembre(self):
+        """El test que reproduce el reporte, con dos meses de mínimo distinto.
+
+        Septiembre arranca en $459.000 y diciembre en $369.000: si la respuesta
+        de septiembre trae la cifra de diciembre, es el bug otra vez.
+        """
+        min_sep = minimo_crudo("amor_de_dios", 9)
+        min_dic = minimo_crudo("amor_de_dios", 12)
+        assert min_sep != min_dic, "sin mínimos distintos este test no prueba nada"
+
+        out = tarifario.consultar(CFG, hotel="Amor de Dios", mes="septiembre", hoy=HOY)
+        assert pesos(min_sep) in out
+        assert pesos(min_dic) not in out
+
+    def test_diciembre_no_devuelve_el_desde_de_septiembre(self):
+        """El mismo cruce en el otro sentido: no es que se citara siempre el
+        más barato, es que se citaba uno fijo pasara lo que pasara."""
+        out = tarifario.consultar(CFG, hotel="Amor de Dios", mes="diciembre", hoy=HOY)
+        linea = [l for l in out.split("\n") if "«desde» de" in l][0]
+        assert pesos(minimo_crudo("amor_de_dios", 12)) in linea
+        assert pesos(minimo_crudo("amor_de_dios", 9)) not in linea
+
+    def test_un_mes_sin_salidas_entre_semana_no_trae_un_desde_falso(self):
+        """Septiembre solo publica salidas de viernes.
+
+        La línea de la promo de «lunes con jueves» tiene que quedar SIN cifra:
+        el «desde» de entre semana de otro mes en la respuesta de septiembre es
+        exactamente por donde entró el bug la primera vez.
+        """
+        out = tarifario.consultar(CFG, hotel="Amor de Dios", mes="septiembre", hoy=HOY)
+        linea = [l for l in out.split("\n") if "Entre semana" in l][0]
+        assert "no hay ninguna publicada" in linea
+        assert "$" not in linea, linea
+
+    def test_un_mes_con_salidas_entre_semana_da_el_minimo_de_esas(self):
+        """Diciembre sí publica salidas de lunes a jueves."""
+        out = tarifario.consultar(CFG, hotel="Piedra Mar", mes="diciembre", hoy=HOY)
+        linea = [l for l in out.split("\n") if "Entre semana" in l][0]
+        entre_semana = [
+            p["multiple"]
+            for p in tarifario._datos()["planes"]
+            if "piedra_mar" in p["hoteles"] and p["mes"] == 12
+            and date.fromisoformat(p["inicio"]).weekday() <= 3
+        ]
+        assert pesos(min(entre_semana)) in linea, linea
+        assert "No aplica para lunes festivos" in linea
+
+    def test_un_mes_sin_salidas_publicadas_no_reintroduce_lo_de_julio(self):
+        """Amor de Dios no publicó julio.
+
+        El comentario de la función lo advierte: la promo de entre semana se
+        agregaba siempre y el bot la usó para concluir que julio «sí tiene
+        salidas». Calcular el «desde» no puede resucitar ese error: sin filas
+        no hay línea de «desde», ni de entre semana, ni cifra alguna.
+        """
+        out = tarifario.consultar(CFG, hotel="Amor de Dios", mes="julio", hoy=HOY)
+        assert "«desde» de" not in out
+        assert "Entre semana" not in out
+        assert cifras_de(out) == set()
+
+    def test_solo_el_hotel_que_si_publica_el_mes_recibe_su_desde(self):
+        """Consultando los dos hoteles en julio, Piedra Mar sí publica y Amor de
+        Dios no: la línea de Amor de Dios no puede aparecer."""
+        out = tarifario.consultar(CFG, mes="julio", hoy=date(2026, 6, 1))
+        assert "Piedra Mar — «desde» de Julio" in out
+        assert "Amor de Dios y Bohíos — «desde»" not in out
+
+    def test_el_minimo_no_cuenta_salidas_que_ya_pasaron(self):
+        """Las dos salidas de $369.000 de diciembre son el 08 y el 14.
+
+        Consultando el 16 de diciembre ya pasaron las dos, y el «desde» tiene
+        que subir solo. Un mínimo calculado sobre una fecha vencida es la misma
+        promesa incumplible, nada más que por otra puerta.
+        """
+        tarde = date(2026, 12, 16)
+        out = tarifario.consultar(CFG, hotel="Amor de Dios", mes="diciembre", hoy=tarde)
+        linea = [l for l in out.split("\n") if "«desde» de" in l][0]
+        assert pesos(minimo_crudo("amor_de_dios", 12, hoy=tarde)) in linea
+        assert pesos(minimo_crudo("amor_de_dios", 12, hoy=HOY)) not in linea
+
+
+class TestNingunaCifraSeInventa:
+    """El arreglo que cubre la clase entera de bug, no solo el $350.000.
+
+    Cualquier precio que salga de esta herramienta tiene que existir como fila
+    del tarifario. Si mañana alguien vuelve a pegar una cifra a mano en un
+    `f"..."` —da igual cuál— este test la caza.
+    """
+
+    @pytest.mark.parametrize("hotel", ["", "Amor de Dios", "Piedra Mar", "Bohíos"])
+    @pytest.mark.parametrize("mes", [
+        "julio", "agosto", "septiembre", "octubre",
+        "noviembre", "diciembre", "enero",
+    ])
+    def test_toda_cifra_de_la_respuesta_existe_en_el_tarifario(self, hotel, mes):
+        out = tarifario.consultar(CFG, hotel=hotel, mes=mes, hoy=HOY)
+        inventadas = cifras_de(out) - precios_publicados()
+        assert not inventadas, f"{hotel or 'ambos'}/{mes}: {sorted(inventadas)}"
+
+    def test_el_350000_que_nunca_existio_ya_no_aparece(self):
+        """El CEO lo reportó aparte: «el precio mínimo no es 350mil sino 369mil».
+
+        $350.000 no era el mínimo de ningún mes ni de la temporada — no estaba
+        en ninguna fila del Excel. Era una cifra de una temporada vieja.
+        """
+        assert 350_000 not in precios_publicados()
+        for mes in ("agosto", "septiembre", "octubre", "noviembre", "diciembre",
+                    "enero"):
+            for hotel in ("", "Amor de Dios", "Piedra Mar", "Bohíos"):
+                out = tarifario.consultar(CFG, hotel=hotel, mes=mes, hoy=HOY)
+                assert "$350.000" not in out, f"{hotel}/{mes}"
+
+    def test_el_minimo_de_la_temporada_sale_de_los_datos(self):
+        """$369.000 en Amor de Dios y Bohíos, $389.000 en Piedra Mar.
+
+        Se derivan del JSON: si el CEO manda un Excel nuevo, el test sigue
+        valiendo. Lo que se fija aquí es la relación, no las cifras — Piedra Mar
+        es más caro que Amor de Dios, y Bohíos cobra igual que Amor de Dios.
+        """
+        inicio = date(2026, 7, 1)
+        amor = minimo_crudo("amor_de_dios", hoy=inicio)
+        bohios = minimo_crudo("bohios", hoy=inicio)
+        piedra = minimo_crudo("piedra_mar", hoy=inicio)
+        assert amor == bohios
+        assert amor < piedra
+        # Y el JSON que lee el bot declara esos mismos mínimos en sus notas.
+        notas = " ".join(tarifario._datos()["notas"])
+        assert pesos(amor) in notas and pesos(piedra) in notas
+        assert "350.000" not in notas
+
+
+class TestBusquedaPorPresupuesto:
+    """F8: del precio a las fechas, que es como pregunta media clientela.
+
+    «Tengo 450 mil, ¿qué me alcanza?», «¿hay algo más económico?», «¿qué tienes
+    por 300?». Casi ninguna es un precio exacto: son techos y presupuestos, así
+    que se busca por `multiple <= tope` y no por igualdad.
+    """
+
+    @pytest.mark.parametrize("texto,esperado", [
+        ("450 mil", 450_000),
+        ("450000", 450_000),
+        ("$450.000", 450_000),
+        ("tengo 450", 450_000),
+        ("menos de 400", 400_000),
+        ("400k", 400_000),
+        ("1.200.000", 1_200_000),
+        ("algo barato", None),
+        ("", None),
+    ])
+    def test_entiende_como_habla_la_gente_de_plata(self, texto, esperado):
+        assert tarifario.normalizar_presupuesto(texto) == esperado
+
+    def test_un_presupuesto_que_alcanza_trae_fecha_hotel_y_precio(self):
+        out = tarifario.consultar(CFG, presupuesto="450 mil", hoy=HOY)
+        bloque = out.split("PRESUPUESTO")[1]
+        assert "Sí le alcanza" in bloque
+        # La más barata de la temporada cabe en 450 mil y tiene que estar.
+        assert pesos(minimo_crudo("amor_de_dios")) in bloque
+        assert "DICIEMBRE 08 AL 11" in bloque
+        assert "Amor de Dios" in bloque and "múltiple" in bloque
+        # Ninguna de las que lista puede pasarse del presupuesto en múltiple.
+        for linea in bloque.split("\n"):
+            if linea.strip().startswith("· "):
+                mult = int(re.search(r"múltiple \$([\d.]+)", linea)
+                           .group(1).replace(".", ""))
+                assert mult <= 450_000, linea
+
+    def test_un_presupuesto_que_no_alcanza_ofrece_lo_mas_barato_que_existe(self):
+        """Nunca dejar al cliente sin una opción: es la misma filosofía que la
+        fecha sin salida, que devuelve las cercanas en vez de escalar."""
+        out = tarifario.consultar(CFG, presupuesto="300 mil", hoy=HOY)
+        bloque = out.split("PRESUPUESTO")[1]
+        assert "NO alcanza" in bloque
+        assert "NO le digas «no hay nada» ni escales" in bloque
+        assert "Lo más económico" in bloque
+        assert pesos(minimo_crudo("amor_de_dios")) in bloque
+
+    def test_el_presupuesto_respeta_el_mes_que_el_cliente_ya_dijo(self):
+        """El mismo error de F7 en otra forma: si ya dijo septiembre, no se le
+        pueden colar las fechas de diciembre dentro del bloque del presupuesto."""
+        out = tarifario.consultar(
+            CFG, mes="septiembre", presupuesto="500 mil", hoy=HOY
+        )
+        bloque = out.split("PRESUPUESTO")[1].split("«desde»")[0]
+        assert "sobre Septiembre" in bloque
+        for mes in ("DICIEMBRE", "ENERO", "OCTUBRE", "AGOSTO"):
+            assert mes not in bloque, bloque
+
+    def test_si_no_alcanza_en_ese_mes_propone_mover_el_viaje(self):
+        """$450.000 no alcanza en septiembre pero sí en diciembre. En vez de
+        cerrar la venta, se le ofrece el cambio de mes — diciendo cuál es."""
+        out = tarifario.consultar(
+            CFG, mes="septiembre", presupuesto="450 mil", hoy=HOY
+        )
+        bloque = out.split("PRESUPUESTO")[1].split("«desde»")[0]
+        assert "en otros meses sí le alcanza" in bloque
+        assert "Diciembre" in bloque
+        # Y los meses van del más próximo al más lejano, no de enero a diciembre.
+        assert bloque.index("Diciembre") < bloque.index("Enero")
+
+    def test_no_se_cuelan_salidas_ya_pasadas(self):
+        """Consultando el 16 de diciembre, las dos salidas baratas del 08 y el
+        14 ya pasaron: no pueden aparecer como opción de presupuesto."""
+        out = tarifario.consultar(
+            CFG, mes="diciembre", presupuesto="400 mil", hoy=date(2026, 12, 16)
+        )
+        assert "DICIEMBRE 08 AL 11" not in out
+        assert "DICIEMBRE 14 AL 17" not in out
+
+    def test_un_precio_exacto_de_la_tabla(self):
+        """«¿Cuándo está en $459.000?» — el valor de un plan estándar de Amor de
+        Dios. Tiene que salir con sus fechas, no con un «no entendí»."""
+        exacto = minimo_crudo("amor_de_dios", 9)
+        out = tarifario.consultar(
+            CFG, hotel="Amor de Dios", presupuesto=pesos(exacto), hoy=HOY
+        )
+        bloque = out.split("PRESUPUESTO")[1]
+        assert "Sí le alcanza" in bloque
+        assert pesos(exacto) in bloque
+        assert "SEPTIEMBRE 04 AL 07" in bloque
+
+    def test_sin_mes_el_desde_dice_a_las_claras_que_es_global(self):
+        """Un mínimo de toda la temporada es legítimo cuando no hay mes — lo que
+        no puede es quedar donde el modelo lo lea como el de un mes."""
+        out = tarifario.consultar(CFG, presupuesto="450 mil", hoy=HOY)
+        linea = [l for l in out.split("\n") if "«desde» de" in l][0]
+        assert "TODOS los meses publicados" in linea
+        assert "NO es de un mes en particular" in linea
+        assert "vuelve a consultar con ese mes" in linea
+
+    def test_sin_mes_cada_fecha_dice_de_que_mes_es(self):
+        out = tarifario.consultar(CFG, presupuesto="450 mil", hoy=HOY)
+        bloque = out.split("PRESUPUESTO")[1]
+        for linea in bloque.split("\n"):
+            if linea.strip().startswith("· "):
+                assert re.search(r"— [A-ZÁÉÍÓÚ]+ \d", linea), linea
+
+    def test_toda_cifra_del_bloque_existe_o_es_el_presupuesto(self):
+        for texto, tope in [("450 mil", 450_000), ("300 mil", 300_000),
+                            ("900 mil", 900_000)]:
+            out = tarifario.consultar(CFG, presupuesto=texto, hoy=HOY)
+            inventadas = cifras_de(out) - precios_publicados() - {tope}
+            assert not inventadas, f"{texto}: {sorted(inventadas)}"
+
+    def test_un_presupuesto_ilegible_no_rompe_la_consulta_del_mes(self):
+        """Si el modelo manda basura en `presupuesto`, la consulta normal del mes
+        sigue funcionando: se ignora el presupuesto, no se pierde la respuesta."""
+        out = tarifario.consultar(
+            CFG, hotel="Amor de Dios", mes="septiembre",
+            presupuesto="algo económico", hoy=HOY,
+        )
+        assert "PRESUPUESTO" not in out
+        assert "Amor de Dios — Septiembre" in out

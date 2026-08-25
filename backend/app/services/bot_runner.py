@@ -140,28 +140,123 @@ def _programar(
     return pa
 
 
-def _cerrar_conversacion(
-    db: Session,
-    conversation: models.Conversation,
-    *,
-    etiqueta: Optional[str] = None,
-) -> None:
-    """Deja la conversación cerrada en la bandeja (y opcionalmente etiquetada).
+def _cerrar_conversacion(db: Session, conversation: models.Conversation) -> None:
+    """El bot **se despidió** (B1): la conversación se cierra y ya.
 
     Antes, cuando el bot se despedía, la conversación quedaba `open` para
     siempre: la del 20-ago-2026 sigue abierta en la bandeja aunque la clienta
     se despidió cuatro veces.
+
+    Ojo con lo que esta función **no** hace, y a propósito: no etiqueta y no
+    asigna asesor. Una despedida es un cierre limpio — el cliente ya recibió lo
+    que pedía y nadie tiene que hacerle seguimiento. El abandono es lo
+    contrario, y por eso vive aparte en `_marcar_abandonada`: si los dos
+    caminos volvieran a compartir función, cada conversación bien cerrada
+    caería en la bandeja de un asesor como si fuera un cliente perdido.
     """
     conversation.status = "closed"
-    if etiqueta is not None:
-        conversation.etiqueta = etiqueta
     db.add(conversation)
     db.commit()
 
 
+def _asesor_para_el_abandono(
+    db: Session, conversation: models.Conversation
+) -> Optional[str]:
+    """A quién le toca el chat abandonado: el mismo turno que reparte el handoff.
+
+    Se llama `resolver_asesor` **sin** `assignee` a propósito. Pasarle un
+    `asesor_1` de respaldo sería repetir el bug de `606b169`: un handle
+    explícito le gana al reparto por turnos y todos los chats terminan en la
+    misma casilla, que además no es de nadie.
+
+    Un team sin `asesores_rotacion` ni miembros `agent` no se queda sin
+    destino: `crud.asesores_del_team` cae al `asesor_1` histórico, igual que
+    hoy hace el handoff en ese mismo tenant. Devuelve None sólo si repartir
+    falló de verdad; el caller decide qué hacer con eso.
+    """
+    try:
+        team = db.query(models.Team).get(conversation.team_id)
+        asesor = (crud.resolver_asesor(db, team) or "").strip()
+    except Exception:  # pragma: no cover - defensivo
+        logger.exception(
+            "bot_runner: no se pudo repartir el abandono conv=%s", conversation.id
+        )
+        return None
+    return asesor or None
+
+
+def _marcar_abandonada(
+    db: Session,
+    conversation: models.Conversation,
+    *,
+    etiqueta: str,
+    minutos: int,
+) -> Optional[str]:
+    """La persona dejó de contestar: se etiqueta y pasa a manos de un humano.
+
+    Pedido del CEO (Sprint 24): además de la etiqueta que ya ponía #377, la
+    conversación se **asigna** al siguiente asesor del turno y queda `pending`,
+    no `closed`. El motivo es práctico: cerrada no aparece como pendiente en la
+    bandeja, y entonces asignarla no sirve de nada — el asesor nunca la ve.
+
+    El orden importa: primero se resuelve el asesor y después se escribe todo
+    junto. Si repartir fallara, la conversación igual queda etiquetada (que es
+    el comportamiento ya desplegado de #377) en vez de perderse el rastro del
+    abandono por culpa de la parte nueva.
+    """
+    asesor = _asesor_para_el_abandono(db, conversation)
+
+    conversation.etiqueta = etiqueta
+    if asesor:
+        conversation.status = "pending"
+        conversation.assigned_to = asesor
+    else:
+        # Sin nadie a quien entregársela, dejarla `pending` sería mentirle a la
+        # bandeja: figuraría por atender y seguiría siendo del bot. Se cierra
+        # etiquetada, como antes de este cambio.
+        conversation.status = "closed"
+    db.add(conversation)
+    db.commit()
+
+    if asesor:
+        _nota_de_handoff(
+            db,
+            conversation,
+            {
+                "motivo": (
+                    "la persona dejó de responder; el bot la reenganchó una vez "
+                    f"y esperó {minutos} minutos más sin respuesta. No se le "
+                    "volverá a escribir automáticamente"
+                ),
+            },
+            # La etiqueta va en minúscula en la bandeja; como encabezado se ve
+            # mejor con la inicial en mayúscula, sin tocar el resto (una
+            # etiqueta futura podría traer siglas).
+            titulo=f"🕒 *{etiqueta[:1].upper()}{etiqueta[1:]}*",
+        )
+    return asesor
+
+
 def _reabrir_conversacion(db: Session, conversation: models.Conversation) -> None:
     """La persona volvió a escribir: la conversación vuelve a la bandeja y
-    pierde la etiqueta de abandono, que ya no describe lo que está pasando."""
+    pierde la etiqueta de abandono, que ya no describe lo que está pasando.
+
+    Excepción (Sprint 24): si el chat ya está en manos de una persona, aquí no
+    se toca nada. Desde que el abandono asigna asesor, "volver a escribir"
+    puede llegar a un chat que ya tiene dueño humano, y devolverlo a `open` con
+    la etiqueta borrada le quitaría al asesor las dos señales con las que lo
+    encuentra: el filtro de pendientes y la marca de por qué le llegó frío.
+
+    Que el bot no se vuelva a meter no lo decide esta función, lo decide
+    `bot_router.resolve_bot_for_incoming_message`, que corta en seco cuando
+    `assigned_to != "bot"` (misma regla desde el handoff del Sprint 19). Con esa
+    puerta cerrada, en el flujo real del webhook `run_turn` ni siquiera llega
+    hasta acá; la guarda está igual porque el día que alguien llame a `run_turn`
+    por otro camino, el costo de olvidarla es quitarle un cliente a un asesor.
+    """
+    if (conversation.assigned_to or "bot") != "bot":
+        return
+
     cambio = False
     if conversation.status == "closed":
         conversation.status = "open"
@@ -420,10 +515,16 @@ def run_turn(
     return session
 
 
+#: Encabezado por defecto de la nota interna. El abandono manda el suyo.
+_TITULO_NOTA = "📋 *Resumen del bot para el asesor*"
+
+
 def _nota_de_handoff(
     db: Session,
     conversation: models.Conversation,
     payload: dict,
+    *,
+    titulo: str = _TITULO_NOTA,
 ) -> None:
     """Deja en el chat lo que el bot ya averiguó, para el asesor que lo recibe.
 
@@ -435,13 +536,16 @@ def _nota_de_handoff(
     contexto y le volvía a preguntar el nombre y la fecha a alguien que ya los
     había dado dos veces. El `resumen` lo redacta el propio bot con lo que el
     cliente dijo.
+
+    `titulo` existe para que el abandono (Sprint 24) reutilice esta nota sin
+    encabezarla como un "resumen del bot": ahí no hubo pase, hubo silencio.
     """
     resumen = (payload.get("resumen") or "").strip()
     motivo = (payload.get("motivo") or "").strip()
     if not resumen and not motivo:
         return
 
-    lineas = ["📋 *Resumen del bot para el asesor*"]
+    lineas = [titulo]
     nombre = (conversation.contact_name or "").strip()
     if nombre:
         lineas.append(f"Contacto: {nombre}")
@@ -706,9 +810,14 @@ def _procesar_silencio(db: Session, pa: models.BotPendingAction) -> None:
         )
         return
 
-    # Abandono: se cierra y se etiqueta, en silencio.
-    _cerrar_conversacion(
-        db, conversation, etiqueta=llm_engine.etiqueta_de_abandono(seguimiento)
+    # Abandono: se etiqueta y se le entrega a un asesor, en silencio. Al
+    # contacto **no se le escribe nada** — la única huella nueva en el chat es
+    # una nota interna, que no viaja a WhatsApp.
+    asesor = _marcar_abandonada(
+        db,
+        conversation,
+        etiqueta=llm_engine.etiqueta_de_abandono(seguimiento),
+        minutos=llm_engine.minutos_de_seguimiento(seguimiento),
     )
     session.status = models.BOT_SESSION_FINISHED
     session.finished_at = datetime.utcnow()
@@ -717,7 +826,8 @@ def _procesar_silencio(db: Session, pa: models.BotPendingAction) -> None:
     pa.status = models.BOT_PENDING_STATUS_DONE
     pa.processed_at = datetime.utcnow()
     db.commit()
+    # Sin el nombre del asesor en el log (regla #1): basta saber si se repartió.
     logger.info(
-        "bot_runner: conversación marcada como abandonada conv=%s bot=%s",
-        conversation.id, bot.id,
+        "bot_runner: conversación marcada como abandonada conv=%s bot=%s asignada=%s",
+        conversation.id, bot.id, bool(asesor),
     )

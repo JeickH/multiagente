@@ -59,6 +59,56 @@ HOTELES = {
 
 _RE_INICIO = re.compile(r"^\s*([A-ZÁÉÍÓÚÑ]+)\s+(\d{1,2})")
 
+# Etiqueta y coletilla de cada tabla de precios. Bohíos no va aparte: comparte
+# fila con Amor de Dios porque cobra exactamente lo mismo.
+_TABLAS = (
+    ("amor_de_dios", "Amor de Dios y Bohíos", ""),
+    (
+        "piedra_mar",
+        "Piedra Mar",
+        " En Piedra Mar, las salidas entre semana (lunes con jueves) no aplican "
+        "para lunes festivos.",
+    ),
+)
+
+
+def _pesos(valor: int) -> str:
+    return f"${valor:,.0f}".replace(",", ".")
+
+
+def _notas(planes: List[Dict[str, Any]]) -> List[str]:
+    """Las notas del JSON, con los mínimos **calculados** de las filas.
+
+    Antes las dos últimas iban escritas a mano, y decían «desde $350.000» para
+    Amor de Dios. Ese valor no existía en ninguna fila del Excel: era de una
+    temporada vieja que nadie volvió a revisar — el mínimo real es $369.000.
+    Escribir aquí una cifra a mano garantiza que se desactualice en silencio la
+    próxima vez que el CEO mande un Excel nuevo, así que se derivan de `planes`.
+
+    Ojo: estas notas son documentación para quien abra el JSON. La respuesta que
+    ve el bot NO las lee —`services/tarifario.py` calcula sus propios mínimos—,
+    y así debe seguir: el bot habla del mes que pidió el cliente, y un mínimo de
+    toda la temporada presentado junto a un mes es justo el bug del Sprint 24.
+    """
+    notas = [
+        "Los valores son POR PERSONA y en pesos colombianos.",
+        "VALOR MÚLTIPLE = acomodación múltiple; VALOR DOBLE = acomodación doble.",
+        "Bohíos cobra exactamente la misma tarifa que Amor de Dios.",
+    ]
+    for clave, etiqueta, coletilla in _TABLAS:
+        propios = [p for p in planes if clave in p["hoteles"]]
+        if not propios:
+            continue
+        barato = min(propios, key=lambda p: (p["multiple"], p["inicio"]))
+        notas.append(
+            f"{etiqueta}: en toda la temporada, la salida más económica es "
+            f"{_pesos(barato['multiple'])} por persona en múltiple "
+            f"({barato['fecha']}). Es el mínimo de TODA la temporada: para "
+            f"cotizarle a alguien que ya dijo un mes, va el mínimo de ESE mes."
+            f"{coletilla}"
+        )
+    return notas
+
 
 def _fecha_inicio(texto: str) -> tuple[int, int] | None:
     """(mes, día) de arranque del plan, leídos del texto de la columna FECHA."""
@@ -139,15 +189,7 @@ def main() -> int:
             f"Temporada julio {ANIO_INICIO} – enero {ANIO_INICIO + 1}. "
             "Regenerar con el Excel de la próxima temporada."
         ),
-        "notas": [
-            "Los valores son POR PERSONA y en pesos colombianos.",
-            "VALOR MÚLTIPLE = acomodación múltiple; VALOR DOBLE = acomodación doble.",
-            "Bohíos cobra exactamente la misma tarifa que Amor de Dios.",
-            "Amor de Dios: todos los lunes con jueves hay salidas desde $350.000 "
-            "por persona en múltiple.",
-            "Piedra Mar: todos los lunes con jueves hay salidas desde $389.000 "
-            "por persona en múltiple (no aplica para lunes festivos).",
-        ],
+        "notas": _notas(planes),
         "planes": planes,
     }
 

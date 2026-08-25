@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { formatearWhatsapp } from '../lib/formatoWhatsapp';
 
 /**
  * Widget de chat de la landing Gloma (Sprint 20 #270).
@@ -82,28 +83,6 @@ type ChatResponse = {
   finished: boolean;
   handoff: boolean;
 };
-
-/** Renderiza el formato de WhatsApp que usa el bot: *negrilla* y saltos de línea. */
-function FormattedText({ text }: { text: string }) {
-  // El backend ya normaliza `**negrilla**` → `*negrilla*`; aquí por si acaso.
-  const clean = text.replace(/\*\*(\S[^*\n]*?\S|\S)\*\*/g, '*$1*');
-  return (
-    <>
-      {clean.split('\n').map((line, li) => (
-        <span key={li}>
-          {li > 0 && <br />}
-          {line.split(/(\*[^*\n]+\*)/g).map((part, pi) =>
-            part.startsWith('*') && part.endsWith('*') && part.length > 2 ? (
-              <strong key={pi}>{part.slice(1, -1)}</strong>
-            ) : (
-              <span key={pi}>{part}</span>
-            )
-          )}
-        </span>
-      ))}
-    </>
-  );
-}
 
 function WhatsAppGlyph({ size = 30, color = '#FFFFFF' }: { size?: number; color?: string }) {
   return (
@@ -371,8 +350,11 @@ export default function GlomaChatWidget() {
                 key={m.id}
                 className={`flex ${m.from === 'user' ? 'justify-end' : 'justify-start'}`}
               >
+                {/* `whitespace-pre-wrap` reemplaza a los `<br>` que armaba el
+                    formateador viejo: ahora el salto de línea viaja dentro del
+                    texto, igual que en /mensajes. */}
                 <div
-                  className="max-w-[85%] px-3 py-2 text-[13px] leading-relaxed"
+                  className="max-w-[85%] px-3 py-2 text-[13px] leading-relaxed whitespace-pre-wrap break-words"
                   style={
                     m.from === 'user'
                       ? {
@@ -396,7 +378,7 @@ export default function GlomaChatWidget() {
                       className="rounded-lg mb-1 max-w-full h-auto"
                     />
                   ) : null}
-                  {m.text && <FormattedText text={m.text} />}
+                  {m.text && formatearWhatsapp(m.text)}
                 </div>
               </div>
             ))}
