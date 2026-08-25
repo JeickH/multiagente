@@ -5142,3 +5142,112 @@ Ningún secreto queda en las variables en texto plano de la task-def.
 a quedar. Están rotados, que es lo que los vuelve inofensivos. Si alguna vez se
 decide limpiar el historial, es reescribirlo entero (`git filter-repo`) y
 forzar el push, con todo lo que eso rompe para quien tenga un clon.
+
+
+---
+
+## Sprint 24 — Continuidad y atención del bot de Arranquemos Pues (2026-08-24)
+
+Seis features pedidas por el CEO sobre la cuenta de **Arranquemos Pues** (bot LLM
+`demo_viajes`, id 12 de `arranquemospues.marketing@gmail.com`), más el cierre de
+dos hallazgos de seguridad en el camino de adjuntos. Rama
+`sprint-24-continuidad-bot-arranquemos`, commit `c81e22e`.
+
+Se trabajó con cinco frentes en paralelo (dev-plataforma ×3, qa, seguridad). Dos
+agentes (F3 y QA) se cayeron a mitad por el **límite de gasto mensual de la
+cuenta**; su trabajo se terminó desde la sesión principal (cierre de tests de F3,
+realineado de 3 aserciones de #377, verificación de prod que iba a hacer QA, y
+los dos hunks de F8 sobre `llm_engine.py`).
+
+### Las features
+
+- **F3 — Primer mensaje unificado.** Ante un saludo o pedido genérico de info, el
+  bot manda **un solo mensaje**: info general + itinerario + la pregunta del
+  nombre al final. Si la persona preguntó algo concreto, se le contesta eso
+  primero. Se **reescribieron** (no se parchearon) las secciones del prompt que
+  decían lo contrario, para que la regla vieja no compitiera con la nueva
+  (gotcha conocido: las reglas del prompt se diluyen entre sí).
+- **F4 — Nombre en chat + agenda.** Ya estaba en código; ver "Hallazgo de prod".
+- **F5 — Abandono a los 15 min.** Además de etiquetar, la conversación se
+  **asigna al siguiente asesor por turno** (`crud.siguiente_asesor`, sin
+  `assignee` para no repetir #606b169) y queda `pending`, con una nota interna.
+  La despedida limpia (B1) sigue cerrando sin asignar: se separó
+  `_marcar_abandonada` de `_cerrar_conversacion` para que no se pisen.
+- **F6 — Formato WhatsApp en la ventana de mensajes.** Parser propio
+  (`frontend/lib/formatoWhatsapp.ts`) que pinta `*negrilla*`, `_cursiva_`,
+  `~tachado~` y ```mono``` como nodos de React — **sin `dangerouslySetInnerHTML`**
+  porque el texto lo escribe el cliente. Se estrenó vitest en el frontend (47
+  pruebas). De paso arregló un bug del chat público (`2 * 3 * 4` ponía el 3 en
+  negrilla).
+- **F7 — Precio "desde" del mes consultado.** El `$350.000` que se citaba **no
+  existía en ninguna fila** del tarifario; el mínimo real de Amor de Dios/Bohíos
+  es `$369.000` y el de Piedra Mar `$389.000`. Ahora el "desde" se **calcula de
+  las filas vigentes del mes**, en los cuatro sitios donde la cifra estaba a mano
+  (herramienta, JSON, generador y prompt). Un cliente de septiembre estaba viendo
+  $109.000 por debajo del precio real.
+- **F8 — Búsqueda por presupuesto.** `consultar_tarifario` acepta `presupuesto`
+  ("tengo 450 mil", "menos de 400"): devuelve qué fechas caben y, si no cabe
+  ninguna, la más económica que existe. `required` del schema pasó a `[]` para
+  que "¿qué tienes por $400.000?" sin mes no obligue al modelo a inventar uno.
+- **F9 — Videos descruzados.** `hotel_amor_dios.mp4` y `tour.mp4` estaban
+  intercambiados en `frontend/public/demo_viajes/`. Confirmado por hash y
+  corregido. (La carpeta `demo_viajes/` de la raíz está git-ignorada; el bot
+  sirve desde `frontend/public/`.)
+
+### Seguridad — auditoría del camino de adjuntos (2 Altos, bloqueantes)
+
+Ambos preexistentes (venían de `edb2be3`), cerrados antes de que F2 saliera:
+
+1. **Bomba de descompresión.** Una imagen de pocos bytes y millones de píxeles
+   (PNG de color sólido 13000×8400 ≈ 109 MP, ~KB en disco) decodificaba a
+   cientos de MB y tumbaba la task de 512 MB, con ella todos los tenants. El
+   límite en bytes (5 MB) no la veía. Se rechaza por **resolución** leyendo solo
+   el header (`imagenes.excede_resolucion`, tope 50 MP / 12000 px) **en
+   `adjuntos.preparar`, antes de comprimir** — no en el `except` de `comprimir`,
+   que guardaría el original.
+2. **Endpoint de subida bloqueante.** `POST .../adjunto` era `async def` y corría
+   trabajo bloqueante (ffmpeg, PIL, S3, el POST a Twilio) sobre el event loop,
+   congelando el backend entero —bandeja de todos los tenants y webhooks
+   entrantes— hasta 60 s. Pasó a `def` para que FastAPI lo mande al threadpool.
+
+Hallazgos Medios/Bajos (presigned URLs para el GET público, rate-limit de la
+subida, `Content-Length` temprano, el `<img src>` que controla el caption del
+cliente) quedan documentados en el reporte de la auditoría, no bloqueantes.
+
+### Hallazgo de prod: los flags estaban dormidos
+
+Al verificar producción antes de desplegar:
+
+- La imagen que corría (`:entrantes378`, 21-ago 19:39) era **anterior al commit
+  `88d1cb1`** (20:22): "el nombre queda en la agenda" (mitad de F4) nunca había
+  llegado a prod.
+- El bot 12 en RDS tenía **`seguimiento=false`, `recordar_nombre=false`,
+  `retomar=false`** y los caminos viejos. La `llm_config` vive en la **base**, no
+  en la imagen, y nunca se corrió el actualizador: F1/F4/F5 estaban **apagados
+  para clientes reales** aunque el código de #377 ya existía. Por eso el deploy
+  incluyó, obligatoriamente, correr `actualizar_bot_viajes.py` contra RDS.
+
+### Pruebas
+
+- Backend: **1101 passed, 88 skipped, 1 xfailed**.
+- Frontend: **47 passed** (vitest, nuevo).
+- Guiones con costo (Bedrock) de F3: escritos, **no ejecutados** (límite de gasto
+  de la cuenta). Follow-up: correrlos ≥12 veces para comparar antes/después.
+
+### Deploy (2026-08-24)
+
+Orden backend → actualizador RDS → Amplify (Amplify va último: sale antes que
+ECS y rompería el contrato).
+
+1. Imagen `:sprint24-continuidad` (digest `sha256:4ec16a32…`) construida
+   `linux/amd64` y pusheada a ECR.
+2. Task-def **rev 69** (clon de la :68, misma imagen salvo el tag; conserva los
+   8 secrets SSM, incluido `POSTGRES_PASSWORD` que la ronda de seguridad movió a
+   SSM). `update-service` + `services-stable`.
+3. `actualizar_bot_viajes.py` contra RDS (`TASKDEF=multiagente-backend:69`).
+   Verificado en RDS que el bot 12 quedó con **`seguimiento`=15 min,
+   `recordar_nombre`=true, `retomar`=true** y los caminos de F3 (antes los tres
+   estaban en `false`). Con esto F1/F4/F5 dejan de estar dormidos.
+4. Frontend: push a `main` → Amplify (`d1cfl9ey07f61o`) auto-buildea (F6 + F9).
+
+Task-def backend: **rev 69** (imagen `:sprint24-continuidad`).
