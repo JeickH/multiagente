@@ -135,6 +135,16 @@ CAMINOS = {
     "asesor": ["hablar con una persona", "con una persona", "asesor humano",
                 "un asesor", "una asesora", "un humano", "con alguien",
                 "atencion humana", "atención humana"],
+    # La dirección de la oficina, que el bot pasó a saber (26-ago-2026). Va
+    # después de `hotel` a propósito: "¿dónde queda el hotel?" es una pregunta
+    # por el hotel, no por la agencia. Sin frases de salida ("de dónde sale el
+    # bus") porque eso es itinerario, y el documento se lo dice al modelo.
+    "ubicacion": ["direccion", "dirección", "ubicacion", "ubicación",
+                   "ubicados", "donde queda", "dónde queda", "donde quedan",
+                   "dónde quedan", "donde estan", "dónde están",
+                   "donde los encuentro", "donde los ubico", "dónde los ubico",
+                   "como llego", "cómo llego", "como llegar", "cómo llegar",
+                   "oficina", "sede", "bosque plaza", "visitarlos"],
     "info_general": ["informacion", "información", "info", "plan", "covenas",
                       "coveñas", "tolu", "tolú", "promo"],
 }
@@ -168,6 +178,10 @@ LLM_CONFIG = {
     # Guarda el nombre en `conversations.contact_name` con `registrar_nombre`,
     # para no volver a preguntarlo aunque se acabe la sesión.
     "recordar_nombre": True,
+    # Con el nombre ya sabido, el mensaje de apertura va **sin** su última
+    # línea (la que pide el nombre) y cierra con esto en su lugar. Sin esta
+    # frase el modelo copiaba la apertura entera y repreguntaba el nombre.
+    "cierre_sin_nombre": "para qué mes lo está pensando",
     # Si vuelve a escribir dentro de estas horas, se retoma la MISMA sesión
     # (con su historial) en vez de arrancar una nueva y saludar de cero.
     "retomar": {"horas": 24},

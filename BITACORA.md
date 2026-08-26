@@ -5251,3 +5251,93 @@ ECS y rompería el contrato).
 4. Frontend: push a `main` → Amplify (`d1cfl9ey07f61o`) auto-buildea (F6 + F9).
 
 Task-def backend: **rev 69** (imagen `:sprint24-continuidad`).
+
+---
+
+## Sprint 25 — La dirección de la agencia en el bot de Arranquemos Pues (2026-08-26)
+
+Pedido del CEO: *"quiero que se agregue a la información la dirección de la
+agencia de viajes, es una pregunta que se hace frecuentemente y ahora solo dice
+que está en Medellín"*. Aclaración posterior: **solo la cuenta de Arranquemos
+Pues**.
+
+### Alcance: por qué esto no toca a los otros bots
+
+`demo_viajes.md` lo usa **un solo bot en producción**. Verificado en RDS antes de
+tocar nada:
+
+| bot | cuenta | `context_key` |
+|-----|--------|---------------|
+| 12 | `arranquemospues.marketing@gmail.com` | `demo_viajes` |
+| 13 | `talulah@gloma.com` | `talulah` |
+| 16 | `gloma@glomabeauty.com` | `gloma` |
+| 17 | `recuperatumascota@gmail.com` | `mascotas_cali` |
+| 18 | `jerarquia@demo.com` | `jerarquia` |
+
+El cambio de `llm_engine.py` va detrás de `recordar_nombre`, que sólo está en
+`app/data/bot_viajes.py` — ningún otro bot lo enciende. La frase de cierre sale
+de `llm_config` (`cierre_sin_nombre`), no del motor, justamente para que "para
+qué mes lo está pensando" no se le aparezca al bot de mascotas.
+
+### Qué cambió
+
+1. **`bot_contexts/demo_viajes.md`** — sección `## Dónde queda la agencia` con
+   la dirección: Centro Comercial Bosque Plaza, Calle 73 N° 51D - 71, Local 1087,
+   al frente de la estación Universidad del Metro y de la entrada principal del
+   Jardín Botánico. La regla de oro pasó de ocho temas a **nueve** (sin eso el
+   bot escala una pregunta cuya respuesta ya tiene escrita).
+2. **`data/bot_viajes.py`** — camino `ubicacion` en `CAMINOS`, penúltimo (antes
+   de `info_general`, después de `hotel`: "¿dónde queda el hotel?" es `hotel`).
+3. **`services/caminos.py`** — chip `📍 Preguntó la dirección` para el panel.
+4. **`services/llm_engine.py`** — el bloque de continuidad ahora dice qué hacer
+   con la **última línea** del mensaje de apertura cuando ya se sabe el nombre.
+
+### El hallazgo caro: la dirección rompía la regla del nombre (#377)
+
+Agregar la dirección hundió una regla que no tiene nada que ver con ella: cuando
+el canal ya traía el nombre, el bot volvía a preguntarlo. Medido con guiones
+contra Bedrock, **intercalando las variantes turno a turno** (correr una después
+de la otra confundía el efecto con la deriva del modelo):
+
+| variante | nombre NO repreguntado |
+|----------|------------------------|
+| producción (sin dirección) | 13/16 · 15/16 · 13/20 |
+| + sección con la dirección como bloque ("mándala **tal cual**") | 2/20 |
+| + la misma sección al final del documento | 5/16 |
+| + sección sin "tal cual" | 8/16 |
+| + ejemplo en *Cómo se ve bien hecho* (solo) | 5/16 |
+| **dirección en prosa + refuerzo del bloque de continuidad** | **16/16 · 20/20** |
+
+**El mecanismo**: el documento ya tenía un bloque literal —el mensaje de
+apertura— que termina pidiendo el nombre. Al meter un **segundo** bloque literal
+("la dirección va tal cual"), el modelo entraba en modo copiar-bloque y se
+llevaba también la última línea del primero. Se ve en el texto: dejaba de
+saludar por el nombre ("¡Hola, buen día!" en vez de "¡Hola Marcela, buen día!").
+
+**Dos intentos que salieron peor** y quedan fijados como tests por la negativa:
+- Reforzar en la sección "cierra con «¿Con quién tengo el gusto?»": **0/20**.
+  Citar la frase la vuelve a meter en el prompt y el efecto se invierte.
+- El ejemplo resuelto en *Cómo se ve bien hecho*, que es lo que uno agregaría por
+  costumbre: 5/16, la segunda edición más dañina de las cuatro.
+
+El arreglo que sí sirvió es de código: decirle al modelo que el mensaje de
+apertura va **sin su última línea** y qué preguntar en su lugar. Sube también el
+baseline — de ~81% a 20/20 — así que #377 queda mejor que antes del cambio.
+
+### Pendiente abierto (#379)
+
+Cuando el primer mensaje trae una pregunta concreta, el bot contesta la pregunta
+pero **no cierra pidiendo el nombre**, aunque el documento lo exige. **No lo
+trajo este cambio**: se reprodujo contra el contexto de producción con "¿qué
+tours incluye el plan?". Se intentó cerrarlo dos veces y las dos empeoraron la
+regla del nombre, así que se dejó documentado en vez de forzarlo. Requiere
+rediseñar la sección *El primer mensaje*, con su propia medición.
+
+### Pruebas
+
+- Backend: **1140 passed, 95 skipped, 1 xfailed** (`TZ=UTC`).
+- Nuevos: `tests/viajes/test_direccion.py` (24 gratis: prompt, chips y el bloque
+  de continuidad) y `tests/viajes/costo/test_guiones_direccion.py` (7 contra
+  Bedrock, ~US$0,05).
+- Guiones con costo, corrida final: **23 passed** (dirección + primer mensaje),
+  incluidos los dos que fallaban contra el contexto viejo.

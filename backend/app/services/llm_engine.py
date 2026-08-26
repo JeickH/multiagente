@@ -657,11 +657,33 @@ def _bloque_continuidad(cfg: Dict[str, Any]) -> str:
     if cfg.get("recordar_nombre"):
         nombre = nombre_saneado(runtime.get("contact_name"))
         if nombre:
+            # La frase sobre "su última línea" es la que hace el trabajo. El
+            # contexto de viajes trae el mensaje de apertura redactado palabra
+            # por palabra, y termina pidiendo el nombre: el modelo lo copia
+            # entero, así que "no preguntes el nombre" no alcanza mientras
+            # tenga delante un texto listo que lo pregunta. Medido el
+            # 26-ago-2026: 13/16 → 16/16 (ver `tests/viajes/test_direccion.py`,
+            # TestElBloqueDeContinuidadAguantaLaSeccionNueva).
+            #
+            # Ojo con la redacción: **no** se cita la frase literal del saludo.
+            # Citarla la mete otra vez en el prompt y el efecto se invierte —
+            # una versión que la citaba se fue de 16/20 a 0/20.
+            #
+            # `cierre_sin_nombre` es propia del negocio ("para qué mes lo está
+            # pensando" no significa nada en el bot de mascotas), así que sale
+            # de `llm_config`. Sin la clave, sólo se pide que quite la línea.
+            cierre = str(cfg.get("cierre_sin_nombre") or "").strip()
+            reemplazo = (
+                f": en lugar de esa, cierra preguntándole {cierre}."
+                if cierre else "."
+            )
             lineas.append(
                 f"Ya sabes que la persona se llama **{nombre}**. Salúdala por su "
-                "nombre y **NO le preguntes cómo se llama** — ya te lo dijo, y "
-                "volver a preguntarlo es lo que más delata a un bot. Tampoco "
-                "uses `registrar_nombre`: ya está guardado."
+                "nombre en la primera línea y **NO le preguntes cómo se llama** "
+                "— ya te lo dijo, y volver a preguntarlo es lo que más delata a "
+                "un bot. Si mandas el mensaje de apertura, va con su nombre y "
+                "**sin su última línea**, la que pide el nombre" + reemplazo +
+                " Tampoco uses `registrar_nombre`: ya está guardado."
             )
         else:
             lineas.append(

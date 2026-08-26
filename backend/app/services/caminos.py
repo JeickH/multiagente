@@ -53,6 +53,7 @@ VIAJES: Dict[str, str] = {
     "itinerario": "🗺️ Pidió el itinerario",
     "precios_condiciones": "💲 Preguntó precios",
     "precios": "💲 Preguntó precios",
+    "ubicacion": "📍 Preguntó la dirección",
     "reserva": "✅ Apartó un cupo",
     "pagos": "💳 Preguntó cómo pagar",
     "pago_registrado": "💰 Pagó",
