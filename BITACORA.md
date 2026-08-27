@@ -5416,3 +5416,110 @@ fija con el modelo es que la pregunta no salga dos veces en el mismo turno.
   mensajes que produce el seguimiento (antes miraba la conversación entera y el
   primer turno ahora lleva su pregunta del nombre). Es el mismo patrón `antes =
   len(salientes(...))` que ya usa su test hermano.
+
+---
+
+## Sprint 26 — El video de 10 MB: dos techos que no estaban en el código (2026-08-27)
+
+El CEO no podía mandar un video de 10 MB por `/mensajes`: la plataforma le decía
+"pesa demasiado". Pedido: subir el límite a 12 MB y desplegar.
+
+### El límite no era el límite
+
+`LIMITES[VIDEO]` ya estaba en **16 MB**, y `frontend/lib/adjuntos.ts` también.
+Subirlo a 12 no habría cambiado nada — habría sido *bajarlo*. Lo que rebotaba el
+archivo eran dos saltos de infraestructura, medidos contra producción con
+cuerpos de tamaño creciente:
+
+| Camino | Techo | De dónde sale |
+|---|---|---|
+| Código (backend y frontend) | 16 MB | no era el problema |
+| Amplify → rewrite `/api/*` | **~4,4 MB** | corre en Lambda; el cuerpo va en base64 y el payload tope son 6 MB |
+| API Gateway HTTP | **10 MB** | cuota dura de AWS, no se puede subir |
+
+El 413 del primer salto es el que el frontend traduce a "pesa demasiado"
+(`mensajeDeErrorEnvio`, caso 413). Ninguno de los dos techos se sube por
+configuración: el de Lambda es del runtime y el de API Gateway es una cuota fija.
+
+### Qué cambió: el archivo deja de pasar por nuestra API
+
+Subida directa a S3 en tres viajes — los dos que tocan la API son JSON de unos
+pocos bytes, y el archivo va por fuera:
+
+1. `POST …/adjunto/preparar` → POST prefirmado (o `modo:"directo"` si no hay
+   bucket, que es el caso local: ahí no hay saltos en medio).
+2. `POST` del archivo directo a S3.
+3. `POST …/adjunto/confirmar` → validación y envío por WhatsApp.
+
+Lo que sube aterriza en `adjuntos-tmp/`, **zona de tránsito**: son bytes sin
+validar. Está fuera de la forma de ruta que sirve `ver_adjunto`
+(`adjuntos/{team}/{32hex}/{nombre}`), así que el endpoint público no la alcanza
+ni conociendo la referencia, y el temporal se borra en un `finally` — salga bien
+o mal el envío.
+
+La validación **no se duplicó**: los dos caminos terminan en
+`_validar_guardar_y_enviar`, o sea la misma `adjuntos.preparar` de siempre —
+firma real de los bytes, lista blanca, tope, bomba de descompresión,
+transcodificación de audio. Un ejecutable subido a mano a la zona de tránsito no
+sale por WhatsApp por haber entrado por la puerta de atrás.
+
+La credencial que se emite va acotada, y eso es lo que hay que cuidar si alguien
+la toca: la key la elige el servidor (uuid4), el `team_id` sale de la membresía
+autenticada y nunca del request, el `content-length-range` va **firmado** (lo
+hace cumplir S3, no nosotros) y expira a los 10 minutos. La política firmada
+fija `bucket` + `key` exactos, así que la URL no se puede redirigir a la carpeta
+de otro tenant. La URL nunca se loggea: la URL *es* la firma (regla #1).
+
+### El detalle que la habría dejado rota en producción
+
+botocore firma los POST prefirmados con **SigV2** si no se le dice otra cosa, y
+S3 dejó de aceptar SigV2 en buckets creados después de junio de 2020 — el
+nuestro es del 13-ago-2026. Se fuerza `signature_version="s3v4"` en `_s3()`.
+Se detectó decodificando la política firmada antes de desplegar, no en la cara
+del CEO.
+
+### AWS: `backend/scripts/configurar_s3_adjuntos.sh` (idempotente, ya aplicado)
+
+- **CORS** en el bucket (POST desde los orígenes de la app + localhost). Sin
+  esto el navegador ni manda el POST.
+- **Ciclo de vida** de 1 día sobre `adjuntos-tmp/`, por si alguien abandona la
+  pestaña entre el preparar y el confirmar. Ojo:
+  `put-bucket-lifecycle-configuration` **reemplaza** todas las reglas, no agrega;
+  el script lee las existentes y las reescribe.
+- **IAM** `adjuntos-s3-subida-directa` en `multiagente-ecs-task-role`, sobre
+  `adjuntos/*` y `adjuntos-tmp/*`. `adjuntos/*` se declaró explícito aunque la
+  escritura ya funcionaba en producción: **no estaba en ninguna policy del rol**
+  y nadie sabe qué la estaba permitiendo. Un permiso del que depende el envío de
+  archivos y que no está escrito es un incidente esperando a que alguien
+  "limpie" políticas. Queda anotado abajo como pendiente.
+
+### Pruebas
+
+- Backend: **1185 passed**, 103 skipped, 1 xfailed. Frontend: `tsc --noEmit` y
+  `next build` limpios.
+- Nuevo: `tests/test_adjuntos_subida_directa.py` (27) — el video de 10 y de
+  12 MB de punta a punta, lo que se firma, la puerta de atrás, el aislamiento
+  entre tenants, la zona de tránsito y la paridad con el camino viejo.
+- Humo contra el bucket real antes de desplegar: firmar → `curl` POST (204) →
+  leer (bytes idénticos) → borrar.
+- Verificado post-deploy: `/adjunto/preparar` y `/adjunto/confirmar` responden
+  401 sin token.
+
+### Deploy
+
+Imagen `:sprint26-adjuntos-s3`, **task-def rev 72**, servicio estable.
+**El backend salió primero, a propósito**: Amplify buildea solo con el push a
+main y el frontend nuevo llama endpoints que antes no existían (ver
+[[deploy-backend-procedimiento]]). Los endpoints nuevos son aditivos, así que no
+hubo ventana rota en ningún sentido.
+
+### Pendientes
+
+- **#380**: averiguar qué permite hoy `s3:PutObject` sobre `adjuntos/*` desde
+  ECS. La escritura funciona en producción (log `adjuntos: guardado` + objeto en
+  el bucket) pero no hay policy del rol que la cubra, ni bucket policy, ni
+  credenciales en la task-def. Ya no bloquea nada —el permiso quedó explícito—
+  pero es un agujero en el mapa.
+- **#381**: el tope del video quedó en 12 MB por pedido del CEO; WhatsApp acepta
+  hasta 16. Subirlo es cambiar dos números (`adjuntos.py` y `lib/adjuntos.ts`):
+  el camino de subida ya no tiene techo propio.
