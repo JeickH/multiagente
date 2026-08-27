@@ -156,28 +156,14 @@ def send_message_in_conversation(
         )
 
 
-@router.post("/conversaciones/{conversation_id}/adjunto", response_model=schemas.MessageOut)
-def send_attachment_in_conversation(
-    conversation_id: int,
-    archivo: UploadFile = File(...),
-    caption: Optional[str] = Form(default=None),
-    db: Session = Depends(get_db),
-    member: models.TeamMember = Depends(require_permission("can_reply_messages")),
+def _conversacion_lista_para_adjunto(
+    db: Session, member: models.TeamMember, conversation_id: int
 ):
-    """Le manda al cliente una imagen, una nota de voz, un video o un PDF.
+    """La conversación y la cuenta, o el error que corresponda.
 
-    Hasta acá solo se podía responder con texto: la foto de la habitación o el
-    audio explicando una tarifa había que mandarlos desde el celular, por fuera
-    de la plataforma, y no quedaban en la conversación.
-
-    El archivo se guarda en nuestro storage y lo que viaja al proveedor es una
-    URL pública (`GET /mensajes/adjunto/...`): así lo hacen Meta y Twilio, que
-    descargan el archivo ellos mismos en vez de recibir el binario.
-
-    El mensaje se persiste con `content = "pie\\nURL"` y `message_type` igual a
-    la categoría (`image` | `audio` | `video` | `document`), que es exactamente
-    lo que ya hace el bot cuando manda un tarifario: la burbuja del asesor se
-    renderiza igual, sin columnas nuevas.
+    Lo comparten los tres endpoints de adjunto. Va primero, y en particular va
+    **antes** de firmar una subida: no tiene sentido dejar subir 12 MB a una
+    conversación que no existe o a una cuenta de WhatsApp desconectada.
     """
     conv = crud.get_conversation(db, member.team_id, conversation_id)
     if not conv:
@@ -189,22 +175,32 @@ def send_attachment_in_conversation(
             status_code=409,
             detail="La cuenta de WhatsApp no está activa. El propietario debe conectarla desde Mi Plan.",
         )
+    return conv, account
 
-    # Un byte más que el tope: alcanza para saber que se pasó sin cargar en
-    # memoria un archivo de cualquier tamaño. Lectura SÍNCRONA (`.file.read`) a
-    # propósito: este endpoint es `def`, no `async`, para que FastAPI corra todo
-    # el trabajo bloqueante (ffmpeg, PIL, S3, el POST a Twilio) en el threadpool
-    # y no congele el event loop —la bandeja de todos los tenants y los webhooks
-    # entrantes— mientras se procesa un adjunto. Ver auditoría de seguridad #2.
-    data = archivo.file.read(adjuntos.MAX_BYTES + 1)
-    preparado, problema = adjuntos.preparar(
-        data, archivo.content_type, archivo.filename
-    )
+
+def _validar_guardar_y_enviar(
+    db: Session,
+    member: models.TeamMember,
+    conv: models.Conversation,
+    account,
+    data: bytes,
+    content_type: Optional[str],
+    filename: Optional[str],
+    caption: Optional[str],
+) -> schemas.MessageOut:
+    """De los bytes crudos al mensaje enviado y persistido.
+
+    Es el corazón compartido por la subida en un paso (local) y la de dos pasos
+    contra S3. Que sea **uno solo** es lo que garantiza que el camino nuevo no
+    se salte nada: lista blanca, firma real de los bytes, tope de tamaño, bomba
+    de descompresión y transcodificación de audio pasan igual por los dos lados.
+    """
+    preparado, problema = adjuntos.preparar(data, content_type, filename)
     if preparado is None:
         raise HTTPException(status_code=400, detail=problema)
 
     try:
-        guardado = adjuntos.guardar(member.team_id, preparado, archivo.filename)
+        guardado = adjuntos.guardar(member.team_id, preparado, filename)
     except Exception:
         # Detalle solo server-side (regla de seguridad #6).
         logger.exception(
@@ -260,6 +256,133 @@ def send_attachment_in_conversation(
         status="sent",
     )
     return schemas.MessageOut.model_validate(msg)
+
+
+@router.post("/conversaciones/{conversation_id}/adjunto", response_model=schemas.MessageOut)
+def send_attachment_in_conversation(
+    conversation_id: int,
+    archivo: UploadFile = File(...),
+    caption: Optional[str] = Form(default=None),
+    db: Session = Depends(get_db),
+    member: models.TeamMember = Depends(require_permission("can_reply_messages")),
+):
+    """Le manda al cliente una imagen, una nota de voz, un video o un PDF.
+
+    Hasta acá solo se podía responder con texto: la foto de la habitación o el
+    audio explicando una tarifa había que mandarlos desde el celular, por fuera
+    de la plataforma, y no quedaban en la conversación.
+
+    El archivo se guarda en nuestro storage y lo que viaja al proveedor es una
+    URL pública (`GET /mensajes/adjunto/...`): así lo hacen Meta y Twilio, que
+    descargan el archivo ellos mismos en vez de recibir el binario.
+
+    El mensaje se persiste con `content = "pie\\nURL"` y `message_type` igual a
+    la categoría (`image` | `audio` | `video` | `document`), que es exactamente
+    lo que ya hace el bot cuando manda un tarifario: la burbuja del asesor se
+    renderiza igual, sin columnas nuevas.
+
+    **En producción este endpoint ya casi no se usa**: el archivo sube directo a
+    S3 por `/adjunto/preparar` + `/adjunto/confirmar`, porque por acá el cuerpo
+    tiene que atravesar Amplify (~4,4 MB) y el API Gateway (10 MB duros). Sigue
+    vivo porque en local no hay bucket al que prefirmar, y porque una nota de
+    voz de 60 KB no necesita dos viajes.
+    """
+    conv, account = _conversacion_lista_para_adjunto(db, member, conversation_id)
+
+    # Un byte más que el tope: alcanza para saber que se pasó sin cargar en
+    # memoria un archivo de cualquier tamaño. Lectura SÍNCRONA (`.file.read`) a
+    # propósito: este endpoint es `def`, no `async`, para que FastAPI corra todo
+    # el trabajo bloqueante (ffmpeg, PIL, S3, el POST a Twilio) en el threadpool
+    # y no congele el event loop —la bandeja de todos los tenants y los webhooks
+    # entrantes— mientras se procesa un adjunto. Ver auditoría de seguridad #2.
+    data = archivo.file.read(adjuntos.MAX_BYTES + 1)
+    return _validar_guardar_y_enviar(
+        db, member, conv, account,
+        data, archivo.content_type, archivo.filename, caption,
+    )
+
+
+@router.post(
+    "/conversaciones/{conversation_id}/adjunto/preparar",
+    response_model=schemas.AdjuntoPrepararOut,
+)
+def prepare_attachment_upload(
+    conversation_id: int,
+    datos: schemas.AdjuntoPrepararIn,
+    db: Session = Depends(get_db),
+    member: models.TeamMember = Depends(require_permission("can_reply_messages")),
+):
+    """Paso 1 de 2: devuelve un POST prefirmado para subir el archivo a S3.
+
+    El permiso se verifica **acá**, que es donde se emite la credencial: quien
+    no puede responder en este equipo no se lleva una URL firmada. El `team_id`
+    de la key sale de la membresía autenticada, nunca del cuerpo del request —
+    es lo que impide firmarle a un tenant una subida en la carpeta de otro.
+    """
+    _conversacion_lista_para_adjunto(db, member, conversation_id)
+
+    if datos.size <= 0:
+        raise HTTPException(status_code=400, detail="El archivo llegó vacío.")
+
+    categoria = adjuntos.categoria_declarada(datos.content_type, datos.filename)
+    if categoria is None:
+        raise HTTPException(status_code=400, detail=adjuntos.TEXTO_NO_PERMITIDO)
+
+    limite = adjuntos.LIMITES[categoria]
+    if datos.size > limite:
+        # El mismo texto que daría `preparar` después de subirlo, pero acá
+        # ahorra la subida completa.
+        raise HTTPException(status_code=400, detail=adjuntos.texto_excede(categoria))
+
+    firmado = adjuntos.presignar_subida(member.team_id, limite)
+    if firmado is None:
+        # Sin bucket (local): que el navegador use el endpoint de un solo paso.
+        return schemas.AdjuntoPrepararOut(modo="directo")
+
+    return schemas.AdjuntoPrepararOut(
+        modo="s3",
+        url=firmado["url"],
+        campos=firmado["campos"],
+        referencia=firmado["referencia"],
+    )
+
+
+@router.post(
+    "/conversaciones/{conversation_id}/adjunto/confirmar",
+    response_model=schemas.MessageOut,
+)
+def confirm_attachment_upload(
+    conversation_id: int,
+    datos: schemas.AdjuntoConfirmarIn,
+    db: Session = Depends(get_db),
+    member: models.TeamMember = Depends(require_permission("can_reply_messages")),
+):
+    """Paso 2 de 2: valida lo que se subió y lo manda por WhatsApp.
+
+    Lo que hay en la zona de tránsito son bytes de un desconocido: que los haya
+    subido un asesor autenticado dice quién los puso, no qué son. Por eso acá se
+    corre la validación **completa** sobre los bytes reales —la misma función
+    que la subida en un paso— y recién después el archivo se mueve al prefijo
+    que sirve el endpoint público.
+    """
+    conv, account = _conversacion_lista_para_adjunto(db, member, conversation_id)
+
+    data = adjuntos.leer_subida(member.team_id, datos.referencia)
+    if not data:
+        raise HTTPException(
+            status_code=409,
+            detail="No encontramos el archivo que subiste. Vuelve a adjuntarlo, por favor.",
+        )
+
+    try:
+        return _validar_guardar_y_enviar(
+            db, member, conv, account,
+            data, datos.content_type, datos.filename, datos.caption,
+        )
+    finally:
+        # Salga bien o mal, el temporal no se queda: si el archivo no pasó la
+        # validación, menos todavía.
+        adjuntos.borrar_subida(member.team_id, datos.referencia)
 
 
 @router.get("/adjunto/{team_id}/{carpeta}/{nombre}")

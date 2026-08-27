@@ -10,7 +10,12 @@
  * backend cambia, esta se actualiza detrás.
  *
  * Los límites salen de lo que acepta WhatsApp (Meta): 5 MB imagen, 16 MB el
- * resto.
+ * resto. El video va en 12 MB, que es lo que se le promete al asesor.
+ *
+ * Estos números son los únicos que quedan: el archivo ya no sube por nuestra
+ * API sino directo a S3 (`subirAdjunto`), justamente porque el camino viejo
+ * tenía dos techos invisibles que ningún número de acá podía levantar —el
+ * compute de Amplify (~4,4 MB) y el API Gateway (10 MB duros de AWS)—.
  */
 
 export type ClaseAdjunto = 'image' | 'audio' | 'video' | 'document';
@@ -50,7 +55,7 @@ const REGLAS: Regla[] = [
     etiqueta: 'Video',
     mimes: ['video/mp4', 'video/3gpp'],
     extensiones: ['mp4', '3gp', '3gpp'],
-    maxBytes: 16 * MB,
+    maxBytes: 12 * MB,
   },
   {
     clase: 'document',
@@ -234,6 +239,95 @@ export function validarAdjunto(archivo: File): Validacion {
     };
   }
   return { estado: 'ok', clase: regla.clase, etiqueta: regla.etiqueta };
+}
+
+/**
+ * Sube el archivo y lo manda, por el camino que diga el backend.
+ *
+ * Son tres viajes en vez de uno, y vale la pena: el de en medio —el archivo—
+ * va **directo a S3**, sin pasar por Amplify ni por el API Gateway, que es
+ * justo donde se moría un video de 10 MB. Los otros dos son JSON de unos pocos
+ * bytes.
+ *
+ *   1. `POST …/adjunto/preparar` → o un POST prefirmado, o "sube por la API"
+ *      (desarrollo local, donde no hay bucket y tampoco hay saltos en medio).
+ *   2. `POST` del archivo a S3. Los `campos` van **antes** que el archivo: en
+ *      un POST de S3 el binario tiene que ser el último campo del formulario o
+ *      S3 responde 400.
+ *   3. `POST …/adjunto/confirmar` → el backend valida los bytes de verdad y
+ *      recién ahí sale por WhatsApp.
+ *
+ * `autorizacion` se recibe en vez de leer el token acá: la sesión se toca solo
+ * por `lib/session.ts` (regla de seguridad #7). Y ojo con no mandarla nunca al
+ * POST de S3 — ahí no pinta nada, y un `Authorization` de más rompe la firma.
+ */
+export async function subirAdjunto(
+  conversationId: number,
+  archivo: File,
+  caption: string,
+  autorizacion: HeadersInit,
+): Promise<void> {
+  const jsonHeaders = { ...(autorizacion as Record<string, string>), 'Content-Type': 'application/json' };
+
+  const preparar = await fetch(`/api/mensajes/conversaciones/${conversationId}/adjunto/preparar`, {
+    method: 'POST',
+    headers: jsonHeaders,
+    body: JSON.stringify({
+      filename: archivo.name,
+      content_type: normalizarMime(archivo.type),
+      size: archivo.size,
+    }),
+  });
+  if (!preparar.ok) {
+    const cuerpo = await preparar.json().catch(() => null);
+    throw new Error(mensajeDeErrorEnvio(preparar.status, cuerpo?.detail));
+  }
+  const plan = await preparar.json();
+
+  // Sin bucket: el camino de siempre, un solo POST con el archivo adentro.
+  if (plan?.modo !== 's3') {
+    const form = new FormData();
+    form.append('archivo', archivo);
+    if (caption) form.append('caption', caption);
+    const res = await fetch(`/api/mensajes/conversaciones/${conversationId}/adjunto`, {
+      method: 'POST',
+      headers: autorizacion,
+      body: form,
+    });
+    if (!res.ok) {
+      const cuerpo = await res.json().catch(() => null);
+      throw new Error(mensajeDeErrorEnvio(res.status, cuerpo?.detail));
+    }
+    return;
+  }
+
+  const form = new FormData();
+  Object.entries(plan.campos || {}).forEach(([k, v]) => form.append(k, String(v)));
+  form.append('file', archivo);
+
+  const subida = await fetch(plan.url, { method: 'POST', body: form });
+  if (!subida.ok) {
+    // S3 contesta XML; no hay nada ahí que mostrarle a la asesora. El caso
+    // realista es que la firma expiró (tardó más de 10 min en darle enviar).
+    throw new Error(
+      'No pudimos subir el archivo. Revisa tu conexión e inténtalo de nuevo.',
+    );
+  }
+
+  const confirmar = await fetch(`/api/mensajes/conversaciones/${conversationId}/adjunto/confirmar`, {
+    method: 'POST',
+    headers: jsonHeaders,
+    body: JSON.stringify({
+      referencia: plan.referencia,
+      filename: archivo.name,
+      content_type: normalizarMime(archivo.type),
+      caption: caption || null,
+    }),
+  });
+  if (!confirmar.ok) {
+    const cuerpo = await confirmar.json().catch(() => null);
+    throw new Error(mensajeDeErrorEnvio(confirmar.status, cuerpo?.detail));
+  }
 }
 
 /**

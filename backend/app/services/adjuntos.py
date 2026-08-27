@@ -32,6 +32,20 @@ Dos detalles que no son obvios y que cuestan un mensaje no entregado:
   2. **El tipo se decide por la firma del archivo, no por el nombre ni por el
      `Content-Type`** que declara el navegador. Para imágenes y PDF la firma es
      obligatoria: si no coincide, no se guarda.
+  3. **El archivo no sube por nuestra API**, sube directo a S3 con un POST
+     prefirmado (`presignar_subida`). No es una optimización: entre el navegador
+     y ECS hay dos saltos con techo propio —el compute de Amplify, que corre en
+     Lambda y revienta pasados ~4,4 MB porque el cuerpo viaja en base64, y el
+     API Gateway HTTP, con un límite duro de 10 MB que AWS no deja subir—. Por
+     ahí un video de 10 MB **nunca** iba a pasar, dijera lo que dijera `LIMITES`.
+     Subiendo contra S3 se esquivan los dos.
+
+     Lo que sube el navegador aterriza en `adjuntos-tmp/` y **no está validado
+     todavía**: son bytes de un desconocido hasta que `preparar` diga lo
+     contrario. Por eso ese prefijo es intocable para el endpoint público — que
+     solo sirve `adjuntos/{team}/{uuid}/{nombre}` — y por eso el paso de
+     confirmación vuelve a hacer *toda* la validación sobre los bytes reales
+     antes de moverlos al prefijo definitivo.
 """
 from __future__ import annotations
 
@@ -119,10 +133,15 @@ _DOCUMENTOS_DE_TEXTO = frozenset({"text/plain", "text/csv"})
 EXTENSIONES: Dict[str, str] = {ext: mime for mime, (_, ext) in TIPOS_PERMITIDOS.items()}
 
 # Límites por categoría. El de imagen es el de Meta (5 MB); el resto, 16 MB.
+#
+# El video va en 12 MB y no en los 16 de Meta por decisión de producto: es el
+# tope que se le prometió al asesor en la interfaz. Subirlo hasta 16 es cambiar
+# este número y el de `frontend/lib/adjuntos.ts`, nada más — el camino de subida
+# ya no tiene techo propio (ver `presignar_subida`).
 LIMITES: Dict[str, int] = {
     IMAGEN: 5 * 1024 * 1024,
     AUDIO: 16 * 1024 * 1024,
-    VIDEO: 16 * 1024 * 1024,
+    VIDEO: 12 * 1024 * 1024,
     DOCUMENTO: 16 * 1024 * 1024,
 }
 MAX_BYTES = max(LIMITES.values())
@@ -139,7 +158,17 @@ AUDIO_ACEPTADO_POR_WHATSAPP = frozenset(
 )
 
 PREFIJO = "adjuntos"
+# Zona de tránsito de las subidas directas a S3. Es un prefijo aparte y no una
+# subcarpeta de `adjuntos/` a propósito: lo que hay acá todavía no pasó por
+# `preparar`, y quiero que sea imposible —no improbable— que el endpoint
+# público lo alcance. Se limpia solo con una regla de ciclo de vida de 1 día,
+# por si un asesor abandona la pestaña entre el `presignar` y el `confirmar`.
+PREFIJO_TMP = "adjuntos-tmp"
 RUTA_PUBLICA = "/mensajes/adjunto"
+
+# Cuánto vale el POST prefirmado. Diez minutos alcanzan de sobra para subir
+# 12 MB por una conexión mala y no dejan una credencial viva dando vueltas.
+EXPIRA_SUBIDA = 600
 
 # La carpeta es un uuid4 en hex y nada más: es lo que hace que un adjunto no se
 # pueda adivinar, y lo que sostiene el endpoint público.
@@ -224,8 +253,17 @@ def _bucket() -> str:
 
 def _s3():
     import boto3  # import perezoso: en local el backend corre sin S3
+    from botocore.config import Config
 
-    return boto3.client("s3", region_name=os.getenv("AWS_REGION", "sa-east-1"))
+    # `s3v4` explícito por el POST prefirmado: botocore firma los POST con SigV2
+    # si no se le dice otra cosa, y S3 dejó de aceptar SigV2 en los buckets
+    # creados después de junio de 2020 —el nuestro es de 2026—. Sin esto la
+    # subida directa falla con un 400 de S3 que no dice por qué.
+    return boto3.client(
+        "s3",
+        region_name=os.getenv("AWS_REGION", "sa-east-1"),
+        config=Config(signature_version="s3v4"),
+    )
 
 
 def _dir_local() -> Path:
@@ -286,6 +324,130 @@ def url_publica(team_id: int, carpeta: str, nombre: str) -> str:
 
 def key_de(team_id: int, carpeta: str, nombre: str) -> str:
     return f"{PREFIJO}/{int(team_id)}/{carpeta}/{nombre}"
+
+
+# ---------------------------------------------------------------------------
+# Subida directa a S3 (esquiva Amplify y el API Gateway; ver el módulo arriba)
+# ---------------------------------------------------------------------------
+
+# La referencia que devolvemos y que el cliente nos repite en el confirmar. Es
+# un uuid4 nuestro, nunca algo que el cliente proponga, y se valida con este
+# regex antes de tocar una key: sin eso, un `../../mascotas/` en la referencia
+# leería objetos de otro prefijo del bucket.
+REFERENCIA_RE = re.compile(r"^[0-9a-f]{32}$")
+
+
+def hay_storage_remoto() -> bool:
+    """¿Estamos contra S3? En local (disco) no hay a dónde prefirmar, y el
+    asesor sube por la API de siempre — que ahí no tiene ningún salto en medio."""
+    return bool(_bucket())
+
+
+def _key_tmp(team_id: int, referencia: str) -> Optional[str]:
+    if not REFERENCIA_RE.match(referencia or ""):
+        return None
+    try:
+        team = int(team_id)
+    except (TypeError, ValueError):
+        return None
+    return f"{PREFIJO_TMP}/{team}/{referencia}" if team > 0 else None
+
+
+def presignar_subida(team_id: int, limite: int) -> Optional[Dict[str, object]]:
+    """POST prefirmado para que el navegador suba **una sola vez, un solo
+    archivo, de un tamaño acotado**.
+
+    Tres candados, porque esto es una credencial que sale de nuestro servidor:
+
+      - la key la elegimos nosotros (uuid4), el cliente no la propone;
+      - `content-length-range` la firma S3: un cliente que ignore nuestro
+        límite y empuje 2 GB recibe un 403 de S3, no un bucket lleno;
+      - expira en `EXPIRA_SUBIDA`.
+
+    Devuelve `None` si no hay bucket (desarrollo local).
+    """
+    bucket = _bucket()
+    if not bucket:
+        return None
+
+    referencia = uuid.uuid4().hex
+    key = _key_tmp(team_id, referencia)
+    if key is None:
+        return None
+
+    firmado = _s3().generate_presigned_post(
+        Bucket=bucket,
+        Key=key,
+        # Sin campos libres: lo único que el navegador aporta es el archivo. El
+        # `Content-Type` no se firma porque acá no decide nada — el tipo real lo
+        # dictamina `preparar` mirando los bytes.
+        Fields={},
+        Conditions=[["content-length-range", 1, int(limite)]],
+        ExpiresIn=EXPIRA_SUBIDA,
+    )
+    # El log lleva la referencia, jamás la URL: la URL ES la firma (regla #1).
+    logger.info("adjuntos: subida prefirmada team=%s ref=%s", team_id, referencia)
+    return {
+        "url": firmado["url"],
+        "campos": firmado["fields"],
+        "referencia": referencia,
+    }
+
+
+def _es_objeto_inexistente(exc: Exception) -> bool:
+    """¿La excepción es "ese objeto no está" y no un problema de verdad?
+
+    Se mira el código de S3 y no el tipo, para no importar botocore acá arriba
+    —el módulo tiene que poder importarse en una máquina sin boto3 instalado—.
+    """
+    codigo = getattr(exc, "response", {}).get("Error", {}).get("Code", "")
+    return codigo in ("NoSuchKey", "404", "NoSuchBucket")
+
+
+def leer_subida(team_id: int, referencia: str) -> Optional[bytes]:
+    """Los bytes que el navegador dejó en la zona de tránsito.
+
+    Se lee un byte más que el tope y el llamador decide: es el mismo truco del
+    endpoint de subida directa, y acá importa igual —que S3 haya aceptado el
+    objeto no obliga a este proceso a cargárselo entero en memoria—.
+    """
+    bucket = _bucket()
+    key = _key_tmp(team_id, referencia)
+    if not bucket or key is None:
+        return None
+    try:
+        cuerpo = _s3().get_object(Bucket=bucket, Key=key)["Body"]
+        return cuerpo.read(MAX_BYTES + 1)
+    except Exception as exc:
+        if _es_objeto_inexistente(exc):
+            # Caso corriente, no incidente: el asesor confirmó sin que la subida
+            # terminara, o la referencia ya se usó. Sin traceback, que si no el
+            # log de producción se llena de ruido que parece un error.
+            logger.info(
+                "adjuntos: no hay subida pendiente team=%s ref=%s", team_id, referencia
+            )
+        else:
+            # Esto sí es problema nuestro (permisos, red). Detalle server-side.
+            logger.exception(
+                "adjuntos: no se pudo leer la subida team=%s ref=%s", team_id, referencia
+            )
+        return None
+
+
+def borrar_subida(team_id: int, referencia: str) -> None:
+    """Saca el archivo de la zona de tránsito. Best-effort: si falla, el objeto
+    se muere solo con la regla de ciclo de vida y no vale tumbar un envío que
+    ya salió por no haber podido borrar un temporal."""
+    bucket = _bucket()
+    key = _key_tmp(team_id, referencia)
+    if not bucket or key is None:
+        return
+    try:
+        _s3().delete_object(Bucket=bucket, Key=key)
+    except Exception:
+        logger.warning(
+            "adjuntos: quedó un temporal sin borrar team=%s ref=%s", team_id, referencia
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -370,6 +532,27 @@ def _mime_por_nombre(filename: Optional[str]) -> str:
     return EXTENSIONES.get(ext, "")
 
 
+def categoria_declarada(
+    content_type: Optional[str], filename: Optional[str]
+) -> Optional[str]:
+    """Qué dice **el navegador** que es esto, sin haber visto un solo byte.
+
+    Existe solo para el paso previo a la subida directa: ahí hay que decidir
+    con qué tope se firma el POST y todavía no tenemos el archivo. No es una
+    validación y no reemplaza a `preparar` — quien manda sigue siendo la firma
+    de los bytes, que se revisa al confirmar. Lo peor que puede lograr un
+    cliente mintiendo acá es firmarse un tope de 16 MB para un video de 13 y
+    que `preparar` se lo rechace después de subirlo.
+    """
+    declarado = _normalizar_mime(content_type)
+    if declarado in TIPOS_PERMITIDOS:
+        return TIPOS_PERMITIDOS[declarado][0]
+    por_nombre = _mime_por_nombre(filename)
+    if por_nombre in TIPOS_PERMITIDOS:
+        return TIPOS_PERMITIDOS[por_nombre][0]
+    return None
+
+
 def _tipo_real(
     data: bytes, declarado: str, filename: Optional[str]
 ) -> Tuple[str, Optional[str]]:
@@ -446,11 +629,25 @@ _NOMBRES_CATEGORIA = {
     DOCUMENTO: "documentos",
 }
 
-_TEXTO_NO_PERMITIDO = (
+TEXTO_NO_PERMITIDO = (
     "Ese tipo de archivo no se puede enviar por WhatsApp. Puedes mandar "
     "imágenes (JPG, PNG, WEBP), audio (MP3, OGG, M4A), video MP4 o documentos "
     "(PDF, Word, Excel, PowerPoint, TXT o CSV)."
 )
+
+
+def texto_excede(categoria: str) -> str:
+    """El "pesa demasiado" con el tope de esa categoría.
+
+    Lo usan los dos caminos —el chequeo previo a la subida directa y `preparar`
+    sobre los bytes— para que el asesor lea exactamente lo mismo suba por donde
+    suba, y para que el número salga siempre de `LIMITES` y no de un texto que
+    alguien se olvide de actualizar.
+    """
+    return (
+        f"El archivo pesa demasiado: el máximo para "
+        f"{_NOMBRES_CATEGORIA[categoria]} es {LIMITES[categoria] // (1024 * 1024)} MB."
+    )
 
 
 def preparar(
@@ -467,7 +664,7 @@ def preparar(
     declarado = _normalizar_mime(content_type)
     mime, firma = _tipo_real(data, declarado, filename)
     if mime not in TIPOS_PERMITIDOS:
-        return None, _TEXTO_NO_PERMITIDO
+        return None, TEXTO_NO_PERMITIDO
 
     categoria, extension = TIPOS_PERMITIDOS[mime]
 
@@ -493,12 +690,8 @@ def preparar(
         elif mime in _DOCUMENTOS_DE_TEXTO and not _parece_texto(data):
             return None, "El archivo no parece un documento de texto válido."
 
-    limite = LIMITES[categoria]
-    if len(data) > limite:
-        return None, (
-            f"El archivo pesa demasiado: el máximo para "
-            f"{_NOMBRES_CATEGORIA[categoria]} es {limite // (1024 * 1024)} MB."
-        )
+    if len(data) > LIMITES[categoria]:
+        return None, texto_excede(categoria)
 
     if categoria == IMAGEN:
         # Rechazo explícito de la bomba de descompresión ANTES de decodificar

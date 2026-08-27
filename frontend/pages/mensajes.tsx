@@ -13,7 +13,7 @@ import {
   ClaseAdjunto,
   MAX_CAPTION,
   etiquetaDeClase,
-  mensajeDeErrorEnvio,
+  subirAdjunto,
   tamanoLegible,
   validarAdjunto,
 } from '../lib/adjuntos';
@@ -539,12 +539,11 @@ export default function Mensajes() {
   };
 
   /**
-   * Sube el archivo y lo manda por WhatsApp en un solo paso
-   * (`POST /mensajes/conversaciones/{id}/adjunto`).
+   * Sube el archivo y lo manda por WhatsApp. El cómo vive en `subirAdjunto`
+   * (`lib/adjuntos.ts`): en producción son tres viajes y el archivo va directo
+   * a S3, esquivando los dos saltos que le ponían techo (~4,4 MB de Amplify y
+   * 10 MB del API Gateway).
    *
-   * No usa `authedFetch` ni el `Content-Type` de `sendMessage`: en un
-   * `multipart/form-data` el boundary lo pone el navegador, y escribir el
-   * header a mano lo borra y el backend recibe un cuerpo que no puede parsear.
    * `authHeaders()` solo agrega `Authorization`, que es justo lo que hace falta
    * (regla #7: el token sale de `lib/session.ts`, nunca de `localStorage`).
    */
@@ -556,19 +555,7 @@ export default function Mensajes() {
     setSending(true);
     setErrorMsg(null);
     try {
-      const form = new FormData();
-      form.append('archivo', adjunto.archivo);
-      if (caption) form.append('caption', caption);
-
-      const res = await fetch(`/api/mensajes/conversaciones/${detail.id}/adjunto`, {
-        method: 'POST',
-        headers: authHeaders(),
-        body: form,
-      });
-      if (!res.ok) {
-        const cuerpo = await res.json().catch(() => null);
-        throw new Error(mensajeDeErrorEnvio(res.status, cuerpo?.detail));
-      }
+      await subirAdjunto(detail.id, adjunto.archivo, caption, authHeaders());
       ponerAdjunto(null);
       if (caption) setDraft('');
       await recargarDetalle(detail.id);

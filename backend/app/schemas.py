@@ -256,6 +256,40 @@ class NewConversationMessageIn(BaseModel):
     language_code: str = "es_CO"
 
 
+# ===== Adjuntos: subida directa a S3 (Sprint 26) =====
+# El archivo no viaja por nuestra API porque entre el navegador y ECS hay dos
+# saltos con techo propio (Amplify ~4,4 MB y API Gateway 10 MB). Ver el
+# docstring de `services/adjuntos`.
+
+class AdjuntoPrepararIn(BaseModel):
+    """Lo que el navegador sabe del archivo ANTES de subirlo."""
+    filename: Optional[str] = None
+    content_type: Optional[str] = None
+    size: int                    # bytes, para rebotar el archivo antes de subirlo
+
+
+class AdjuntoPrepararOut(BaseModel):
+    """Por dónde subir.
+
+    `modo="s3"` trae el POST prefirmado; `modo="directo"` significa que no hay
+    bucket (desarrollo local) y el navegador debe usar el endpoint de siempre.
+    Los `campos` van tal cual al formulario, sin tocarlos: son parte de la firma.
+    """
+    modo: str                    # 's3' | 'directo'
+    url: Optional[str] = None
+    campos: Optional[dict] = None
+    referencia: Optional[str] = None
+
+
+class AdjuntoConfirmarIn(BaseModel):
+    """"Ya subí; mándalo." El archivo se identifica por la referencia que
+    devolvió `preparar`, nunca por una ruta que proponga el cliente."""
+    referencia: str
+    filename: Optional[str] = None
+    content_type: Optional[str] = None
+    caption: Optional[str] = None
+
+
 # ===== Sprint 8/9: Bots =====
 class BotListItem(BaseModel):
     """Fila del listado `/bots`."""
