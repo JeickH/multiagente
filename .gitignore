@@ -79,3 +79,9 @@ media_local/
 # de seguridad #8—, así que el material de entrega se queda local y se manda
 # por el canal que el CEO decida.
 entregables/
+
+# Planes de trabajo en HTML que se generan para revisar con el CEO. Llevan
+# correos de clientes reales (regla de seguridad #8: este repo es PÚBLICO) y
+# son fotos de un momento, no documentación viva: lo que sobrevive de ellos
+# termina en la BITÁCORA o en documentacion_bd/.
+PLAN_*.html
