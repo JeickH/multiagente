@@ -281,11 +281,16 @@ def send_attachment_in_conversation(
     lo que ya hace el bot cuando manda un tarifario: la burbuja del asesor se
     renderiza igual, sin columnas nuevas.
 
-    **En producción este endpoint ya casi no se usa**: el archivo sube directo a
-    S3 por `/adjunto/preparar` + `/adjunto/confirmar`, porque por acá el cuerpo
+    **En producción este endpoint ya no se usa**: el archivo sube directo a S3
+    por `/adjunto/preparar` + `/adjunto/confirmar`, porque por acá el cuerpo
     tiene que atravesar Amplify (~4,4 MB) y el API Gateway (10 MB duros). Sigue
-    vivo porque en local no hay bucket al que prefirmar, y porque una nota de
-    voz de 60 KB no necesita dos viajes.
+    vivo para el desarrollo local, donde no hay bucket al que prefirmar — y ahí
+    tampoco hay ninguno de los dos saltos en medio.
+
+    Los archivos chicos suben por el mismo camino que los grandes, aunque una
+    nota de voz de 60 KB pasaría sin problema por acá: dos caminos vivos en
+    producción son dos comportamientos que mantener, y el que menos se usa es el
+    que se rompe sin que nadie lo note.
     """
     conv, account = _conversacion_lista_para_adjunto(db, member, conversation_id)
 
