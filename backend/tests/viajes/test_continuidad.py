@@ -680,11 +680,16 @@ class TestSeguimientoALos15Minutos:
         pa = pendientes(db_session, conv)[0]
         _vencer(db_session, pa)
         llamadas_antes = len(modelo.recibidos)
+        # Sólo lo que salga de AQUÍ en adelante, como en el test de arriba. El
+        # primer turno lleva su propia pregunta del nombre (#379, la agrega el
+        # guardarraíl) y mirarla acá haría fallar a este test por algo que pasó
+        # antes de que existiera el seguimiento.
+        antes = len(salientes(db_session, conv))
 
         bot_runner.process_pending_action(db_session, pa)
 
         assert len(modelo.recibidos) == llamadas_antes, "gastó un turno de Bedrock"
-        texto = " ".join(m.content for m in salientes(db_session, conv))
+        texto = " ".join(m.content for m in salientes(db_session, conv)[antes:])
         assert "¿Con quién tengo el gusto?" not in texto, "saludó a quien se fue"
 
     def test_si_la_persona_ya_escribio_no_se_le_manda_nada(

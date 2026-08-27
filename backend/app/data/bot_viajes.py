@@ -182,6 +182,11 @@ LLM_CONFIG = {
     # línea (la que pide el nombre) y cierra con esto en su lugar. Sin esta
     # frase el modelo copiaba la apertura entera y repreguntaba el nombre.
     "cierre_sin_nombre": "para qué mes lo está pensando",
+    # #379: si el primer mensaje sale sin pedir el nombre —pasa 1 de cada 5
+    # veces, cuando la persona abre con una pregunta concreta y el bot gasta su
+    # única pregunta contestándola—, se manda esto como mensaje aparte. La
+    # frase la fija el tenant porque es su voz, no la del motor.
+    "pregunta_nombre": "¿Con quién tengo el gusto? 😊",
     # Si vuelve a escribir dentro de estas horas, se retoma la MISMA sesión
     # (con su historial) en vez de arrancar una nueva y saludar de cero.
     "retomar": {"horas": 24},

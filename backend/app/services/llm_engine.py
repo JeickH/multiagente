@@ -637,6 +637,65 @@ def _system_prompt(
     return "\n\n".join(p for p in parts if p)
 
 
+#: Las formas en que el modelo escribe la pregunta del nombre. Es más ancha que
+#: la frase del documento a propósito: cuando ya preguntó "¿quién eres?" no hay
+#: que volver a preguntárselo con otras palabras.
+_YA_PIDIO_EL_NOMBRE = re.compile(
+    r"con qui[eé]n tengo el gusto|c[oó]mo te llamas|cu[aá]l es tu nombre|"
+    r"tu nombre|me regalas tu nombre|qui[eé]n eres|con qui[eé]n hablo|"
+    r"c[oó]mo te digo|tu gracia",
+    re.IGNORECASE,
+)
+
+
+def _falta_pedir_el_nombre(
+    cfg: Dict[str, Any],
+    history: List[Dict[str, str]],
+    say_texts: List[str],
+    tools_called: List[Dict[str, Any]],
+    finished: bool,
+) -> bool:
+    """¿Hay que agregarle la pregunta del nombre a este primer mensaje? (#379)
+
+    El documento ya lo ordena ("sea cual sea el primer mensaje que mandes,
+    termina con la pregunta del nombre") y el modelo lo cumple ~4 de cada 5
+    veces. Falla justo cuando la persona abre con una pregunta concreta: contesta
+    lo que le preguntaron y gasta su única pregunta —la regla de *una pregunta
+    por mensaje*— en el mes o en un "¿te ayudo en algo más?".
+
+    Se intentó por prompt dos veces y las dos empataron exactamente con el
+    baseline: pedirlo otra vez en el bloque de continuidad (12/15 vs 12/15) y
+    nombrarle la pregunta rival dentro de *El primer mensaje* (10/15 vs 10/15).
+    Por eso esto es determinista y no otra frase: es la única forma de que el
+    nombre entre siempre.
+
+    Se agrega como un mensaje aparte, no pegado al anterior: WhatsApp los manda
+    seguidos, no se pisa el texto que el modelo ya redactó y —lo que importa— no
+    hay que descartar el turno, así que el material que ya adjuntó (el flyer de
+    los tours, el tarifario) sale igual. Descartarlo, que es lo que hacen los
+    guardarraíles de `_viola_contacto`, aquí costaría la imagen.
+
+    Sólo aplica al **primer** turno de la conversación. En los siguientes no:
+    insistir con el nombre turno tras turno es exactamente la queja que originó
+    #377 ("son muy intensos").
+    """
+    if not cfg.get("recordar_nombre") or not cfg.get("pregunta_nombre"):
+        return False
+    runtime = cfg.get("_runtime") or {}
+    if nombre_saneado(runtime.get("contact_name")):
+        return False            # ya se sabe: preguntarlo es el bug #377
+    if history or runtime.get("retomada"):
+        return False            # no es el primer mensaje
+    if finished or not say_texts:
+        return False            # se despidió, o no escribió nada (no_responder)
+    if any(t.get("tool") in ("escalar_a_asesor", "registrar_nombre")
+           for t in tools_called):
+        # Escalando, quien pregunta es el asesor; y si acaba de registrarlo, ya
+        # se presentó en este mismo turno.
+        return False
+    return not _YA_PIDIO_EL_NOMBRE.search(" ".join(say_texts))
+
+
 def _bloque_continuidad(cfg: Dict[str, Any]) -> str:
     """Lo que el bot ya sabe de esta persona y de esta conversación (#377).
 
@@ -2688,6 +2747,16 @@ def _advance_inner(
         actions.append({"type": "end", "payload": {"text": "", "silencioso": True}})
         del say_texts[:]
         del sent_media_log[:]
+
+    # #379: el primer mensaje tiene que salir con la pregunta del nombre.
+    if _falta_pedir_el_nombre(cfg, history, say_texts, tools_called, finished):
+        pregunta = str(cfg.get("pregunta_nombre") or "").strip()
+        actions.append({"type": "say", "payload": {"text": pregunta}})
+        say_texts.append(pregunta)
+        logger.info(
+            "llm_engine: pregunta del nombre agregada al primer mensaje (bot=%s)",
+            getattr(bot, "id", "?"),
+        )
 
     # Historial aplanado: texto del asistente + marcas de medios enviados.
     assistant_summary = "\n\n".join(say_texts)

@@ -5341,3 +5341,78 @@ rediseñar la sección *El primer mensaje*, con su propia medición.
   Bedrock, ~US$0,05).
 - Guiones con costo, corrida final: **23 passed** (dirección + primer mensaje),
   incluidos los dos que fallaban contra el contexto viejo.
+
+---
+
+## Sprint 26 — #379: el primer mensaje siempre pide el nombre (2026-08-27)
+
+Pedido del CEO: *"ok arregla lo del nombre"*, sobre el pendiente que quedó
+abierto ayer. Sólo la cuenta de Arranquemos Pues.
+
+### El problema, bien diagnosticado
+
+El documento ya ordena "sea cual sea el primer mensaje que mandes, termina con
+la pregunta del nombre", y el modelo lo cumple **~4 de cada 5 veces**. Falla
+cuando la persona abre con una pregunta concreta ("¿qué tours incluye?").
+
+Leyendo las respuestas fallidas —no sólo contándolas— se ve que **no se olvida
+del nombre**: en 7 de 8 fallas cierra con *otra* pregunta. Unas veces un relleno
+("¿te ayudo en algo más?"), otras la del mes ("¿para qué mes lo estás
+pensando?"), que es la pregunta del **segundo** mensaje. Con la regla de *una
+pregunta por mensaje*, elegir una es descartar la otra — y elige la del tema.
+
+De paso, una de las "fallas" no lo era: el bot preguntaba "¿Quién eres? 😊" y el
+regex de la suite no lo reconocía. Se amplió (`test_guiones_primer_mensaje.py`),
+y sirve en las dos direcciones: también atrapa una repregunta cuando el nombre
+ya se sabía.
+
+### Dos intentos por prompt, los dos empatados
+
+Medido contra Bedrock, intercalando variantes turno a turno, N=15 por variante:
+
+| variante | B (#379 pide) | A (#377 no repregunta) | C (apertura genérica) |
+|----------|---------------|------------------------|-----------------------|
+| producción | 12/15 · 10/15 | 15/15 | 15/15 |
+| reforzarlo en el bloque de continuidad | 12/15 | 15/15 | 15/15 |
+| nombrarle la pregunta rival en el .md | 10/15 | 15/15 | 15/15 |
+
+**Empate exacto las dos veces.** Insistir no mueve nada: el modelo prefiere la
+pregunta que sigue al tema. Por eso el arreglo no es otra frase.
+
+### El arreglo: determinista, en código
+
+`_falta_pedir_el_nombre()` en `llm_engine.py`. Si es el **primer** turno, no se
+sabe el nombre y el mensaje salió sin pedirlo, se agrega la pregunta como
+**mensaje aparte**.
+
+Aparte y no pegado al anterior, por dos razones medidas: no se pisa el texto que
+el modelo redactó, y sobre todo **no hay que descartar el turno**. Los
+guardarraíles hermanos (`_viola_contacto`, `_viola_link`) descartan y repiten;
+acá eso costaría el flyer de los tours, que es lo que se acaba de enviar.
+
+No dispara si: ya se sabe el nombre (sería #377 otra vez), hay historial o la
+conversación es retomada, se escaló a un asesor (quien pregunta es la persona
+del equipo), se acaba de llamar `registrar_nombre`, la conversación se cerró, o
+el modelo ya lo preguntó con cualquier redacción ("¿quién eres?" incluido).
+
+Alcance: detrás de `recordar_nombre` **y** de `pregunta_nombre`, dos claves que
+sólo tiene `app/data/bot_viajes.py`. La frase sale de `llm_config` porque es la
+voz del tenant, no del motor.
+
+### Lo que el guardarraíl NO cubre
+
+A partir del segundo turno la conversación es del modelo. Se observó que, si la
+persona no se presentó, el bot vuelve a preguntar el nombre en el segundo turno
+— comportamiento suyo, **anterior a este cambio** (el guardarraíl no puede
+disparar con historial). No se afirma lo contrario en los tests; lo único que se
+fija con el modelo es que la pregunta no salga dos veces en el mismo turno.
+
+### Pruebas
+
+- Backend: **1158 passed, 103 skipped, 1 xfailed** (`TZ=UTC`).
+- Nuevos: `tests/viajes/test_pregunta_nombre.py` (18 gratis, función pura) y
+  `tests/viajes/costo/test_guiones_pregunta_nombre.py` (8 contra Bedrock).
+- `test_continuidad.py::test_el_seguimiento_no_llama_al_modelo` se acotó a los
+  mensajes que produce el seguimiento (antes miraba la conversación entera y el
+  primer turno ahora lleva su pregunta del nombre). Es el mismo patrón `antes =
+  len(salientes(...))` que ya usa su test hermano.
