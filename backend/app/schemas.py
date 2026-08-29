@@ -248,6 +248,18 @@ class MessageSendIn(BaseModel):
     content: str
 
 
+class ConversationAsignarIn(BaseModel):
+    """A quién queda asignada una conversación.
+
+    `"bot"` la devuelve al motor; cualquier otro valor es el nombre de un
+    asesor del equipo. El endpoint valida contra la lista real del team en vez
+    de aceptar texto libre: un nombre que no es de nadie llega tal cual a la
+    etiqueta 👤 de la bandeja y el chat queda en una casilla fantasma, que fue
+    justo lo que pasó en #376/#377 con el handle `asesor_1`.
+    """
+    assigned_to: str
+
+
 class NewConversationMessageIn(BaseModel):
     """Iniciar una conversación con un contacto nuevo enviando un template aprobado."""
     contact_wa_id: str           # E.164 sin +

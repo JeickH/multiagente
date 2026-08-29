@@ -7,7 +7,12 @@ from sqlalchemy.orm import Session
 from typing import List, Optional
 
 from .. import models, schemas, crud
-from ..dependencies import get_db, get_current_membership, require_permission
+from ..dependencies import (
+    get_db,
+    get_current_membership,
+    get_current_owner_membership,
+    require_permission,
+)
 from ..services import adjuntos, messaging
 
 logger = logging.getLogger(__name__)
@@ -103,6 +108,125 @@ def get_conversation(
         last_message_at=conv.last_message_at,
         messages=[schemas.MessageOut.model_validate(m) for m in conv.messages],
     )
+
+
+def _conversacion_out(db: Session, member: models.TeamMember, conv) -> schemas.ConversationOut:
+    """Arma el `ConversationOut` de una conversación ya cargada.
+
+    Repite el respaldo de nombre de la bandeja: si el contacto no trae
+    `contact_name`, se busca en la agenda.
+    """
+    nombre = conv.contact_name or crud.nombres_de_agenda(
+        db, member.team_id, [conv.contact_wa_id]
+    ).get(conv.contact_wa_id)
+    return schemas.ConversationOut(
+        id=conv.id,
+        contact_wa_id=conv.contact_wa_id,
+        contact_name=nombre,
+        status=conv.status,
+        assigned_to=getattr(conv, "assigned_to", "bot") or "bot",
+        etiqueta=getattr(conv, "etiqueta", None),
+        last_message_at=conv.last_message_at,
+    )
+
+
+@router.post("/conversaciones/{conversation_id}/cerrar", response_model=schemas.ConversationOut)
+def close_conversation(
+    conversation_id: int,
+    db: Session = Depends(get_db),
+    member: models.TeamMember = Depends(require_permission("can_reply_messages")),
+):
+    """Marca la conversación como cerrada. Puede hacerlo cualquiera que atienda.
+
+    Cerrar NO se la devuelve al bot: `assigned_to` queda como está. Si el chat
+    era de un asesor y el cliente vuelve a escribir, `bot_router` lo sigue
+    dejando en sus manos —la puerta es `assigned_to != "bot"`, no el estado— y
+    `bot_runner._reabrir` lo vuelve a poner en `open` solo cuando el dueño es
+    el bot. Devolverlo al motor es un acto aparte, y es del admin.
+    """
+    conv = crud.get_conversation(db, member.team_id, conversation_id)
+    if not conv:
+        raise HTTPException(status_code=404, detail="Conversación no encontrada")
+
+    conv.status = "closed"
+    db.add(conv)
+    db.commit()
+    db.refresh(conv)
+    logger.info(
+        "conversacion.cerrada id=%s team_id=%s user_id=%s",
+        conv.id,
+        member.team_id,
+        member.user_id,
+    )
+    return _conversacion_out(db, member, conv)
+
+
+@router.get("/asesores", response_model=List[str])
+def list_assignees(
+    db: Session = Depends(get_db),
+    member: models.TeamMember = Depends(get_current_membership),
+):
+    """Los destinos válidos para reasignar: los asesores del team.
+
+    Es la misma lista que usa el reparto por turnos del handoff, así que lo que
+    ve el admin en el selector es exactamente lo que el bot puede repartir. No
+    incluye `"bot"`: ese destino lo pone la UI aparte porque no es una persona.
+    """
+    return crud.asesores_del_team(db, member.team)
+
+
+@router.post("/conversaciones/{conversation_id}/asignar", response_model=schemas.ConversationOut)
+def assign_conversation(
+    conversation_id: int,
+    payload: schemas.ConversationAsignarIn,
+    db: Session = Depends(get_db),
+    member: models.TeamMember = Depends(get_current_owner_membership),
+):
+    """Reasigna una conversación a un asesor o la devuelve al bot. Solo el owner.
+
+    Es owner-only a propósito: mover un chat se lo quita a quien lo estaba
+    atendiendo, y esa no es decisión de un asesor sobre la cola de otro.
+
+    El destino se valida contra los asesores reales del team. Aceptar texto
+    libre aquí sería reintroducir a mano el bug #376/#377: un nombre que no le
+    corresponde a nadie deja el chat en una casilla que nadie mira.
+    """
+    conv = crud.get_conversation(db, member.team_id, conversation_id)
+    if not conv:
+        raise HTTPException(status_code=404, detail="Conversación no encontrada")
+
+    destino = (payload.assigned_to or "").strip()
+    if not destino:
+        raise HTTPException(status_code=422, detail="Falta a quién asignar la conversación")
+
+    if destino == "bot":
+        conv.assigned_to = "bot"
+        # La etiqueta es la señal de por qué le llegó frío a un asesor. Si el
+        # chat vuelve al motor deja de aplicar, y si se queda puesta la bandeja
+        # lo sigue mostrando como pendiente de alguien.
+        conv.etiqueta = None
+        if conv.status == "closed":
+            conv.status = "open"
+    else:
+        validos = crud.asesores_del_team(db, member.team)
+        if destino not in validos:
+            raise HTTPException(
+                status_code=422,
+                detail="Ese asesor no pertenece al equipo",
+            )
+        conv.assigned_to = destino
+
+    db.add(conv)
+    db.commit()
+    db.refresh(conv)
+    logger.info(
+        "conversacion.asignada id=%s team_id=%s destino=%s por_user_id=%s",
+        conv.id,
+        member.team_id,
+        destino,
+        member.user_id,
+    )
+    return _conversacion_out(db, member, conv)
 
 
 @router.post("/conversaciones/{conversation_id}/enviar", response_model=schemas.MessageOut)

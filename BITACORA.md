@@ -5622,3 +5622,24 @@ a propósito**: es voseo de manual, pero el bot llama a la gente por su nombre e
 casi todos los mensajes y "¡Listo, tomas!" es peor que cualquier voseo.
 
 Ojo con los falsos positivos al medirlo: "acá" salió 7 veces y es paisa normal.
+
+### Deploy
+
+Imagen `:sprint26-anticipo`, **task-def rev 73**, servicio estable (rollout
+COMPLETED). Y la segunda mitad, que es la que se olvida: el filtro vive en
+`llm_config.reemplazos`, o sea **en la base**, así que desplegar la imagen no lo
+enciende ([[gotcha-config-bot-dormida-en-db]]). Va con
+`rds_exec.sh actualizar_bot_viajes.py` y se verifica leyendo la columna, no
+confiando en el resumen del script — que dice "el catálogo ya estaba al día" y
+no menciona el mapa.
+
+Verificado dentro de la imagen desplegada (`TASKDEF=multiagente-backend:73
+rds_exec.sh`), leyendo el bot 12 de RDS y contra el Bedrock real: prompt con la
+prohibición ✓, `reemplazos` en la base ✓, el filtro devuelve "Con una *cuota
+inicial* del 30% lo *pagas*" ✓, y los dos turnos que fallaron el 23-ago salen
+limpios.
+
+Observación al margen, que no es de este cambio: "Y cuanto seria al 30" el bot
+lo leyó como *el 30 de octubre* y no como *el 30%*. En el chat de Pedro lo había
+leído como el porcentaje. La frase del cliente es ambigua de verdad y las dos
+lecturas se defienden, pero queda anotado por si vuelve a aparecer.
