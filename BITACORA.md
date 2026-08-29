@@ -5643,3 +5643,116 @@ Observación al margen, que no es de este cambio: "Y cuanto seria al 30" el bot
 lo leyó como *el 30 de octubre* y no como *el 30%*. En el chat de Pedro lo había
 leído como el porcentaje. La frase del cliente es ambigua de verdad y las dos
 lecturas se defienden, pero queda anotado por si vuelve a aparecer.
+
+---
+
+## Sprint 26 — La cuenta de Twilio suspendida, y la bandeja que no se podía gestionar (2026-08-29)
+
+Pedido del CEO: *"por qué la cuenta de twilio está suspendida?"*. Y detrás de
+eso, tres cosas más que aparecieron al revisar.
+
+### La suspensión: se acabó el saldo
+
+**El bot estuvo caído 2 días y nadie se enteró.** Último envío bueno el
+**27-ago 17:33 UTC**; el primer `401 / code 20003` a las 17:32:50. Desde ahí el
+número quedó mudo en las dos direcciones — Twilio suspendido tampoco entrega
+webhooks, así que los mensajes de esos dos días **no existen en ninguna parte**.
+
+La causa es aritmética, no técnica: la cuenta se conectó con **US$20**
+(línea 1761) y el rate card del proyecto pone Twilio en **USD 0,005/mensaje**
+(línea ~3756). `20 / 0,005 = 4.000 mensajes`. Mensajes reales cursados hasta el
+corte: **4.248**. Se acabó justo ahí.
+
+Casi todo el consumo fue fee de Twilio y no de Meta: 1.578 de los 4.249 fueron
+entrantes, o sea conversaciones iniciadas por el cliente, que Meta ya no cobra.
+Por eso los $20 alcanzaron para tantos mensajes.
+
+**Cómo se diagnostica, porque la API no lo dice**: Twilio devuelve el mismo
+`20003 / "Authenticate"` para token malo, SID inexistente y cuenta suspendida
+—verificado con los tres controles—, así que el error no distingue. Lo que sí
+distingue:
+
+1. SSM y `CREDENCIALES_TWILIO.txt` son idénticos (comparados por hash): nadie
+   rotó nada.
+2. Fallan **tres credenciales independientes a la vez**: auth token de la
+   matriz, auth token de la subcuenta y la API Key `SK…`. Una rotación del
+   token dejaría viva la API Key; que caigan todas es de cuenta, no de
+   credencial.
+3. Falla igual desde el equipo del CEO que desde ECS → no fue el deploy.
+
+Tras la recarga: cuenta `active`, saldo **US$19,998**, sender
+`whatsapp:+573334324954` **ONLINE**, webhook intacto, calidad **HIGH** con
+límite 100K/24h — nunca hubo problema de política. Verificado end-to-end
+*desde producción* (`rds_exec.sh`) descifrando el token de la BD: **HTTP 200**.
+
+> **Follow-up abierto y urgente: no hay alerta de saldo.** Los `status='failed'`
+> quedan en `messages` y nadie los mira. Hoy la señal de que el bot está caído
+> es que el CEO pregunte. Falta (a) auto-recharge en Twilio y (b) una alarma
+> sobre envíos fallidos consecutivos. A ~450 mensajes/día son ~US$2,25 diarios:
+> US$20 son nueve días.
+
+### El chat de pruebas que no respondía
+
+No era la suspensión. La conversación 8 estaba **`assigned_to='Camila'`** desde
+el 9-ago, cuando el bot escaló ("te conecto con uno de nuestros asesores"), y
+`bot_router.resolve_bot_for_incoming_message` corta en seco cuando
+`assigned_to != "bot"` (línea 108). Devuelta al bot a mano, solo esa fila.
+
+### Cerrar y reasignar desde la bandeja (`b272b95`)
+
+Tres endpoints nuevos en `routers/mensajes.py`:
+
+| Endpoint | Quién | Qué hace |
+|---|---|---|
+| `POST /conversaciones/{id}/cerrar` | `can_reply_messages` | `status='closed'` |
+| `POST /conversaciones/{id}/asignar` | **owner** | reasigna a un asesor o al bot |
+| `GET /asesores` | cualquier miembro | destinos válidos para el selector |
+
+Lo que se decidió a propósito:
+
+- **Cerrar NO devuelve el chat al bot.** La puerta del motor es `assigned_to`,
+  no el estado. Si cerrar reasignara de paso, cada vez que un asesor archivara
+  un chat atendido el bot se le metería encima al siguiente mensaje.
+- **Reasignar es owner-only**: mover un chat se lo quita a quien lo atendía, y
+  esa no es decisión de un asesor sobre la cola de otro.
+- **El destino se valida contra `asesores_del_team`.** Aceptar texto libre
+  reintroduce #376/#377 a mano: un nombre que no es de nadie deja el chat en
+  una casilla que nadie mira. El selector además conserva como opción a quien
+  atiende hoy aunque ya no esté en la rotación, o parecería que el chat cambió
+  de manos solo.
+- **Devolver al bot limpia la etiqueta** y reabre si estaba cerrada.
+
+Suite: **1220 passed** (9 nuevos en `test_conversacion_cerrar_asignar.py`, que
+fijan sobre todo lo que cada operación *no* hace). `tsc --noEmit` limpio.
+
+### Arranquemos Pues queda con una sola asesora
+
+`asesores_rotacion` pasó de `["Camila", "Julián", "Alexandra"]` a
+`["Alexandra"]`. Con `len(asesores) == 1`, `crud.siguiente_asesor` corta antes
+de tocar `handoff_turno`. Aplicado en RDS y en la fuente de verdad
+(`configurar_arranquemos_pues.py`), que si no el configurador lo revertía.
+
+**Los 107 chats con dueño humano no se movieron** (Alexandra 36, Julián 36,
+Camila 35): reasignarlos en bloque le quitaría a dos personas lo que están
+atendiendo. Si el CEO los quiere mover, está `reasignar_asesores_arranquemos.py`.
+
+### Deploy
+
+Orden backend → Amplify, como manda el Sprint 24 (Amplify va último: sale antes
+que ECS y rompería el contrato — acá era literal, la UI llama endpoints que no
+existían). Imagen `:sprint26-bandeja`
+(digest `sha256:5778fe9142ac…`), **task-def rev 74**, rollout COMPLETED,
+endpoints verificados en el `openapi.json` de producción. Amplify **job 134
+SUCCEED**. Sin migración: no hubo cambio de schema.
+
+Task-def backend: **rev 74** (imagen `:sprint26-bandeja`).
+
+### Ojo con las sesiones concurrentes
+
+Otra sesión commiteó con `git add -A` mientras esta editaba, y se llevó
+`routers/mensajes.py` y `schemas.py` a medias dentro de un commit de docs
+(`bc017cb`, "docs(bitacora)"). No rompió nada —el código estaba completo y su
+deploy `:73` era anterior—, pero el commit no dice lo que trae y el `git log`
+de esos dos archivos ahora miente. **Stagear por nombre, nunca `-A`, mientras
+haya más de una sesión sobre el mismo árbol.** Ver
+[[gotcha-sesiones-concurrentes-git]].
