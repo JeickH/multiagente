@@ -100,6 +100,8 @@ _MONEDA = re.compile(
 # El contexto no tiene un solo teléfono: si el bot escribe uno, lo inventó.
 _TELEFONO = re.compile(r"(?:\+?\d[\d\s\-().]{6,}\d)")
 _ANDAMIAJE = re.compile(r"</?\s*(?:antml:)?(?:invoke|parameter|function_calls)", re.I)
+# La palabra suelta: "señor", "señal" y "diseña" no cuentan.
+_SENA = re.compile(r"\bseñas?\b", re.IGNORECASE)
 
 
 def dicho(*salidas) -> str:
@@ -162,6 +164,11 @@ def sin_inventos(monkeypatch):
 
     texto = " ".join(dichos)
     assert not _ANDAMIAJE.search(texto), f"andamiaje de tool-use al cliente: {texto!r}"
+    # "Seña" es la palabra de otros países para el pago inicial y el modelo la
+    # elige solo; en Colombia el cliente no sabe qué le están pidiendo. El
+    # prompt la prohíbe y `_con_reemplazos` la cambia a la salida: esto vigila
+    # el resultado de los dos, en cualquier guion, sin tener que escribir uno.
+    assert not _SENA.search(texto), f"«seña» al cliente: {texto!r}"
     # Los números que la propia persona dio son suyos: confirmarle la cédula
     # que acaba de escribir es correcto, no un dato inventado. Es el mismo
     # criterio que usa el guardarraíl del motor con los teléfonos.

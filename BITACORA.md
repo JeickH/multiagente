@@ -5523,3 +5523,102 @@ hubo ventana rota en ningún sentido.
 - **#381**: el tope del video quedó en 12 MB por pedido del CEO; WhatsApp acepta
   hasta 16. Subirlo es cambiar dos números (`adjuntos.py` y `lib/adjuntos.ts`):
   el camino de subida ya no tiene techo propio.
+
+---
+
+## La palabra "seña" no se dice en Colombia (2026-08-29)
+
+Pedido del CEO: el bot de *Arranquemos Pues* dice que el cupo se aparta con "una
+seña del 30%". El dato es correcto —el 30% es real— pero la palabra es de otros
+países y en Colombia el cliente no sabe qué le están pidiendo. Va *anticipo*,
+*adelanto* o *cuota inicial*.
+
+### Lo primero que hay que entender: la palabra nunca estuvo en el prompt
+
+`bot_contexts/demo_viajes.md` siempre dijo "se aparta el cupo con el 30%". Nadie
+escribió "seña" en ningún lado: **la elige el modelo**, porque es la palabra que
+el español de otros países usa para el pago inicial. Eso cambia el arreglo. No
+hay un texto que corregir; hay que prohibir una palabra que el modelo pone por
+su cuenta.
+
+La buena noticia es que aquí **el prompt sí sirve**: no hay ninguna regla rival
+empujando en la otra dirección, que es cuando insistir no cambia nada
+([[gotcha-insistir-en-el-prompt-no-sirve]]). Es vocabulario, no una decisión
+entre dos reglas.
+
+### Costó encontrarla, y el porqué importa
+
+Seis guiones preguntando por el pago contra el modelo real: **0 de 16**. Otros
+18 turnos con todas las formas de preguntar "¿cuánto hay que abonar?", ya con
+los precios sobre la mesa: **0 de 18**. Con el documento viejo. La palabra no
+aparecía por ningún lado.
+
+Aparece buscándola donde de verdad pasó — en la base de producción:
+
+```sql
+SELECT count(*) FILTER (WHERE content ~* '...se[nñ]as?...') FROM messages
+WHERE direction = 'outbound';   -- 2 de 2.681
+```
+
+Dos mensajes, los dos del 23-ago, los dos del mismo chat:
+
+> "Son *5 personas* a *$459.000 por persona*: *5 × $459.000 = $2.295.000*.
+> Con el 30% de **seña** apartas el cupo: *$688.500*. El resto lo **pagás** de 8
+> a 10 días hábiles antes del viaje ✨"
+
+**El disparador no es la pregunta por el pago: es la cuenta.** El turno donde el
+modelo se pone a multiplicar el total de un grupo es donde se le va el registro
+—en el mismo mensaje escribió "seña" *y* "pagás"—, y por eso 34 turnos de
+preguntas normales daban cero. Replicado ese turno exacto tampoco cae en 16
+corridas: la tasa real es de 2 en 2.681 mensajes (0,07%).
+
+### Y por eso el arreglo tiene dos capas
+
+Un defecto de 1 en mil es justamente el que no se atrapa probando y el que llega
+a un cliente sin que nadie se entere. Así que:
+
+1. **El documento la prohíbe por su nombre** y modela la frase buena en los tres
+   lugares donde vive el 30% (tono, el ejemplo del regateo y la condición de
+   reserva). Es lo que hace que el bot escriba bien, no sólo que no escriba mal.
+2. **`llm_engine._con_reemplazos` la cambia a la salida**, por donde pasan los
+   tres canales, y sobre el texto que se guarda en el historial — si no, el
+   modelo se copia a sí mismo en el turno siguiente.
+
+El mapa vive en `llm_config.reemplazos` (`app/data/bot_viajes.py`) y no en el
+motor: `llm_engine` lo comparte el bot de mascotas, donde "señas particulares"
+es vocabulario central y un reemplazo global le rompería las descripciones.
+
+El reemplazo es *cuota inicial* y no *anticipo* por concordancia: hereda el
+artículo que el modelo ya escribió, y "seña" es femenino. Con "anticipo"
+saldría "una anticipo del 30%", que es peor que el problema original.
+
+### Pruebas
+
+- Backend: **1211 passed**, 103 skipped, 1 xfailed.
+- Nuevo: `tests/viajes/test_anticipo.py` (26) — el documento, el filtro, la
+  concordancia, que no toque "señor"/"señal"/"diseña", que no le cambie el
+  nombre a un cliente llamado Tomás y que sin mapa no haga nada (el bot de
+  mascotas).
+- `tests/viajes/costo/test_guiones.py`: el guardarraíl global que ya revisaba
+  andamiaje, teléfonos y cifras ahora revisa también la palabra, en cualquier
+  guion y sin tener que escribir uno.
+- Modelo real: 16 turnos con el documento nuevo, 0 con la palabra ya antes de
+  que el filtro tuviera que hacer nada.
+
+### El voseo del mismo mensaje, con el diagnóstico corregido
+
+"El resto lo **pagás**" salió en el mismo mensaje, y un "querés" en otro chat:
+**2 de 2.675** salientes. La primera lectura fue que era registro de otro país,
+y **está mal**: el voseo paisa es español legítimo y es el de Medellín, que es
+justo donde queda la agencia. El defecto no es la forma, es **mezclar los dos
+registros en el mismo mensaje** — el documento ya eligió tutear (`Trata de
+"tú"`, desde siempre).
+
+O sea que no faltaba una regla: faltaba que se cumpliera. Repetirla sería
+exactamente lo que no funciona ([[gotcha-insistir-en-el-prompt-no-sirve]]), así
+que va por el mismo mapa determinista, que además no tiene el problema de
+concordancia de "seña". La lista es corta y explícita, y **"tomás" queda fuera
+a propósito**: es voseo de manual, pero el bot llama a la gente por su nombre en
+casi todos los mensajes y "¡Listo, tomas!" es peor que cualquier voseo.
+
+Ojo con los falsos positivos al medirlo: "acá" salió 7 veces y es paisa normal.

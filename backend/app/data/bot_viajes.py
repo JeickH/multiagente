@@ -190,5 +190,36 @@ LLM_CONFIG = {
     # Si vuelve a escribir dentro de estas horas, se retoma la MISMA sesión
     # (con su historial) en vez de arrancar una nueva y saludar de cero.
     "retomar": {"horas": 24},
+    # Palabras que el modelo elige por su cuenta y que en Colombia no se
+    # entienden (pedido del CEO, 29-ago-2026). El documento nunca escribe
+    # "seña" —siempre "se aparta el cupo con el 30%"— pero el modelo la usa
+    # igual: es la palabra de otros países para el pago inicial, y aquí el
+    # cliente no sabe qué le están pidiendo. El prompt ya lo prohíbe; esto es
+    # la red, porque una palabra que se escapa una vez de cada veinte igual
+    # llega a un cliente real.
+    #
+    # El reemplazo es *cuota inicial* y no *anticipo* por concordancia: hereda
+    # el artículo que el modelo ya escribió, y "seña" es femenino ("una seña
+    # del 30%" → "una cuota inicial del 30%"). Con "anticipo" habría que tocar
+    # también el artículo.
+    #
+    # Vive en el tenant y no en el motor: `llm_engine` lo comparte el bot de
+    # mascotas, donde "señas" es vocabulario central ("señas particulares") y
+    # este reemplazo le rompería las descripciones.
+    #
+    # Los verbos son otra cosa y conviene no confundirlas: "pagás", "tenés" y
+    # "querés" son voseo **paisa**, español legítimo y de la ciudad donde queda
+    # la agencia. Lo que no se puede es mezclarlo con el tuteo en el mismo
+    # mensaje, y el documento ya eligió tutear ("Trata de tú"). Se listan sólo
+    # formas que no chocan con un nombre propio: "tomás" queda fuera a
+    # propósito, o el bot le escribiría "tomas" a un cliente llamado Tomás.
+    "reemplazos": {
+        "seña": "cuota inicial", "señas": "cuotas iniciales",
+        "vos": "tú",
+        "pagás": "pagas", "tenés": "tienes", "querés": "quieres",
+        "podés": "puedes", "sabés": "sabes", "hacés": "haces",
+        "decís": "dices", "venís": "vienes", "necesitás": "necesitas",
+        "reservás": "reservas", "viajás": "viajas", "llegás": "llegas",
+    },
 }
 

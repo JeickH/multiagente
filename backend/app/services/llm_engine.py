@@ -2508,6 +2508,44 @@ def _sin_asterisco_huerfano(text: str) -> str:
     return "\n".join(lineas)
 
 
+@lru_cache(maxsize=16)
+def _reemplazos_re(claves: tuple) -> "re.Pattern":
+    """Una sola alternancia con las palabras a reemplazar, de la más larga a la
+    más corta (si no, "seña" matchea antes que "señas" y deja la `s` suelta).
+
+    Los bordes de palabra son lo que hace seguro el reemplazo: `\\b` cuenta la
+    `ñ` como letra, así que "diseña", "enseña", "señor" y "señal" no matchean.
+    """
+    alternancia = "|".join(re.escape(k) for k in sorted(claves, key=len, reverse=True))
+    return re.compile(rf"\b(?:{alternancia})\b", re.IGNORECASE)
+
+
+def _con_reemplazos(text: str, cfg: Dict[str, Any]) -> str:
+    """Cambia las palabras que el tenant declaró intraducibles en su país.
+
+    Es un guardarraíl de vocabulario, no de contenido: el system prompt ya se lo
+    pide al modelo y esto sólo atrapa lo que se le escape. Se aplica aquí, a la
+    salida, porque por acá pasan los tres canales (WhatsApp, simulador y
+    landing) y porque el texto corregido es el que se guarda en el historial —
+    si no, el modelo se copia a sí mismo en el turno siguiente.
+
+    El mapa vive en `llm_config.reemplazos` (ver `app/data/bot_viajes.py`): un
+    reemplazo global le rompería el vocabulario a los otros bots que comparten
+    este motor.
+    """
+    reemplazos = (cfg or {}).get("reemplazos")
+    if not isinstance(reemplazos, dict) or not reemplazos:
+        return text
+    mapa = {str(k).lower(): str(v) for k, v in reemplazos.items() if k}
+
+    def _cambia(m: "re.Match") -> str:
+        nueva = mapa[m.group(0).lower()]
+        # "Seña" al arrancar una frase tiene que salir con mayúscula igual.
+        return nueva[:1].upper() + nueva[1:] if m.group(0)[:1].isupper() else nueva
+
+    return _reemplazos_re(tuple(mapa)).sub(_cambia, text)
+
+
 def _to_whatsapp_format(text: str) -> str:
     """Normaliza lo que emite el modelo al formato que WhatsApp sí renderiza.
 
@@ -2669,7 +2707,9 @@ def _advance_inner(
         for block in content:
             btype = block.get("type")
             if btype == "text":
-                text = _to_whatsapp_format((block.get("text") or "").strip())
+                text = _con_reemplazos(
+                    _to_whatsapp_format((block.get("text") or "").strip()), cfg
+                )
                 if text:
                     actions.append({"type": "say", "payload": {"text": text}})
                     say_texts.append(text)
