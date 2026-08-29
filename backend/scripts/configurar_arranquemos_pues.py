@@ -66,9 +66,15 @@ DOCUMENTO_ASESOR = "ASESORAP02"
 # dejaría por fuera a quien la esté usando ahora mismo. El script solo la
 # reporta para que el CEO decida.
 CORREO_ASESOR_PREVIO = "arranquemospues.asesor@gmail.com"
-# Orden del reparto por turnos del handoff: primer chat a Camila, el siguiente
-# a Julián, el siguiente a Alexandra, y vuelve a empezar.
-ASESORES = ["Camila", "Julián", "Alexandra"]
+# A quién le caen los chats que el bot escala. Con un solo nombre no hay turnos:
+# `crud.siguiente_asesor` corta en el `len(asesores) == 1` y devuelve siempre a
+# Alexandra, sin tocar `handoff_turno`.
+#
+# Antes eran ["Camila", "Julián", "Alexandra"] repartiendo por turnos. Lo cambió
+# el CEO el 29-ago-2026: la atención quedó en una sola persona. Volver a repartir
+# es agregar los nombres acá y correr el script; los chats YA asignados no se
+# mueven solos, para eso está `reasignar_asesores_arranquemos.py`.
+ASESORES = ["Alexandra"]
 
 # Flags de continuidad (#377). Los valores se importan de la fuente de verdad
 # del bot de viajes para que no puedan quedar en desacuerdo con lo que despacha

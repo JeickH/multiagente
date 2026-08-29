@@ -339,6 +339,11 @@ export default function Mensajes() {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [adjunto, setAdjunto] = useState<AdjuntoLocal | null>(null);
   const [grabando, setGrabando] = useState(false);
+  /** Destinos válidos para reasignar. Se piden al backend en vez de derivarlos
+      de las conversaciones cargadas: un asesor sin chats en esta página existe
+      igual y tiene que poder recibir uno. */
+  const [asesores, setAsesores] = useState<string[]>([]);
+  const [gestionando, setGestionando] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
@@ -412,6 +417,22 @@ export default function Mensajes() {
     };
   }, [me, filter, searchAplicado, pagina, porPagina]);
 
+  // Los destinos del selector de reasignación. Solo los pide el admin, que es
+  // el único que puede reasignar; para un asesor la petición daría 403.
+  useEffect(() => {
+    if (me?.member.role !== 'owner') return;
+    let active = true;
+    fetch('/api/mensajes/asesores', { headers: authHeaders() })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data: string[] | null) => {
+        if (active && data) setAsesores(data);
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [me]);
+
   // Cargar detalle al seleccionar (ver POLL_DETALLE_MS)
   useEffect(() => {
     if (selectedId == null) {
@@ -440,6 +461,11 @@ export default function Mensajes() {
   }, [detail?.messages?.length]);
 
   const canReply = me?.member.permissions?.can_reply_messages === true;
+  /** Reasignar es del dueño de la cuenta: mover un chat se lo quita a quien lo
+      atendía, y esa no es decisión de un asesor sobre la cola de otro. El
+      backend lo vuelve a exigir con `get_current_owner_membership`; esto solo
+      evita mostrar un control que iba a dar 403. */
+  const esAdmin = me?.member.role === 'owner';
 
   // Ya no se filtra acá: `conversations` es la página que devolvió el backend
   // con el filtro y la búsqueda ya aplicados.
@@ -597,6 +623,76 @@ export default function Mensajes() {
       setErrorMsg(e.message || 'Error enviando mensaje');
     } finally {
       setSending(false);
+    }
+  };
+
+  /**
+   * Refleja en pantalla la conversación que devolvió el backend, sin esperar al
+   * siguiente poll. Toca las dos vistas —la fila de la bandeja y la cabecera
+   * del chat— porque el estado y quién atiende se pintan en ambas: actualizar
+   * solo una deja la pantalla contradiciéndose por hasta 8 segundos.
+   */
+  const aplicarCambioDeConversacion = (c: Conversation) => {
+    setConversations((prev) =>
+      prev.map((x) =>
+        x.id === c.id
+          ? { ...x, status: c.status, assigned_to: c.assigned_to, etiqueta: c.etiqueta }
+          : x,
+      ),
+    );
+    setDetail((prev) =>
+      prev && prev.id === c.id
+        ? { ...prev, status: c.status, assigned_to: c.assigned_to, etiqueta: c.etiqueta }
+        : prev,
+    );
+  };
+
+  /**
+   * Marca la conversación como cerrada. No la devuelve al bot: si el chat lo
+   * venía atendiendo una persona, sigue siendo suyo (el motor mira
+   * `assigned_to`, no el estado). Devolverlo al bot es la otra acción.
+   */
+  const cerrarConversacion = async () => {
+    if (!detail || !canReply || gestionando) return;
+    setGestionando(true);
+    setErrorMsg(null);
+    try {
+      const res = await fetch(`/api/mensajes/conversaciones/${detail.id}/cerrar`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.detail || `Error ${res.status}`);
+      }
+      aplicarCambioDeConversacion(await res.json());
+    } catch (e: any) {
+      setErrorMsg(e.message || 'No se pudo cerrar la conversación');
+    } finally {
+      setGestionando(false);
+    }
+  };
+
+  /** Reasigna el chat a un asesor o lo devuelve al bot (`destino === 'bot'`). */
+  const asignarConversacion = async (destino: string) => {
+    if (!detail || !esAdmin || !destino || gestionando) return;
+    setGestionando(true);
+    setErrorMsg(null);
+    try {
+      const res = await fetch(`/api/mensajes/conversaciones/${detail.id}/asignar`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({ assigned_to: destino }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.detail || `Error ${res.status}`);
+      }
+      aplicarCambioDeConversacion(await res.json());
+    } catch (e: any) {
+      setErrorMsg(e.message || 'No se pudo reasignar la conversación');
+    } finally {
+      setGestionando(false);
     }
   };
 
@@ -837,8 +933,43 @@ export default function Mensajes() {
                     <div className="text-xs text-gray-500">+{detail.contact_wa_id}</div>
                   )}
                 </div>
-                <div className="ml-auto text-xs">
-                  {detail.assigned_to && detail.assigned_to !== 'bot' ? (
+                <div className="ml-auto flex items-center gap-2 text-xs">
+                  {esAdmin ? (
+                    /* Para el admin la etiqueta ES el control: se ve quién
+                       atiende y se cambia en el mismo lugar, sin un botón
+                       aparte que diga lo mismo dos veces. */
+                    <label className="flex items-center gap-1.5">
+                      <span className="text-gray-500">Atiende:</span>
+                      <select
+                        value={detail.assigned_to || 'bot'}
+                        onChange={(e) => void asignarConversacion(e.target.value)}
+                        disabled={gestionando}
+                        className={`rounded-full border px-2.5 py-1 font-medium focus:outline-none focus:ring-2 focus:ring-gloma-brown/30 disabled:opacity-50 ${
+                          detail.assigned_to && detail.assigned_to !== 'bot'
+                            ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                            : 'bg-gray-100 text-gray-600 border-gray-200'
+                        }`}
+                      >
+                        <option value="bot">🤖 bot</option>
+                        {/* Quien atiende hoy puede no estar en la rotación
+                            configurada (se le asignó antes de un cambio). Sin
+                            esta opción, el selector mostraría a otra persona y
+                            parecería que el chat ya cambió de manos. */}
+                        {detail.assigned_to &&
+                          detail.assigned_to !== 'bot' &&
+                          !asesores.includes(detail.assigned_to) && (
+                            <option value={detail.assigned_to}>
+                              👤 {detail.assigned_to}
+                            </option>
+                          )}
+                        {asesores.map((a) => (
+                          <option key={a} value={a}>
+                            👤 {a}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  ) : detail.assigned_to && detail.assigned_to !== 'bot' ? (
                     <span className="px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 font-medium">
                       Atiende: 👤 {detail.assigned_to}
                     </span>
@@ -846,6 +977,23 @@ export default function Mensajes() {
                     <span className="px-2.5 py-1 rounded-full bg-gray-100 text-gray-500 font-medium">
                       Atiende: 🤖 bot
                     </span>
+                  )}
+
+                  {detail.status === 'closed' ? (
+                    <span className="px-2.5 py-1 rounded-full bg-gray-100 text-gray-500 font-medium">
+                      Cerrada
+                    </span>
+                  ) : (
+                    canReply && (
+                      <button
+                        onClick={() => void cerrarConversacion()}
+                        disabled={gestionando}
+                        className="px-2.5 py-1 rounded-full border border-gray-300 text-gray-600 font-medium hover:bg-gray-50 disabled:opacity-50"
+                        title="Marcar la conversación como cerrada"
+                      >
+                        Cerrar
+                      </button>
+                    )
                   )}
                 </div>
               </div>
