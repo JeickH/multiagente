@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
 import GrabadorVoz from '../components/GrabadorVoz';
 import Layout from '../components/Layout';
 import SelectorEmoji from '../components/SelectorEmoji';
@@ -17,7 +17,13 @@ import {
   tamanoLegible,
   validarAdjunto,
 } from '../lib/adjuntos';
-import { horaCorta } from '../lib/fechas';
+import {
+  encabezadoDeDia,
+  fechaHoraLarga,
+  horaCorta,
+  marcaDeTiempoLista,
+  mismoDia,
+} from '../lib/fechas';
 import { formatearWhatsapp } from '../lib/formatoWhatsapp';
 import { getToken } from '../lib/session';
 
@@ -648,16 +654,16 @@ export default function Mensajes() {
   };
 
   /**
-   * Marca la conversación como cerrada. No la devuelve al bot: si el chat lo
-   * venía atendiendo una persona, sigue siendo suyo (el motor mira
+   * Cierra o reabre la conversación. No toca a quién atiende: si el chat lo
+   * venía llevando una persona, sigue siendo suyo (el motor mira
    * `assigned_to`, no el estado). Devolverlo al bot es la otra acción.
    */
-  const cerrarConversacion = async () => {
+  const cambiarEstadoConversacion = async (accion: 'cerrar' | 'reabrir') => {
     if (!detail || !canReply || gestionando) return;
     setGestionando(true);
     setErrorMsg(null);
     try {
-      const res = await fetch(`/api/mensajes/conversaciones/${detail.id}/cerrar`, {
+      const res = await fetch(`/api/mensajes/conversaciones/${detail.id}/${accion}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeaders() },
       });
@@ -667,7 +673,10 @@ export default function Mensajes() {
       }
       aplicarCambioDeConversacion(await res.json());
     } catch (e: any) {
-      setErrorMsg(e.message || 'No se pudo cerrar la conversación');
+      setErrorMsg(
+        e.message ||
+          `No se pudo ${accion === 'cerrar' ? 'cerrar' : 'reabrir'} la conversación`,
+      );
     } finally {
       setGestionando(false);
     }
@@ -837,8 +846,14 @@ export default function Mensajes() {
                         <span className="font-semibold text-sm text-gray-800 truncate">
                           {c.contact_name || `+${c.contact_wa_id}`}
                         </span>
-                        <span className="text-xs text-gray-400 ml-2 flex-shrink-0">
-                          {formatTime(c.last_message_at)}
+                        {/* Hora si es de hoy, "Ayer", o la fecha. La hora
+                            sola hacía ver un chat de la semana pasada como si
+                            acabara de entrar. */}
+                        <span
+                          className="text-xs text-gray-400 ml-2 flex-shrink-0"
+                          title={fechaHoraLarga(c.last_message_at)}
+                        >
+                          {marcaDeTiempoLista(c.last_message_at)}
                         </span>
                       </div>
                       {/* El número debajo del nombre: el asesor lo necesita para
@@ -980,13 +995,27 @@ export default function Mensajes() {
                   )}
 
                   {detail.status === 'closed' ? (
-                    <span className="px-2.5 py-1 rounded-full bg-gray-100 text-gray-500 font-medium">
-                      Cerrada
-                    </span>
+                    <>
+                      <span className="px-2.5 py-1 rounded-full bg-gray-100 text-gray-500 font-medium">
+                        Cerrada
+                      </span>
+                      {/* Cerrar sin poder deshacerlo convertía un click de más
+                          en un chat perdido de la bandeja. */}
+                      {canReply && (
+                        <button
+                          onClick={() => void cambiarEstadoConversacion('reabrir')}
+                          disabled={gestionando}
+                          className="px-2.5 py-1 rounded-full border border-gray-300 text-gray-600 font-medium hover:bg-gray-50 disabled:opacity-50"
+                          title="Volver a abrir la conversación"
+                        >
+                          Reabrir
+                        </button>
+                      )}
+                    </>
                   ) : (
                     canReply && (
                       <button
-                        onClick={() => void cerrarConversacion()}
+                        onClick={() => void cambiarEstadoConversacion('cerrar')}
                         disabled={gestionando}
                         className="px-2.5 py-1 rounded-full border border-gray-300 text-gray-600 font-medium hover:bg-gray-50 disabled:opacity-50"
                         title="Marcar la conversación como cerrada"
@@ -1004,47 +1033,65 @@ export default function Mensajes() {
                     Sin mensajes en esta conversación.
                   </div>
                 ) : (
-                  detail.messages.map((m) =>
-                    /* La nota interna la escribe el bot al pasar el chat a un
-                       asesor. NO se le envió al cliente: se muestra centrada y
-                       con aviso, para que nadie la confunda con un mensaje del
-                       chat y le responda "como ya le dije...". */
-                    m.message_type === 'nota_interna' ? (
-                      <div key={m.id} className="flex justify-center">
-                        <div className="max-w-lg w-full px-4 py-2.5 rounded-xl border border-amber-200 bg-amber-50">
-                          <div className="text-sm whitespace-pre-wrap break-words text-amber-900">
-                            {formatearWhatsapp(m.content)}
-                          </div>
-                          <div className="text-[10px] mt-1 text-amber-600">
-                            {formatTime(m.created_at)} • solo visible para el equipo
+                  detail.messages.map((m, i) => (
+                    <Fragment key={m.id}>
+                      {/* Separador de día. El historial de un chat se estira
+                          por semanas y las burbujas solo llevan la hora: sin
+                          esta línea, "9:14 a. m." debajo de "6:40 p. m." se
+                          lee como si el bot hubiera contestado antes de que le
+                          escribieran. */}
+                      {(i === 0 ||
+                        !mismoDia(detail.messages[i - 1].created_at, m.created_at)) && (
+                        <div className="flex justify-center py-1">
+                          <span className="px-3 py-1 rounded-full bg-white/80 border border-gloma-rose-soft text-[11px] text-gray-500 shadow-sm">
+                            {encabezadoDeDia(m.created_at)}
+                          </span>
+                        </div>
+                      )}
+                      {/* La nota interna la escribe el bot al pasar el chat a un
+                          asesor. NO se le envió al cliente: se muestra centrada y
+                          con aviso, para que nadie la confunda con un mensaje del
+                          chat y le responda "como ya le dije...". */}
+                      {m.message_type === 'nota_interna' ? (
+                        <div className="flex justify-center">
+                          <div className="max-w-lg w-full px-4 py-2.5 rounded-xl border border-amber-200 bg-amber-50">
+                            <div className="text-sm whitespace-pre-wrap break-words text-amber-900">
+                              {formatearWhatsapp(m.content)}
+                            </div>
+                            <div
+                              className="text-[10px] mt-1 text-amber-600"
+                              title={fechaHoraLarga(m.created_at)}
+                            >
+                              {formatTime(m.created_at)} • solo visible para el equipo
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    ) : (
-                      <div
-                        key={m.id}
-                        className={`flex ${m.direction === 'outbound' ? 'justify-end' : 'justify-start'}`}
-                      >
+                      ) : (
                         <div
-                          className={`max-w-md px-4 py-2 rounded-2xl shadow-sm ${
-                            m.direction === 'outbound'
-                              ? 'bg-gloma-brown text-white rounded-br-sm'
-                              : 'bg-white text-gray-800 rounded-bl-sm border border-gray-100'
-                          }`}
+                          className={`flex ${m.direction === 'outbound' ? 'justify-end' : 'justify-start'}`}
                         >
-                          <Contenido mensaje={m} />
                           <div
-                            className={`text-[10px] mt-1 ${
-                              m.direction === 'outbound' ? 'text-gloma-rose-soft' : 'text-gray-400'
+                            className={`max-w-md px-4 py-2 rounded-2xl shadow-sm ${
+                              m.direction === 'outbound'
+                                ? 'bg-gloma-brown text-white rounded-br-sm'
+                                : 'bg-white text-gray-800 rounded-bl-sm border border-gray-100'
                             }`}
                           >
-                            {formatTime(m.created_at)}
-                            {m.status === 'failed' && ' • falló'}
+                            <Contenido mensaje={m} />
+                            <div
+                              className={`text-[10px] mt-1 ${
+                                m.direction === 'outbound' ? 'text-gloma-rose-soft' : 'text-gray-400'
+                              }`}
+                              title={fechaHoraLarga(m.created_at)}
+                            >
+                              {formatTime(m.created_at)}
+                              {m.status === 'failed' && ' • falló'}
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    )
-                  )
+                      )}
+                    </Fragment>
+                  ))
                 )}
                 <div ref={messagesEndRef} />
               </div>

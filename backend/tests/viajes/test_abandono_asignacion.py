@@ -214,19 +214,40 @@ def _vencer(db, pa: models.BotPendingAction) -> None:
     db.commit()
 
 
+def hasta_el_abandono(db, conv):
+    """Consume la cadena de recordatorios y devuelve el `abandono` ya vencido,
+    listo para que el test lo procese como quiera (con o sin patch)."""
+    for _ in range(10):
+        pa = pendientes(db, conv)[0]
+        _vencer(db, pa)
+        if pa.action_type == models.BOT_PENDING_ACTION_ABANDONO:
+            return pa
+        bot_runner.process_pending_action(db, pa)
+    raise AssertionError("la cadena de recordatorios nunca llegó al abandono")
+
+
 def abandonar(db, team, modelo, wa_id: str = WA_ID):
-    """El ciclo completo: saludo → silencio → recordatorio → silencio → abandono."""
+    """El ciclo completo: saludo → silencio → recordatorio(s) → abandono.
+
+    Los recordatorios se recorren en bucle en vez de contarlos: desde el
+    Sprint 27 el bot de viajes manda tres (15 min, 5 h y 23 h) y este helper lo
+    usan cuatro clases de tests que no tratan sobre *cuántos* son, sino sobre
+    lo que pasa **después**. Con el bucle, cambiar la cadencia no los rompe.
+    """
     modelo.guion = [_respuesta(_texto("¿Para qué mes lo piensas?"))]
     conv, _ = entra_mensaje(db, team, "Hola", wa_id=wa_id)
 
-    seguimiento = pendientes(db, conv)[0]
-    _vencer(db, seguimiento)
-    bot_runner.process_pending_action(db, seguimiento)
+    # Tope de seguridad: si la cadena no llegara nunca al abandono, es mejor
+    # fallar acá que colgar la suite.
+    for _ in range(10):
+        pa = pendientes(db, conv)[0]
+        _vencer(db, pa)
+        bot_runner.process_pending_action(db, pa)
+        if pa.action_type == models.BOT_PENDING_ACTION_ABANDONO:
+            break
+    else:  # pragma: no cover - defensivo
+        raise AssertionError("la cadena de recordatorios nunca llegó al abandono")
 
-    abandono = pendientes(db, conv)[0]
-    assert abandono.action_type == models.BOT_PENDING_ACTION_ABANDONO
-    _vencer(db, abandono)
-    bot_runner.process_pending_action(db, abandono)
     db.refresh(conv)
     return conv
 
@@ -304,13 +325,11 @@ class TestElAbandonoNoLeEscribeAlCliente:
         team, _ = agencia
         modelo.guion = [_respuesta(_texto("¿Para qué mes lo piensas?"))]
         conv, _ = entra_mensaje(db_session, team, "Hola")
-        seguimiento = pendientes(db_session, conv)[0]
-        _vencer(db_session, seguimiento)
-        bot_runner.process_pending_action(db_session, seguimiento)
+        abandono = hasta_el_abandono(db_session, conv)
+        # Se cuenta DESPUÉS de los recordatorios: esos sí salen, y lo que este
+        # test defiende es que el abandono en sí no agregue ni uno más.
         antes = len(enviados_al_cliente(db_session, conv))
 
-        abandono = pendientes(db_session, conv)[0]
-        _vencer(db_session, abandono)
         bot_runner.process_pending_action(db_session, abandono)
 
         assert len(enviados_al_cliente(db_session, conv)) == antes
@@ -321,12 +340,7 @@ class TestElAbandonoNoLeEscribeAlCliente:
         team, _ = agencia
         modelo.guion = [_respuesta(_texto("¿Para qué mes lo piensas?"))]
         conv, _ = entra_mensaje(db_session, team, "Hola")
-        seguimiento = pendientes(db_session, conv)[0]
-        _vencer(db_session, seguimiento)
-        bot_runner.process_pending_action(db_session, seguimiento)
-
-        abandono = pendientes(db_session, conv)[0]
-        _vencer(db_session, abandono)
+        abandono = hasta_el_abandono(db_session, conv)
         with patch.object(bot_runner, "_send_text") as enviar:
             bot_runner.process_pending_action(db_session, abandono)
         enviar.assert_not_called()
@@ -352,12 +366,7 @@ class TestElAbandonoNoLeEscribeAlCliente:
         team, _ = agencia
         modelo.guion = [_respuesta(_texto("¿Para qué mes lo piensas?"))]
         conv, _ = entra_mensaje(db_session, team, "Hola")
-        seguimiento = pendientes(db_session, conv)[0]
-        _vencer(db_session, seguimiento)
-        bot_runner.process_pending_action(db_session, seguimiento)
-
-        abandono = pendientes(db_session, conv)[0]
-        _vencer(db_session, abandono)
+        abandono = hasta_el_abandono(db_session, conv)
         with patch.object(crud, "add_message", side_effect=RuntimeError("boom")):
             bot_runner.process_pending_action(db_session, abandono)
         db_session.refresh(conv)
@@ -445,12 +454,7 @@ class TestUnTeamSinAsesoresNoRevienta:
         team, _ = agencia_sin_asesores
         modelo.guion = [_respuesta(_texto("¿Para qué mes lo piensas?"))]
         conv, _ = entra_mensaje(db_session, team, "Hola", wa_id="573000000043")
-        seguimiento = pendientes(db_session, conv)[0]
-        _vencer(db_session, seguimiento)
-        bot_runner.process_pending_action(db_session, seguimiento)
-
-        abandono = pendientes(db_session, conv)[0]
-        _vencer(db_session, abandono)
+        abandono = hasta_el_abandono(db_session, conv)
         with patch.object(bot_runner, "_asesor_para_el_abandono", return_value=None):
             bot_runner.process_pending_action(db_session, abandono)
         db_session.refresh(conv)

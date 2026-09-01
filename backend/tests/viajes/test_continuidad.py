@@ -583,7 +583,7 @@ class TestSeguimientoALos15Minutos:
         conv, _ = entra_mensaje(db_session, team, "¿y los tours?")
         assert len(pendientes(db_session, conv)) == 1
 
-    def test_al_vencer_manda_el_texto_y_agenda_el_abandono(
+    def test_al_vencer_manda_el_texto_y_agenda_el_siguiente(
         self, db_session, agencia, modelo
     ):
         team, _ = agencia
@@ -599,7 +599,116 @@ class TestSeguimientoALos15Minutos:
         assert pa.status == models.BOT_PENDING_STATUS_DONE
         siguiente = pendientes(db_session, conv)
         assert len(siguiente) == 1
-        assert siguiente[0].action_type == models.BOT_PENDING_ACTION_ABANDONO
+        # Con tres recordatorios configurados, detrás del primero va el
+        # segundo; el abandono espera al final de la cadena.
+        assert siguiente[0].action_type == models.BOT_PENDING_ACTION_SEGUIMIENTO
+
+
+class TestLosTresRecordatorios:
+    """Sprint 27, pedido del CEO: el reenganche pasó de uno a tres —a los 15
+    minutos, a las 5 horas y a las 23— y sólo después de ese último la
+    conversación se etiqueta y pasa a manos de la asesora.
+
+    Las 23 horas no son un número arbitrario: WhatsApp sólo deja mandar texto
+    libre dentro de las 24 horas siguientes al último mensaje del cliente. Un
+    recordatorio agendado a las 25 saldría `failed` y nadie se enteraría.
+    """
+
+    def _recorrer(self, db, conv, veces: int = 10):
+        """Vence y procesa la cadena entera. Devuelve las acciones en orden."""
+        recorridas = []
+        for _ in range(veces):
+            pa = pendientes(db, conv)[0]
+            recorridas.append(pa.action_type)
+            _vencer(db, pa)
+            bot_runner.process_pending_action(db, pa)
+            if pa.action_type == models.BOT_PENDING_ACTION_ABANDONO:
+                break
+        return recorridas
+
+    def test_la_cadena_es_tres_recordatorios_y_despues_el_abandono(
+        self, db_session, agencia, modelo
+    ):
+        team, _ = agencia
+        modelo.guion = [_respuesta(_texto("¿Para qué mes lo piensas?"))]
+        conv, _ = entra_mensaje(db_session, team, "Hola")
+
+        recorridas = self._recorrer(db_session, conv)
+
+        assert recorridas == [
+            models.BOT_PENDING_ACTION_SEGUIMIENTO,
+            models.BOT_PENDING_ACTION_SEGUIMIENTO,
+            models.BOT_PENDING_ACTION_SEGUIMIENTO,
+            models.BOT_PENDING_ACTION_ABANDONO,
+        ]
+
+    def test_al_contacto_le_llegan_tres_mensajes_y_son_distintos(
+        self, db_session, agencia, modelo
+    ):
+        """Distintos a propósito: el mismo párrafo calcado tres veces en un día
+        se lee como un bot trabado, no como alguien que insiste con tacto."""
+        team, _ = agencia
+        modelo.guion = [_respuesta(_texto("¿Para qué mes lo piensas?"))]
+        conv, _ = entra_mensaje(db_session, team, "Hola")
+        antes = len(salientes(db_session, conv))
+
+        self._recorrer(db_session, conv)
+
+        nuevos = [m.content for m in salientes(db_session, conv)[antes:]]
+        assert len(nuevos) == 3, "tienen que salir exactamente tres"
+        assert len(set(nuevos)) == 3, "los tres textos no pueden ser el mismo"
+
+    def test_los_tiempos_son_15_min_5_h_y_23_h(self, db_session, agencia, modelo):
+        """Lo que se mide es el reloj, que es lo que el CEO pidió. Cada etapa se
+        cuenta desde que empezó el silencio, así que lo agendado es la
+        diferencia con la anterior: 15 min, después 4h45, después 18h."""
+        team, _ = agencia
+        modelo.guion = [_respuesta(_texto("¿Para qué mes lo piensas?"))]
+        conv, _ = entra_mensaje(db_session, team, "Hola")
+
+        esperados = [15, 5 * 60 - 15, 23 * 60 - 5 * 60]
+        for esperado in esperados:
+            pa = pendientes(db_session, conv)[0]
+            faltan = (pa.scheduled_at - datetime.utcnow()).total_seconds() / 60
+            assert abs(faltan - esperado) <= 2, (esperado, faltan)
+            _vencer(db_session, pa)
+            bot_runner.process_pending_action(db_session, pa)
+
+    def test_si_contesta_en_medio_la_cadena_vuelve_a_empezar(
+        self, db_session, agencia, modelo
+    ):
+        """Contestar reabre la conversación: el silencio nuevo merece su propio
+        primer recordatorio, no el tercero.
+
+        Es la razón por la que la etapa viaja en el `payload` de la acción y no
+        se deduce contando las ya procesadas — `_cancelar_pendientes` marca
+        `done` también las que cancela, y contándolas esta persona se saltaría
+        los dos primeros reenganches.
+        """
+        team, _ = agencia
+        modelo.guion = [
+            _respuesta(_texto("¿Para qué mes lo piensas?")),
+            _respuesta(_texto("En septiembre hay salidas todos los viernes.")),
+        ]
+        conv, _ = entra_mensaje(db_session, team, "Hola")
+
+        # Se avanza hasta el segundo recordatorio.
+        for _ in range(2):
+            pa = pendientes(db_session, conv)[0]
+            _vencer(db_session, pa)
+            bot_runner.process_pending_action(db_session, pa)
+
+        conv, _ = entra_mensaje(db_session, team, "sí, cuéntame de septiembre")
+        pa = pendientes(db_session, conv)[0]
+        faltan = (pa.scheduled_at - datetime.utcnow()).total_seconds() / 60
+        assert abs(faltan - 15) <= 2, f"debería volver a los 15 min, no a {faltan}"
+
+    def test_un_bot_sin_recordatorios_configurados_se_comporta_como_antes(self):
+        """El bot de mascotas y el institucional no declaran la lista y no
+        pueden cambiar de comportamiento por este sprint."""
+        etapas = llm_engine.recordatorios_de({"minutos": 15})
+        assert len(etapas) == 1
+        assert etapas[0]["minutos"] == 15
 
     def test_si_contesta_el_recordatorio_y_se_vuelve_a_ir_se_le_recuerda_otra_vez(
         self, db_session, agencia, modelo
@@ -624,13 +733,13 @@ class TestSeguimientoALos15Minutos:
         _vencer(db_session, primero)
         bot_runner.process_pending_action(db_session, primero)
         assert "otra pregunta" in salientes(db_session, conv)[-1].content
-        # Detrás quedó agendado el abandono.
+        # Detrás queda agendado el segundo de la cadena (Sprint 27).
         assert (
             pendientes(db_session, conv)[0].action_type
-            == models.BOT_PENDING_ACTION_ABANDONO
+            == models.BOT_PENDING_ACTION_SEGUIMIENTO
         )
 
-        # Contesta: el abandono se cae y vuelve a quedar agendado un seguimiento.
+        # Contesta: lo agendado se cae y vuelve a quedar un seguimiento nuevo.
         conv, _ = entra_mensaje(db_session, team, "sí, ¿qué tal septiembre?")
         pend = pendientes(db_session, conv)
         assert len(pend) == 1, "no se puede acumular más de una acción viva"
@@ -647,21 +756,26 @@ class TestSeguimientoALos15Minutos:
         ]
         assert len(recordatorios) == 2, "el segundo silencio también se reengancha"
 
-    def test_pero_sin_contestar_no_se_le_insiste_una_segunda_vez(
+    def test_agotada_la_cadena_no_se_le_insiste_una_vez_mas(
         self, db_session, agencia, modelo
     ):
-        """El otro lado de la misma moneda: si no contestó, lo que sigue es la
-        etiqueta y el silencio, nunca un segundo '¿te quedó alguna duda?'."""
+        """El otro lado de la misma moneda: cuando se acaban los recordatorios,
+        lo que sigue es la etiqueta y el silencio, nunca uno de más."""
         team, _ = agencia
         modelo.guion = [_respuesta(_texto("¿Para qué mes lo piensas?"))]
         conv, _ = entra_mensaje(db_session, team, "Hola")
 
-        pa = pendientes(db_session, conv)[0]
-        _vencer(db_session, pa)
-        bot_runner.process_pending_action(db_session, pa)
+        # Toda la cadena de reenganches, hasta dejar el abandono agendado.
+        for _ in range(10):
+            pa = pendientes(db_session, conv)[0]
+            if pa.action_type == models.BOT_PENDING_ACTION_ABANDONO:
+                break
+            _vencer(db_session, pa)
+            bot_runner.process_pending_action(db_session, pa)
         antes = len(salientes(db_session, conv))
 
         abandono = pendientes(db_session, conv)[0]
+        assert abandono.action_type == models.BOT_PENDING_ACTION_ABANDONO
         _vencer(db_session, abandono)
         bot_runner.process_pending_action(db_session, abandono)
 
@@ -742,14 +856,22 @@ class TestSeguimientoALos15Minutos:
 
 class TestConversacionAbandonada:
     def _hasta_el_abandono(self, db, team, modelo):
+        """Consume la cadena entera de recordatorios y deja el `abandono`
+        agendado y vencido, sin procesarlo: cada test decide cómo hacerlo.
+
+        Va en bucle y no en dos pasos fijos porque desde el Sprint 27 los
+        recordatorios son tres; lo que estos tests miran es lo que ocurre
+        cuando la cadena se acaba, no cuántos eslabones tiene.
+        """
         modelo.guion = [_respuesta(_texto("¿Para qué mes lo piensas?"))]
         conv, _ = entra_mensaje(db, team, "Hola")
-        seguimiento = pendientes(db, conv)[0]
-        _vencer(db, seguimiento)
-        bot_runner.process_pending_action(db, seguimiento)
-        abandono = pendientes(db, conv)[0]
-        _vencer(db, abandono)
-        return conv, abandono
+        for _ in range(10):
+            pa = pendientes(db, conv)[0]
+            _vencer(db, pa)
+            if pa.action_type == models.BOT_PENDING_ACTION_ABANDONO:
+                return conv, pa
+            bot_runner.process_pending_action(db, pa)
+        raise AssertionError("la cadena de recordatorios nunca llegó al abandono")
 
     def test_abandono_etiqueta_asigna_asesor_y_no_le_escribe_nada(
         self, db_session, agencia, modelo

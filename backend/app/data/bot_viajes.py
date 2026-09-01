@@ -168,12 +168,50 @@ LLM_CONFIG = {
     # el comportamiento (ya pasó — commit 1a7d385).
     #
     # `seguimiento` es la política de cierre de este bot: cerrar la
-    # conversación cuando el bot se despide, reenganchar a los 15 minutos de
-    # silencio y, si tampoco así contesta, cerrar y etiquetar sin escribirle.
-    # Habilita además la herramienta `no_responder`.
+    # conversación cuando el bot se despide, reenganchar mientras haya silencio
+    # y, si tampoco así contesta, etiquetarla y pasársela a la asesora sin
+    # escribirle. Habilita además la herramienta `no_responder`.
+    #
+    # Tres recordatorios en vez de uno (pedido del CEO, 31-ago-2026). Los
+    # `minutos` de cada uno se cuentan **desde que empezó el silencio**, no
+    # desde el recordatorio anterior; `bot_runner` calcula la diferencia.
+    #
+    # Por qué 23 h y no 24: WhatsApp solo deja mandar texto libre dentro de las
+    # 24 horas siguientes al último mensaje del cliente. A las 24 en punto el
+    # mensaje ya necesitaría una plantilla aprobada por Meta y saldría
+    # `failed`; la hora de margen absorbe el retraso del tick.
+    #
+    # Los tres textos son distintos a propósito: el mismo párrafo calcado tres
+    # veces en un día se lee como un bot trabado. El tercero además se despide,
+    # porque es el último que sale.
     "seguimiento": {
         "minutos": 15,
         "etiqueta_abandono": "conversación abandonada",
+        "recordatorios": [
+            {
+                "minutos": 15,
+                "texto": (
+                    "¿Te quedó alguna otra pregunta para seguir con la reserva? 😊 "
+                    "Si prefieres lo dejamos hasta aquí y me escribes cuando "
+                    "quieras 🌴"
+                ),
+            },
+            {
+                "minutos": 5 * 60,
+                "texto": (
+                    "¡Hola de nuevo! 👋 Te quedé debiendo la respuesta por acá. "
+                    "Si quieres seguimos con el plan cuando tengas un momento, "
+                    "o dime qué te gustaría saber 🌴"
+                ),
+            },
+            {
+                "minutos": 23 * 60,
+                "texto": (
+                    "Última razón por hoy 🌴 Si más adelante quieres retomar el "
+                    "plan, aquí estoy y con gusto te ayudo. ¡Que estés muy bien! 😊"
+                ),
+            },
+        ],
     },
     # Guarda el nombre en `conversations.contact_name` con `registrar_nombre`,
     # para no volver a preguntarlo aunque se acabe la sesión.

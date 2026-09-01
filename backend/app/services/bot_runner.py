@@ -125,19 +125,39 @@ def _programar(
     session: models.BotSession,
     action_type: str,
     minutos: int,
+    etapa: int = 0,
 ) -> models.BotPendingAction:
-    """Agenda una acción de silencio, reemplazando la que hubiera."""
+    """Agenda una acción de silencio, reemplazando la que hubiera.
+
+    `etapa` es cuál de los recordatorios de `llm_engine.recordatorios_de` va a
+    salir cuando venza. Viaja en la columna `payload` (que ya existía y estaba
+    sin usar) y no en una columna nueva: es la única forma de encadenar tres
+    reenganches sin migrar la tabla. Derivarla contando las acciones ya
+    procesadas no sirve — `_cancelar_pendientes` marca `done` también las que
+    cancela, así que un cliente que contesta y vuelve a callarse arrancaría en
+    la etapa 2 y se saltaría el primer recordatorio.
+    """
     _cancelar_pendientes(db, session)
     pa = models.BotPendingAction(
         session_id=session.id,
         scheduled_at=datetime.utcnow() + timedelta(minutes=max(1, minutos)),
         action_type=action_type,
+        payload=json.dumps({"etapa": max(0, int(etapa))}),
         status=models.BOT_PENDING_STATUS_PENDING,
     )
     db.add(pa)
     db.commit()
     db.refresh(pa)
     return pa
+
+
+def _etapa_de(pa: models.BotPendingAction) -> int:
+    """Qué recordatorio toca. Cero ante cualquier duda: repetir el primero es
+    molesto, saltarse al último es perder el reenganche entero."""
+    try:
+        return max(0, int((json.loads(pa.payload or "{}") or {}).get("etapa") or 0))
+    except (ValueError, TypeError, AttributeError):
+        return 0
 
 
 def _cerrar_conversacion(db: Session, conversation: models.Conversation) -> None:
@@ -185,12 +205,36 @@ def _asesor_para_el_abandono(
     return asesor or None
 
 
+def _describir_reenganches(etapas: list) -> str:
+    """"a los 15 min, a las 5 h y a las 23 h" — para la nota que lee el asesor.
+
+    Lo que necesita saber quien recibe el chat frío no es cuántos mensajes le
+    salieron sino **hace cuánto** fue el último: si el bot le escribió por
+    última vez hace 23 horas, la persona ya tuvo todo el día para contestar y
+    no lo hizo, que es una conversación muy distinta a un silencio de media
+    hora.
+    """
+    def _humano(minutos: int) -> str:
+        if minutos < 60:
+            return f"a los {minutos} min"
+        horas = minutos / 60
+        # Sin decimales cuando son horas exactas: "a las 5 h", no "a las 5.0 h".
+        texto = f"{horas:.0f}" if abs(horas - round(horas)) < 0.05 else f"{horas:.1f}"
+        return f"a las {texto} h"
+
+    partes = [_humano(int(e["minutos"])) for e in etapas]
+    if len(partes) == 1:
+        return partes[0]
+    return f"{', '.join(partes[:-1])} y {partes[-1]}"
+
+
 def _marcar_abandonada(
     db: Session,
     conversation: models.Conversation,
     *,
     etiqueta: str,
     minutos: int,
+    etapas: Optional[list] = None,
 ) -> Optional[str]:
     """La persona dejó de contestar: se etiqueta y pasa a manos de un humano.
 
@@ -219,14 +263,19 @@ def _marcar_abandonada(
     db.commit()
 
     if asesor:
+        etapas = etapas or [{"minutos": minutos}]
+        veces = (
+            "una vez" if len(etapas) == 1 else f"{len(etapas)} veces"
+        )
         _nota_de_handoff(
             db,
             conversation,
             {
                 "motivo": (
-                    "la persona dejó de responder; el bot la reenganchó una vez "
-                    f"y esperó {minutos} minutos más sin respuesta. No se le "
-                    "volverá a escribir automáticamente"
+                    f"la persona dejó de responder; el bot la reenganchó {veces} "
+                    f"({_describir_reenganches(etapas)}) y esperó {minutos} "
+                    "minutos más sin respuesta. No se le volverá a escribir "
+                    "automáticamente"
                 ),
             },
             # La etiqueta va en minúscula en la bandeja; como encabezado se ve
@@ -510,7 +559,8 @@ def run_turn(
                 db,
                 session,
                 models.BOT_PENDING_ACTION_SEGUIMIENTO,
-                llm_engine.minutos_de_seguimiento(seguimiento),
+                llm_engine.recordatorios_de(seguimiento)[0]["minutos"],
+                etapa=0,
             )
     return session
 
@@ -761,8 +811,9 @@ def _cerrar_accion(
 def _procesar_silencio(db: Session, pa: models.BotPendingAction) -> None:
     """Atiende un `seguimiento` o un `abandono` vencido. NUNCA llama al modelo.
 
-    - `seguimiento`: si la persona no volvió a escribir, se le manda UN texto
-      fijo y se agenda el `abandono`.
+    - `seguimiento`: si la persona no volvió a escribir, se le manda el texto
+      fijo de la etapa que toca y se agenda la siguiente; después del último
+      recordatorio, el `abandono`.
     - `abandono`: si tampoco contestó a eso, la conversación se cierra y queda
       etiquetada. **No se le envía nada.**
 
@@ -791,22 +842,41 @@ def _procesar_silencio(db: Session, pa: models.BotPendingAction) -> None:
         return _cerrar_accion(db, pa, "la persona ya escribió")
 
     if pa.action_type == models.BOT_PENDING_ACTION_SEGUIMIENTO:
-        texto = llm_engine.texto_de_seguimiento(seguimiento)
+        # Cadena de reenganches (Sprint 27). Con un solo recordatorio
+        # configurado esto se comporta igual que antes; con tres, cada uno
+        # agenda el siguiente y sólo el último le abre paso al abandono.
+        etapas = llm_engine.recordatorios_de(seguimiento)
+        etapa = min(_etapa_de(pa), len(etapas) - 1)
+        texto = etapas[etapa]["texto"]
         account = crud.get_meta_account_for_team(db, conversation.team_id)
         _send_text(db, conversation, bot, account, texto)
         _apuntar_en_el_historial(db, session, texto)
-        _programar(
-            db,
-            session,
-            models.BOT_PENDING_ACTION_ABANDONO,
-            llm_engine.minutos_de_seguimiento(seguimiento),
-        )
+
+        siguiente = etapa + 1
+        if siguiente < len(etapas):
+            # Los minutos de cada etapa se cuentan desde que empezó el
+            # silencio, así que lo que falta es la diferencia con la actual.
+            _programar(
+                db,
+                session,
+                models.BOT_PENDING_ACTION_SEGUIMIENTO,
+                etapas[siguiente]["minutos"] - etapas[etapa]["minutos"],
+                etapa=siguiente,
+            )
+        else:
+            _programar(
+                db,
+                session,
+                models.BOT_PENDING_ACTION_ABANDONO,
+                llm_engine.minutos_de_seguimiento(seguimiento),
+            )
         # `_programar` canceló las pendientes de la sesión, incluida ésta.
         pa.status = models.BOT_PENDING_STATUS_DONE
         pa.processed_at = datetime.utcnow()
         db.commit()
         logger.info(
-            "bot_runner: seguimiento enviado conv=%s bot=%s", conversation.id, bot.id
+            "bot_runner: seguimiento %s/%s enviado conv=%s bot=%s",
+            etapa + 1, len(etapas), conversation.id, bot.id,
         )
         return
 
@@ -818,6 +888,7 @@ def _procesar_silencio(db: Session, pa: models.BotPendingAction) -> None:
         conversation,
         etiqueta=llm_engine.etiqueta_de_abandono(seguimiento),
         minutos=llm_engine.minutos_de_seguimiento(seguimiento),
+        etapas=llm_engine.recordatorios_de(seguimiento),
     )
     session.status = models.BOT_SESSION_FINISHED
     session.finished_at = datetime.utcnow()

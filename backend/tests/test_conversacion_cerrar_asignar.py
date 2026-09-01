@@ -220,3 +220,43 @@ def test_los_asesores_que_ve_el_selector_son_los_del_team(db_session, equipo):
     assert mensajes.list_assignees(db=db_session, member=equipo) == [
         "Alexandra", "Camila",
     ]
+
+
+# ───────────────────────── reabrir ─────────────────────────
+def test_el_asesor_reabre_lo_que_cerro(db_session, equipo):
+    """Cerrar era un camino de una sola dirección: un click de más y el asesor
+    no tenía cómo recuperar el chat sin ir a buscar al dueño de la cuenta."""
+    conv = _conversacion(db_session, equipo.team_id, estado="closed")
+
+    out = mensajes.reopen_conversation(conv.id, db=db_session, member=equipo)
+
+    assert out.status == "open"
+    db_session.refresh(conv)
+    assert conv.status == "open"
+
+
+def test_reabrir_no_le_devuelve_el_chat_al_bot(db_session, equipo):
+    """Simétrico de cerrar, y por el mismo motivo: si reabrir reasignara de
+    paso, el motor se le metería encima al asesor que sólo se estaba
+    corrigiendo."""
+    conv = _conversacion(
+        db_session, equipo.team_id,
+        estado="closed", asignado="Alexandra", etiqueta="conversación abandonada",
+    )
+
+    out = mensajes.reopen_conversation(conv.id, db=db_session, member=equipo)
+
+    assert out.status == "open"
+    assert out.assigned_to == "Alexandra"
+    assert out.etiqueta == "conversación abandonada", "la etiqueta no es del estado"
+
+
+def test_reabrir_una_conversacion_de_otro_equipo_da_404(db_session, equipo, otro_equipo):
+    conv = _conversacion(db_session, equipo.team_id, estado="closed")
+
+    with pytest.raises(HTTPException) as exc:
+        mensajes.reopen_conversation(conv.id, db=db_session, member=otro_equipo)
+
+    assert exc.value.status_code == 404
+    db_session.refresh(conv)
+    assert conv.status == "closed"

@@ -58,3 +58,119 @@ export function fechaHoraCorta(iso: string | null | undefined, fallback = ''): s
     minute: '2-digit',
   });
 }
+
+/**
+ * Fecha y hora completas, para el `title` de algo que muestra una forma
+ * abreviada: la lista dice "Ayer" y al pasar el mouse se ve el dato exacto.
+ */
+export function fechaHoraLarga(iso: string | null | undefined, fallback = ''): string {
+  const d = aInstante(iso);
+  if (!d) return fallback;
+  return d.toLocaleString(LOCALE, {
+    timeZone: ZONA_CO,
+    day: '2-digit',
+    month: 'long',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
+/**
+ * El día del calendario **en Colombia**, como "2026-08-31".
+ *
+ * `en-CA` se usa por su formato, no por el idioma: es el único locale que
+ * devuelve ISO (año-mes-día) de fábrica, y eso hace que dos fechas se puedan
+ * comparar con `===`. Comparar con `getDate()` sería leer el día del
+ * navegador: a las 8 p. m. de Colombia el `getDate()` de un equipo en UTC ya
+ * es el día siguiente, y "hoy" saldría "ayer".
+ */
+function diaEnColombia(d: Date): string {
+  return d.toLocaleDateString('en-CA', { timeZone: ZONA_CO });
+}
+
+/** Cuántos días de calendario colombiano hay entre `d` y hoy. 0 = hoy. */
+function diasDesdeHoy(d: Date): number {
+  const dia = diaEnColombia(d);
+  const hoy = diaEnColombia(new Date());
+  // Se restan como fechas puras (mediodía UTC, para no rozar ningún cambio de
+  // día) en vez de restar los instantes: entre las 11 p. m. y la 1 a. m. hay
+  // dos horas pero son días distintos, y lo que importa acá es el calendario.
+  const ms = Date.parse(`${hoy}T12:00:00Z`) - Date.parse(`${dia}T12:00:00Z`);
+  return Math.round(ms / 86400000);
+}
+
+/**
+ * Marca de tiempo de la lista de conversaciones, al estilo de WhatsApp: la
+ * hora si es de hoy, "Ayer" si es de ayer, y la fecha si es más vieja.
+ *
+ * Antes acá salía **siempre la hora sola**, y esa era la queja: un chat del
+ * 27 de agosto mostraba "12:33 p. m." sin más, que se lee como "hace un rato".
+ * La hora nunca estuvo mal calculada —el arreglo de zona ya estaba— pero sin
+ * el día la respuesta era engañosa igual.
+ */
+export function marcaDeTiempoLista(iso: string | null | undefined, fallback = ''): string {
+  const d = aInstante(iso);
+  if (!d) return fallback;
+
+  const dias = diasDesdeHoy(d);
+  if (dias <= 0) return horaCorta(iso, fallback);
+  if (dias === 1) return 'Ayer';
+  if (dias < 7) {
+    // "mié", "jue": dentro de la semana el nombre del día ubica mejor que un
+    // número, que es como lo resuelve cualquier app de mensajería.
+    return d.toLocaleDateString(LOCALE, { timeZone: ZONA_CO, weekday: 'short' });
+  }
+  if (dias < 365) {
+    return d.toLocaleDateString(LOCALE, {
+      timeZone: ZONA_CO,
+      day: '2-digit',
+      month: 'short',
+    });
+  }
+  return d.toLocaleDateString(LOCALE, {
+    timeZone: ZONA_CO,
+    day: '2-digit',
+    month: '2-digit',
+    year: '2-digit',
+  });
+}
+
+/**
+ * Encabezado del separador de día dentro del chat: "Hoy", "Ayer" o
+ * "miércoles, 27 de agosto de 2026".
+ *
+ * Sin esto, un historial de varios días es una fila de burbujas con horas
+ * sueltas: "9:14 a. m." debajo de "6:40 p. m." parece que el bot contestó
+ * antes de que le escribieran.
+ */
+export function encabezadoDeDia(iso: string | null | undefined, fallback = ''): string {
+  const d = aInstante(iso);
+  if (!d) return fallback;
+
+  const dias = diasDesdeHoy(d);
+  if (dias <= 0) return 'Hoy';
+  if (dias === 1) return 'Ayer';
+  return d.toLocaleDateString(LOCALE, {
+    timeZone: ZONA_CO,
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  });
+}
+
+/**
+ * ¿Los dos instantes caen el mismo día en Colombia? Es lo que decide dónde va
+ * un separador. Con fechas inválidas devuelve `true` para no inventar un corte
+ * donde no se sabe si lo hay.
+ */
+export function mismoDia(
+  a: string | null | undefined,
+  b: string | null | undefined,
+): boolean {
+  const da = aInstante(a);
+  const dbb = aInstante(b);
+  if (!da || !dbb) return true;
+  return diaEnColombia(da) === diaEnColombia(dbb);
+}

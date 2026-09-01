@@ -29,6 +29,11 @@ Dos detalles que no son obvios y que cuestan un mensaje no entregado:
      adjunto. Si ffmpeg no está (un dev sin rebuild), no se revienta: lo que ya
      viene en un formato aceptable pasa tal cual, y lo que no, se rechaza con
      un mensaje que dice qué hacer.
+
+     Lo mismo pasa con **`video/quicktime` (.mov)**, que es lo que graba un
+     iPhone y lo que exporta un Mac: entra a la lista blanca para poder
+     recibirlo y mostrarlo, pero sale convertido a MP4 (`transcodificar_a_mp4`).
+     En el bucket nunca queda un .mov.
   2. **El tipo se decide por la firma del archivo, no por el nombre ni por el
      `Content-Type`** que declara el navegador. Para imágenes y PDF la firma es
      obligatoria: si no coincide, no se guarda.
@@ -49,6 +54,7 @@ Dos detalles que no son obvios y que cuestan un mensaje no entregado:
 """
 from __future__ import annotations
 
+import json
 import logging
 import os
 import re
@@ -84,6 +90,11 @@ TIPOS_PERMITIDOS: Dict[str, Tuple[str, str]] = {
     "audio/webm": (AUDIO, ".webm"),
     "video/mp4": (VIDEO, ".mp4"),
     "video/3gpp": (VIDEO, ".3gp"),
+    # QuickTime (.mov) es lo que sale de un iPhone y de cualquier exportación de
+    # un Mac, así que es el video que una asesora tiene a mano. WhatsApp NO lo
+    # acepta: entra acá para poder recibirlo y se convierte a MP4 antes de
+    # mandarlo (ver `transcodificar_a_mp4`). En el bucket nunca queda un .mov.
+    "video/quicktime": (VIDEO, ".mov"),
     "application/pdf": (DOCUMENTO, ".pdf"),
     # Office y texto plano: son los que WhatsApp acepta como documento, ni uno
     # más. Un asesor manda un itinerario en Word o una cotización en Excel tan
@@ -156,6 +167,11 @@ CATEGORIAS_CON_CAPTION = (IMAGEN, VIDEO, DOCUMENTO)
 AUDIO_ACEPTADO_POR_WHATSAPP = frozenset(
     {"audio/ogg", "audio/mpeg", "audio/mp4", "audio/aac", "audio/amr"}
 )
+
+# Video que WhatsApp acepta tal cual. Los dos proveedores dicen lo mismo y es
+# una lista corta: MP4 y 3GP. Lo que no esté acá (hoy, `video/quicktime`) se
+# convierte antes de mandarlo.
+VIDEO_ACEPTADO_POR_WHATSAPP = frozenset({"video/mp4", "video/3gpp"})
 
 PREFIJO = "adjuntos"
 # Zona de tránsito de las subidas directas a S3. Es un prefijo aparte y no una
@@ -459,6 +475,28 @@ def borrar_subida(team_id: int, referencia: str) -> None:
 # navegador.
 _FTYP = "ftyp"
 
+# Marcas (`major_brand`) que SÍ dicen sin ambigüedad qué es el archivo. Van los
+# 4 bytes que siguen a `ftyp`.
+#
+# `qt  ` es la importante: es QuickTime, o sea un .mov. Sin esta tabla la firma
+# devolvía el sentinela y `_tipo_real` caía en su respaldo "un ftyp raro debe
+# ser un mp4" — así que un .mov de iPhone se guardaba **con extensión .mp4 y
+# etiquetado video/mp4** teniendo bytes de QuickTime adentro. Se subía sin
+# error y era WhatsApp quien lo rechazaba después.
+#
+# `isom`, `mp42`, `avc1` y compañía NO están acá a propósito: esas marcas las
+# comparten un mp4 de video y un m4a de solo audio, y ahí sigue mandando el
+# `Content-Type` como hasta ahora.
+_MARCAS_FTYP: Dict[bytes, str] = {
+    b"qt  ": "video/quicktime",
+    b"M4A ": "audio/mp4",
+    b"M4B ": "audio/mp4",
+    b"3gp4": "video/3gpp",
+    b"3gp5": "video/3gpp",
+    b"3gp6": "video/3gpp",
+    b"3g2a": "video/3gpp",
+}
+
 
 def _firma(data: bytes) -> Optional[str]:
     """El tipo real según los primeros bytes. `None` si no se reconoce.
@@ -494,7 +532,7 @@ def _firma(data: bytes) -> Optional[str]:
     if data.startswith(b"#!AMR"):
         return "audio/amr"
     if data[4:8] == b"ftyp":
-        return _FTYP
+        return _MARCAS_FTYP.get(data[8:12], _FTYP)
     if data.startswith(b"PK\x03\x04"):
         # docx / xlsx / pptx. Cuál de los tres es, lo dice el `Content-Type`.
         return _ZIP
@@ -619,6 +657,161 @@ def transcodificar_a_ogg(data: bytes) -> Optional[bytes]:
 
 
 # ---------------------------------------------------------------------------
+# Conversión de video (.mov → .mp4)
+# ---------------------------------------------------------------------------
+
+# Lo que WhatsApp exige **dentro** del MP4, que es distinto del contenedor:
+# H.264 de video y AAC de audio. Un .mov de iPhone grabado en "Alta eficiencia"
+# trae HEVC y no sirve aunque se reetiquete.
+_VIDEO_CODEC_OK = "h264"
+_AUDIO_CODECS_OK = frozenset({"aac", ""})  # "" = el archivo no trae audio
+
+# Dos presupuestos muy distintos, y la diferencia es la razón de todo el diseño
+# de abajo:
+#
+#   - Copiar las pistas a otro contenedor (remux) no decodifica nada: son
+#     milisegundos, sin importar cuánto dure el video.
+#   - Recodificar sí. Y esto corre en una task de Fargate de 0,25 vCPU, detrás
+#     de un API Gateway cuyo timeout de integración es de 30 s duros que AWS no
+#     deja subir sin pedir cuota. Por eso el tope es 20 s: pasado eso el asesor
+#     recibiría un 504 del gateway —un error que no explica nada— en vez del
+#     mensaje que le dice qué hacer con su archivo.
+_FFMPEG_REMUX_TIMEOUT = 20
+_FFMPEG_RECODIFICAR_TIMEOUT = 20
+
+
+def _codecs_de(ruta: Path) -> Optional[Tuple[str, str]]:
+    """`(codec de video, codec de audio)` según ffprobe. `None` si no se pudo.
+
+    El audio vacío significa "no tiene pista de audio", que para WhatsApp es
+    válido. Devolver `None` (ffprobe ausente o archivo ilegible) hace que el
+    llamador recodifique, que es la opción segura: convertir de más cuesta
+    tiempo, mandar HEVC cuesta un mensaje no entregado.
+    """
+    comando = [
+        "ffprobe", "-v", "error",
+        "-show_entries", "stream=codec_type,codec_name",
+        "-of", "json", str(ruta),
+    ]
+    try:
+        proceso = subprocess.run(
+            comando, capture_output=True, timeout=_FFMPEG_REMUX_TIMEOUT, check=False
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        logger.warning("adjuntos: ffprobe no disponible o no terminó a tiempo")
+        return None
+    if proceso.returncode != 0:
+        logger.error("adjuntos: ffprobe falló (rc=%s)", proceso.returncode)
+        return None
+    try:
+        streams = json.loads(proceso.stdout or b"{}").get("streams") or []
+    except (ValueError, TypeError):
+        return None
+
+    video = audio = ""
+    for stream in streams:
+        tipo = (stream.get("codec_type") or "").lower()
+        nombre = (stream.get("codec_name") or "").lower()
+        if tipo == "video" and not video:
+            video = nombre
+        elif tipo == "audio" and not audio:
+            audio = nombre
+    return video, audio
+
+
+def transcodificar_a_mp4(data: bytes) -> Optional[bytes]:
+    """Convierte un video a MP4 que WhatsApp acepte. `None` si no se pudo.
+
+    Dos caminos, y elegir bien el barato es lo que hace que esto quepa en el
+    request:
+
+      1. **Remux** cuando las pistas ya son H.264/AAC —el caso corriente: un
+         .mov de un Mac, o de un iPhone configurado en "Más compatible"—. Se
+         copian tal cual a un contenedor MP4. No se decodifica ni un frame, no
+         se pierde calidad y tarda lo que tarde leer el archivo.
+      2. **Recodificar** cuando no (HEVC, ProRes). Es caro, y en 0,25 vCPU un
+         video largo no termina dentro del timeout: por eso va a 720p con
+         `ultrafast`, y si aun así no alcanza se devuelve `None` para que el
+         asesor lea qué hacer en vez de esperar un 504.
+
+    `+faststart` en los dos: mueve el índice al principio del archivo. Quien
+    descarga esto es el servidor de Meta o el de Twilio, y con el índice al
+    final tiene que bajar el archivo entero antes de poder empezar.
+
+    Nunca levanta excepción, igual que `transcodificar_a_ogg`.
+    """
+    with tempfile.TemporaryDirectory(prefix="video-") as tmp:
+        entrada = Path(tmp) / "entrada"
+        salida = Path(tmp) / "salida.mp4"
+        entrada.write_bytes(data)
+
+        codecs = _codecs_de(entrada)
+        puede_copiarse = (
+            codecs is not None
+            and codecs[0] == _VIDEO_CODEC_OK
+            and codecs[1] in _AUDIO_CODECS_OK
+        )
+        if puede_copiarse:
+            comando = [
+                "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+                "-i", str(entrada),
+                "-c", "copy", "-movflags", "+faststart",
+                str(salida),
+            ]
+            tope = _FFMPEG_REMUX_TIMEOUT
+        else:
+            comando = [
+                "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+                "-i", str(entrada),
+                # `-2` mantiene la proporción y deja la altura par, que libx264
+                # exige. `min(1280,iw)` no agranda un video que ya sea chico.
+                #
+                # Se probó bajarlo a 854 para ganar tiempo y **no sirvió**:
+                # medido en la task real, un HEVC de 10 s a 720p tarda 15,4 s
+                # contra 15,7 s a 1280. El costo está en *decodificar* el HEVC,
+                # que pasa antes del escalado, así que achicar la salida no
+                # compra nada y sí se lleva calidad por delante. Lo que mueve
+                # esta aguja es más CPU en la task, no este número.
+                "-vf", "scale='min(1280,iw)':-2",
+                "-c:v", "libx264", "-preset", "ultrafast", "-crf", "28",
+                "-pix_fmt", "yuv420p",
+                "-c:a", "aac", "-b:a", "96k", "-ac", "2",
+                "-movflags", "+faststart",
+                str(salida),
+            ]
+            tope = _FFMPEG_RECODIFICAR_TIMEOUT
+
+        try:
+            proceso = subprocess.run(
+                comando, capture_output=True, timeout=tope, check=False
+            )
+        except FileNotFoundError:
+            logger.warning(
+                "adjuntos: ffmpeg no está instalado, no se puede convertir el video"
+            )
+            return None
+        except subprocess.TimeoutExpired:
+            logger.warning(
+                "adjuntos: la conversión de video no terminó en %ss (copia=%s)",
+                tope, puede_copiarse,
+            )
+            return None
+
+        if proceso.returncode != 0 or not salida.exists():
+            logger.error(
+                "adjuntos: ffmpeg falló al convertir video (rc=%s, copia=%s)",
+                proceso.returncode, puede_copiarse,
+            )
+            return None
+        convertido = salida.read_bytes()
+    logger.info(
+        "adjuntos: video convertido a mp4 %d -> %d bytes (copia=%s)",
+        len(data), len(convertido), puede_copiarse,
+    )
+    return convertido or None
+
+
+# ---------------------------------------------------------------------------
 # Validación
 # ---------------------------------------------------------------------------
 
@@ -631,8 +824,8 @@ _NOMBRES_CATEGORIA = {
 
 TEXTO_NO_PERMITIDO = (
     "Ese tipo de archivo no se puede enviar por WhatsApp. Puedes mandar "
-    "imágenes (JPG, PNG, WEBP), audio (MP3, OGG, M4A), video MP4 o documentos "
-    "(PDF, Word, Excel, PowerPoint, TXT o CSV)."
+    "imágenes (JPG, PNG, WEBP), audio (MP3, OGG, M4A), video (MP4 o MOV) o "
+    "documentos (PDF, Word, Excel, PowerPoint, TXT o CSV)."
 )
 
 
@@ -651,12 +844,25 @@ def texto_excede(categoria: str) -> str:
 
 
 def preparar(
-    data: bytes, content_type: Optional[str] = None, filename: Optional[str] = None
+    data: bytes,
+    content_type: Optional[str] = None,
+    filename: Optional[str] = None,
+    *,
+    convertir_video: bool = True,
 ) -> Tuple[Optional[Preparado], str]:
     """Valida el archivo y lo deja listo para guardar.
 
     Devuelve `(preparado, problema)`. `problema` es un texto **para el asesor**:
     dice qué pasó y qué hacer, sin filtrar nada del servidor.
+
+    `convertir_video=False` guarda el video tal como llegó, sin pasarlo por
+    ffmpeg. Lo usa **el camino entrante** (`guardar_entrante`), y no es una
+    optimización: ese código corre dentro del webhook, y Twilio da unos 15
+    segundos para contestarlo. Recodificar un HEVC puede tomar veinte, así que
+    convertir ahí cambiaría "el asesor ve un video que su navegador quizá no
+    reproduce" por "el webhook se pasa de tiempo y el mensaje se pierde" —
+    que es muchísimo peor. Lo entrante además no vuelve a salir hacia WhatsApp:
+    se guarda para *verlo* en la bandeja, y ahí el contenedor da igual.
     """
     if not data:
         return None, "El archivo llegó vacío."
@@ -713,6 +919,25 @@ def preparar(
                 "adjuntos: imagen comprimida %d -> %d bytes", len(data), len(comprimida)
             )
             data, mime, extension = comprimida, "image/jpeg", ".jpg"
+
+    if categoria == VIDEO and convertir_video and mime not in VIDEO_ACEPTADO_POR_WHATSAPP:
+        # Hoy esto es siempre `video/quicktime`: el .mov del iPhone o del Mac.
+        convertido = transcodificar_a_mp4(data)
+        if convertido is None:
+            return None, (
+                "No pudimos convertir ese video a un formato que WhatsApp acepte. "
+                "Si es muy largo o viene de un iPhone en «Alta eficiencia», "
+                "expórtalo como MP4 y vuelve a intentarlo."
+            )
+        data, mime, extension = convertido, "video/mp4", ".mp4"
+        if len(data) > LIMITES[VIDEO]:
+            # Convertir puede agrandar: un .mov de 11 MB copiado a MP4 pesa casi
+            # lo mismo, y ahí el tope se pasa por poco. Se avisa con el número
+            # real en vez de dejar que lo rechace WhatsApp.
+            return None, (
+                "El video pesa demasiado incluso convertido: el máximo es "
+                f"{LIMITES[VIDEO] // (1024 * 1024)} MB."
+            )
 
     if categoria == AUDIO and mime not in AUDIO_ACEPTADO_POR_WHATSAPP:
         # Hoy esto es siempre `audio/webm`: lo que graba el navegador.
@@ -788,8 +1013,14 @@ def guardar_entrante(
 
     Devuelve `None` si no se pudo: el webhook sigue igual y el mensaje se queda
     con su marcador. Perder una foto es feo; perder el turno del bot, peor.
+
+    El video se guarda **sin convertir** (`convertir_video=False`): esto corre
+    dentro del webhook y ffmpeg no cabe en ese presupuesto de tiempo. Ver
+    `preparar`.
     """
-    preparado, problema = preparar(data, content_type, filename)
+    preparado, problema = preparar(
+        data, content_type, filename, convertir_video=False
+    )
     if preparado is None:
         logger.info("adjuntos: entrante descartado (%s)", problema)
         return None

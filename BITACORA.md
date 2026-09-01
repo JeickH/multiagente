@@ -5756,3 +5756,169 @@ deploy `:73` era anterior—, pero el commit no dice lo que trae y el `git log`
 de esos dos archivos ahora miente. **Stagear por nombre, nunca `-A`, mientras
 haya más de una sesión sobre el mismo árbol.** Ver
 [[gotcha-sesiones-concurrentes-git]].
+
+---
+
+## Sprint 27 — Tres recordatorios, videos .mov y las horas de la bandeja (2026-08-31)
+
+Pedido del CEO, cinco cosas. Dos ya estaban hechas y desplegadas desde el
+Sprint 26 — se verificaron contra producción antes de tocar nada, y la
+verificación es el entregable:
+
+| Pedido | Estado |
+|---|---|
+| Que el asesor pueda cerrar una conversación | **Ya estaba** (Sprint 26). Se le agregó **Reabrir** |
+| Revisar la hora en la lista y en cada mensaje | Arreglado — pero el problema no era la hora |
+| Que el bot asigne sólo a Alexandra en Arranquemos Pues | **Ya estaba** (`asesores_rotacion=['Alexandra']`) |
+| Enviar y recibir videos .mov | Nuevo |
+| Recordatorios a los 15 min, 5 h y 23 h | Nuevo |
+
+### Lo de la hora nunca fue la hora
+
+`lib/fechas.ts` ya convertía bien: el backend serializa UTC sin marcarlo y
+`aInstante` le pone la `Z` que falta, todo con `timeZone: 'America/Bogota'`.
+Se comprobó contra RDS —`now()` en UTC, `last_message_at` coherente con el
+último `created_at` de cada conversación, hasta el milisegundo— y contra el
+front. **La conversión estaba bien desde el Sprint 25.**
+
+Lo que estaba mal era **que no se veía el día**. La lista pintaba
+`formatTime(last_message_at)`, o sea la hora sola: un chat del 27 de agosto
+decía «12:33 p. m.» y se leía como *hace un rato*. Con 380 conversaciones y la
+última actividad real del 27-ago (la cuenta estuvo suspendida), la bandeja
+entera parecía de hoy.
+
+- **Lista**: `marcaDeTiempoLista` — hoy la hora, ayer «Ayer», dentro de la
+  semana el día («jue»), más atrás la fecha, y el año si pasó de un año. Con el
+  dato exacto en el `title`.
+- **Chat**: separadores de día («Hoy», «Ayer», «jueves, 27 de agosto de 2026»).
+  Sin ellos, un historial de varios días es una fila de horas sueltas y
+  «9:14 a. m.» debajo de «6:40 p. m.» parece que el bot contestó antes de que
+  le escribieran.
+
+El corte del día se calcula **en Colombia**, no en el navegador
+(`toLocaleDateString('en-CA', {timeZone})`, el único locale que da ISO de
+fábrica y deja comparar con `===`). A las 9 p. m. de Colombia un equipo en UTC
+ya está en el día siguiente, y «hoy» habría salido «ayer». 19 pruebas nuevas en
+`lib/fechas.test.ts`, verdes con `TZ=UTC` y con `TZ=Asia/Tokyo`.
+
+### Cerrar ya estaba; lo que faltaba era deshacerlo
+
+El endpoint y el botón son del Sprint 26 y están desplegados. Lo que no había
+era vuelta atrás: un click de más y el asesor tenía que ir a buscar al dueño de
+la cuenta. Nuevo `POST /conversaciones/{id}/reabrir`, con el **mismo permiso**
+que cerrar (`can_reply_messages`) porque es la misma decisión al revés, y
+simétrico en lo que **no** hace: no toca `assigned_to`. Si reabrir devolviera el
+chat al bot, el motor se le metería encima al asesor que sólo se estaba
+corrigiendo.
+
+### Videos .mov
+
+El .mov es lo que graba un iPhone y lo que exporta un Mac, o sea el video que
+la asesora tiene a mano — y WhatsApp no lo acepta (sólo MP4 y 3GP). Entra a la
+lista blanca **para poder convertirlo**, y en el bucket nunca queda un .mov.
+
+**El bug de fondo era peor que un rechazo.** `_firma` miraba `ftyp` y devolvía
+un sentinela «es un ISO-BMFF cualquiera»; `_tipo_real` caía entonces en su
+respaldo *«un ftyp raro debe ser un mp4»*. Un .mov entrante se guardaba **con
+extensión `.mp4` y etiquetado `video/mp4` teniendo bytes de QuickTime adentro**.
+Nada fallaba de este lado: lo rechazaba WhatsApp después. Ahora la firma lee la
+marca del contenedor (`qt  `, `M4A `, `3gp4`…). `isom`/`mp42` siguen siendo
+ambiguas a propósito: las comparten un mp4 de video y un m4a de sólo audio.
+
+Dos caminos, y elegir bien el barato es lo que hace que quepa en el request:
+
+| Caso | Qué se hace | Medido en la task real |
+|---|---|---|
+| H.264 + AAC (Mac, iPhone «Más compatible») | **Copiar** las pistas a MP4 | **~1,4 s**, igual con 10 s que con 60 s de video |
+| HEVC, ProRes (iPhone «Alta eficiencia») | Recodificar a H.264 | 10 s de 720p → **15,4 s**; 20 s → **no alcanza** |
+
+Copiar no decodifica un solo frame: es tiempo constante y sin pérdida de
+calidad. Recodificar sí, y esto corre en **0,25 vCPU detrás de un API Gateway
+con 30 s de timeout de integración** (verificado: `TimeoutInMillis: 30000`, y
+AWS no deja subirlo sin pedir cuota). De ahí el tope de 20 s: pasado eso el
+asesor recibiría un 504 que no explica nada, en vez del mensaje que le dice qué
+hacer con su archivo.
+
+> **Se probó bajar la salida del recodificado de 720p a 480p para ganar tiempo y
+> no sirvió**: 15,4 s contra 15,7 s, dentro del ruido. El costo está en
+> *decodificar* el HEVC, que pasa **antes** del escalado. Se revirtió: achicar
+> la salida no compraba nada y sí se llevaba calidad. Lo que mueve esa aguja es
+> CPU, no ese número.
+
+**Lo entrante NO se convierte** (`preparar(convertir_video=False)`). No es una
+optimización: `guardar_entrante` corre dentro del webhook y Twilio da ~15
+segundos para contestarlo. Convertir ahí cambiaría «el asesor ve un video que su
+navegador quizá no reproduce» por «el webhook se pasa de tiempo y el mensaje se
+pierde». Además lo entrante no vuelve a salir hacia WhatsApp: se guarda para
+*verlo*, y ahí el contenedor da igual.
+
+Verificado end-to-end **dentro de la imagen desplegada**, generando .mov de
+verdad con ffmpeg: un H.264 sale `h264/aac` en MP4 en 0,6 s y un HEVC sale
+recodificado a `h264/aac`. El mp4 de siempre no cambia de camino (hay un test
+que revienta si alguien lo manda por ffmpeg).
+
+### Tres recordatorios en vez de uno
+
+Antes: silencio → recordatorio a los 15 min → 15 min más → etiqueta y a la
+bandeja de la asesora. Ahora **15 min, 5 h y 23 h**, y sólo después de ese
+último la conversación se etiqueta y se entrega. Decisión del CEO tras ver las
+dos opciones: el bot insiste mientras el chat es suyo, y el lead llega a la
+bandeja de Alexandra a las ~23 h en vez de a los 30 min.
+
+Las **23 h no son un número redondo por casualidad**: WhatsApp sólo deja mandar
+texto libre dentro de las 24 horas siguientes al último mensaje del cliente.
+A las 24 en punto haría falta una plantilla aprobada por Meta y el mensaje
+saldría `failed` sin que nadie se entere. La hora de margen absorbe el retraso
+del tick.
+
+Los tres textos son **distintos** (también decisión del CEO): el mismo párrafo
+calcado tres veces en un día se lee como un bot trabado. El tercero se despide,
+porque es el último que sale.
+
+Dos detalles de implementación que no son obvios:
+
+- **La etapa viaja en `bot_pending_actions.payload`**, una columna que ya
+  existía y estaba sin usar. Es lo que permite encadenar tres reenganches **sin
+  migrar la tabla** — este sprint no tocó el schema.
+- **No se deduce contando las acciones ya procesadas**, que era lo tentador:
+  `_cancelar_pendientes` marca `done` también las que *cancela*, así que quien
+  contesta y se vuelve a callar arrancaría en la etapa 2 y se saltaría los dos
+  primeros recordatorios. Hay un test que fija justo eso.
+
+Va detrás de la config del bot (`llm_config.seguimiento.recordatorios`), o sea
+**sólo Arranquemos Pues**. Un bot sin la lista —mascotas, el institucional—
+conserva exactamente el comportamiento de #377: un recordatorio y listo. Hay un
+test para eso también.
+
+### Pruebas y deploy
+
+**1253 passed**, 103 skipped (33 nuevas: 24 de video .mov, 6 de la cadena de
+recordatorios, 3 de reabrir). Frontend: **66 passed** (19 nuevas de fechas) y
+`tsc --noEmit` limpio. Todo corrido con `TZ=UTC` para reproducir el CI.
+
+Orden backend → Amplify, como manda el Sprint 24, y esta vez era literal: la UI
+nueva llama a `/reabrir`, que no existía. Imagen `:sprint27-mov-recordatorios`,
+**task-def rev 77**, rollout COMPLETED, `/mensajes/conversaciones/{id}/reabrir`
+verificado en el `openapi.json` de producción. Sin migración: no hubo cambio de
+schema.
+
+La config del bot se aplicó aparte con `actualizar_bot_viajes.py` contra RDS y
+se verificó leyendo la base — el código no enciende los flags, viven en la DB
+(ver [[gotcha-config-bot-dormida-en-db]]): `jsonb_array_length(...) = 3`.
+
+Task-def backend: **rev 77** (imagen `:sprint27-mov-recordatorios`).
+
+### Follow-ups abiertos
+
+1. **Un HEVC de más de ~15 s no se puede mandar.** El asesor recibe un mensaje
+   que le dice que lo exporte como MP4, así que degrada bien, pero la solución
+   de verdad es subir la task de 0,25 a 0,5 vCPU (de ~US$10 a ~US$20/mes de
+   ECS). Queda a decisión del CEO.
+2. **512 MB de RAM son justos para video.** Generando un fixture de 1080p, el
+   contenedor mató al ffmpeg por OOM. Nuestro camino degrada bien (el
+   `returncode != 0` se traduce en el mensaje al asesor y la API sobrevive,
+   porque el que muere es el proceso hijo), pero es el mismo techo del punto 1.
+3. **HEVC dentro de un `.mp4`** sigue sin convertirse: sólo se mira el
+   contenedor, no el códec, para no meter por ffmpeg el camino del mp4 que hoy
+   funciona. Si aparece un caso real, se prueba con ffprobe antes de tocarlo.
+4. Sigue abierto lo del Sprint 26: **no hay alerta de saldo de Twilio.**

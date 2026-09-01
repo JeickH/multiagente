@@ -53,8 +53,12 @@ const REGLAS: Regla[] = [
   {
     clase: 'video',
     etiqueta: 'Video',
-    mimes: ['video/mp4', 'video/3gpp'],
-    extensiones: ['mp4', '3gp', '3gpp'],
+    // `video/quicktime` (.mov) es lo que sale de un iPhone y de un Mac.
+    // WhatsApp no lo acepta, pero el backend lo convierte a MP4 antes de
+    // enviarlo, así que acá se deja pasar: rebotarlo en el navegador dejaría
+    // a la asesora sin poder mandar el video que tiene a mano.
+    mimes: ['video/mp4', 'video/3gpp', 'video/quicktime'],
+    extensiones: ['mp4', '3gp', '3gpp', 'mov', 'qt'],
     maxBytes: 12 * MB,
   },
   {
@@ -94,6 +98,7 @@ export const ACCEPT_ADJUNTO = [
   'image/webp',
   'video/mp4',
   'video/3gpp',
+  'video/quicktime',
   'audio/ogg',
   'audio/mpeg',
   'audio/mp4',
@@ -105,6 +110,7 @@ export const ACCEPT_ADJUNTO = [
   '.png',
   '.webp',
   '.mp4',
+  '.mov',
   '.3gp',
   '.ogg',
   '.oga',
@@ -226,7 +232,7 @@ export function validarAdjunto(archivo: File): Validacion {
       estado: 'rechazado',
       motivo:
         'WhatsApp no acepta ese tipo de archivo. Puedes enviar imágenes (JPG, PNG, WEBP), ' +
-        'audio (OGG, MP3, M4A, AAC), video MP4 o documentos (PDF, Word, Excel, ' +
+        'audio (OGG, MP3, M4A, AAC), video (MP4 o MOV) o documentos (PDF, Word, Excel, ' +
         'PowerPoint, TXT o CSV).',
     };
   }
@@ -343,7 +349,7 @@ export function mensajeDeErrorEnvio(status: number, detalle?: unknown): string {
 
   switch (status) {
     case 400:
-      return 'El archivo no se pudo enviar: revisa que sea una imagen, un audio, un video MP4 o un documento (PDF, Word, Excel).';
+      return 'El archivo no se pudo enviar: revisa que sea una imagen, un audio, un video (MP4 o MOV) o un documento (PDF, Word, Excel).';
     case 401:
       return 'Tu sesión venció. Vuelve a entrar para seguir respondiendo.';
     case 403:

@@ -161,6 +161,42 @@ def close_conversation(
     return _conversacion_out(db, member, conv)
 
 
+@router.post("/conversaciones/{conversation_id}/reabrir", response_model=schemas.ConversationOut)
+def reopen_conversation(
+    conversation_id: int,
+    db: Session = Depends(get_db),
+    member: models.TeamMember = Depends(require_permission("can_reply_messages")),
+):
+    """Deshace un cierre: la conversación vuelve a `open`.
+
+    Va con el mismo permiso que cerrar y no con el del owner, porque es
+    exactamente la misma decisión mirada al revés. Sin esto, cerrar era un
+    camino de una sola dirección: un click de más y el asesor no tenía cómo
+    recuperar el chat en su bandeja — para volver a abrirlo había que ir a
+    buscar al dueño de la cuenta.
+
+    Es simétrico de `close_conversation` y por el mismo motivo: **no toca
+    `assigned_to`**. Reabrir es sobre el estado, no sobre quién atiende; si
+    reabrir devolviera el chat al bot, el motor se le metería encima al asesor
+    que solo quería corregirse.
+    """
+    conv = crud.get_conversation(db, member.team_id, conversation_id)
+    if not conv:
+        raise HTTPException(status_code=404, detail="Conversación no encontrada")
+
+    conv.status = "open"
+    db.add(conv)
+    db.commit()
+    db.refresh(conv)
+    logger.info(
+        "conversacion.reabierta id=%s team_id=%s user_id=%s",
+        conv.id,
+        member.team_id,
+        member.user_id,
+    )
+    return _conversacion_out(db, member, conv)
+
+
 @router.get("/asesores", response_model=List[str])
 def list_assignees(
     db: Session = Depends(get_db),

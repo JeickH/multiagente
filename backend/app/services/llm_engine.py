@@ -137,7 +137,8 @@ def _parse_llm_config(bot) -> Dict[str, Any]:
 # comportamiento, que es exactamente lo que pasó con el aviso de "no leo
 # imágenes" (commit 1a7d385) y por eso esa regla vive en el contexto del bot.
 #
-#   "seguimiento":     {"minutos": 15, "etiqueta_abandono": "conversación abandonada"}
+#   "seguimiento":     {"minutos": 15, "etiqueta_abandono": "conversación abandonada",
+#                       "recordatorios": [{"minutos": 15, "texto": "…"}, …]}
 #   "recordar_nombre": true
 #   "retomar":         {"horas": 24}
 
@@ -184,6 +185,63 @@ def etiqueta_de_abandono(seg: Optional[Dict[str, Any]]) -> str:
 
 def texto_de_seguimiento(seg: Optional[Dict[str, Any]]) -> str:
     return str((seg or {}).get("texto") or TEXTO_SEGUIMIENTO_DEFAULT)
+
+
+def recordatorios_de(seg: Optional[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Los reenganches de silencio, en orden y ya normalizados.
+
+    Cada elemento es `{"minutos": int, "texto": str}` y **`minutos` se cuenta
+    desde que empezó el silencio**, no desde el recordatorio anterior. Es la
+    forma en que se piensa la política ("a los 15 minutos, a las 5 horas y a
+    las 23") y evita el error de leer una lista `[15, 285, 1080]` como si
+    fueran offsets absolutos. Quien agenda calcula la diferencia.
+
+    Sin `recordatorios` configurados devuelve **un solo** reenganche con los
+    valores de siempre, que es el comportamiento desplegado desde #377: el bot
+    de mascotas y el institucional no declaran la lista y no deben cambiar.
+
+    Las 23 horas del último no son un número redondo por casualidad: WhatsApp
+    solo deja escribir texto libre dentro de las 24 horas siguientes al último
+    mensaje del cliente. Pasada esa ventana haría falta una plantilla aprobada
+    por Meta, así que un recordatorio a las 25 horas no llegaría — saldría
+    `failed` y nadie se enteraría.
+    """
+    crudos = (seg or {}).get("recordatorios")
+    if not isinstance(crudos, list) or not crudos:
+        return [
+            {
+                "minutos": minutos_de_seguimiento(seg),
+                "texto": texto_de_seguimiento(seg),
+            }
+        ]
+
+    etapas: List[Dict[str, Any]] = []
+    for item in crudos:
+        if not isinstance(item, dict):
+            continue
+        try:
+            minutos = max(1, int(item.get("minutos") or SEGUIMIENTO_MINUTOS_DEFAULT))
+        except (TypeError, ValueError):
+            minutos = SEGUIMIENTO_MINUTOS_DEFAULT
+        etapas.append(
+            {
+                "minutos": minutos,
+                "texto": str(item.get("texto") or TEXTO_SEGUIMIENTO_DEFAULT),
+            }
+        )
+    if not etapas:
+        return recordatorios_de(None)
+
+    # Orden y sin repetidos: dos etapas al mismo minuto son dos mensajes
+    # seguidos al mismo segundo, que se lee como un bot roto. Con la lista
+    # ordenada, además, la resta que hace `bot_runner` nunca es negativa.
+    etapas.sort(key=lambda e: e["minutos"])
+    unicas: List[Dict[str, Any]] = []
+    for etapa in etapas:
+        if unicas and etapa["minutos"] == unicas[-1]["minutos"]:
+            continue
+        unicas.append(etapa)
+    return unicas
 
 
 def horas_para_retomar(bot_o_cfg) -> Optional[float]:
