@@ -6031,6 +6031,31 @@ La última prueba es la que vale: recorre Amplify → rewrite → `api.glomacx.c
 → API Gateway → VPC Link → Cloud Map → ECS → FastAPI, y vuelve con el error
 sanitizado.
 
+### El "no me funciona el login" de después del despliegue
+
+Reportado por el CEO al terminar la mudanza. **El login nunca se rompió**, y la
+prueba que lo zanja es cruzada: `demo@gmail.com` con su password documentada da
+401 **también contra `api.glomabeauty.com`**, que no se tocó en todo el sprint
+— o sea que esa credencial ya estaba vencida desde antes. En paralelo,
+`talulah@gloma.com` y `recuperatumascota@gmail.com` con sus passwords rotadas
+en agosto entran con 200 por `app.glomacx.com`. El CEO confirmó poco después
+que entraba bien con la cuenta de Arranquemos Pues.
+
+Lo que sí pasa de verdad, y hay que decirlo antes de que lo reporten:
+
+1. **La mudanza de dominio cierra la sesión de todo el mundo.** El token vive en
+   `localStorage`, que es por **origen**: `app.glomabeauty.com` y
+   `app.glomacx.com` son orígenes distintos, así que el token guardado no viaja.
+   Todos los usuarios activos aparecen en el login una vez. Es inevitable en
+   cualquier cambio de dominio, no es un defecto del código.
+2. **El gestor de contraseñas del navegador no autocompleta en el dominio
+   nuevo**, por lo mismo: las credenciales guardadas están atadas al origen
+   viejo. Quien entraba por autocompletar se queda mirando un formulario vacío,
+   y eso se siente exactamente como "no me funciona el login".
+
+Moraleja para la próxima migración de dominio: avisar del cierre de sesión
+**antes** de desplegar el redirect, no después.
+
 ### Pieza de comunicación
 
 `identidad_gloma/redes sociales/cambio-dominio-glomacx.jpg` (1080×1080 @2x),
