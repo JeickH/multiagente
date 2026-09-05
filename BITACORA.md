@@ -6238,3 +6238,32 @@ Y en el panel de Wompi, apuntar el webhook a
 
 Con las de sandbox (`pub_test_`/`prv_test_`) se puede probar el flujo entero
 sin cobrar un peso: `python backend/scripts/probar_suscripcion_sandbox.py`.
+
+### La prueba en producción encontró un defecto (2026-09-05)
+
+El CEO pidió comprobar en la web que todo hubiera quedado bien. Se probó con
+un navegador real (Chrome headless por CDP, sesión sembrada en `localStorage`)
+contra `https://app.glomacx.com/pagos`.
+
+**Lo que funcionó:** el panel muestra "Plan mensual Gloma", el estado
+**"Pendiente por activar"**, "$ 350.000 / mes" y el botón "Activar suscripción"
+deshabilitado con su aviso; el paquete quedó en **$ 230.000** y el de 5.000 ya
+no aparece; el modal de segunda confirmación viajó en el bundle. Y por API:
+el catálogo, el estado, los siete guardarraíles (503 sin llaves, 400 sin
+aceptar términos, 409 al cancelar sin suscripción, 401 sin sesión, 403 en el
+webhook sin firma) y que la respuesta **no filtra** `payment_source_id` ni
+`customer_email`.
+
+**Lo que no:** la primera carga dejó la sección en "Cargando…" para siempre.
+La causa no estaba en el backend —CloudWatch no tiene un solo 500, todo eran
+200/401/503—: **el 500 lo devolvía el SSR de Next en Amplify** en su primera
+petición al rewrite `/api/*`, por arranque en frío. El panel trataba ese fallo
+como si siguiera cargando.
+
+Duele porque es exactamente lo que ve quien entra a la plataforma después de
+unas horas: la primera carga del día. Arreglado (`1946b48`): reintenta una vez
+a los 1,5 s y, si vuelve a fallar, muestra el error con un botón de reintentar
+en vez de un "Cargando…" que no lleva a ninguna parte.
+
+Moraleja: los 1.309 tests pasaban y la API respondía bien. Lo que faltaba era
+**abrir la pantalla**.
