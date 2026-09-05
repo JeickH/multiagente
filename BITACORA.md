@@ -5922,3 +5922,98 @@ Task-def backend: **rev 77** (imagen `:sprint27-mov-recordatorios`).
    contenedor, no el códec, para no meter por ffmpeg el camino del mp4 que hoy
    funciona. Si aparece un caso real, se prueba con ffprobe antes de tocarlo.
 4. Sigue abierto lo del Sprint 26: **no hay alerta de saldo de Twilio.**
+
+---
+
+## Sprint 28 — La marca se muda a glomacx.com (2026-09-05)
+
+El CEO compró `glomacx.com` y pidió mudar todo: landing, plataforma y correo.
+El dominio viejo `glomabeauty.com` no se apaga — **redirecciona** al nuevo por
+un tiempo, para que nadie que ya usa la plataforma se quede afuera.
+`mascotasperdidascolombia.com` **no se toca**: es un domain association aparte
+en el mismo Amplify, con su propio CloudFront.
+
+### La regla que ordenó todo el sprint
+
+El redirect es lo único de esta mudanza que **rompe producción si se hace en el
+orden equivocado**. Un 301 de `glomabeauty.com` → `glomacx.com` desplegado antes
+de que `glomacx.com` resuelva con HTTPS no degrada: manda a todos los usuarios
+—los de la landing y los de la plataforma— a un dominio muerto, y el dominio
+viejo ya no los atiende porque justamente lo acaba de reemplazar el redirect.
+De ahí las dos fases, y de ahí que el commit de la fase 1 sea deliberadamente
+aditivo.
+
+### `api.glomabeauty.com` NO redirecciona
+
+Decisión explícita, distinta de la de la landing y la app. Un redirect HTTP
+sobre una API rompe clientes: buena parte de las librerías HTTP no reenvían el
+header `Authorization` a través de un redirect cross-origin (es una protección
+contra fuga de credenciales), y muchas convierten el `POST` en `GET` al seguir
+un 301, perdiendo el body. Además `BACKEND_URL` se hornea en tiempo de build
+(ver [[gotcha-backend-url-build-time]]), así que todo navegador con la app ya
+cargada seguiría pegándole al host viejo.
+
+`api.glomacx.com` se agrega como **segundo dominio del mismo API Gateway**, con
+su propio cert. Los dos hosts sirven el mismo backend, en paralelo, sin
+redirect entre ellos.
+
+### Fase 1 — hecha y desplegada (commit `452b354`)
+
+Aditiva: `glomabeauty.com` sigue funcionando idéntico y ningún usuario nota
+nada. Lo único que hace es que, en el instante en que el DNS delegue,
+`glomacx.com` sirva **la landing** y no la plataforma — si el código no
+estuviera desplegado, el apex nuevo caería en el passthrough del middleware y
+mostraría la plataforma.
+
+- `middleware.ts`: `glomacx.com` y `www.glomacx.com` entran a `GLOMA_HOSTS`;
+  `app.glomacx.com` cae en el passthrough, igual que `app.glomabeauty.com`
+- `_app.tsx`: los dos hosts públicos nuevos entran a `PUBLIC_HOSTS`
+- `404.tsx`: el chequeo de host normaliza el `www` y cubre los dos dominios
+  (equivalente al anterior para los hosts que ya existían)
+
+### Infraestructura ya montada (inerte hasta la delegación)
+
+| Pieza | Estado |
+|---|---|
+| Hosted zone `glomacx.com` | `Z06268479Z66S57UBVCL` |
+| Cert ACM `api.glomacx.com` (sa-east-1) | `f72be33d-11c9-4ebf-ae26-d11bd9cbfd15`, PENDING_VALIDATION |
+| Domain association Amplify (apex + www + app) | PENDING_VERIFICATION |
+| WorkMail: dominio `glomacx.com` registrado | ownership + DKIM PENDING |
+| Registros en la zona | 8 de WorkMail (MX, SPF, DMARC, 3×DKIM, autodiscover, `_amazonses`) + validación ACM. Amplify escribió los suyos solo (A del apex, `www`, `app`, su CNAME de validación) |
+
+Todo queda PENDING porque `glomacx.com` todavía resuelve por los NS del
+registrador, no por Route 53.
+
+### Bloqueo: los nameservers
+
+El dominio **no está registrado en Route 53** (`list-domains` vuelve vacío),
+igual que `glomabeauty.com` (HostGator) y `mascotasperdidascolombia.com`
+(Hostinger). El CEO tiene que ponerlos en el panel del registrador:
+
+```
+ns-919.awsdns-50.net
+ns-72.awsdns-09.com
+ns-1677.awsdns-17.co.uk
+ns-1241.awsdns-27.org
+```
+
+### Fase 2 — pendiente, sólo cuando `glomacx.com` responda HTTPS
+
+1. Verificar: cert ISSUED, domain association AVAILABLE, WorkMail VERIFIED
+2. `api.glomacx.com` como segundo dominio del API Gateway `pmg6lfu9cj`
+3. Mudar el buzón: `update-primary-email-address` a `contacto@glomacx.com`
+   (conserva el histórico del buzón) y **desactivar** el de `glomabeauty.com`,
+   por instrucción explícita del CEO
+4. Código: redirect 301 de los hosts viejos, `APP_URL` de la landing, y el
+   correo de contacto del footer
+5. Env vars de Amplify → `https://api.glomacx.com` + rebuild
+
+### Riesgo asumido, dicho de frente
+
+El CEO pidió **desactivar** el correo viejo, no dejarlo como alias. Se le
+advirtió que `contacto@glomabeauty.com` está publicado en el footer de la
+landing y en las piezas de Instagram ya publicadas, y que quien escriba a esa
+dirección después del apagón recibe un rebote sin que nadie en Gloma se entere.
+Confirmó la decisión y pidió cambiar la dirección en la landing. Queda
+registrado acá porque las piezas de Instagram ya publicadas **no se pueden
+editar** y van a seguir mostrando la dirección vieja.
