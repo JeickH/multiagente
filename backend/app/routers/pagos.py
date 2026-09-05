@@ -45,7 +45,6 @@ from ..schemas import (
     EstadoPagoOut,
     CompraOut,
     PagosAccesoOut,
-    PaqueteDesgloseOut,
     PaqueteOut,
     PaquetesOut,
     SaldoOut,
@@ -153,8 +152,11 @@ def check_access(
 
 
 def _paquete_out(p: svc_creditos.Paquete) -> PaqueteOut:
-    desglose = svc_creditos.desglose_paquete(p.key)
-    assert desglose is not None  # viene del propio catálogo
+    """El paquete tal como lo ve el cliente: nombre, precio y nada más.
+
+    El desglose de costos ya no sale (ver `PaqueteOut`). Sigue calculándose en
+    `creditos.desglose_paquete()` para auditar el precio desde el código.
+    """
     return PaqueteOut(
         key=p.key,
         nombre=p.nombre,
@@ -165,18 +167,6 @@ def _paquete_out(p: svc_creditos.Paquete) -> PaqueteOut:
         precio_por_mensaje_cop=p.precio_por_mensaje_cop,
         currency=p.currency,
         link_pago=p.link_pago,
-        desglose=PaqueteDesgloseOut(
-            costo_cop=desglose["costo_cop"],
-            margen_objetivo_cop=desglose["margen_objetivo_cop"],
-            neto_objetivo_cop=desglose["neto_objetivo_cop"],
-            comision_wompi_cop=desglose["comision_wompi_cop"],
-            neto_real_cop=desglose["neto_real_cop"],
-            margen_real_cop=desglose["margen_real_cop"],
-            margen_real_pct=desglose["margen_real_pct"],
-            trm=desglose["trm"],
-            trm_fecha=desglose["trm_fecha"],
-            costo_usd_por_mensaje=desglose["costo_usd_por_mensaje"],
-        ),
     )
 
 
@@ -184,10 +174,11 @@ def _paquete_out(p: svc_creditos.Paquete) -> PaqueteOut:
 def listar_paquetes(
     member: models.TeamMember = Depends(require_billing_admin),
 ) -> PaquetesOut:
-    """Catálogo con precios y el desglose de en qué se va cada peso.
+    """Los paquetes a la venta, con su precio.
 
-    El desglose (costo, margen, comisión de Wompi) es información de costos
-    del negocio: sale acá porque el endpoint ya es solo para administradores.
+    Sin el desglose de costos: aunque el endpoint sea solo para
+    administradores, el administrador de una cuenta **es el cliente**, y el
+    costo de los mensajes y el margen son datos de Gloma, no suyos.
     """
     return PaquetesOut(
         paquetes=[_paquete_out(p) for p in svc_creditos.catalogo()],

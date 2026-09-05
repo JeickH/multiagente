@@ -788,28 +788,19 @@ class PagosAccesoOut(BaseModel):
     allowed: bool
 
 
-class PaqueteDesgloseOut(BaseModel):
-    """En qué se va cada peso del precio de un paquete.
-
-    Va en el catálogo para que el CEO pueda auditar el precio desde la
-    pantalla, sin abrir el código. Es información de costos del negocio, así
-    que solo la ve un administrador — el endpoint que la sirve exige
-    `can_manage_billing`.
-    """
-    costo_cop: int
-    margen_objetivo_cop: int
-    neto_objetivo_cop: int
-    comision_wompi_cop: int
-    neto_real_cop: int
-    margen_real_cop: int
-    margen_real_pct: float
-    trm: float
-    trm_fecha: str
-    costo_usd_por_mensaje: float
-
-
 class PaqueteOut(BaseModel):
-    """Un paquete del catálogo. El precio ya viene calculado del servidor."""
+    """Un paquete del catálogo. El precio ya viene calculado del servidor.
+
+    **Sin desglose de costos** (5-sep-2026, decisión del CEO). Antes salía de
+    acá el detalle de en qué se iba cada peso — costo de los mensajes, comisión
+    de la pasarela, TRM — y la pantalla lo mostraba tras un "ver en qué se va
+    el valor". Se quitó del schema y no solo de la pantalla: ocultarlo en el
+    frontend habría dejado los costos viajando igual al navegador, a un
+    `DevTools` de distancia de cualquier cliente.
+
+    El cálculo sigue vivo en `services/creditos.desglose_paquete()`, para
+    auditar el precio desde el código o un script. Ahí no lo ve un cliente.
+    """
     key: str
     nombre: str
     descripcion: str
@@ -822,7 +813,6 @@ class PaqueteOut(BaseModel):
     #: un secreto: es una página pública de cobro. Cuando viene, el frontend
     #: manda al usuario ahí en vez de armar el checkout por API.
     link_pago: Optional[str] = None
-    desglose: PaqueteDesgloseOut
 
 
 class PaquetesOut(BaseModel):

@@ -686,6 +686,18 @@ class TestNoFiltraSecretos:
         assert "customer_email" not in crudo
         assert "duena@ejemplo.com" not in crudo
 
+    def test_el_catalogo_no_expone_los_costos_del_negocio(self, admin):
+        """El desglose (costo, margen, TRM) se retiró el 5-sep-2026.
+
+        El endpoint es solo para administradores, pero el administrador de una
+        cuenta **es el cliente**: mostrarle en qué se va cada peso es enseñarle
+        el margen de Gloma. Ocultarlo solo en la pantalla no habría servido —
+        seguiría viajando al navegador, a un DevTools de distancia.
+        """
+        crudo = admin.get("/pagos/paquetes").text
+        for filtrado in ("desglose", "costo_cop", "margen", "trm", "neto_real"):
+            assert filtrado not in crudo, f"«{filtrado}» volvió al catálogo"
+
     def test_el_repr_del_modelo_redacta(self, db, team):
         sub = models.Subscription(
             team_id=team["team"].id,

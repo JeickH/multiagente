@@ -23,15 +23,6 @@ import Layout from '../components/Layout';
 import SuscripcionPanel from '../components/SuscripcionPanel';
 import { ApiError, authedFetch } from '../lib/api';
 
-type Desglose = {
-  costo_cop: number;
-  margen_objetivo_cop: number;
-  comision_wompi_cop: number;
-  neto_real_cop: number;
-  trm?: number;
-  trm_fecha?: string;
-};
-
 type Paquete = {
   key: string;
   nombre: string;
@@ -43,7 +34,6 @@ type Paquete = {
   currency: string;
   /** Link de pago creado a mano en Wompi. Si viene, manda ahí directo. */
   link_pago: string | null;
-  desglose: Desglose;
 };
 
 type Compra = {
@@ -107,7 +97,6 @@ export default function Pagos() {
   const [saldo, setSaldo] = useState<Saldo | null>(null);
   const [comprando, setComprando] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [verDetalle, setVerDetalle] = useState<string | null>(null);
 
   // ¿Volvemos de Wompi? El id de la transacción llega por query string.
   const volviendoDePago = Boolean(router.query.id || router.query.ref);
@@ -213,9 +202,6 @@ export default function Pagos() {
           <h1 className="font-heading text-2xl md:text-3xl font-extrabold text-gloma-brown-dark">
             Pagos y créditos
           </h1>
-          <p className="text-sm text-gloma-brown-light mt-1">
-            Cada mensaje de un envío masivo consume un crédito. Aquí recargas.
-          </p>
         </div>
 
         {error && (
@@ -331,35 +317,6 @@ export default function Pagos() {
                     </button>
                   )}
 
-                  <button
-                    type="button"
-                    onClick={() => setVerDetalle(verDetalle === p.key ? null : p.key)}
-                    className="mt-2 text-xs underline text-gloma-brown-light hover:text-gloma-brown-dark"
-                  >
-                    {verDetalle === p.key ? 'Ocultar detalle' : 'Ver en qué se va el valor'}
-                  </button>
-
-                  {verDetalle === p.key && (
-                    <dl className="mt-3 text-xs text-gloma-brown-dark bg-gloma-cream rounded-lg p-3 space-y-1">
-                      <div className="flex justify-between">
-                        <dt>Costo de los mensajes</dt>
-                        <dd>{COP.format(p.desglose.costo_cop)}</dd>
-                      </div>
-                      <div className="flex justify-between">
-                        <dt>Comisión de la pasarela</dt>
-                        <dd>{COP.format(p.desglose.comision_wompi_cop)}</dd>
-                      </div>
-                      <div className="flex justify-between font-semibold border-t border-gloma-brown-light/20 pt-1">
-                        <dt>Total que pagas</dt>
-                        <dd>{COP.format(p.amount_cop)}</dd>
-                      </div>
-                      {p.desglose.trm_fecha && (
-                        <p className="text-[10px] text-gloma-brown-light pt-1">
-                          Calculado con la TRM del {p.desglose.trm_fecha}.
-                        </p>
-                      )}
-                    </dl>
-                  )}
                 </div>
               ))}
             </div>
