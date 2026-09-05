@@ -5997,16 +5997,47 @@ ns-1677.awsdns-17.co.uk
 ns-1241.awsdns-27.org
 ```
 
-### Fase 2 — pendiente, sólo cuando `glomacx.com` responda HTTPS
+### Fase 2 — hecha (commit `c80275d`, merge `5acb6ef`, builds 139 y 140)
 
-1. Verificar: cert ISSUED, domain association AVAILABLE, WorkMail VERIFIED
-2. `api.glomacx.com` como segundo dominio del API Gateway `pmg6lfu9cj`
-3. Mudar el buzón: `update-primary-email-address` a `contacto@glomacx.com`
-   (conserva el histórico del buzón) y **desactivar** el de `glomabeauty.com`,
-   por instrucción explícita del CEO
-4. Código: redirect 301 de los hosts viejos, `APP_URL` de la landing, y el
-   correo de contacto del footer
-5. Env vars de Amplify → `https://api.glomacx.com` + rebuild
+El CEO delegó los NS y a partir de ahí se ejecutó todo. WorkMail verificó de
+inmediato; ACM y Amplify tardaron ~40 min en sondear, y el sitio nuevo empezó
+a servir **antes** de que Amplify reportara `AVAILABLE` — el estado de la API
+va por detrás de la realidad de CloudFront, así que la prueba buena es el
+`curl`, no el estado.
+
+1. `api.glomacx.com`: cert `ISSUED`, custom domain
+   `d-gvr5d8jw87.execute-api.sa-east-1.amazonaws.com`, api-mapping `s76o04`
+   al mismo `pmg6lfu9cj` / `$default`, A-alias en la zona
+2. Buzón mudado con `update-primary-email-address` (mismo user id
+   `643c6d05-…`, así que **conserva el histórico**) y alias viejo borrado
+3. Redirect 301, `APP_URL` y correo del footer desplegados
+4. Env vars de Amplify → `https://api.glomacx.com` + rebuild (job 140)
+
+### Verificación final
+
+| Prueba | Resultado |
+|---|---|
+| `glomacx.com`, `www`, `app/login`, `api/docs` | 200 |
+| `glomacx.com/login` | 404 — la separación por host sigue viva |
+| `glomabeauty.com`, `www` | 301 al equivalente en glomacx |
+| `app.glomabeauty.com/mensajes` | 301 → `app.glomacx.com/mensajes` |
+| `app.glomabeauty.com/bots/10?tab=flujo&x=1` | 301 conservando el query |
+| `api.glomabeauty.com/docs` | 200, **sin** redirect |
+| `app.glomabeauty.com/api/docs` | 200, **sin** redirect (passthrough) |
+| `mascotasperdidascolombia.com` y `www` | 200, sin redirect |
+| `POST app.glomacx.com/api/login` con credencial falsa | 401 `Credenciales incorrectas` |
+
+La última prueba es la que vale: recorre Amplify → rewrite → `api.glomacx.com`
+→ API Gateway → VPC Link → Cloud Map → ECS → FastAPI, y vuelve con el error
+sanitizado.
+
+### Pieza de comunicación
+
+`identidad_gloma/redes sociales/cambio-dominio-glomacx.jpg` (1080×1080 @2x),
+compuesta con el skill `post-redes`: Syne + Inter, Deep Forest/Mint y el logo
+de la ventanilla. El HTML fuente está en el scratchpad de la sesión. Ojo con el
+logo: `logo_gloma_original*.png` sigue siendo el rosado de la etapa beauty,
+descontinuado — el vigente es `frontend/public/gloma/logo_blancotrans.png`.
 
 ### Riesgo asumido, dicho de frente
 
