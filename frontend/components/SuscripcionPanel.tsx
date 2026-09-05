@@ -103,15 +103,37 @@ function formatearVencimiento(valor: string): string {
 export default function SuscripcionPanel() {
   const [sub, setSub] = useState<Suscripcion | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [fallóLaCarga, setFallóLaCarga] = useState(false);
   const [abriendo, setAbriendo] = useState(false);
   const [modalTarjeta, setModalTarjeta] = useState<Config | null>(null);
   const [modalCancelar, setModalCancelar] = useState(false);
 
-  const cargar = useCallback(async () => {
+  /**
+   * Trae el estado de la suscripción, **reintentando una vez**.
+   *
+   * El reintento no es paranoia: el rewrite `/api/*` lo sirve el SSR de
+   * Amplify, y su primera petición tras un rato de inactividad puede fallar
+   * con 500 por arranque en frío. Se comprobó en producción — el backend
+   * respondía 200 a todo y el 500 lo devolvía Next. Sin reintento, esa
+   * primera carga del día deja la sección inservible hasta que el usuario
+   * recargue, que es justo cuando nadie sabe que hay que recargar.
+   *
+   * Un 403 no se reintenta ni se muestra como error: significa que esta
+   * sesión no administra la caja, y la pantalla que la contiene ya se
+   * encarga de decirlo.
+   */
+  const cargar = useCallback(async (reintentar = true) => {
     try {
       setSub(await authedFetch<Suscripcion>('/pagos/suscripcion'));
+      setFallóLaCarga(false);
+      setError(null);
     } catch (err) {
       if (err instanceof ApiError && err.status === 403) return;
+      if (reintentar) {
+        await new Promise((r) => setTimeout(r, 1500));
+        return cargar(false);
+      }
+      setFallóLaCarga(true);
       setError('No se pudo cargar la suscripción.');
     }
   }, []);
@@ -167,7 +189,27 @@ export default function SuscripcionPanel() {
         <h2 className="font-heading text-sm uppercase tracking-widest text-gloma-brown-light mb-3">
           Suscripción
         </h2>
-        <p className="text-sm text-gloma-brown-light">Cargando…</p>
+        {/* Sin esta rama, un fallo de carga se veía igual que estar cargando:
+            "Cargando…" para siempre, sin decir qué pasó ni cómo salir de ahí. */}
+        {fallóLaCarga ? (
+          <div className="rounded-2xl bg-white border border-gloma-brown-light/20 p-6 shadow-sm max-w-3xl">
+            <p className="text-sm text-gloma-brown-dark">
+              No pudimos cargar tu suscripción. Puede ser algo momentáneo.
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                setFallóLaCarga(false);
+                cargar();
+              }}
+              className="mt-3 px-4 py-2 rounded-lg bg-gloma-brown text-gloma-cream font-semibold text-sm hover:bg-gloma-brown-dark transition-colors"
+            >
+              Reintentar
+            </button>
+          </div>
+        ) : (
+          <p className="text-sm text-gloma-brown-light">Cargando…</p>
+        )}
       </section>
     );
   }
