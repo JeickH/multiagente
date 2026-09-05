@@ -1031,7 +1031,7 @@ function Footer() {
             Contacto
           </h4>
           <ul className="space-y-2 text-sm" style={{ fontFamily: FONT_BODY, color: BRAND.textMuted }}>
-            <li>contacto@glomabeauty.com</li>
+            <li>contacto@glomacx.com</li>
             <li>+57 300 318 7871</li>
             <li>
               <a

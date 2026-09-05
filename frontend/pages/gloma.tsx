@@ -113,7 +113,7 @@ const WHATSAPP_URL =
   'https://wa.me/573003187871?text=Hola%20Gloma%2C%20tengo%20una%20agencia%20de%20viajes%20y%20quiero%20ver%20una%20demo';
 
 /** La plataforma vive en su propio subdominio (#303). */
-const APP_URL = 'https://app.glomabeauty.com';
+const APP_URL = 'https://app.glomacx.com';
 
 /**
  * Scroll suave hacia la sección de contacto con un easing más agradable que
@@ -1049,7 +1049,7 @@ export default function GlomaLanding() {
                 className="space-y-2 text-sm opacity-80"
                 style={{ fontFamily: 'Inter, system-ui, sans-serif' }}
               >
-                <li>contacto@glomabeauty.com</li>
+                <li>contacto@glomacx.com</li>
                 <li>+57 300 318 7871</li>
                 <li>Calle 36, Vía Jamundí #128-321, Cali, Valle del Cauca</li>
               </ul>

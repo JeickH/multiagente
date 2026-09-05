@@ -35,6 +35,23 @@ import type { NextRequest } from 'next/server';
  *                      app.glomabeauty.com con sesión iniciada)
  */
 
+/**
+ * Sprint 28, fase 2: el dominio viejo redirecciona al nuevo, conservando la
+ * ruta y el query string. `app.glomabeauty.com/mensajes` cae en
+ * `app.glomacx.com/mensajes`, y de ahí el guard de sesión hace lo de siempre:
+ * si no hay sesión válida, al login del dominio nuevo.
+ *
+ * El 301 es permanente a propósito — la marca se mudó — pero eso también
+ * significa que el navegador lo cachea de forma agresiva y prácticamente
+ * indefinida. Volver atrás no es cambiar este mapa: a los usuarios que ya lo
+ * recibieron habría que sacarlos del caché.
+ */
+const REDIRECCIONES_LEGADO: Record<string, string> = {
+  'glomabeauty.com': 'glomacx.com',
+  'www.glomabeauty.com': 'www.glomacx.com',
+  'app.glomabeauty.com': 'app.glomacx.com',
+};
+
 const GLOMA_HOSTS = new Set([
   'glomabeauty.com',
   'www.glomabeauty.com',
@@ -74,6 +91,24 @@ function isMascotasAllowed(pathname: string): boolean {
 export function middleware(req: NextRequest) {
   const host = (req.headers.get('host') || '').toLowerCase();
   const { pathname } = req.nextUrl;
+
+  // Dominio viejo → dominio nuevo, antes que cualquier otra regla.
+  //
+  // `/api/*` queda FUERA del redirect a propósito. Un navegador que ya tenía
+  // la plataforma abierta en el dominio viejo sigue disparando XHR contra él;
+  // si esas llamadas se redirigieran, el salto sería cross-origin y el
+  // navegador descarta el header `Authorization` al seguirlo (protección
+  // estándar contra fuga de credenciales), así que la sesión se caería sola a
+  // mitad de uso. Dejándolas pasar, esas pestañas terminan su trabajo contra
+  // el host viejo y se mudan al nuevo en la siguiente navegación.
+  const destinoLegado = REDIRECCIONES_LEGADO[host];
+  if (destinoLegado && !pathname.startsWith('/api/')) {
+    const destino = req.nextUrl.clone();
+    destino.protocol = 'https:';
+    destino.host = destinoLegado;
+    destino.port = '';
+    return NextResponse.redirect(destino, 301);
+  }
 
   if (MASCOTAS_HOSTS.has(host)) {
     // La raíz sirve el chat (la URL pública no cambia).
