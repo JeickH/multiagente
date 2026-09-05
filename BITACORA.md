@@ -6073,3 +6073,168 @@ dirección después del apagón recibe un rebote sin que nadie en Gloma se enter
 Confirmó la decisión y pidió cambiar la dirección en la landing. Queda
 registrado acá porque las piezas de Instagram ya publicadas **no se pueden
 editar** y van a seguir mostrando la dirección vieja.
+
+---
+
+## Sprint 29: suscripción mensual con cobro automático (2026-09-05)
+
+Pedido del CEO en un mensaje: un botón que active una suscripción de $350.000
+al mes, que guarde la tarjeta del cliente en Wompi y la cobre sola cada mes el
+mismo día a la misma hora; que mientras no se pague el primer mes diga
+"pendiente por activar"; que se pueda desactivar con una segunda confirmación.
+Y aparte: retirar el paquete de 5.000 mensajes y subir el de 1.000 a $230.000.
+
+### La pregunta que había que resolver primero
+
+El CEO ofreció un link de pago (`checkout.wompi.co/l/fjXTQs`) y preguntó si con
+eso bastaba o si el cobro recurrente iba por API. **Iba por API.** El Web
+Checkout y los links de pago de Wompi cobran una vez y se olvidan de la
+tarjeta: no hay ningún parámetro para guardarla. Para cobrar todos los meses
+hay que pasar por la API de *fuentes de pago*, que son tres pasos:
+
+1. el **navegador** tokeniza la tarjeta contra `POST /v1/tokens/cards` con la
+   llave pública → `tok_...`;
+2. el **backend** cambia ese token por una fuente de pago permanente
+   (`POST /v1/payment_sources`, llave privada) → un `id` numérico;
+3. cada mes el backend cobra con `POST /v1/transactions` mandando ese
+   `payment_source_id` y `recurrent: true`.
+
+El link quedó sin usar. Doc consultada el 5-sep-2026:
+`docs.wompi.co/docs/colombia/fuentes-de-pago/`.
+
+### El número de la tarjeta no pasa por nuestro servidor
+
+El paso 1 va del navegador directo a Wompi. Si el PAN pasara por el backend
+—aunque fuera solo para reenviarlo— quedaría en los logs de acceso, en el
+cuerpo del request y en cualquier traza de error, y **la plataforma entera
+entraría en alcance PCI-DSS**: auditoría anual, segmentación de red, retención
+de logs. Hay un guardarraíl (`validar_token_tarjeta`) que rechaza cualquier
+cosa con forma de número de tarjeta antes de que llegue a un log, y su mensaje
+de error no repite lo que recibió — sería escribir justo lo que se intenta
+mantener fuera.
+
+### Lo que entró
+
+| Qué | Dónde |
+|-----|-------|
+| Plan, fechas del ciclo, motor de cobro y reintentos | `app/services/suscripciones.py` |
+| Fuentes de pago, cobro recurrente y tokens de aceptación | `app/services/wompi.py` |
+| `Subscription` y `SubscriptionCharge` | `app/models.py` |
+| Endpoints (estado, config, activar, cancelar) y webhook | `app/routers/pagos.py` |
+| Tick del cobro mensual | `app/routers/internal.py` |
+| Migración idempotente | `scripts/migrate_suscripciones.py` |
+| Prueba contra el sandbox real de Wompi | `scripts/probar_suscripcion_sandbox.py` |
+| Panel, formulario de tarjeta y modal de confirmación | `components/SuscripcionPanel.tsx` |
+| Lambda del cobro mensual | `infra/suscripciones_tick/` |
+
+### Las fechas, que es donde estaba la dificultad real
+
+"El mismo día a la misma hora" no se resuelve sumando 30 días.
+
+- **El día se cuenta en hora de Colombia, no en UTC.** Quien activa a las 10
+  p. m. del 31 en Bogotá está en el 1.º a las 03:00 UTC: cobrarle "el 1.º"
+  sería cobrarle un día distinto del que vio en pantalla.
+- **`billing_day` se guarda aparte.** Quien se suscribe un 31 no tiene 31 en
+  febrero: se cobra el 28 y en marzo **vuelve al 31**. Arrastrando la última
+  fecha cobrada, el 31 se habría degradado a 28 para siempre.
+- **El ciclo avanza desde la fecha programada, no desde el momento del cobro**,
+  para que el retraso del tick no se acumule mes a mes hasta correr la hora.
+- **Un reintento conserva el `scheduled_for` del ciclo original.** Lo cazó un
+  test: sin eso, un ciclo del 31 de enero reintentado el 2 de febrero calcula
+  el siguiente cobro desde febrero y **se salta un mes entero de cobro**.
+
+### Decisiones que vale la pena recordar
+
+- **La suscripción no se activa con la respuesta del `POST`.** Wompi devuelve
+  `PENDING` y el estado final lo confirma el webhook firmado. Activar con la
+  respuesta sería activar sobre una promesa.
+- **El tick también reconcilia.** Los cobros que llevan más de 15 min en
+  `pending` se resuelven preguntándole a Wompi. Sin eso, un webhook mal
+  configurado deja una suscripción pagada sin activar y nadie se entera.
+- **Tres rechazos dejan la suscripción en mora, no cancelada.** La causa más
+  común de un rechazo es cupo insuficiente, no una intención de irse; cancelar
+  sola sería tomar por el cliente una decisión que es suya.
+- **Cancelar olvida la tarjeta.** Guardar un medio de pago que el cliente pidió
+  no volver a usar es riesgo sin contrapartida.
+- **`team_id` es UNIQUE en `subscriptions`**: una fila por cuenta para siempre.
+  Cancelar cambia el `status`; el historial vive en `subscription_charges`. Así
+  el estado de una cuenta se lee sin desempatar entre filas viejas, que es de
+  donde salen los errores de "se cobró dos veces".
+
+### Seguridad (auditoría del feature)
+
+Un hallazgo que no estaba en el pedido: **card testing**. Quien consiga una
+cuenta de administrador podía usar el endpoint de activación para probar
+tarjetas robadas de a una, y a quien las franquicias multan y terminan
+cerrándole la pasarela es **al comercio**, no al atacante. Se puso un tope de
+5 intentos por cuenta y por hora.
+
+Lo demás, verificado con tests: `payment_source_id` y `customer_email` no
+aparecen en ningún schema de respuesta ni en el `__repr__` del modelo; los
+errores de Wompi se traducen a mensajes genéricos y el código real solo va al
+log; el webhook sigue siendo fail-closed en producción.
+
+### Las pruebas
+
+67 tests en `tests/pagos/`, contra un **Wompi falso que habla HTTP de verdad**
+(`tests/pagos/wompi_falso.py`): levanta un servidor real y replica las reglas
+del sandbox (la 4242 aprueba, la 4111 rechaza). Parchear las funciones del
+servicio habría probado la lógica saltándose justo donde se rompen estas
+integraciones — el cliente HTTP, los headers de autenticación, el `data` que
+envuelve la respuesta. Suite completa: **1309 passed, 103 skipped**.
+
+Lo que el doble no simula, y por eso existe
+`scripts/probar_suscripcion_sandbox.py`: 3D Secure, los métodos que no son
+tarjeta y la demora real entre el `PENDING` y el webhook.
+
+### Los paquetes de mensajes
+
+El de 5.000 se retira del catálogo; el de 1.000 pasa de $70.000 a **$230.000**.
+
+**Se quitaron los links de pago estáticos.** Estaban creados en el panel de
+Wompi por los precios viejos: dejarlos habría hecho que el cliente viera
+$230.000 en la app y pagara $70.000 en Wompi, que es el peor error posible acá.
+Sin link, el frontend cae al **checkout por API**, que firma el monto del
+catálogo y por lo tanto no puede desincronizarse. Si el CEO prefiere volver al
+link estático, crea uno nuevo por el valor exacto y lo pega en
+`WOMPI_LINK_MENSAJES_1000` — sin desplegar.
+
+Nota: el precio ya **no persigue el `MARGEN_COMERCIAL` del 10%**. Es un precio
+comercial; el margen real que reporta el desglose es muy superior. La constante
+sobrevive como piso, para avisar si el precio se queda por debajo del costo
+cuando suba el dólar.
+
+### Despliegue
+
+Imagen `multiagente-backend:sprint29-suscripciones` → task-def **rev 78** →
+`update-service --force-new-deployment` → `services-stable`. Migración aplicada
+y verificada en la base local y en **RDS** (paridad). Frontend: Amplify **job
+143 SUCCEED**. Lambda `multiagente-suscripciones-tick` + EventBridge Scheduler
+homónimo, `rate(5 minutes)`, **ENABLED** — probado invocándolo a mano:
+`{"status": 200, "cobradas": 0, "reconciliadas": 0}`, o sea que la cadena
+Lambda → SSM → API Gateway → ECS funciona entera.
+
+Cada 5 minutos y no cada minuto: una suscripción se cobra una vez al mes, y 5
+minutos de desviación sobre la hora que eligió el cliente no los nota nadie.
+Va en una Lambda **aparte** del tick de bots a propósito: si un cobro revienta,
+el que se queda sin correr es este tick, no el que atiende conversaciones.
+
+### Lo que falta para poder cobrarle a un cliente
+
+**Las llaves de Wompi.** El módulo las lee del entorno y no hay ninguna
+configurada en la task-def; hoy `/pagos/suscripcion` responde
+`habilitada: false` y la pantalla dice "el medio de pago no está disponible".
+Hacen falta cuatro, de la cuenta de Wompi del CEO:
+
+| Variable | Para qué | Dónde va |
+|---|---|---|
+| `WOMPI_PUBLIC_KEY` | tokenizar la tarjeta en el navegador | env var normal |
+| `WOMPI_PRIVATE_KEY` | crear la fuente de pago y cobrar | **SSM SecureString** |
+| `WOMPI_INTEGRITY_SECRET` | firmar el monto | **SSM SecureString** |
+| `WOMPI_EVENTS_SECRET` | validar el webhook | **SSM SecureString** |
+
+Y en el panel de Wompi, apuntar el webhook a
+`https://api.glomacx.com/pagos/wompi/webhook`.
+
+Con las de sandbox (`pub_test_`/`prv_test_`) se puede probar el flujo entero
+sin cobrar un peso: `python backend/scripts/probar_suscripcion_sandbox.py`.
