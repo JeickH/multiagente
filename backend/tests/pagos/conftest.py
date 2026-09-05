@@ -85,6 +85,25 @@ def llaves_wompi(monkeypatch):
     monkeypatch.setenv("FRONTEND_BASE_URL", "https://app.glomabeauty.com")
 
 
+@pytest.fixture(autouse=True)
+def limiter_limpio(monkeypatch):
+    """Un contador de intentos nuevo por test.
+
+    El limitador vive a nivel de módulo (es una ventana en memoria del
+    proceso), así que sin esto los intentos de un test se le suman al
+    siguiente y el orden de ejecución decide quién falla — el peor tipo de
+    test intermitente.
+    """
+    from app.routers import pagos
+    from app.services import ratelimit
+
+    monkeypatch.setattr(
+        pagos,
+        "_activaciones_limiter",
+        ratelimit.SlidingWindow(por_ip=5, global_=200),
+    )
+
+
 # ---------------------------------------------------------------------------
 # Datos: un team con su dueño y su asesor
 # ---------------------------------------------------------------------------
@@ -192,6 +211,57 @@ def anonimo(Sesion, team):
 
     with TestClient(_app_de_pagos(Sesion, None)) as c:
         yield c
+
+
+# ---------------------------------------------------------------------------
+# Wompi de mentira, hablando HTTP de verdad
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def wompi_falso(monkeypatch):
+    """Levanta el servidor falso y apunta `WOMPI_BASE_URL` hacia él.
+
+    Con esto, el código bajo prueba es el mismo que corre en producción —
+    `httpx`, headers y parseo incluidos—, que es justo la parte que un
+    `monkeypatch` sobre las funciones del servicio se saltaría. Ver
+    `wompi_falso.py` para lo que el doble no simula.
+    """
+    from .wompi_falso import ServidorWompiFalso
+
+    with ServidorWompiFalso() as servidor:
+        monkeypatch.setenv("WOMPI_BASE_URL", servidor.base_url)
+        yield servidor
+
+
+@pytest.fixture
+def tarjeta(wompi_falso):
+    """Tokeniza una tarjeta como lo haría el navegador y devuelve el `tok_...`.
+
+    Se hace con la llave PÚBLICA a propósito: es exactamente lo que hace
+    `SuscripcionPanel.tokenizar()`, y el servidor falso rechaza el intento si
+    llega con la privada.
+    """
+    import httpx
+
+    from .wompi_falso import TARJETA_APROBADA
+
+    def _tokenizar(numero: str = TARJETA_APROBADA) -> str:
+        respuesta = httpx.post(
+            f"{wompi_falso.base_url}/tokens/cards",
+            headers={"Authorization": f"Bearer {PUBLIC_KEY}"},
+            json={
+                "number": numero,
+                "cvc": "123",
+                "exp_month": "08",
+                "exp_year": "30",
+                "card_holder": "Cliente De Prueba",
+            },
+            timeout=5.0,
+        )
+        assert respuesta.status_code == 201, respuesta.text
+        return respuesta.json()["data"]["id"]
+
+    return _tokenizar
 
 
 # ---------------------------------------------------------------------------

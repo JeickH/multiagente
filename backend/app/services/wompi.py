@@ -96,6 +96,18 @@ def esta_configurado() -> bool:
     return bool(_env("WOMPI_PUBLIC_KEY") and _env("WOMPI_INTEGRITY_SECRET"))
 
 
+def suscripciones_habilitadas() -> bool:
+    """¿Se puede guardar una tarjeta y cobrarla todos los meses?
+
+    Exige **también la llave privada**, que el checkout no necesita: crear la
+    fuente de pago y cobrar cada mes son llamadas server-to-server autenticadas
+    con ella. Sirve para que la pantalla muestre "no disponible por ahora" en
+    vez de llevar al cliente a escribir su tarjeta en un formulario que va a
+    fallar en el último paso, con el peor momento posible para fallar.
+    """
+    return bool(esta_configurado() and _env("WOMPI_PRIVATE_KEY"))
+
+
 def _requerir(nombre: str) -> str:
     """El valor de la variable, o `WompiNoConfigurado`.
 
@@ -341,6 +353,230 @@ def consultar_transaccion_publica(transaccion_id: str) -> Optional[Dict[str, Any
         # Sin `str(e)`: el mensaje de httpx puede traer la URL con credenciales.
         logger.exception("wompi: error consultando la transacción (público)")
         return None
+
+
+# ---------------------------------------------------------------------------
+# Fuentes de pago (tarjeta guardada) y cobro recurrente
+# ---------------------------------------------------------------------------
+#
+# Los tres pasos están explicados en `services/suscripciones.py`. Acá va el
+# cliente HTTP de cada uno. Regla transversal en todo este bloque: **el cuerpo
+# de la respuesta de Wompi nunca se loggea completo** — trae correo, nombre del
+# tarjetahabiente y los últimos cuatro dígitos. Se loggea el `type` del error,
+# que es un código como `INPUT_VALIDATION_ERROR`, y nada más.
+
+
+class WompiError(RuntimeError):
+    """Wompi rechazó la operación o no se pudo hablar con Wompi.
+
+    `codigo` es el `error.type` de Wompi (o `SIN_RESPUESTA` si no contestó),
+    para poder distinguir en el log qué pasó sin guardar el cuerpo. El router
+    lo traduce a un mensaje genérico: al cliente no se le reenvía nunca el
+    texto de la pasarela (regla 6).
+    """
+
+    def __init__(self, mensaje: str, codigo: str = "ERROR") -> None:
+        super().__init__(mensaje)
+        self.codigo = codigo
+
+
+def _tipo_de_error(respuesta: Any) -> str:
+    """El `error.type` de una respuesta de Wompi, sin arrastrar el cuerpo."""
+    try:
+        return str(((respuesta.json() or {}).get("error") or {}).get("type") or "ERROR")
+    except Exception:
+        return "ERROR"
+
+
+def _post_privado(ruta: str, cuerpo: Dict[str, Any], *, timeout: float = 20.0) -> Dict[str, Any]:
+    """`POST` autenticado con la llave privada. Devuelve `data` o levanta.
+
+    Un timeout generoso (20 s) porque del otro lado hay un procesador de
+    tarjetas: cortar a los 5 s convertiría cobros lentos pero exitosos en
+    "no respondió", y un cobro que no se sabe si pasó es peor que uno lento.
+    """
+    import httpx
+
+    private_key = _requerir("WOMPI_PRIVATE_KEY")
+    url = f"{base_url().rstrip('/')}/{ruta.lstrip('/')}"
+    try:
+        respuesta = httpx.post(
+            url,
+            json=cuerpo,
+            headers={"Authorization": f"Bearer {private_key}"},
+            timeout=timeout,
+        )
+    except Exception:
+        # Sin `str(e)`: el mensaje de httpx puede traer la URL con credenciales.
+        logger.exception("wompi: no se pudo hablar con la API (%s)", ruta)
+        raise WompiError("sin respuesta de la pasarela", "SIN_RESPUESTA")
+
+    if respuesta.status_code not in (200, 201):
+        codigo = _tipo_de_error(respuesta)
+        logger.error(
+            "wompi: %s respondió %s tipo=%s", ruta, respuesta.status_code, codigo
+        )
+        raise WompiError("la pasarela rechazó la operación", codigo)
+
+    try:
+        return (respuesta.json() or {}).get("data") or {}
+    except Exception:
+        logger.exception("wompi: respuesta de %s no es JSON", ruta)
+        raise WompiError("respuesta ilegible de la pasarela", "RESPUESTA_INVALIDA")
+
+
+def tokens_de_aceptacion() -> Dict[str, Any]:
+    """Los dos tokens de aceptación del comercio, con sus permalinks.
+
+    Colombia (habeas data) exige que el cliente acepte dos documentos antes de
+    que se guarden sus datos: el reglamento del servicio y la autorización de
+    tratamiento de datos personales. Wompi los entrega prefirmados como JWT y
+    hay que reenviárselos al crear la fuente de pago; el `permalink` es el PDF
+    que la pantalla tiene que mostrarle al cliente para que los lea.
+
+    Se piden **frescos en cada activación** en vez de cachearlos: los JWT
+    expiran, y la gracia del mecanismo es probar que al cliente se le mostró la
+    versión vigente del contrato. Un token cacheado apuntaría a un contrato que
+    quizá ya cambió.
+
+    Devuelve `{"acceptance_token", "acceptance_permalink",
+    "personal_auth_token", "personal_auth_permalink"}`.
+
+    Nada de esto es secreto: los JWT son públicos por diseño (van a un
+    formulario en el navegador) y los permalinks son PDFs abiertos.
+    """
+    import httpx
+
+    public_key = _requerir("WOMPI_PUBLIC_KEY")
+    raiz = base_url().rstrip("/")
+
+    # Wompi expone lo mismo en dos rutas: la nueva (`/merchants/info` con el
+    # header) y la clásica (`/merchants/<llave pública>`). Se intentan las dos
+    # porque ambas están vivas hoy y la doc cita una u otra según la página;
+    # si mañana retiran cualquiera de las dos, esto sigue funcionando.
+    intentos = (
+        (f"{raiz}/merchants/info", {"X-Merchant-Public-Key": public_key}),
+        (f"{raiz}/merchants/{public_key}", {}),
+    )
+
+    datos: Optional[Dict[str, Any]] = None
+    for url, headers in intentos:
+        try:
+            respuesta = httpx.get(url, headers=headers, timeout=10.0)
+        except Exception:
+            logger.exception("wompi: no se pudo consultar el comercio")
+            continue
+        if respuesta.status_code == 200:
+            try:
+                datos = (respuesta.json() or {}).get("data") or {}
+            except Exception:
+                logger.exception("wompi: respuesta del comercio no es JSON")
+                continue
+            break
+        logger.warning(
+            "wompi: consulta del comercio respondió %s", respuesta.status_code
+        )
+
+    if not datos:
+        raise WompiError("no se pudieron obtener los términos", "SIN_RESPUESTA")
+
+    aceptacion = datos.get("presigned_acceptance") or {}
+    personales = datos.get("presigned_personal_data_auth") or {}
+
+    token_aceptacion = aceptacion.get("acceptance_token")
+    if not token_aceptacion:
+        logger.error("wompi: el comercio no devolvió presigned_acceptance")
+        raise WompiError("no se pudieron obtener los términos", "SIN_ACEPTACION")
+
+    return {
+        "acceptance_token": token_aceptacion,
+        "acceptance_permalink": aceptacion.get("permalink"),
+        # `presigned_personal_data_auth` no lo devuelven todos los comercios.
+        # Si no viene, no se manda: mandarlo vacío hace fallar la creación.
+        "personal_auth_token": personales.get("acceptance_token"),
+        "personal_auth_permalink": personales.get("permalink"),
+    }
+
+
+def crear_fuente_de_pago(
+    *,
+    token_tarjeta: str,
+    email_cliente: str,
+    acceptance_token: str,
+    personal_auth_token: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Convierte el token de una tarjeta en una fuente de pago permanente.
+
+    `token_tarjeta` lo produjo el NAVEGADOR contra `/v1/tokens/cards` con la
+    llave pública: el número de la tarjeta nunca pasa por acá (ver la nota de
+    PCI en `services/suscripciones.py`). Un token es de un solo uso para esto;
+    lo que queda reutilizable mes a mes es la fuente de pago.
+
+    Devuelve `{"id", "status", "brand", "last_four"}`. `status` debe ser
+    `AVAILABLE` para poder cobrar: cualquier otro valor significa que la fuente
+    quedó creada pero no sirve todavía.
+    """
+    cuerpo: Dict[str, Any] = {
+        "type": "CARD",
+        "token": token_tarjeta,
+        "customer_email": email_cliente,
+        "acceptance_token": acceptance_token,
+    }
+    if personal_auth_token:
+        cuerpo["accept_personal_auth"] = personal_auth_token
+
+    datos = _post_privado("payment_sources", cuerpo)
+
+    publico = datos.get("public_data") or {}
+    return {
+        "id": datos.get("id"),
+        "status": (datos.get("status") or "").upper(),
+        # Para pintar "Visa ····4242". Los últimos cuatro dígitos y la marca no
+        # son datos protegidos por PCI y son lo único que hace reconocible la
+        # tarjeta para su dueño.
+        "brand": publico.get("brand") or publico.get("card_brand"),
+        "last_four": publico.get("last_four") or publico.get("last_4"),
+    }
+
+
+def cobrar_con_fuente_de_pago(
+    *,
+    payment_source_id: int,
+    monto_centavos: int,
+    referencia: str,
+    email_cliente: str,
+    acceptance_token: str,
+    moneda: str = MONEDA,
+    cuotas: int = 1,
+    recurrente: bool = True,
+) -> Dict[str, Any]:
+    """Cobra a una tarjeta ya guardada. Es el cobro del mes.
+
+    `recurrent=True` le dice a la franquicia que esto es un cobro periódico
+    autorizado por el tarjetahabiente (COF, *credential on file*), por el mismo
+    monto cada vez. Sin esa marca, los bancos rechazan cobros sin titular
+    presente con mucha más frecuencia.
+
+    La **firma de integridad es obligatoria** también acá, no solo en el Web
+    Checkout, y se calcula igual: `<referencia><monto><moneda><secreto>`.
+
+    Devuelve la transacción como la entrega Wompi (`id`, `status`, …). Suele
+    volver en `PENDING`: el estado final lo confirma el webhook firmado, que es
+    la única fuente de verdad. Quien llama NO debe dar el cobro por bueno
+    porque esta llamada haya respondido 201.
+    """
+    cuerpo: Dict[str, Any] = {
+        "amount_in_cents": int(monto_centavos),
+        "currency": moneda,
+        "customer_email": email_cliente,
+        "reference": referencia,
+        "payment_source_id": int(payment_source_id),
+        "payment_method": {"installments": int(cuotas)},
+        "recurrent": bool(recurrente),
+        "acceptance_token": acceptance_token,
+        "signature": firma_integridad(referencia, monto_centavos, moneda),
+    }
+    return _post_privado("transactions", cuerpo)
 
 
 def consultar_transaccion(transaccion_id: str) -> Optional[Dict[str, Any]]:

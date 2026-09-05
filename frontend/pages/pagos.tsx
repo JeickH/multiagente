@@ -20,6 +20,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
 
 import Layout from '../components/Layout';
+import SuscripcionPanel from '../components/SuscripcionPanel';
 import { ApiError, authedFetch } from '../lib/api';
 
 type Desglose = {
@@ -275,6 +276,10 @@ export default function Pagos() {
             </p>
           </div>
         </section>
+
+        {/* Suscripción mensual. Va antes de los paquetes porque es la cuota
+            de la plataforma: sin ella lo demás no aplica. */}
+        <SuscripcionPanel />
 
         {/* Paquetes */}
         <section className="mb-10">

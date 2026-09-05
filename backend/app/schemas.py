@@ -29,7 +29,9 @@ class UserOut(BaseModel):
 
 
 # ===== Tutoriales interactivos (Sprint 15) =====
-ALLOWED_TUTORIAL_MODULES = {"mi_plan", "mensajes", "bots", "campanas"}
+ALLOWED_TUTORIAL_MODULES = {
+    "mi_plan", "mensajes", "bots", "campanas", "agendamientos",
+}
 
 
 class TutorialStateOut(BaseModel):
@@ -41,7 +43,7 @@ class TutorialStateOut(BaseModel):
 class TutorialsOut(BaseModel):
     """Estado de los tutoriales del usuario autenticado por módulo.
 
-    Llaves: mi_plan, mensajes, bots, campanas (whitelist).
+    Llaves: mi_plan, mensajes, bots, campanas, agendamientos (whitelist).
     Si una llave no está presente significa que el usuario NUNCA hizo
     ese tutorial → el frontend debe mostrarlo.
     """
@@ -893,3 +895,107 @@ class CheckoutOut(BaseModel):
     currency: str
     messages: int
     checkout: CheckoutFormOut
+
+
+# ─── Suscripción mensual ──────────────────────────────────────────────────
+#
+# Lo que NO puede aparecer en ninguno de estos schemas, por si mañana alguien
+# agrega un campo "para depurar":
+#   * `payment_source_id` — es la llave con la que se le cobra a ese cliente;
+#   * `customer_email` — PII que el frontend ya tiene por otro lado;
+#   * cualquier dato de la tarjeta que no sean la marca y los últimos cuatro
+#     dígitos, que son justamente lo que PCI permite mostrar.
+
+
+class TarjetaOut(BaseModel):
+    """La tarjeta guardada, como se le muestra a su dueño: `Visa ····4242`.
+
+    Marca y últimos cuatro dígitos es todo lo que sale. Basta para que el
+    cliente reconozca cuál registró y no sirve para cobrar en ningún lado.
+    """
+    brand: Optional[str] = None
+    last_four: Optional[str] = None
+
+
+class CobroOut(BaseModel):
+    """Un intento de cobro en el historial de la suscripción."""
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    reference: str
+    amount_cents: int
+    currency: str
+    status: str
+    attempt: int
+    scheduled_for: datetime
+    paid_at: Optional[datetime] = None
+    created_at: datetime
+
+
+class SuscripcionOut(BaseModel):
+    """`GET /pagos/suscripcion` — en qué va la suscripción de esta cuenta.
+
+    `status` es uno de `pending` (nunca se activó: el botón dice "pendiente por
+    activar"), `active`, `past_due` (un cobro no entró) o `canceled`.
+    """
+    status: str
+    plan_key: str
+    plan_nombre: str
+    plan_descripcion: str
+    amount_cents: int
+    amount_cop: int
+    currency: str
+    tarjeta: Optional[TarjetaOut] = None
+    next_charge_at: Optional[datetime] = None
+    last_charge_at: Optional[datetime] = None
+    activated_at: Optional[datetime] = None
+    canceled_at: Optional[datetime] = None
+    #: `false` si al backend le faltan llaves de Wompi. La pantalla avisa antes
+    #: de que el cliente escriba su tarjeta, no después.
+    habilitada: bool
+    #: `true` mientras hay un cobro sin confirmar: la pantalla muestra
+    #: "estamos confirmando tu pago" y refresca sola.
+    cobro_en_curso: bool = False
+    cobros: List[CobroOut] = []
+
+
+class SuscripcionConfigOut(BaseModel):
+    """Lo que el navegador necesita para registrar una tarjeta contra Wompi.
+
+    **Nada de esto es secreto.** La llave pública es pública por definición y
+    los tokens de aceptación son JWT prefirmados pensados para viajar al
+    navegador; los permalinks son PDFs abiertos. La llave privada y el secreto
+    de integridad no salen de acá ni tienen dónde caber en este schema.
+
+    Los tokens de aceptación se piden frescos en cada activación porque
+    expiran: su razón de ser es probar que al cliente se le mostró la versión
+    vigente del contrato.
+    """
+    public_key: str
+    #: URL de tokenización. La llama el NAVEGADOR con el número de la tarjeta;
+    #: viene del servidor para que el ambiente (sandbox/producción) lo decida
+    #: el backend y no un hardcode en el bundle.
+    tokens_url: str
+    acceptance_token: str
+    acceptance_permalink: Optional[str] = None
+    personal_auth_token: Optional[str] = None
+    personal_auth_permalink: Optional[str] = None
+    #: `true` con llaves `pub_test_`: la pantalla muestra el aviso de modo
+    #: prueba y los datos de la tarjeta de pruebas, para que nadie crea que
+    #: registró su tarjeta real.
+    sandbox: bool = False
+
+
+class SuscripcionActivarIn(BaseModel):
+    """Input de `POST /pagos/suscripcion/activar`.
+
+    `card_token` es un `tok_...` que produjo el NAVEGADOR contra Wompi. El
+    número de la tarjeta no pasa por acá jamás: hay un guardarraíl que rechaza
+    cualquier cosa con forma de PAN (`suscripciones.validar_token_tarjeta`), y
+    el `max_length` de 140 ya deja fuera casi todo lo demás.
+
+    `acepta_terminos` tiene que llegar en `true`: es el consentimiento de
+    habeas data que exige Wompi, y la pantalla no deja enviar sin marcarlo.
+    """
+    card_token: str = Field(..., min_length=8, max_length=140)
+    acepta_terminos: bool = Field(default=False)

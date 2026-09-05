@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session
 from .. import models
 from ..dependencies import get_db
 from ..services import bot_runner, campaign_sender
+from ..services import suscripciones as svc_suscripciones
 
 logger = logging.getLogger(__name__)
 
@@ -88,6 +89,33 @@ def bot_scheduler_tick(
         "items": processed,
         "tick_at": now.isoformat() + "Z",
     }
+
+
+@router.post("/suscripciones/tick")
+def suscripciones_tick(
+    db: Session = Depends(get_db),
+    _: None = Depends(_require_internal_key),
+    limit: int = 50,
+):
+    """Cobra las suscripciones vencidas y reconcilia los cobros colgados.
+
+    Va **aparte del tick de bots** a propósito: mezclar los dos haría que un
+    error cobrando le tumbara el turno al bot de un cliente, y son cosas que
+    fallan por motivos completamente distintos.
+
+    No hace falta que corra cada minuto — una suscripción se cobra una vez al
+    mes. Cada 5 minutos deja el cobro dentro de los 5 minutos de la hora que el
+    cliente eligió, que es más precisión de la que nadie va a notar.
+
+    Respuesta agregada y sin PII: solo conteos.
+    """
+    try:
+        return svc_suscripciones.tick(db, limite=limit)
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("suscripciones_tick falló")
+        raise HTTPException(status_code=500, detail="tick failed")
 
 
 @router.post("/campaigns/tick")

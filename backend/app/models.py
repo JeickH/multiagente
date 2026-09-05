@@ -1153,6 +1153,196 @@ class CreditPurchase(Base):
     __str__ = __repr__
 
 
+# ─── Suscripción mensual a la plataforma ──────────────────────────────────
+# Distinta de los paquetes de mensajes: la suscripción es la cuota por usar la
+# plataforma y se cobra sola cada mes contra una tarjeta guardada en Wompi. El
+# plan y las reglas de fechas viven en `app/services/suscripciones.py`.
+
+SUBSCRIPTION_PENDING = "pending"    # nunca se activó: falta el primer pago
+SUBSCRIPTION_ACTIVE = "active"      # cobrando cada mes
+SUBSCRIPTION_PAST_DUE = "past_due"  # se agotaron los intentos de un ciclo
+SUBSCRIPTION_CANCELED = "canceled"  # la apagó el cliente
+AVAILABLE_SUBSCRIPTION_STATUSES = (
+    SUBSCRIPTION_PENDING,
+    SUBSCRIPTION_ACTIVE,
+    SUBSCRIPTION_PAST_DUE,
+    SUBSCRIPTION_CANCELED,
+)
+
+#: Estados de un cobro. Mismos nombres que los de `CreditPurchase` a propósito:
+#: los dos traducen los estados de Wompi y no hay razón para que difieran.
+SUBSCRIPTION_CHARGE_PENDING = "pending"
+SUBSCRIPTION_CHARGE_APPROVED = "approved"
+SUBSCRIPTION_CHARGE_DECLINED = "declined"
+SUBSCRIPTION_CHARGE_ERROR = "error"
+SUBSCRIPTION_CHARGE_VOIDED = "voided"
+AVAILABLE_SUBSCRIPTION_CHARGE_STATUSES = (
+    SUBSCRIPTION_CHARGE_PENDING,
+    SUBSCRIPTION_CHARGE_APPROVED,
+    SUBSCRIPTION_CHARGE_DECLINED,
+    SUBSCRIPTION_CHARGE_ERROR,
+    SUBSCRIPTION_CHARGE_VOIDED,
+)
+
+
+class Subscription(Base):
+    """La suscripción de una cuenta: una fila por team, para siempre.
+
+    `team_id` es UNIQUE **a propósito**. Cancelar no borra la fila ni crea una
+    nueva al reactivar: se reusa la misma y cambia `status`. Así el estado de
+    una cuenta se lee sin ordenar por fecha ni desempatar entre filas viejas,
+    que es de donde salen los errores de "se cobró dos veces". El historial no
+    se pierde porque vive completo en `subscription_charges`.
+
+    `payment_source_id` es el identificador de la tarjeta guardada en Wompi.
+    **No es un número de tarjeta** y por sí solo no cobra nada: sin nuestra
+    llave privada no sirve para nada. Aun así no se expone en ningún schema de
+    respuesta ni se loggea — lo único que sale a la pantalla es
+    `card_brand` + `card_last_four`, que es lo que le permite al dueño
+    reconocer cuál de sus tarjetas quedó registrada.
+    """
+
+    __tablename__ = "subscriptions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    team_id = Column(
+        Integer, ForeignKey("teams.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    plan_key = Column(String(40), nullable=False)
+    status = Column(
+        String(20), nullable=False,
+        default=SUBSCRIPTION_PENDING, server_default=SUBSCRIPTION_PENDING,
+    )
+    amount_cents = Column(Integer, nullable=False)
+    currency = Column(String(8), nullable=False, default="COP", server_default="COP")
+    provider = Column(String(20), nullable=False, default="wompi", server_default="wompi")
+
+    # --- la tarjeta guardada -------------------------------------------------
+    payment_source_id = Column(Integer, nullable=True)
+    card_brand = Column(String(20), nullable=True)     # VISA, MASTERCARD…
+    card_last_four = Column(String(4), nullable=True)  # para "····4242"
+    #: Correo con el que se creó la fuente de pago. Wompi lo exige en CADA
+    #: cobro, y tiene que ser el mismo con el que se registró la tarjeta.
+    customer_email = Column(String(255), nullable=True)
+
+    # --- el ciclo ------------------------------------------------------------
+    #: Día del mes (1–31) en hora de Colombia en que se activó. Se guarda
+    #: aparte de `next_charge_at` para que un 31 no se degrade a 28 para
+    #: siempre después de pasar por febrero.
+    billing_day = Column(Integer, nullable=True)
+    next_charge_at = Column(DateTime, nullable=True, index=True)
+    last_charge_at = Column(DateTime, nullable=True)
+    activated_at = Column(DateTime, nullable=True)
+    canceled_at = Column(DateTime, nullable=True)
+    #: Intentos gastados en el ciclo EN CURSO. Vuelve a 0 cuando un cobro entra.
+    attempts = Column(Integer, nullable=False, default=0, server_default="0")
+
+    created_by_user_id = Column(
+        Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    canceled_by_user_id = Column(
+        Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+    )
+
+    __table_args__ = (
+        UniqueConstraint("team_id", name="uq_subscriptions_team"),
+        CheckConstraint(
+            "status IN ('pending','active','past_due','canceled')",
+            name="ck_subscriptions_status",
+        ),
+        CheckConstraint("amount_cents > 0", name="ck_subscriptions_amount"),
+        CheckConstraint(
+            "billing_day IS NULL OR (billing_day >= 1 AND billing_day <= 31)",
+            name="ck_subscriptions_billing_day",
+        ),
+    )
+
+    team = relationship("Team")
+    charges = relationship(
+        "SubscriptionCharge", back_populates="subscription", cascade="all, delete-orphan"
+    )
+
+    def __repr__(self) -> str:
+        # `payment_source_id` y `customer_email` NO salen acá: el primero es la
+        # llave de cobro de un cliente y el segundo es PII.
+        return (
+            f"<Subscription id={self.id} team_id={self.team_id} "
+            f"plan={self.plan_key!r} status={self.status!r} "
+            f"payment_source_id=<REDACTED>>"
+        )
+
+    __str__ = __repr__
+
+
+class SubscriptionCharge(Base):
+    """Un intento de cobro mensual. Una fila por intento, no por mes.
+
+    Los reintentos de un mismo ciclo comparten `scheduled_for` y se distinguen
+    por `attempt`: así queda registrado que se intentó tres veces y por qué
+    falló cada una, en vez de sobrescribir la fila y perder el rastro.
+
+    `reference` es UNIQUE por lo mismo que en `credit_purchases`: es el candado
+    que impide que un webhook repetido de Wompi se procese dos veces.
+    """
+
+    __tablename__ = "subscription_charges"
+
+    id = Column(Integer, primary_key=True, index=True)
+    subscription_id = Column(
+        Integer, ForeignKey("subscriptions.id", ondelete="CASCADE"),
+        nullable=False, index=True,
+    )
+    team_id = Column(
+        Integer, ForeignKey("teams.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    reference = Column(String(80), nullable=False)
+    amount_cents = Column(Integer, nullable=False)
+    currency = Column(String(8), nullable=False, default="COP", server_default="COP")
+    status = Column(
+        String(20), nullable=False,
+        default=SUBSCRIPTION_CHARGE_PENDING, server_default=SUBSCRIPTION_CHARGE_PENDING,
+    )
+    provider_tx_id = Column(String(80), nullable=True, index=True)
+    #: El momento del ciclo que este cobro paga. Los reintentos lo repiten.
+    scheduled_for = Column(DateTime, nullable=False)
+    attempt = Column(Integer, nullable=False, default=1, server_default="1")
+    #: Código del fallo, NO el mensaje de Wompi: `DECLINED`, `SIN_RESPUESTA`,
+    #: `INPUT_VALIDATION_ERROR`… El texto completo va solo al log del servidor
+    #: (regla 6); acá cabe un código porque no dice nada del pagador.
+    failure_code = Column(String(40), nullable=True)
+    paid_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+    )
+
+    __table_args__ = (
+        UniqueConstraint("reference", name="uq_subscription_charges_reference"),
+        CheckConstraint(
+            "status IN ('pending','approved','declined','error','voided')",
+            name="ck_subscription_charges_status",
+        ),
+        CheckConstraint("amount_cents > 0", name="ck_subscription_charges_amount"),
+        Index("ix_subscription_charges_team_created", "team_id", "created_at"),
+    )
+
+    subscription = relationship("Subscription", back_populates="charges")
+    team = relationship("Team")
+
+    def __repr__(self) -> str:
+        return (
+            f"<SubscriptionCharge id={self.id} sub={self.subscription_id} "
+            f"status={self.status!r} attempt={self.attempt} "
+            f"reference={self.reference!r}>"
+        )
+
+    __str__ = __repr__
+
+
 # ===== Sprint "Ayuda a Cali": mascotas perdidas =====
 # Dos naturalezas de registro en la MISMA tabla, distinguidas por
 # `tipo_registro`, porque el cruce que hace el bot es justamente entre ambas:

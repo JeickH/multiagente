@@ -153,9 +153,16 @@ def _gross_up_wompi(neto_objetivo_cop: float) -> float:
 #: cubriendo el costo. Antes esto se calculaba solo: se cambió porque un
 #: precio que se mueve con la TRM da cifras como $80.653, imposibles de
 #: comunicar y de cuadrar en la caja.
+#:
+#: **El precio dejó de perseguir el `MARGEN_COMERCIAL`** (5-sep-2026, decisión
+#: del CEO): los $230.000 del paquete de 1.000 mensajes son un precio comercial,
+#: no `costo + 10%`. `MARGEN_COMERCIAL` sobrevive como piso — sirve para que
+#: `precio_sugerido_cop()` avise si el precio de lista se queda por debajo del
+#: costo cuando suba el dólar —, pero ya no describe lo que se cobra. El
+#: desglose que ve el administrador reporta el margen REAL, que hoy es muy
+#: superior al objetivo.
 PRECIO_LISTA_COP: Dict[str, int] = {
-    "mensajes_1000": 70_000,
-    "mensajes_5000": 340_000,
+    "mensajes_1000": 230_000,
 }
 
 
@@ -302,16 +309,13 @@ def desglose_paquete(key: str) -> Optional[Desglose]:
 # El catálogo
 # ---------------------------------------------------------------------------
 #
-# Con los números de arriba (costo directo COP 59,44 por mensaje):
+# Hoy se vende **un solo paquete**: 1.000 mensajes por COP 230.000 (decisión
+# del CEO, 5-sep-2026; el de 5.000 se retiró del catálogo). Con el costo
+# directo de COP 59,44 por mensaje, el margen real queda muy por encima del
+# `MARGEN_COMERCIAL` — ver la nota de `PRECIO_LISTA_COP`.
 #
-#   | paquete |    costo    | +30% (neto) | gross-up | precio de lista |
-#   |---------|-------------|-------------|----------|-----------------|
-#   | 1.000   | COP  59.444 | COP  77.277 |  80.653  | COP     80.700  |
-#   | 5.000   | COP 297.222 | COP 386.389 | 399.830  | COP    399.900  |
-#
-# La tabla es ilustrativa: la fuente de verdad es el cálculo, y los tests
-# verifican los precios contra él (y contra el gross-up), no contra estos
-# comentarios.
+# Los tests verifican que el precio de lista cubra el costo y que el desglose
+# cuadre (precio − comisión = neto), no estos comentarios.
 
 #: Links de pago creados a mano en el panel de Wompi, uno por paquete.
 #:
@@ -319,13 +323,17 @@ def desglose_paquete(key: str) -> Optional[Desglose]:
 #: y no en SSM. La variable de entorno `WOMPI_LINK_<KEY>` los pisa, para poder
 #: cambiarlos sin desplegar.
 #:
-#: OJO al actualizarlos: el valor del link tiene que coincidir con
-#: `PRECIO_LISTA_COP`. Si no coinciden, el cliente ve un precio en la app y
-#: paga otro en Wompi.
-LINKS_DE_PAGO: Dict[str, str] = {
-    "mensajes_1000": "https://checkout.wompi.co/l/LXZc6o",
-    "mensajes_5000": "https://checkout.wompi.co/l/a1sl2W",
-}
+#: **Está vacío a propósito desde el 5-sep-2026.** Los links que había estaban
+#: creados por los precios viejos ($70.000 y $340.000): dejarlos después de
+#: subir el paquete a $230.000 habría hecho que el cliente viera un precio en
+#: la app y pagara otro en Wompi, que es el peor error posible acá. Sin link,
+#: el frontend cae al **checkout por API**, que firma el monto del catálogo y
+#: por lo tanto no puede desincronizarse.
+#:
+#: Si el CEO prefiere volver al link estático, crea uno nuevo en el panel de
+#: Wompi por el valor EXACTO de `PRECIO_LISTA_COP` y lo pega en
+#: `WOMPI_LINK_MENSAJES_1000` — sin desplegar.
+LINKS_DE_PAGO: Dict[str, str] = {}
 
 
 _CATALOGO: List[Paquete] = [
@@ -334,12 +342,6 @@ _CATALOGO: List[Paquete] = [
         nombre="1.000 mensajes",
         messages=1000,
         descripcion="Ideal para arrancar o para una campaña puntual.",
-    ),
-    Paquete(
-        key="mensajes_5000",
-        nombre="5.000 mensajes",
-        messages=5000,
-        descripcion="Para envíos recurrentes, con la comisión fija diluida.",
     ),
 ]
 

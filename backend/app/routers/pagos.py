@@ -41,6 +41,7 @@ from ..schemas import (
     CheckoutCreate,
     CheckoutFormOut,
     CheckoutOut,
+    CobroOut,
     EstadoPagoOut,
     CompraOut,
     PagosAccesoOut,
@@ -48,8 +49,14 @@ from ..schemas import (
     PaqueteOut,
     PaquetesOut,
     SaldoOut,
+    SuscripcionActivarIn,
+    SuscripcionConfigOut,
+    SuscripcionOut,
+    TarjetaOut,
 )
 from ..services import creditos as svc_creditos
+from ..services import ratelimit
+from ..services import suscripciones as svc_suscripciones
 from ..services import wompi
 
 logger = logging.getLogger(__name__)
@@ -68,6 +75,19 @@ FRONTEND_BASE_URL = os.getenv("FRONTEND_BASE_URL", "http://localhost:3000")
 
 #: Ruta por defecto de regreso: la misma pantalla de pagos.
 REDIRECT_POR_DEFECTO = "/pagos"
+
+#: Tope de intentos de registrar una tarjeta, por cuenta y por hora.
+#:
+#: No es una defensa contra un cliente torpe (con dos o tres intentos ya se
+#: corrigió un número mal escrito): es contra el **card testing**. Quien
+#: consiga una cuenta de administrador podría usar este endpoint para probar
+#: tarjetas robadas de a una, y a quien las franquicias multan y terminan
+#: cerrándole la pasarela es al comercio — a Gloma, no al atacante.
+#:
+#: La ventana es en memoria del proceso, igual que la de los chats públicos:
+#: con más de una task de ECS el límite pasa a ser por task, que es más
+#: permisivo pero nunca peor que no tener nada.
+_activaciones_limiter = ratelimit.SlidingWindow(por_ip=5, global_=200)
 
 
 # ---------------------------------------------------------------------------
@@ -288,6 +308,225 @@ def crear_checkout(
 
 
 # ---------------------------------------------------------------------------
+# Suscripción mensual
+# ---------------------------------------------------------------------------
+#
+# El flujo completo, y por qué la tarjeta no pasa por acá, está explicado en
+# `services/suscripciones.py`. Lo que este router aporta:
+#
+#   GET  /pagos/suscripcion          en qué va la suscripción de la cuenta
+#   GET  /pagos/suscripcion/config   lo que el navegador necesita para
+#                                    tokenizar la tarjeta contra Wompi
+#   POST /pagos/suscripcion/activar  recibe el `tok_...`, guarda la tarjeta y
+#                                    lanza el primer cobro
+#   POST /pagos/suscripcion/cancelar apaga el cobro automático
+#
+# Los cuatro exigen `require_billing_admin`, igual que el resto del módulo.
+
+
+def _suscripcion_out(
+    db: Session, sub: models.Subscription
+) -> SuscripcionOut:
+    """Arma la respuesta pública de una suscripción.
+
+    Es la única traducción del modelo a la pantalla, y por eso es también el
+    sitio donde se decide qué NO sale: ni `payment_source_id` ni
+    `customer_email` tienen campo en `SuscripcionOut`.
+    """
+    plan = svc_suscripciones.plan(sub.plan_key) or svc_suscripciones.PLAN_MENSUAL
+
+    cobros = (
+        db.query(models.SubscriptionCharge)
+        .filter(models.SubscriptionCharge.subscription_id == sub.id)
+        .order_by(models.SubscriptionCharge.created_at.desc())
+        .limit(24)
+        .all()
+    )
+
+    tarjeta = None
+    if sub.card_last_four:
+        tarjeta = TarjetaOut(brand=sub.card_brand, last_four=sub.card_last_four)
+
+    return SuscripcionOut(
+        status=sub.status,
+        plan_key=plan.key,
+        plan_nombre=plan.nombre,
+        plan_descripcion=plan.descripcion,
+        amount_cents=sub.amount_cents,
+        amount_cop=sub.amount_cents // 100,
+        currency=sub.currency,
+        tarjeta=tarjeta,
+        next_charge_at=sub.next_charge_at,
+        last_charge_at=sub.last_charge_at,
+        activated_at=sub.activated_at,
+        canceled_at=sub.canceled_at,
+        habilitada=wompi.suscripciones_habilitadas(),
+        cobro_en_curso=any(
+            c.status == models.SUBSCRIPTION_CHARGE_PENDING for c in cobros[:3]
+        ),
+        cobros=[CobroOut.model_validate(c) for c in cobros],
+    )
+
+
+@router.get("/suscripcion", response_model=SuscripcionOut)
+def ver_suscripcion(
+    db: Session = Depends(get_db),
+    member: models.TeamMember = Depends(require_billing_admin),
+) -> SuscripcionOut:
+    """Estado de la suscripción de la cuenta.
+
+    Crea la fila en `pending` si no existía: una cuenta sin fila y una con fila
+    `pending` son lo mismo de cara al cliente ("pendiente por activar"), y
+    unificarlas acá le ahorra a la pantalla tener que distinguirlas.
+    """
+    team = _team(db, member)
+    sub = svc_suscripciones.obtener_o_crear(db, team.id)
+    return _suscripcion_out(db, sub)
+
+
+@router.get("/suscripcion/config", response_model=SuscripcionConfigOut)
+def config_suscripcion(
+    member: models.TeamMember = Depends(require_billing_admin),
+) -> SuscripcionConfigOut:
+    """Llave pública y tokens de aceptación para el formulario de tarjeta.
+
+    Se pide **al abrir el formulario**, no al cargar la pantalla: los tokens de
+    aceptación expiran, y su razón de ser es probar que al cliente se le mostró
+    la versión vigente del contrato justo antes de aceptarla.
+
+    Nada de lo que sale de acá es secreto — ver `SuscripcionConfigOut`.
+    """
+    if not wompi.suscripciones_habilitadas():
+        logger.error("suscripcion: faltan llaves de Wompi para tokenizar tarjetas")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="El medio de pago no está disponible por ahora. Intenta más tarde.",
+        )
+
+    try:
+        aceptacion = wompi.tokens_de_aceptacion()
+    except wompi.WompiError:
+        # El detalle ya quedó en el log del servicio (regla 6).
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="El medio de pago no está disponible por ahora. Intenta más tarde.",
+        )
+
+    return SuscripcionConfigOut(
+        public_key=os.environ.get("WOMPI_PUBLIC_KEY", "").strip(),
+        tokens_url=f"{wompi.base_url().rstrip('/')}/tokens/cards",
+        acceptance_token=aceptacion["acceptance_token"],
+        acceptance_permalink=aceptacion.get("acceptance_permalink"),
+        personal_auth_token=aceptacion.get("personal_auth_token"),
+        personal_auth_permalink=aceptacion.get("personal_auth_permalink"),
+        sandbox=not wompi.es_produccion(),
+    )
+
+
+@router.post("/suscripcion/activar", response_model=SuscripcionOut)
+def activar_suscripcion(
+    payload: SuscripcionActivarIn,
+    db: Session = Depends(get_db),
+    member: models.TeamMember = Depends(require_billing_admin),
+    user: models.User = Depends(get_current_user),
+) -> SuscripcionOut:
+    """Guarda la tarjeta en Wompi y lanza el primer cobro del plan.
+
+    Devuelve la suscripción **todavía sin activar**: Wompi responde `PENDING` y
+    la confirmación llega por el webhook firmado (o por la reconciliación del
+    tick). La pantalla muestra "estamos confirmando" y refresca sola. Activar
+    aquí, con la respuesta del `POST`, sería activar sobre una promesa.
+    """
+    if not payload.acepta_terminos:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Debes aceptar los términos para registrar la tarjeta",
+        )
+
+    if not wompi.suscripciones_habilitadas():
+        logger.error("suscripcion: intento de activar sin llaves de Wompi")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="El medio de pago no está disponible por ahora. Intenta más tarde.",
+        )
+
+    team = _team(db, member)
+
+    # El tope va por CUENTA, no por IP: la IP la cambia cualquiera, el team es
+    # lo que de verdad identifica a quien está probando tarjetas.
+    if not _activaciones_limiter.allow(f"team:{team.id}"):
+        logger.warning(
+            "suscripcion: team %s superó el tope de intentos de registrar tarjeta",
+            team.id,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Demasiados intentos. Espera un momento antes de volver a intentar.",
+        )
+
+    sub = svc_suscripciones.obtener_o_crear(db, team.id)
+
+    try:
+        svc_suscripciones.activar(
+            db,
+            sub,
+            token_tarjeta=payload.card_token,
+            email_cliente=user.correo,
+            user_id=user.id,
+        )
+    except svc_suscripciones.TokenInvalido:
+        # El servicio ya loggeó lo que pasó SIN escribir el valor recibido.
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="El registro de la tarjeta no se completó. Vuelve a intentarlo.",
+        )
+    except svc_suscripciones.SuscripcionError as error:
+        if error.codigo == "YA_ACTIVA":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="La suscripción ya está activa",
+            )
+        if error.codigo == "COBRO_EN_CURSO":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Ya hay un cobro en curso. Espera unos minutos.",
+            )
+        # Todo lo demás (rechazo del banco, Wompi caído) → mensaje genérico.
+        # El código real quedó en el log del servicio.
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="No se pudo registrar la tarjeta. Verifica los datos o intenta con otra.",
+        )
+
+    db.refresh(sub)
+    return _suscripcion_out(db, sub)
+
+
+@router.post("/suscripcion/cancelar", response_model=SuscripcionOut)
+def cancelar_suscripcion(
+    db: Session = Depends(get_db),
+    member: models.TeamMember = Depends(require_billing_admin),
+    user: models.User = Depends(get_current_user),
+) -> SuscripcionOut:
+    """Apaga el cobro automático y olvida la tarjeta.
+
+    La segunda confirmación es de la pantalla (un modal), no de acá: este
+    endpoint es la acción, y una acción que ya se pidió dos veces no se
+    pregunta una tercera. No reembolsa el mes en curso.
+    """
+    team = _team(db, member)
+    sub = svc_suscripciones.obtener(db, team.id)
+    if sub is None or sub.status == models.SUBSCRIPTION_PENDING:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="No hay una suscripción activa que desactivar",
+        )
+
+    svc_suscripciones.cancelar(db, sub, user_id=user.id)
+    return _suscripcion_out(db, sub)
+
+
+# ---------------------------------------------------------------------------
 # Webhook
 # ---------------------------------------------------------------------------
 
@@ -343,7 +582,11 @@ async def wompi_webhook(request: Request, db: Session = Depends(get_db)) -> Dict
         .first()
     )
     if compra is None:
-        # Puede ser una transacción de otro sistema sobre el mismo comercio.
+        # Puede ser el cobro de una suscripción, que vive en otra tabla.
+        resultado = _webhook_de_suscripcion(db, referencia, estado_wompi, tx_id, tx)
+        if resultado is not None:
+            return resultado
+        # O una transacción de otro sistema sobre el mismo comercio.
         logger.warning("wompi.webhook: referencia desconocida")
         return {"ok": True, "ignorado": True}
 
@@ -423,6 +666,88 @@ async def wompi_webhook(request: Request, db: Session = Depends(get_db)) -> Dict
         team.message_credits,
     )
     return {"ok": True, "status": models.CREDIT_PURCHASE_APPROVED}
+
+
+def _webhook_de_suscripcion(
+    db: Session,
+    referencia: str,
+    estado_wompi: str,
+    tx_id: Optional[str],
+    tx: Dict[str, Any],
+) -> Optional[Dict[str, Any]]:
+    """Procesa el evento si la referencia es la de un cobro de suscripción.
+
+    Devuelve `None` si la referencia no es de acá (para que el llamador siga
+    buscando), o el dict de respuesta si sí lo era.
+
+    Mismos candados que la acreditación de mensajes, y por las mismas razones:
+    `SELECT ... FOR UPDATE` para serializar dos webhooks simultáneos, salida
+    temprana si el cobro ya está aprobado, verificación del monto contra lo que
+    registramos, y re-consulta a la API de Wompi en producción antes de dar
+    nada por bueno.
+    """
+    cobro = (
+        db.query(models.SubscriptionCharge)
+        .filter(models.SubscriptionCharge.reference == referencia)
+        .with_for_update()
+        .first()
+    )
+    if cobro is None:
+        return None
+
+    if cobro.status == models.SUBSCRIPTION_CHARGE_APPROVED:
+        logger.info("wompi.webhook: cobro %s ya estaba aprobado", cobro.id)
+        return {"ok": True, "ya_acreditada": True}
+
+    nuevo_estado = wompi.estado_interno(estado_wompi)
+    if nuevo_estado is None:
+        logger.info("wompi.webhook: cobro %s sigue en %s", cobro.id, estado_wompi)
+        return {"ok": True, "pendiente": True}
+
+    # El monto viene firmado en el evento, pero se compara igual con lo que
+    # registramos: si no cuadra, algo se salió del guion y no se activa nada.
+    monto_evento = tx.get("amount_in_cents")
+    if (
+        nuevo_estado == models.SUBSCRIPTION_CHARGE_APPROVED
+        and monto_evento is not None
+        and int(monto_evento) != int(cobro.amount_cents)
+    ):
+        logger.error(
+            "wompi.webhook: monto no coincide cobro_id=%s esperado=%s recibido=%s",
+            cobro.id,
+            cobro.amount_cents,
+            monto_evento,
+        )
+        cobro.failure_code = "MONTO_NO_COINCIDE"
+        svc_suscripciones.aplicar_estado(
+            db, cobro, models.SUBSCRIPTION_CHARGE_ERROR, tx_id=tx_id
+        )
+        return {"ok": True, "status": models.SUBSCRIPTION_CHARGE_ERROR}
+
+    # Segunda vuelta en producción: preguntarle a Wompi con la llave privada.
+    # El 503 es a propósito — Wompi reintenta hasta 3 veces en 24 h, y es
+    # preferible reintentar que activar una suscripción que no se pagó.
+    if (
+        nuevo_estado == models.SUBSCRIPTION_CHARGE_APPROVED
+        and _verificar_contra_api()
+        and tx_id
+    ):
+        real = wompi.consultar_transaccion(tx_id)
+        if real is None:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="No se pudo verificar el pago. Reintentar.",
+            )
+        if (real.get("status") or "").upper() != "APPROVED":
+            logger.error(
+                "wompi.webhook: el evento decía APPROVED pero la API no. cobro_id=%s",
+                cobro.id,
+            )
+            raise HTTPException(status_code=403, detail="Firma inválida")
+
+    svc_suscripciones.aplicar_estado(db, cobro, nuevo_estado, tx_id=tx_id)
+    logger.info("wompi.webhook: cobro %s → %s", cobro.id, nuevo_estado)
+    return {"ok": True, "status": nuevo_estado}
 
 
 def _verificar_contra_api() -> bool:
