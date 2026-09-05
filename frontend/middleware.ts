@@ -16,6 +16,14 @@ import type { NextRequest } from 'next/server';
  * main.<amplify>.amplifyapp.com  → idem (URL técnica de respaldo)
  * localhost y otros hosts         → sin intervención.
  *
+ * Sprint 28: la marca se muda a `glomacx.com`. Este paso es **aditivo**:
+ * `glomacx.com` y `www.glomacx.com` sirven la landing igual que el dominio
+ * viejo, y `app.glomacx.com` cae en el passthrough (plataforma completa),
+ * exactamente como `app.glomabeauty.com`. El redirect 301 del dominio viejo
+ * al nuevo se activa en un segundo commit, y sólo cuando `glomacx.com` ya
+ * resuelva con HTTPS: si se activara antes, el redirect mandaría a todos los
+ * usuarios a un dominio muerto.
+ *
  * Sprint "Ayuda a Cali" — dominio propio `mascotasperdidascolombia.com`
  * (comprado en Hostinger, con el DNS delegado a Route 53), más el subdominio
  * `mascotasperdidascali.glomabeauty.com` que se mantiene como respaldo:
@@ -27,7 +35,12 @@ import type { NextRequest } from 'next/server';
  *                      app.glomabeauty.com con sesión iniciada)
  */
 
-const GLOMA_HOSTS = new Set(['glomabeauty.com', 'www.glomabeauty.com']);
+const GLOMA_HOSTS = new Set([
+  'glomabeauty.com',
+  'www.glomabeauty.com',
+  'glomacx.com',
+  'www.glomacx.com',
+]);
 const MASCOTAS_HOSTS = new Set([
   'mascotasperdidascolombia.com',
   'www.mascotasperdidascolombia.com',
