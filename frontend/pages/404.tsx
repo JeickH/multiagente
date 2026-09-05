@@ -6,7 +6,8 @@ import { useEffect, useState } from 'react';
  * 404 brandeado Gloma. Se muestra cuando:
  *  - Alguien entra a una ruta inexistente.
  *  - Middleware rewritea rutas de plataforma (login, bots, …) cuando el host
- *    es glomabeauty.com, porque la plataforma vive bajo el dominio de Amplify.
+ *    es el de la landing (glomacx.com, o el viejo glomabeauty.com), porque la
+ *    plataforma vive bajo el subdominio `app.`.
  *
  * Diseño alineado con /gloma (Syne + Inter, Deep Forest + Algorithmic Mint).
  */
@@ -25,7 +26,7 @@ export default function NotFound() {
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const h = window.location.hostname.toLowerCase();
-      setIsGloma(h === 'glomabeauty.com' || h === 'www.glomabeauty.com');
+      setIsGloma(h.replace(/^www\./, '') === 'glomabeauty.com' || h.replace(/^www\./, '') === 'glomacx.com');
     }
   }, []);
 

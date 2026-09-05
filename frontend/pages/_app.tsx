@@ -46,6 +46,10 @@ const PUBLIC_PAGES = [
 const PUBLIC_HOSTS = [
   'glomabeauty.com',
   'www.glomabeauty.com',
+  // Sprint 28: dominio nuevo de la marca. `app.glomacx.com` tampoco va aquí,
+  // por el mismo motivo que `app.glomabeauty.com`.
+  'glomacx.com',
+  'www.glomacx.com',
   'mascotasperdidascolombia.com',
   'www.mascotasperdidascolombia.com',
   'mascotasperdidascali.glomabeauty.com',
