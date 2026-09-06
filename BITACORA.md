@@ -6267,3 +6267,51 @@ en vez de un "Cargando…" que no lleva a ninguna parte.
 
 Moraleja: los 1.309 tests pasaban y la API respondía bien. Lo que faltaba era
 **abrir la pantalla**.
+
+### Ajustes del CEO y llaves de producción (2026-09-05, tarde)
+
+Tres cosas pedidas al ver la pantalla:
+
+1. **Quitar el detalle de en qué se va el costo del plan.** Se quitó del
+   **schema**, no solo de la pantalla: el endpoint es de administradores, pero
+   el administrador de una cuenta *es el cliente*, así que ocultarlo en el
+   frontend habría dejado el costo y el margen de Gloma viajando al navegador,
+   a un DevTools de distancia. El cálculo sigue en
+   `creditos.desglose_paquete()` y hay un test que impide que vuelva a salir
+   por la API.
+2. **Quitar el subtítulo** "Cada mensaje de un envío masivo consume un
+   crédito. Aquí recargas."
+3. **El botón de suscripción deshabilitado.** No era un bug: faltaban las
+   llaves de Wompi.
+
+**Llaves de producción (parcial).** El CEO entregó la pública y la privada;
+quedaron en **SSM SecureString** (`/multiagente/prod/WOMPI_PUBLIC_KEY` y
+`WOMPI_PRIVATE_KEY`) y conectadas como `secrets` de la task-def **rev 79** —
+nunca como `environment` en claro, porque la task-def queda en CloudTrail.
+Verificado que no aparecen en ningún archivo del repo ni en el historial de
+git.
+
+**Faltan dos** y sin ellas el botón sigue apagado, verificado corriendo un
+`run-task` que imprime qué ve el contenedor:
+
+    WOMPI_PUBLIC_KEY          PRESENTE  pub_prod
+    WOMPI_PRIVATE_KEY         PRESENTE  prv_prod
+    WOMPI_INTEGRITY_SECRET    FALTA
+    WOMPI_EVENTS_SECRET       FALTA
+    suscripciones_habilitadas(): False
+
+- `WOMPI_INTEGRITY_SECRET` (`prod_integrity_…`) firma el monto. **Sin ella
+  Wompi rechaza la transacción**, así que es la que mantiene el botón apagado.
+- `WOMPI_EVENTS_SECRET` (`prod_events_…`) valida el webhook. Sin ella el
+  webhook es fail-closed en producción: el cobro se haría y **nunca se
+  confirmaría**, dejando la suscripción sin activar con la plata cobrada.
+
+Ojo: con `pub_prod_` el sistema ya está en modo producción real
+(`es_produccion() == True`). El día que entren las dos que faltan, el primer
+clic en "Activar suscripción" **cobra $350.000 de verdad**.
+
+Despliegue de estos ajustes: imagen `:sprint29-wompi-prod`, task-def **rev
+79**, Amplify **job 147 SUCCEED**. Verificado en la web con navegador real:
+la sección muestra "Pendiente por activar", "$ 350.000 / mes" y el botón
+deshabilitado con su aviso; el paquete quedó en "$ 230.000"; ya no aparecen
+ni el subtítulo ni el desglose de costos.
