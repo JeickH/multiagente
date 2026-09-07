@@ -6315,3 +6315,73 @@ Despliegue de estos ajustes: imagen `:sprint29-wompi-prod`, task-def **rev
 la sección muestra "Pendiente por activar", "$ 350.000 / mes" y el botón
 deshabilitado con su aviso; el paquete quedó en "$ 230.000"; ya no aparecen
 ni el subtítulo ni el desglose de costos.
+
+### Llaves completas y el ambiente equivocado (2026-09-06)
+
+Entraron las cuatro llaves de producción. Las dos que faltaban
+(`WOMPI_INTEGRITY_SECRET` y `WOMPI_EVENTS_SECRET`) quedaron en SSM
+SecureString y en la task-def como `secrets`. Verificado que ninguna de las
+cuatro aparece en un archivo del repo ni en el historial de git.
+
+**Y ahí salió un defecto que solo se ve con llaves reales.** Con todo
+configurado, la pantalla seguía diciendo "el medio de pago no está
+disponible". El log lo delató:
+
+    GET https://sandbox.wompi.co/v1/merchants/info → 422
+    GET https://sandbox.wompi.co/v1/merchants/pub_prod_… → 422
+
+El backend le estaba mandando una llave de **producción** al **sandbox**.
+`base_url()` devolvía sandbox por defecto salvo que alguien recordara poner
+`WOMPI_BASE_URL`, y los dos ambientes de Wompi son independientes: esa llave
+allí no existe, así que respondió 422 sin explicar nada. El síntoma visible
+era solo "no disponible" — el mismo mensaje genérico que da la falta de una
+llave, que es justo lo que despistaba.
+
+Arreglado en la causa (`7bc1372`): **el ambiente sale del prefijo de la llave**
+(`pub_prod_` → producción, si no → sandbox). Elimina la misconfiguración en
+los dos sentidos — no se puede quedar en sandbox con llaves reales ni cobrar
+de verdad con llaves de prueba. `WOMPI_BASE_URL` sigue mandando si está, que
+es lo que deja apuntar al doble en las pruebas.
+
+Lección para la próxima integración con dos ambientes: **derivar el ambiente
+del credencial, no de una variable aparte**. Una variable aparte se olvida, y
+el error que produce no se parece a "te faltó una variable".
+
+### Precio por cuenta
+
+Para poder probar el cobro recurrente **de verdad** —Wompi no permite ensayarlo
+sin cobrar; el sandbox es otro ambiente y no prueba las llaves de producción—
+la cuenta interna `gloma@glomabeauty.com` (team 7) queda en **$3.000**. Todas
+las demás, Arranquemos Pues incluida, siguen en **$350.000**.
+
+El override vive en `suscripciones.PRECIO_POR_CUENTA`, en código y no en un
+`UPDATE` a mano: un precio especial metido a mano en producción no deja rastro
+de quién lo puso ni por qué. **Marcado como TEMPORAL — devolverlo a $350.000
+cuando termine la prueba.**
+
+Dos reglas del precio, con test cada una:
+- a una suscripción **`pending`** se le actualiza el precio (la fila se crea al
+  abrir la pantalla y se habría quedado con el precio viejo);
+- a una **activa** no se le toca. Cambiarle el precio a un cobro recurrente por
+  detrás es lo que un cliente jamás espera; eso exige una decisión explícita,
+  no un efecto secundario de abrir una pantalla.
+
+`scripts/verificar_precios_suscripcion.py` resuelve el precio de cada cuenta
+con la misma función que usa el cobro, y verifica que no haya un typo en el
+correo del override — un typo haría que la cuenta pagara el precio de lista
+sin que nadie se entere hasta ver el cobro.
+
+### Estado final
+
+Task-def **rev 82** (`:sprint29-ambiente-prod`), Amplify al día. Verificado en
+producción con navegador real: el botón "Activar suscripción" **habilitado**,
+el formulario de tarjeta abriendo con los dos enlaces de habeas data y el
+aviso de que la tarjeta no pasa por Gloma, y `GET /pagos/suscripcion/config`
+trayendo los tokens de aceptación de **Wompi producción** sin que viaje ningún
+secreto al navegador. Suite: **1.346 passed**.
+
+Pendiente del CEO: registrar el webhook en el panel de Wompi apuntando a
+`https://api.glomacx.com/pagos/wompi/webhook`. Sin eso el cobro entra pero la
+plataforma no se entera, y la suscripción quedaría sin activar con la plata
+cobrada — la reconciliación del tick la rescataría a los 15 minutos, pero es
+una red de seguridad, no el camino.
