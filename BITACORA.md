@@ -6385,3 +6385,126 @@ Pendiente del CEO: registrar el webhook en el panel de Wompi apuntando a
 plataforma no se entera, y la suscripción quedaría sin activar con la plata
 cobrada — la reconciliación del tick la rescataría a los 15 minutos, pero es
 una red de seguridad, no el camino.
+
+---
+
+## Sprint 30 — La conversación abandonada se convierte en una llamada (2026-09-06)
+
+**Pedido del CEO.** Que las conversaciones marcadas como abandonadas **después
+de haber enviado alguna información** dejen sus datos en una ventana nueva, para
+que un asesor las revise y llame. La llamada no se hace por la plataforma: acá
+solo se registra a quién llamar y cuándo (3 días después del abandono), con un
+estado que el asesor pasa de `pendiente` a `cerrado`. Además, el bot tiene que
+**distinguir** entre las que solo recibieron el mensaje de bienvenida y las que
+sí recibieron información, que son las de más interés. La ventana la ven todos
+los tipos de cuenta, administrador y asesor.
+
+### El corte salió de los datos, no del criterio de nadie
+
+Antes de escribir el modelo se miraron las 159 conversaciones abandonadas reales
+de Arranquemos Pues entre el 21-ago y el 4-sep: **62 habían recibido información
+y 97 solo el saludo**. En la base los dos casos se separan con nitidez — la que
+solo recibió el saludo tiene **un único mensaje entrante**, el "hola" con el que
+abrió, y de ahí en adelante todo lo que hay es del bot.
+
+De ahí la regla, que vive en `services/agendamientos.nivel_de_interes()`:
+**¿volvió a escribir después del primer mensaje del bot?** Si sí, el motor le
+contestó —siempre responde a un entrante— y eso es haber recibido información.
+
+**Contar mensajes salientes no sirve, y ese era el error fácil.** Los tres
+recordatorios de silencio también son salientes y los manda el bot solo, cuando
+ya no hay nadie del otro lado: contando salientes, *todo* abandono parecería un
+cliente interesado y la lista no distinguiría nada. La nota interna del handoff
+también es saliente, y por eso se excluye por `message_type`.
+
+Un descubrimiento del camino: al medir por `message_type <> 'text'` para
+detectar media, el conteo daba 1 en conversaciones donde el bot no había mandado
+ninguna imagen. Ese 1 era la **nota interna**. Se confirmó leyendo la
+transcripción completa de dos conversaciones, una de cada tipo.
+
+### La tabla
+
+`agendamientos`, con índice único **parcial** por conversación
+(`WHERE estado = 'pendiente'`). Impide dos llamadas pendientes del mismo chat
+—dos ticks a la vez, o alguien que vuelve, se calla y el bot la vuelve a
+abandonar— pero deja pasar una nueva cuando la anterior ya está cerrada: eso es
+una oportunidad nueva, no un duplicado.
+
+Los datos del cliente **no se copian** a la tabla: nombre y teléfono se leen de
+`conversations` por el join. Duplicarlos abriría la puerta a que la lista muestre
+un teléfono viejo después de corregir el contacto en la bandeja, y el teléfono es
+el dato por el que existe la pantalla. Lo que sí se guarda es el `asesor`, porque
+es el nombre del turno **en el momento del abandono**.
+
+### La fecha se calcula en hora de Colombia
+
+`fecha_tentativa()` convierte a `America/Bogota` antes de sumar los 3 días. Un
+abandono procesado a las 02:00 UTC son las 21:00 del día anterior en Medellín, y
+sumar sobre la fecha UTC le correría la llamada un día entero. Hay test del caso
+de madrugada.
+
+### Autorización
+
+`/agendamientos` no lleva `require_permission` **a propósito**: es el módulo de
+trabajo del asesor, y exigirle un permiso que hoy nadie tiene configurado lo
+dejaría por fuera justo a él. Lo que sí se respeta es el aislamiento: el
+`team_id` va en el WHERE, no en un `if` posterior, así que una cuenta que adivine
+el id de otra recibe 404 y no llega a tocar la fila. Probado con dos cuentas
+contra el servidor local, además de los tests.
+
+### Backfill
+
+78 llamadas creadas para Arranquemos Pues, todas con fecha **8-sep-2026** y
+asignadas a **Alexandra** (la rotación de esa cuenta quedó en una sola persona el
+29-ago). Las 126 restantes se saltaron por ser de solo bienvenida. El script usa
+la **misma función** de clasificación que el bot en vivo: si clasificara por su
+cuenta, la lista tendría dos criterios conviviendo. Es idempotente y se corrió
+antes en local con datos sembrados.
+
+### El bot ahora se llama Luisa
+
+La asesora virtual de Arranquemos Pues pasa de **"Maria Camila"** a **"Luisa"**.
+Vive en `bot_contexts/demo_viajes.md`, que se hornea en la imagen: **necesita
+despliegue, no hay nada que correr en la base.** Ojo con no confundirla con la
+asesora **humana** Camila de la rotación histórica, que no se tocó.
+
+### Lo que encontró la revisión de seguridad
+
+Un hallazgo, propio y corregido antes de pushear: los docstrings del servicio y
+las pruebas citaban **el nombre y los mensajes textuales de un cliente real** de
+la conversación 495, copiados al armar los ejemplos. Este repo es público
+(regla 8). Se reemplazaron por texto inventado con la misma forma y se enmendó el
+commit, así que nunca entró al historial público. El resto de las reglas pasa:
+los logs no llevan teléfono ni nombre, el `__repr__` los omite, los errores al
+cliente van genéricos y la pantalla usa `authedFetch` sin tocar `localStorage`.
+
+### Un bug propio, encontrado mirando el pantallazo
+
+La página salió con `<Layout>` sin variante, y el default es `centered`: mete el
+contenido en una tarjeta angosta y la tabla se salía por los lados. No lo
+detectó ningún test —los tests no miran— sino la captura para el manual. Los
+listados van con `variant="fullscreen"`.
+
+### Documentación
+
+- **Tutorial interactivo** de 5 pasos en la ventana nueva, con su llave
+  `agendamientos` en `ALLOWED_TUTORIAL_MODULES`.
+- **Manual del cliente**: capítulo 11 nuevo, secciones renumeradas hasta la 15,
+  la rutina del día con su paso de agendamientos y las capturas nuevas. De paso
+  se corrigió la dirección de la portada: **app.glomacx.com** (estaba la vieja).
+- **`nuevo_modulo_agendamientos.pdf`**: volante corto y aparte para anunciar el
+  módulo, con los estilos extraídos del manual para que no se desincronicen.
+- **Pieza de Instagram** `33_agendamientos` (carrusel de 5), planeada en el
+  Sprint 12 del plan de contenido. Cierra el hilo de la pieza 12, que remataba
+  con *«La cotización no se pierde. Se abandona.»* y quedaba sin salida.
+
+### Estado final
+
+Task-def **rev 83** (`:sprint29-agendamientos`), migración aplicada en RDS y en
+local (paridad), Amplify job 154 SUCCEED. Verificado en producción:
+`/agendamientos` responde 401 sin token, la página carga y el bundle desplegado
+trae el módulo y el tutorial. Suite: **1.359 passed** (25 nuevos), también con
+`TZ=UTC` como el CI.
+
+Pendiente menor: el manual no documenta el módulo **Pagos**, que salió en el
+Sprint 29 y ya aparece en el menú de la cuenta.
