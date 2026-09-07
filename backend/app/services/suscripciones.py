@@ -125,6 +125,40 @@ def plan(key: str) -> Optional[Plan]:
 
 
 # ---------------------------------------------------------------------------
+# Precio por cuenta
+# ---------------------------------------------------------------------------
+
+#: Cuentas que pagan algo distinto del precio de lista, por correo del dueño.
+#:
+#: Vive en código y no en la base por lo mismo que el catálogo de paquetes: un
+#: precio especial que se mete con un `UPDATE` a mano en producción no deja
+#: rastro de quién lo puso ni por qué, y seis meses después nadie sabe si esa
+#: cuenta paga menos por un acuerdo comercial o por un error.
+#:
+#: ⚠️ **`gloma@glomabeauty.com` es TEMPORAL** (6-sep-2026, pedido del CEO).
+#: Wompi no permite ensayar un cobro recurrente real sin cobrar de verdad —el
+#: sandbox es otro ambiente y no prueba las llaves de producción—, así que la
+#: cuenta interna de Gloma queda en $3.000 para verificar el flujo completo
+#: (registrar tarjeta → cobro → webhook → activación) moviendo lo mínimo.
+#: **Devolverla a los $350.000 cuando la prueba termine.**
+PRECIO_POR_CUENTA: Dict[str, int] = {
+    "gloma@glomabeauty.com": 3_000 * 100,
+}
+
+
+def precio_para(correo_dueño: Optional[str], *, el_plan: Plan = PLAN_MENSUAL) -> int:
+    """Cuántos centavos paga esta cuenta al mes.
+
+    El precio sale **siempre del servidor**: el cliente manda a lo sumo qué
+    plan quiere, nunca cuánto cuesta. La comparación de correos es
+    case-insensitive porque el login no distingue mayúsculas y un override que
+    dependa de cómo se escribió el correo es un override que un día no aplica.
+    """
+    clave = (correo_dueño or "").strip().lower()
+    return PRECIO_POR_CUENTA.get(clave, el_plan.amount_cents)
+
+
+# ---------------------------------------------------------------------------
 # Reintentos
 # ---------------------------------------------------------------------------
 
@@ -267,6 +301,17 @@ def obtener(db: Session, team_id: int) -> Optional[models.Subscription]:
     )
 
 
+def correo_del_dueño(db: Session, team_id: int) -> Optional[str]:
+    """El correo del owner del team. Es la llave de `PRECIO_POR_CUENTA`."""
+    fila = (
+        db.query(models.User.correo)
+        .join(models.Team, models.Team.owner_user_id == models.User.id)
+        .filter(models.Team.id == team_id)
+        .first()
+    )
+    return fila[0] if fila else None
+
+
 def obtener_o_crear(
     db: Session, team_id: int, *, plan_key: str = PLAN_MENSUAL.key
 ) -> models.Subscription:
@@ -276,17 +321,34 @@ def obtener_o_crear(
     "pendiente por activar". Una cuenta sin fila y una cuenta con fila
     `pending` son lo mismo de cara al cliente, y unificarlas acá evita que cada
     pantalla tenga que tratar el `None` por su cuenta.
+
+    **Al precio de una suscripción todavía `pending` se le da alcance.** Si el
+    precio de lista cambia —o se le pone un override a la cuenta— después de
+    que alguien abrió la pantalla, la fila ya creada se quedaría con el precio
+    viejo y le cobraríamos eso. Solo se toca en `pending`: cambiarle el precio
+    a una suscripción **activa** por detrás es lo que un cliente jamás espera,
+    y eso exige una decisión explícita, no un efecto secundario de abrir una
+    pantalla.
     """
+    el_plan = plan(plan_key) or PLAN_MENSUAL
+    precio = precio_para(correo_del_dueño(db, team_id), el_plan=el_plan)
+
     sub = obtener(db, team_id)
     if sub is not None:
+        if sub.status == models.SUBSCRIPTION_PENDING and sub.amount_cents != precio:
+            logger.info(
+                "suscripcion %s (pending): precio %s → %s",
+                sub.id, sub.amount_cents, precio,
+            )
+            sub.amount_cents = precio
+            db.commit()
         return sub
 
-    el_plan = plan(plan_key) or PLAN_MENSUAL
     sub = models.Subscription(
         team_id=team_id,
         plan_key=el_plan.key,
         status=models.SUBSCRIPTION_PENDING,
-        amount_cents=el_plan.amount_cents,
+        amount_cents=precio,
         currency=el_plan.currency,
     )
     db.add(sub)

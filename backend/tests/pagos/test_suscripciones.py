@@ -86,6 +86,81 @@ class TestFechasDelCiclo:
 
 
 # ---------------------------------------------------------------------------
+# Precio por cuenta
+# ---------------------------------------------------------------------------
+
+class TestPrecioPorCuenta:
+    """Una cuenta puede pagar distinto, y el precio lo pone SIEMPRE el servidor."""
+
+    def test_por_defecto_se_cobra_el_precio_de_lista(self):
+        assert svc.precio_para("cualquiera@ejemplo.com") == PRECIO_CENTAVOS
+        assert svc.precio_para(None) == PRECIO_CENTAVOS
+        assert svc.precio_para("") == PRECIO_CENTAVOS
+
+    def test_la_cuenta_con_override_paga_lo_suyo(self, monkeypatch):
+        monkeypatch.setitem(svc.PRECIO_POR_CUENTA, "especial@ejemplo.com", 300_000)
+        assert svc.precio_para("especial@ejemplo.com") == 300_000
+
+    def test_el_correo_no_distingue_mayusculas(self, monkeypatch):
+        """El login no distingue mayúsculas: un override que sí lo hiciera es
+        un override que un día no aplica y le cobra de más a alguien."""
+        monkeypatch.setitem(svc.PRECIO_POR_CUENTA, "especial@ejemplo.com", 300_000)
+        assert svc.precio_para("  ESPECIAL@Ejemplo.COM  ") == 300_000
+
+    def test_la_cuenta_de_prueba_configurada_tiene_su_precio(self):
+        """Protege contra un typo en el correo del override: si se escribe mal,
+        la cuenta paga el precio de lista y nadie se entera hasta el cobro."""
+        assert svc.PRECIO_POR_CUENTA["gloma@glomabeauty.com"] == 3_000 * 100
+
+    def test_la_suscripcion_nace_con_el_precio_de_su_cuenta(
+        self, db, team, monkeypatch
+    ):
+        monkeypatch.setitem(svc.PRECIO_POR_CUENTA, "duena@ejemplo.com", 300_000)
+        sub = svc.obtener_o_crear(db, team["team"].id)
+        assert sub.amount_cents == 300_000
+
+    def test_a_una_pendiente_se_le_actualiza_el_precio(self, db, team, monkeypatch):
+        """Si el precio cambia después de que alguien abrió la pantalla, la fila
+        ya creada no puede quedarse con el precio viejo."""
+        sub = svc.obtener_o_crear(db, team["team"].id)
+        assert sub.amount_cents == PRECIO_CENTAVOS
+
+        monkeypatch.setitem(svc.PRECIO_POR_CUENTA, "duena@ejemplo.com", 300_000)
+        sub = svc.obtener_o_crear(db, team["team"].id)
+        assert sub.amount_cents == 300_000
+
+    def test_a_una_ACTIVA_no_se_le_toca_el_precio(self, db, team, admin, tarjeta, monkeypatch):
+        """Cambiarle el precio a una suscripción activa por detrás es lo que un
+        cliente jamás espera. Exige una decisión explícita, no un efecto
+        secundario de abrir una pantalla."""
+        admin.post(
+            "/pagos/suscripcion/activar",
+            json={"card_token": tarjeta(), "acepta_terminos": True},
+        )
+        sub = db.query(models.Subscription).one()
+        assert sub.status == "active"
+
+        monkeypatch.setitem(svc.PRECIO_POR_CUENTA, "duena@ejemplo.com", 300_000)
+        svc.obtener_o_crear(db, team["team"].id)
+        db.refresh(sub)
+        assert sub.amount_cents == PRECIO_CENTAVOS
+
+    def test_se_cobra_el_precio_de_la_cuenta_no_el_de_lista(
+        self, db, team, admin, tarjeta, wompi_falso, monkeypatch
+    ):
+        """Lo que de verdad importa: que a Wompi le llegue el monto correcto."""
+        monkeypatch.setitem(svc.PRECIO_POR_CUENTA, "duena@ejemplo.com", 300_000)
+        admin.get("/pagos/suscripcion")  # crea la fila con el precio nuevo
+
+        admin.post(
+            "/pagos/suscripcion/activar",
+            json={"card_token": tarjeta(), "acepta_terminos": True},
+        )
+        cobro = wompi_falso.estado.peticiones_a("/transactions")[0]
+        assert cobro["amount_in_cents"] == 300_000
+
+
+# ---------------------------------------------------------------------------
 # El guardarraíl de PCI
 # ---------------------------------------------------------------------------
 
