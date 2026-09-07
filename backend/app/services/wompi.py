@@ -33,8 +33,10 @@ código ni se loggea** (reglas 1 y 8 de CLAUDE.md — este repo es público):
                          él se pueden firmar montos arbitrarios.
   WOMPI_EVENTS_SECRET    Valida el `checksum` del webhook. Sin él, cualquiera
                          que conozca la URL puede regalarse créditos.
-  WOMPI_BASE_URL         API de Wompi. Por defecto el **sandbox**: que haya
-                         que pedir producción explícitamente, y no al revés.
+  WOMPI_BASE_URL         API de Wompi. **Opcional**: por defecto se deduce del
+                         prefijo de la llave pública (`pub_prod_` → producción,
+                         si no → sandbox). Ver `base_url()`. Se usa para
+                         apuntar a un doble en las pruebas.
 
 Las llaves se leen **en cada llamada**, no al importar el módulo. Es
 deliberado: si faltan, el que falla es el endpoint de pagos con un error
@@ -57,8 +59,10 @@ logger = logging.getLogger(__name__)
 #: el ambiente es el prefijo de la llave pública (`pub_test_` / `pub_prod_`).
 CHECKOUT_URL = "https://checkout.wompi.co/p/"
 
-#: API de Wompi. Sandbox por defecto (ver docstring del módulo).
+#: API de Wompi. Los dos ambientes son independientes: una llave de uno no
+#: sirve en el otro, y mezclarlos da `422` sin decir por qué.
 BASE_URL_SANDBOX = "https://sandbox.wompi.co/v1"
+BASE_URL_PRODUCCION = "https://production.wompi.co/v1"
 
 #: Única moneda que acepta Wompi Colombia hoy.
 MONEDA = "COP"
@@ -82,8 +86,24 @@ def _env(nombre: str) -> str:
 
 
 def base_url() -> str:
-    """La API de Wompi contra la que se trabaja."""
-    return _env("WOMPI_BASE_URL") or BASE_URL_SANDBOX
+    """La API de Wompi contra la que se trabaja.
+
+    **El ambiente lo decide el prefijo de la llave pública**, no una variable
+    aparte: `pub_prod_` → producción, cualquier otra cosa → sandbox. Antes esto
+    caía siempre en sandbox salvo que alguien recordara poner `WOMPI_BASE_URL`,
+    y el día que entraron las llaves de producción el backend estuvo mandando
+    una `pub_prod_` al sandbox — que responde **422 sin explicar nada**, porque
+    los dos ambientes son independientes y esa llave allí no existe.
+
+    Derivarlo de la llave elimina la misconfiguración en los dos sentidos: no
+    se puede quedar en sandbox con llaves reales, ni cobrar de verdad con
+    llaves de prueba. `WOMPI_BASE_URL` sigue mandando si está, para poder
+    apuntar a un doble en las pruebas.
+    """
+    explicito = _env("WOMPI_BASE_URL")
+    if explicito:
+        return explicito
+    return BASE_URL_PRODUCCION if es_produccion() else BASE_URL_SANDBOX
 
 
 def esta_configurado() -> bool:

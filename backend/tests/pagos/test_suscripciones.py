@@ -86,6 +86,40 @@ class TestFechasDelCiclo:
 
 
 # ---------------------------------------------------------------------------
+# Ambiente de Wompi
+# ---------------------------------------------------------------------------
+
+class TestAmbiente:
+    """Sandbox y producción son independientes: mezclarlos da 422 mudo.
+
+    Pasó de verdad el 6-sep-2026: entraron las llaves de producción y el
+    backend siguió llamando al sandbox, que respondió 422 sin explicar nada.
+    """
+
+    def test_llave_de_produccion_apunta_a_produccion(self, monkeypatch):
+        from app.services import wompi
+
+        monkeypatch.delenv("WOMPI_BASE_URL", raising=False)
+        monkeypatch.setenv("WOMPI_PUBLIC_KEY", "pub_prod_loquesea")
+        assert wompi.base_url() == wompi.BASE_URL_PRODUCCION
+
+    def test_llave_de_prueba_apunta_al_sandbox(self, monkeypatch):
+        from app.services import wompi
+
+        monkeypatch.delenv("WOMPI_BASE_URL", raising=False)
+        monkeypatch.setenv("WOMPI_PUBLIC_KEY", "pub_test_loquesea")
+        assert wompi.base_url() == wompi.BASE_URL_SANDBOX
+
+    def test_la_variable_explicita_manda(self, monkeypatch):
+        """Es lo que permite apuntar al doble en las pruebas."""
+        from app.services import wompi
+
+        monkeypatch.setenv("WOMPI_PUBLIC_KEY", "pub_prod_loquesea")
+        monkeypatch.setenv("WOMPI_BASE_URL", "http://127.0.0.1:9999/v1")
+        assert wompi.base_url() == "http://127.0.0.1:9999/v1"
+
+
+# ---------------------------------------------------------------------------
 # Precio por cuenta
 # ---------------------------------------------------------------------------
 
