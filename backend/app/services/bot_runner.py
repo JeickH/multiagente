@@ -18,7 +18,7 @@ from typing import Optional
 from sqlalchemy.orm import Session
 
 from .. import crud, models
-from . import bot_engine, llm_engine, messaging, meta_whatsapp
+from . import agendamientos, bot_engine, llm_engine, messaging, meta_whatsapp
 
 logger = logging.getLogger(__name__)
 
@@ -282,6 +282,21 @@ def _marcar_abandonada(
             # mejor con la inicial en mayúscula, sin tocar el resto (una
             # etiqueta futura podría traer siglas).
             titulo=f"🕒 *{etiqueta[:1].upper()}{etiqueta[1:]}*",
+        )
+
+    # La llamada de rescate (ventana /agendamientos). Va al final y dentro de
+    # un `try` por la misma razón que el reparto va antes que la escritura: si
+    # esto fallara, el abandono ya quedó registrado con su etiqueta y su
+    # asesor, que es el comportamiento que ya estaba desplegado. Perder la
+    # llamada agendada es malo; perder además el rastro del abandono, peor.
+    #
+    # Se agenda aunque `asesor` sea None: la persona sigue siendo un cliente
+    # potencial al que hay que llamar, y quién la llama se decide en la lista.
+    try:
+        agendamientos.registrar_por_abandono(db, conversation, asesor=asesor)
+    except Exception:  # pragma: no cover - defensivo
+        logger.exception(
+            "bot_runner: no se pudo agendar la llamada conv=%s", conversation.id
         )
     return asesor
 

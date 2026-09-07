@@ -8,6 +8,10 @@ const menu = [
   { name: 'Mensajes', path: '/mensajes', icon: '💬' },
   { name: 'Campañas', path: '/campanas', icon: '📢' },
   { name: 'Bots', path: '/bots', icon: '🤖' },
+  // Las llamadas por hacer a quien dejó la conversación a medias. Va en el
+  // menú de siempre y no en los módulos internos: la ven todas las cuentas
+  // del team, administrador y asesor por igual (pedido del CEO).
+  { name: 'Agendamientos', path: '/agendamientos', icon: '📞' },
   { name: 'Mi Plan', path: '/usuario', icon: '👤' },
 ];
 

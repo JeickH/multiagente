@@ -52,7 +52,7 @@ STEPS = [
     # 1 — saludo + pedir nombre
     {"step_type": "send_text", "label": "Saludo + pedir nombre", "config": {
         "text": "Hola, ¡Buen día! Espero que se encuentre muy bien el día de hoy, "
-                "mi nombre es *Maria Camila*, asesora de la *Agencia de Viajes "
+                "mi nombre es *Luisa*, asesora de la *Agencia de Viajes "
                 "Arranquemos Pues*. ¿Con quién tengo el gusto? 😊"}},
     # 2 — espera el nombre (texto abierto)
     {"step_type": "wait_input", "label": "Espera nombre", "config": {"prompt": ""}},

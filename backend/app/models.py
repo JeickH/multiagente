@@ -12,6 +12,7 @@ from sqlalchemy import (
     UniqueConstraint,
     Index,
     CheckConstraint,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
@@ -34,7 +35,7 @@ class User(Base):
     activo = Column(Boolean, nullable=False, default=True, server_default="true")
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     # Sprint 15: estado de tutoriales interactivos por módulo.
-    # Llaves esperadas: mi_plan, mensajes, bots, campanas
+    # Llaves esperadas: mi_plan, mensajes, bots, campanas, agendamientos
     # Valor: {"done": bool, "skipped": bool, "completed_at": iso8601 | null}
     tutorials_completed = Column(JSONB, nullable=False, default=dict, server_default="{}")
 
@@ -1626,6 +1627,126 @@ class MascotaFoto(Base):
         return (
             f"<MascotaFoto id={self.id} mascota_id={self.mascota_id} "
             f"key={self.storage_key!r}>"
+        )
+
+    __str__ = __repr__
+
+
+# ===== Agendamientos: la llamada de rescate de un chat abandonado ==========
+#
+# Cuando el bot da una conversación por abandonada, hoy la etiqueta y se la
+# asigna a un asesor en la bandeja. Eso alcanza para que alguien la vea, pero
+# no para que alguien la *llame*: la bandeja se ordena por actividad y un chat
+# frío se hunde. Esta tabla es la lista de llamadas pendientes — un renglón por
+# cliente potencial que se fue a mitad de camino, con la fecha en que hay que
+# marcarle y un estado que el asesor cierra cuando ya lo hizo.
+#
+# La llamada NO se hace desde la plataforma (decisión del CEO): aquí sólo se
+# registra a quién hay que llamar y cuándo.
+
+AGENDAMIENTO_PENDIENTE = "pendiente"
+AGENDAMIENTO_CERRADO = "cerrado"
+AVAILABLE_AGENDAMIENTO_ESTADOS = (AGENDAMIENTO_PENDIENTE, AGENDAMIENTO_CERRADO)
+
+#: Qué tan lejos llegó la conversación antes de que la persona dejara de
+#: contestar. Es el nivel de interés del cliente potencial:
+#:  - `con_informacion`: el bot alcanzó a responderle algo. Son los que valen
+#:    una llamada — preguntaron, recibieron respuesta y aun así se fueron.
+#:  - `solo_bienvenida`: escribió una vez, recibió el saludo y nunca volvió.
+#:    No se les agenda llamada (ver `services/agendamientos.py`); el nivel
+#:    existe igual para poder distinguirlos si mañana se quieren trabajar.
+AGENDAMIENTO_NIVEL_CON_INFORMACION = "con_informacion"
+AGENDAMIENTO_NIVEL_SOLO_BIENVENIDA = "solo_bienvenida"
+AVAILABLE_AGENDAMIENTO_NIVELES = (
+    AGENDAMIENTO_NIVEL_CON_INFORMACION,
+    AGENDAMIENTO_NIVEL_SOLO_BIENVENIDA,
+)
+
+#: Días entre el abandono y la llamada tentativa (pedido del CEO).
+AGENDAMIENTO_DIAS_PARA_LLAMAR = 3
+
+
+class Agendamiento(Base):
+    """Una llamada por hacer a alguien que dejó la conversación a medias.
+
+    Los datos del cliente (nombre y teléfono) **no se copian aquí**: viven en
+    `conversations` y se leen por el join. Duplicarlos abriría la puerta a que
+    la lista muestre un teléfono viejo después de que el contacto se corrigiera
+    en la bandeja, y el teléfono es justamente el dato por el que existe esta
+    pantalla.
+
+    `asesor` sí se guarda, y es a propósito: es el nombre del turno **en el
+    momento del abandono** (`conversations.assigned_to` puede reasignarse
+    después). Es un nombre de rotación, no un usuario — la cuenta de asesores
+    de Arranquemos Pues es un solo login compartido.
+    """
+
+    __tablename__ = "agendamientos"
+
+    id = Column(Integer, primary_key=True, index=True)
+    team_id = Column(
+        Integer, ForeignKey("teams.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    conversation_id = Column(
+        Integer,
+        ForeignKey("conversations.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    nivel_interes = Column(
+        String(24),
+        nullable=False,
+        default=AGENDAMIENTO_NIVEL_CON_INFORMACION,
+        server_default=AGENDAMIENTO_NIVEL_CON_INFORMACION,
+    )
+    #: Cuándo hay que llamar. Es `Date` y no `DateTime` porque lo que se acordó
+    #: es el día, no la hora: quien llama elige el momento.
+    fecha_llamada = Column(Date, nullable=False, index=True)
+    estado = Column(
+        String(16),
+        nullable=False,
+        default=AGENDAMIENTO_PENDIENTE,
+        server_default=AGENDAMIENTO_PENDIENTE,
+        index=True,
+    )
+    asesor = Column(String(64), nullable=True)
+
+    cerrado_at = Column(DateTime, nullable=True)
+    cerrado_por_user_id = Column(
+        Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+    )
+
+    conversation = relationship("Conversation")
+
+    __table_args__ = (
+        # La pantalla siempre pregunta lo mismo: "lo de este team, por fecha
+        # de llamada".
+        Index("ix_agendamientos_team_fecha", "team_id", "fecha_llamada"),
+        # Un chat no puede tener DOS llamadas pendientes: si la persona vuelve,
+        # se calla otra vez y el bot la vuelve a abandonar, el asesor no
+        # necesita dos renglones de la misma persona. El índice es parcial
+        # a propósito — una vez cerrado, el mismo chat sí puede volver a
+        # generar un agendamiento nuevo, que es una oportunidad nueva.
+        Index(
+            "uq_agendamientos_conv_pendiente",
+            "conversation_id",
+            unique=True,
+            postgresql_where=text("estado = 'pendiente'"),
+            sqlite_where=text("estado = 'pendiente'"),
+        ),
+    )
+
+    def __repr__(self) -> str:
+        # Sin nombre ni teléfono: son datos de un tercero (regla 8).
+        return (
+            f"<Agendamiento id={self.id} team_id={self.team_id} "
+            f"conversation_id={self.conversation_id} estado={self.estado!r} "
+            f"fecha_llamada={self.fecha_llamada}>"
         )
 
     __str__ = __repr__

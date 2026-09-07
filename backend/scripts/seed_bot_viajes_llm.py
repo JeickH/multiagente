@@ -38,7 +38,7 @@ BOT_NAME = "Plan Tolú & Coveñas (IA)"
 # ---------------------------------------------------------------------------
 STEPS = [
     # 1 — bloque LLM de entrada
-    {"step_type": "llm", "label": "🤖 LLM · Maria Camila decide el camino",
+    {"step_type": "llm", "label": "🤖 LLM · Luisa decide el camino",
      "config": {"mode": "route", "intents": [], "default_step_id": None}},
     {"step_type": "llm", "label": "Info general + los 3 hoteles", "config": {
         "mode": "accion", "accion": "media",
