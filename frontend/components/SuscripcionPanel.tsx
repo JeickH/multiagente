@@ -80,6 +80,15 @@ const COP = new Intl.NumberFormat('es-CO', {
   maximumFractionDigits: 0,
 });
 
+/** El monto pelado: "350.000", sin símbolo de moneda.
+ *
+ * Es el precio grande de la tarjeta del plan. Ahí el "$" y el "/ mes" sobran
+ * porque el título ya dice "Plan mensual Gloma": la cifra se lee sola. En el
+ * formulario de la tarjeta sí se sigue usando `COP` con símbolo — ese es el
+ * momento de confirmar un cobro, y ahí conviene que diga a las claras que son
+ * pesos. */
+const MONTO = new Intl.NumberFormat('es-CO', { maximumFractionDigits: 0 });
+
 /** Cómo se ve cada estado en el botón y en la etiqueta. */
 const ESTADOS: Record<Suscripcion['status'], { etiqueta: string; cls: string }> = {
   pending: { etiqueta: 'Pendiente por activar', cls: 'bg-amber-100 text-amber-800' },
@@ -246,11 +255,7 @@ export default function SuscripcionPanel() {
         </div>
 
         <p className="font-heading text-3xl font-extrabold text-gloma-brown mt-4">
-          {COP.format(sub.amount_cop)}
-          <span className="text-sm font-body font-normal text-gloma-brown-light">
-            {' '}
-            / mes
-          </span>
+          {MONTO.format(sub.amount_cop)}
         </p>
 
         {/* Estado del cobro en curso: el webhook todavía no confirma. */}
