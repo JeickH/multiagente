@@ -6508,3 +6508,67 @@ trae el módulo y el tutorial. Suite: **1.359 passed** (25 nuevos), también con
 
 Pendiente menor: el manual no documenta el módulo **Pagos**, que salió en el
 Sprint 29 y ya aparece en el menú de la cuenta.
+
+---
+
+## Sprint 30 — Los adjuntos que la mudanza de dominio dejó sin salir (2026-09-08)
+
+**Reporte del CEO**: "no se están permitiendo enviar imágenes y videos en la app".
+
+### El diagnóstico
+
+En los logs del backend no había un solo error. Lo que había era una forma:
+cinco `POST /mensajes/conversaciones/469/adjunto/preparar` con **200**, todos
+entre las 17:07 y las 17:08 UTC, y **ningún `confirmar` detrás**. El que falla
+entre esos dos es el paso del medio, que no pasa por nosotros: el POST
+prefirmado del navegador contra S3.
+
+La prueba estaba en el bucket. En `adjuntos-tmp/5/` quedaron los cinco archivos
+—412 KB, la misma imagen reintentada cuatro veces—. O sea que **la subida sí
+funcionó**: S3 recibió los bytes y contestó 204. Lo que no funcionó fue leer esa
+respuesta: el CORS del bucket seguía autorizando `app.glomabeauty.com`, y desde
+el **Sprint 28** la plataforma se sirve en `app.glomacx.com`. El navegador manda
+el POST igual (un `FormData` es "simple request", no hay preflight que lo
+frene), S3 guarda, y recién al volver el navegador tapa la respuesta por falta
+de `Access-Control-Allow-Origin`. Del lado del servidor eso es indistinguible de
+un asesor que cerró la pestaña.
+
+Rotos desde el 5-sep, entonces: **todos** los adjuntos salientes, no solo imagen
+y video. Las notas de voz también. Lo que siguió apareciendo en los logs —
+`guardado tipo=audio` casi a diario— es tráfico **entrante**: los audios que
+mandan los clientes, que entran por el webhook y no tocan este camino. Por eso
+la avería se veía sana desde adentro.
+
+### Los dos arreglos
+
+1. **`backend/scripts/configurar_s3_adjuntos.sh`**: la lista de orígenes pasa a
+   `glomacx.com` (apex, `www` y `app`). Los viejos no se quedan de respaldo:
+   `app.glomabeauty.com` responde 301 al nuevo, así que ese origen ya no existe
+   en ningún navegador. Corrido contra el bucket (es idempotente).
+2. **`frontend/lib/adjuntos.ts`**: el `fetch` a S3 va dentro de un `try`. Es el
+   único que sale a otro origen, y un CORS caído no da status sino `TypeError`,
+   que subía crudo hasta la pantalla: la asesora leía **"Load failed"**. Ahora
+   dice lo mismo que cualquier otra falla de subida.
+
+### La verificación
+
+Se reprodujo el paso exacto del navegador: `presignar_subida` de verdad (la
+función que usa el backend) y el POST con el `Origin` puesto a mano.
+
+| Origen | status | `Access-Control-Allow-Origin` |
+|---|---|---|
+| `https://app.glomacx.com` | 204 | `https://app.glomacx.com` ✅ |
+| `https://app.glomabeauty.com` | 204 | *(ninguna)* ❌ |
+
+Las dos filas importan: la primera dice que quedó arreglado, la segunda
+reproduce la avería tal cual era. Y las dos dan **204** — esa es la razón de que
+esto no dejara rastro en ningún log.
+
+Suite de adjuntos: 87 passed. `tsc --noEmit` limpio. El backend no cambió:
+esto se despliega solo con el build de Amplify.
+
+### La lección
+
+El dominio de la marca no vive solo en Route 53 y en Amplify. Está también en el
+CORS de un bucket, y esa copia no la mueve ningún deploy. Queda anotada en el
+encabezado del script, que es donde la va a leer el que haga la próxima mudanza.

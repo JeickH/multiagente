@@ -34,6 +34,17 @@ echo "==> Bucket: ${BUCKET} (${REGION})"
 # se pueda probar entero desde una máquina de desarrollo apuntando al bucket.
 # No se expone ningún header: el navegador no necesita leer nada de la
 # respuesta de S3, le alcanza con el 204.
+#
+# ⚠️ Esta lista es parte del dominio de la marca: **si el dominio cambia, se
+# cambia acá y se corre este script**. La mudanza a `glomacx.com` (Sprint 28)
+# dejó esta lista en `glomabeauty.com` y los adjuntos salientes se murieron
+# durante tres días sin un solo error en los logs del backend — el `preparar`
+# contestaba 200, el navegador mandaba el POST, S3 guardaba el objeto, y el
+# navegador tapaba la respuesta por falta de `Access-Control-Allow-Origin`. Del
+# lado del servidor eso se ve como un `confirmar` que nunca llega.
+#
+# Los dominios viejos NO siguen acá: `app.glomabeauty.com` responde 301 a
+# `app.glomacx.com`, así que el navegador nunca vuelve a tener ese origen.
 echo "==> CORS"
 aws s3api put-bucket-cors --bucket "${BUCKET}" --region "${REGION}" \
   --cors-configuration '{
@@ -41,9 +52,9 @@ aws s3api put-bucket-cors --bucket "${BUCKET}" --region "${REGION}" \
       {
         "AllowedMethods": ["POST"],
         "AllowedOrigins": [
-          "https://app.glomabeauty.com",
-          "https://www.glomabeauty.com",
-          "https://glomabeauty.com",
+          "https://app.glomacx.com",
+          "https://www.glomacx.com",
+          "https://glomacx.com",
           "https://main.d1cfl9ey07f61o.amplifyapp.com",
           "http://localhost:3000"
         ],

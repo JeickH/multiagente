@@ -311,7 +311,20 @@ export async function subirAdjunto(
   Object.entries(plan.campos || {}).forEach(([k, v]) => form.append(k, String(v)));
   form.append('file', archivo);
 
-  const subida = await fetch(plan.url, { method: 'POST', body: form });
+  // El `try` no es decorativo: este `fetch` es el único que sale a otro origen,
+  // y cuando el bucket no tiene puesto nuestro dominio en su CORS el navegador
+  // no devuelve un status —tira `TypeError`—. Sin esto, ese error subía crudo
+  // hasta la pantalla y la asesora leía "Load failed", que no dice nada y no
+  // se puede buscar. Pasó de verdad: la mudanza a glomacx.com dejó el CORS del
+  // bucket apuntando al dominio viejo. Ver `backend/scripts/configurar_s3_adjuntos.sh`.
+  let subida: Response;
+  try {
+    subida = await fetch(plan.url, { method: 'POST', body: form });
+  } catch {
+    throw new Error(
+      'No pudimos subir el archivo. Revisa tu conexión e inténtalo de nuevo.',
+    );
+  }
   if (!subida.ok) {
     // S3 contesta XML; no hay nada ahí que mostrarle a la asesora. El caso
     // realista es que la firma expiró (tardó más de 10 min en darle enviar).
