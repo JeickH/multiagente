@@ -34,6 +34,17 @@ const MODULOS_INTERNOS = [
   // Sprint "Ayuda a Cali": panel de la cuenta `recuperatumascota@gmail.com`.
   // No es de Gloma sino de esa cuenta, y su `/access` lo resuelve así.
   { name: 'Mascotas', path: '/mascotas-panel', icon: '🐾', access: '/api/mascotas/access' },
+  // Cuentas que venden por el chat: el bot cierra el pedido y lo escribe en la
+  // hoja del equipo. `reemplaza` saca a Agendamientos del menú, porque esta
+  // ventana ya trae las llamadas por hacer en su segunda mitad — dejar las dos
+  // sería mandar al asesor a revisar dos pantallas para el mismo día.
+  {
+    name: 'Pedidos',
+    path: '/pedidos',
+    icon: '🧾',
+    access: '/api/pedidos/access',
+    reemplaza: '/agendamientos',
+  },
 ];
 
 export default function Sidebar() {
@@ -63,7 +74,14 @@ export default function Sidebar() {
     };
   }, []);
 
-  const items = [...menu, ...internos];
+  // Un módulo interno puede declarar que `reemplaza` a uno del menú de siempre
+  // (hoy: Pedidos sobre Agendamientos). Se filtra sólo cuando el backend dijo
+  // que sí: si `/access` falla, la cuenta se queda con el menú de siempre en
+  // vez de perder una ventana.
+  const reemplazados = new Set(
+    internos.map((m) => (m as { reemplaza?: string }).reemplaza).filter(Boolean),
+  );
+  const items = [...menu.filter((m) => !reemplazados.has(m.path)), ...internos];
 
   return (
     // `sticky top-0 h-screen` y NO `min-h-screen`: como flex item, un aside con

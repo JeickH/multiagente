@@ -1750,3 +1750,83 @@ class Agendamiento(Base):
         )
 
     __str__ = __repr__
+
+
+# ===== Pedidos cerrados por el bot =====
+#
+# Cuando el cliente manda nombre, dirección y pedido, el bot llama a
+# `registrar_pedido` y la fila termina en dos lugares: la hoja de cálculo del
+# equipo (`services/pedidos_sheet.py`, que es donde trabaja quien despacha) y
+# esta tabla, que es la que puede mostrar la app.
+#
+# Los datos SÍ se copian aquí, a diferencia de `agendamientos` —que los lee de
+# la conversación—. Un pedido es un documento: dice a qué dirección se despachó
+# el 12 de septiembre, y esa dirección no puede cambiar porque el contacto se
+# corrigió después. Lo mismo con el nombre y el total.
+
+PEDIDO_PENDIENTE = "pendiente"
+PEDIDO_DESPACHADO = "despachado"
+PEDIDO_CANCELADO = "cancelado"
+AVAILABLE_PEDIDO_ESTADOS = (PEDIDO_PENDIENTE, PEDIDO_DESPACHADO, PEDIDO_CANCELADO)
+
+
+class Pedido(Base):
+    """Un pedido que el bot cerró en el chat."""
+
+    __tablename__ = "pedidos"
+
+    id = Column(Integer, primary_key=True, index=True)
+    team_id = Column(
+        Integer, ForeignKey("teams.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    #: Nulo cuando el pedido viene del simulador: ahí no hay conversación real.
+    conversation_id = Column(
+        Integer,
+        ForeignKey("conversations.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    nombre = Column(String(120), nullable=False)
+    direccion = Column(String(250), nullable=False)
+    detalle = Column(Text, nullable=False)
+    total = Column(String(40), nullable=True)
+    telefono = Column(String(32), nullable=True)
+    #: whatsapp | simulador — de dónde salió. En una demostración la fila del
+    #: simulador se ve igual que una de verdad, y quien despacha tiene que poder
+    #: distinguirlas de un vistazo.
+    origen = Column(String(24), nullable=False, default="whatsapp", server_default="whatsapp")
+    estado = Column(
+        String(16), nullable=False, default=PEDIDO_PENDIENTE,
+        server_default=PEDIDO_PENDIENTE, index=True,
+    )
+    #: Si la fila alcanzó a escribirse en la hoja de Drive. Cuando es False el
+    #: pedido existe igual —está aquí— pero nadie lo vio en la hoja: es el
+    #: aviso de que hay que copiarlo a mano o revisar el script.
+    en_hoja = Column(Boolean, nullable=False, default=False, server_default="false")
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    updated_at = Column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+    )
+
+    conversation = relationship("Conversation")
+
+    __table_args__ = (
+        CheckConstraint(
+            "estado IN ('pendiente','despachado','cancelado')",
+            name="ck_pedidos_estado",
+        ),
+        # La pantalla siempre pregunta lo mismo: "los de este equipo, el más
+        # reciente arriba".
+        Index("ix_pedidos_team_creado", "team_id", "created_at"),
+    )
+
+    def __repr__(self) -> str:
+        # Nombre, dirección y teléfono son datos de un tercero (reglas 1 y 8):
+        # no salen ni en un repr de debug.
+        return (
+            f"<Pedido id={self.id} team_id={self.team_id} "
+            f"estado={self.estado!r} origen={self.origen!r} "
+            f"nombre=<REDACTED> direccion=<REDACTED> telefono=<REDACTED>>"
+        )
+
+    __str__ = __repr__

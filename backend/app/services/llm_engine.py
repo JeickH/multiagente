@@ -1041,6 +1041,48 @@ def _tools_for(cfg: Dict[str, Any]) -> List[Dict[str, Any]]:
                 },
             }
         )
+    if isinstance(cfg.get("pedidos"), dict):
+        tools.append(
+            {
+                "name": "registrar_pedido",
+                "description": (
+                    "Registra el pedido del cliente en la hoja de pedidos del "
+                    "equipo. Llámala APENAS tengas los tres datos: nombre, "
+                    "dirección de envío y qué pidió. Es lo que hace que el "
+                    "equipo se entere del pedido: si no la llamas, nadie lo "
+                    "despacha. Después de usarla, confírmale el pedido al "
+                    "cliente y pásalo a un asesor."
+                ),
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "nombre": {
+                            "type": "string",
+                            "description": "Nombre completo, como lo escribió.",
+                        },
+                        "direccion": {
+                            "type": "string",
+                            "description": "Dirección de envío completa, con ciudad.",
+                        },
+                        "pedido": {
+                            "type": "string",
+                            "description": (
+                                "Qué pidió, con sabores y cantidades. "
+                                "Ej: '2 frutos rojos y 1 maracuyá'."
+                            ),
+                        },
+                        "total": {
+                            "type": "string",
+                            "description": (
+                                "Total a pagar con el envío incluido, como se "
+                                "lo vas a decir al cliente. Ej: '$83.000'."
+                            ),
+                        },
+                    },
+                    "required": ["nombre", "direccion", "pedido"],
+                },
+            }
+        )
     if cfg.get("tarifario"):
         tools.append(
             {
@@ -2090,6 +2132,41 @@ def _viola_link(
     return False
 
 
+#: Confirmación por defecto de un pedido. La plantilla la puede cambiar el
+#: tenant en `pedidos.confirmacion`: es su voz, no la del motor.
+_CONFIRMACION_PEDIDO = (
+    "¡Listo, {primer_nombre}! 🙌 Confirmo tu pedido:\n\n"
+    "*Nombre:* {nombre}\n"
+    "*Dirección:* {direccion}\n"
+    "*Pedido:* {pedido}{total}"
+)
+
+
+def _texto_de_confirmacion(cfg: Dict[str, Any], pedido: Dict[str, Any]) -> str:
+    """El mensaje que le repite el pedido al cliente, con sus propios datos."""
+    plantilla = str((cfg.get("pedidos") or {}).get("confirmacion") or "").strip()
+    total = str(pedido.get("total") or "").strip()
+    nombre = str(pedido.get("nombre", "")).strip()
+    # Solo el primer nombre en el saludo: el vocativo con nombre y apellido
+    # suena a carta de cobro, no a WhatsApp.
+    campos = {
+        "nombre": nombre,
+        "primer_nombre": nombre.split()[0] if nombre else "",
+        "direccion": str(pedido.get("direccion", "")).strip(),
+        "pedido": str(pedido.get("pedido", "")).strip(),
+        "total": f"\n*Total:* {total}" if total else "",
+    }
+    try:
+        return (plantilla or _CONFIRMACION_PEDIDO).format(**campos)
+    except (KeyError, IndexError):
+        # Una plantilla del tenant con una llave que no existe no puede tumbar
+        # el turno: se cae al texto de siempre.
+        logger.warning(
+            "llm_engine: plantilla de confirmación inválida, se usa la de por defecto"
+        )
+        return _CONFIRMACION_PEDIDO.format(**campos)
+
+
 def _run_tool(
     name: str,
     tool_input: Dict[str, Any],
@@ -2098,6 +2175,7 @@ def _run_tool(
     sent_media_log: List[str],
     bookings: Optional[List[Dict[str, str]]] = None,
     notas: Optional[List[str]] = None,
+    pedidos: Optional[List[Dict[str, str]]] = None,
 ) -> tuple[str, bool]:
     """Ejecuta una tool. Devuelve (tool_result_text, turno_terminado)."""
     if name == "registrar_demo":
@@ -2111,6 +2189,35 @@ def _run_tool(
         return (
             f"demo registrada para el {booking['label']}; confírmasela al "
             "prospecto con esa misma fecha y despídete"
+        ), False
+
+    if name == "registrar_pedido":
+        pedido = {
+            "nombre": nombre_saneado(tool_input.get("nombre")) or
+                      str(tool_input.get("nombre", "")).strip()[:120],
+            "direccion": str(tool_input.get("direccion", "")).strip()[:250],
+            "pedido": str(tool_input.get("pedido", "")).strip()[:400],
+            "total": str(tool_input.get("total", "")).strip()[:40],
+        }
+        faltan = [k for k in ("nombre", "direccion", "pedido") if not pedido[k]]
+        if faltan:
+            # Sin PII en el log (regla #1): solo qué campo faltó.
+            return (
+                "faltan datos para registrar el pedido: "
+                + ", ".join(faltan)
+                + ". Pídeselos al cliente en un solo mensaje y vuelve a llamarme"
+            ), False
+        # No se escribe aquí: el motor no tiene sesión de BD ni sabe el
+        # teléfono. El pedido viaja en `telemetry` y lo manda a la hoja el
+        # caller con `pedidos_sheet.registrar()` — mismo patrón que las demos.
+        if pedidos is not None:
+            pedidos.append(pedido)
+        if notas is not None:
+            notas.append("pedido registrado")
+        return (
+            "pedido registrado en la hoja del equipo. Confírmaselo al cliente "
+            "repitiéndole nombre, dirección y pedido con el total, y pásalo a "
+            "un asesor en este mismo turno"
         ), False
 
     if name == "registrar_venta":
@@ -2729,6 +2836,7 @@ def _advance_inner(
     # Van al historial aplanado: sin ellas el bot pierde de qué reporte hablaba.
     notas_historial: List[str] = []
     bookings: List[Dict[str, str]] = []
+    pedidos_cerrados: List[Dict[str, str]] = []
     tools_called: List[Dict[str, Any]] = []
     escalated_to: Optional[str] = None
     finished = False
@@ -2776,7 +2884,7 @@ def _advance_inner(
                 tool_input = block.get("input") or {}
                 result_text, ended = _run_tool(
                     name, tool_input, cfg, actions, sent_media_log, bookings,
-                    notas_historial,
+                    notas_historial, pedidos_cerrados,
                 )
                 # #255: cada tool llamada es una decisión — queda registrada.
                 tools_called.append(
@@ -2846,6 +2954,36 @@ def _advance_inner(
         del say_texts[:]
         del sent_media_log[:]
 
+    # Un pedido registrado SIEMPRE se le confirma al cliente. Es un guardarraíl
+    # y no una instrucción más en el prompt porque ya se midió: con la regla
+    # escrita en el documento ("registra, confirma y escala"), el modelo
+    # registraba y escalaba bien, y se comía la confirmación **4 de 4 veces**.
+    # No es que se olvide: en ese turno llama dos herramientas y el texto se le
+    # va entre las dos. La persona acababa de mandar su nombre y su dirección y
+    # lo único que recibía era "te paso con un asesor".
+    #
+    # Solo entra cuando el turno no escribió NADA: si el modelo sí redactó su
+    # confirmación, esa se respeta — es mejor que una plantilla.
+    if pedidos_cerrados and not any(t.strip() for t in say_texts):
+        confirmacion = _texto_de_confirmacion(cfg, pedidos_cerrados[-1])
+        if confirmacion:
+            # Antes del cierre del turno: el handoff (o el `end`) ya está en la
+            # lista, y la confirmación tiene que leerse ANTES de "te paso con
+            # un asesor", no después.
+            corte = next(
+                (
+                    i for i, a in enumerate(actions)
+                    if a.get("type") in ("handoff", "end")
+                ),
+                len(actions),
+            )
+            actions.insert(corte, {"type": "say", "payload": {"text": confirmacion}})
+            say_texts.append(confirmacion)
+            logger.info(
+                "llm_engine: confirmación de pedido agregada por el motor (bot=%s)",
+                getattr(bot, "id", "?"),
+            )
+
     # #379: el primer mensaje tiene que salir con la pregunta del nombre.
     if _falta_pedir_el_nombre(cfg, history, say_texts, tools_called, finished):
         pregunta = str(cfg.get("pregunta_nombre") or "").strip()
@@ -2878,6 +3016,8 @@ def _advance_inner(
     telemetry = {
         "user_input": user_input,
         "bookings": bookings,   # #276: las persiste el caller con record_booking()
+        # Los manda a la hoja de Drive el caller, con pedidos_sheet.registrar()
+        "pedidos": pedidos_cerrados,
         "camino": _classify_camino(cfg, user_input, tools_called, sent_media_log, False),
         "tools": tools_called,
         "reply_preview": assistant_summary[:300],

@@ -279,7 +279,9 @@ function SimulatorModal({
   const [bubbles, setBubbles] = useState<ChatBubble[]>([]);
   const [state, setState] = useState<SimulateResponse['next_state']>(null);
   const [finished, setFinished] = useState(false);
-  const [waitingInput, setWaitingInput] = useState(false);
+  // Arranca habilitado: la conversación la abre el cliente, no el bot (ver el
+  // comentario del arranque, más abajo).
+  const [waitingInput, setWaitingInput] = useState(true);
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
   const [typing, setTyping] = useState(false);
@@ -405,11 +407,12 @@ function SimulatorModal({
     }
   };
 
-  // Arranque: primer turno sin input
-  useEffect(() => {
-    turn(null);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  // Arranque: **no se llama al bot**. La ventana queda esperando a que se
+  // escriba el primer mensaje, que es como funciona el canal de verdad — en
+  // WhatsApp la conversación siempre la abre el cliente y el bot contesta.
+  // Antes se disparaba un turno vacío al abrir y el bot saludaba solo: en una
+  // demostración eso arruina el efecto (el saludo ya estaba en pantalla antes
+  // de que el cliente escribiera) y no se parece a nada que pase en producción.
 
   // Auto-scroll
   useEffect(() => {
@@ -431,11 +434,9 @@ function SimulatorModal({
     setBubbles([]);
     setState(null);
     setFinished(false);
-    setWaitingInput(false);
+    setWaitingInput(true);
     setTyping(false);
     setInput('');
-    // Disparar primer turno
-    setTimeout(() => turn(null), 0);
   };
 
   // Wallpaper SVG de WhatsApp (doodle pattern, beige clásico)
@@ -527,6 +528,17 @@ function SimulatorModal({
               backgroundColor: '#ECE5DD',
             }}
           >
+            {bubbles.length === 0 && !typing && (
+              // Chat vacío: sin esto la ventana se abre en blanco y parece
+              // cargando. Dice qué hacer y por qué está vacía.
+              <div className="flex justify-center pt-6">
+                <div className="max-w-[85%] rounded-lg bg-[#FFF6D5] px-3 py-2 text-center text-[11.5px] leading-relaxed text-gray-600 shadow-sm">
+                  Escribe el primer mensaje, como lo haría un cliente por WhatsApp.
+                  <br />
+                  El bot responde cuando le escriben.
+                </div>
+              </div>
+            )}
             {bubbles.map((b, i) => {
               if (b.role === 'user') {
                 return (

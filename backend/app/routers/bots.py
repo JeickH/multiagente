@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from .. import crud, models, schemas
 from ..dependencies import get_current_membership, get_db
-from ..services import bot_engine, llm_engine
+from ..services import bot_engine, llm_engine, pedidos_sheet
 
 router = APIRouter(prefix="/bots", tags=["bots"])
 
@@ -98,6 +98,14 @@ def simulate_bot(
         # queda registrada en `demo_bookings` (misma tabla que la landing).
         llm_engine.record_booking(
             db, bot, result.get("telemetry"), source="simulador"
+        )
+        # Un pedido cerrado desde la ventana de prueba también entra a la hoja
+        # del equipo, marcado `simulador` en la columna de origen: así en una
+        # demostración se ve la fila aparecer en vivo, y quien despacha
+        # distingue de un vistazo la prueba del pedido de verdad.
+        pedidos_sheet.registrar(
+            db, bot, result.get("telemetry"), source="simulador",
+            team_id=member.team_id,
         )
         camino = (result.get("telemetry") or {}).get("camino")
     else:

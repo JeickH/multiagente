@@ -18,7 +18,14 @@ from typing import Optional
 from sqlalchemy.orm import Session
 
 from .. import crud, models
-from . import agendamientos, bot_engine, llm_engine, messaging, meta_whatsapp
+from . import (
+    agendamientos,
+    bot_engine,
+    llm_engine,
+    messaging,
+    meta_whatsapp,
+    pedidos_sheet,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -459,6 +466,15 @@ def run_turn(
         # Sprint 21 #276: demos agendadas por WhatsApp → `demo_bookings`.
         llm_engine.record_booking(
             db, bot, result.get("telemetry"), source="whatsapp"
+        )
+        # Los pedidos que cerró el bot → la hoja de pedidos del equipo. Va con
+        # el teléfono, que es el dato que el motor no tiene y la hoja sí
+        # necesita: quien despacha llama para confirmar.
+        pedidos_sheet.registrar(
+            db, bot, result.get("telemetry"), source="whatsapp",
+            telefono=conversation.contact_wa_id,
+            team_id=conversation.team_id,
+            conversation_id=conversation.id,
         )
     else:
         result = bot_engine.advance(bot, state, user_input)

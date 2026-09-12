@@ -6634,3 +6634,71 @@ solo asertando: los tres caminos salen con su media, el sabor que no existe
 (mango) se responde ofreciendo frutos amarillos, y tanto el pedido cerrado como
 el "precio al por mayor" terminan en `escalar_a_asesor` con resumen. Suite
 completa: 1346 passed, 103 skipped.
+
+---
+
+## Sprint 31 — Natulcé, segunda vuelta: pedidos a Drive y una ventana propia (2026-09-12)
+
+Cuatro pedidos del CEO sobre la demo que acababa de salir.
+
+### 1. El simulador ya no saluda solo
+
+`frontend/pages/bots/[id].tsx` disparaba un turno vacío al abrir la ventana de
+prueba, así que el bot saludaba antes de que nadie escribiera. Eso no se parece
+a nada que pase en producción —en WhatsApp la conversación **siempre** la abre
+el cliente— y en una demostración arruina el efecto: el saludo ya estaba en
+pantalla. Ahora la ventana abre vacía, con un aviso que dice qué hacer, y el
+bot contesta cuando le escriben. El arreglo también quitó el doble saludo que
+salía al escribir "Hola" después del arranque automático.
+
+### 2. Agendamientos de ejemplo
+
+Tres conversaciones abandonadas más y sus llamadas: una vencida, una para hoy,
+una próxima y una cerrada. Se crean con `services/agendamientos.nivel_de_interes`
+—el mismo clasificador que usa el bot en vivo— y no a mano: si el seed
+clasificara por su cuenta, la demo mostraría filas que el sistema real no
+habría creado.
+
+### 3. Los pedidos van a una hoja de Drive
+
+Cuando el cliente manda nombre, dirección y pedido, el bot llama a la
+herramienta nueva `registrar_pedido` y la fila termina en dos lugares: la tabla
+`pedidos` y una hoja de cálculo del equipo.
+
+**Sin API de Google**: la hoja publica un Apps Script como aplicación web y
+nosotros le hacemos un POST. Nada de cuenta de servicio, ni JSON de
+credenciales, ni una librería más en la imagen. La URL del script **es un
+secreto de tenant** (quien la tenga escribe en la hoja del cliente), así que va
+cifrada con Fernet en `llm_config` y nunca se loggea.
+
+El orden es base primero, hoja después: la base no depende de que Google
+conteste, y si el POST falla la fila queda con `en_hoja = false` en vez de
+perderse.
+
+#### El guardarraíl que hubo que agregar
+
+Con la regla escrita en el documento del bot ("registra, confirma y escala"),
+el modelo **registraba y escalaba bien, y se comía la confirmación 4 de 4
+veces**. No es que se olvide: en ese turno llama dos herramientas y el texto se
+le va entre las dos. La persona acababa de mandar su nombre y su dirección y lo
+único que recibía era "te paso con un asesor".
+
+Insistir en el prompt ya se sabe que no sirve cuando el modelo *elige* (ver el
+Sprint 26). Así que el motor arma la confirmación él mismo con los datos del
+pedido y la inserta **antes** del handoff — pero solo si el turno no escribió
+nada. Si el modelo sí redactó su confirmación, esa se respeta: es mejor que una
+plantilla. Medido después del cambio: 4 de 4 con confirmación.
+
+### 4. La ventana de Pedidos reemplaza la de Agendamientos
+
+Solo en las cuentas que tienen su hoja conectada, y sin lista de correos
+cableada: el menú pregunta `GET /pedidos/access`, que responde mirando si el
+bot del equipo tiene el bloque `pedidos`. Si mañana otra marca la conecta, le
+aparece sola.
+
+Las dos listas viven en la misma pantalla porque son las dos mitades del día de
+quien atiende: **lo que hay que despachar** arriba y **a quién hay que llamar**
+abajo. En pantallas separadas hay que acordarse de revisar dos.
+
+Migración `migrate_pedidos.py` aplicada en local y en RDS el mismo día
+(paridad). Suite: 1356 passed (10 nuevos en `tests/test_pedidos.py`).

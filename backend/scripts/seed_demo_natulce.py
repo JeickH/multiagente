@@ -6,7 +6,7 @@ asesora).
 
 Qué crea, todo colgando del team de `natulce@demo.com`:
 
-  - **6 conversaciones** con su historial completo, incluidas las burbujas de
+  - **9 conversaciones** con su historial completo, incluidas las burbujas de
     imagen y video que manda el bot:
       1. Daniela Ospina — recorre los tres caminos y **cierra el pedido**
          (nombre, dirección y pedido) → pasa a la asesora.
@@ -18,6 +18,14 @@ Qué crea, todo colgando del team de `natulce@demo.com`:
       5. Julián Cardona — pide precio al por mayor → escalado a la asesora.
       6. Marcela Gil — **abandonada de verdad**: no contestó ni al segundo
          recordatorio, queda con la etiqueta "conversación abandonada".
+      7-9. Sara Montoya, Mateo Vélez y Paula Zapata — las otras tres
+         abandonadas, que son las que llenan la pantalla de Agendamientos.
+  - **5 pedidos** confirmados (uno es el de Daniela Ospina, con los mismos
+    datos que ella escribió en el chat) para que la ventana de Pedidos tenga
+    historia.
+  - **4 agendamientos** (llamadas por hacer): una vencida, una para hoy, una
+    próxima y una ya cerrada. Se crean con el mismo clasificador que usa el bot
+    en vivo (`services/agendamientos.nivel_de_interes`), no a mano.
   - **18 contactos** sintéticos, 2 grupos y 2 plantillas WhatsApp mock
     APPROVED, para el módulo de Campañas.
   - **3 campañas**: dos completadas con métricas (enviado / entregado / leído /
@@ -287,6 +295,104 @@ CONVERSACIONES = [
             ("outbound", "text", RECORDATORIO_23H, 6 * H - 51),
         ],
     },
+    # 7-9 ── Las otras tres abandonadas, que son las que llenan la pantalla de
+    # Agendamientos. Todas alcanzaron a recibir información (la persona escribió
+    # DESPUÉS del primer mensaje del bot): ése es el corte que separa un cliente
+    # potencial de alguien que escribió una vez — ver `services/agendamientos`.
+    {
+        "wa_id": "573000000017",
+        "name": "Sara Montoya",
+        "status": "open",
+        "assigned_to": ASESOR_HANDLE,
+        "etiqueta": "conversación abandonada",
+        "messages": [
+            ("inbound", "text", "Buenas 👋", 5 * 24 * H),
+            ("outbound", "text", BIENVENIDA, 5 * 24 * H),
+            ("outbound", "image", f"\n{IMG_PROMO}", 5 * 24 * H - 1),
+            ("outbound", "video", f"\n{VID_PROMO}", 5 * 24 * H - 1),
+            ("inbound", "text", "Sara. Qué precio tienen?", 5 * 24 * H - 6),
+            ("outbound", "image", f"{PRECIOS}\n{IMG_PRECIOS}", 5 * 24 * H - 7),
+            ("inbound", "text", "Ah ok, déjame lo consulto con mi esposo", 5 * 24 * H - 12),
+            (
+                "outbound",
+                "text",
+                "¡Claro que sí, Sara! 😊 Aquí estoy cuando quieras. Recuerda que "
+                "la promo de $25mil está esta semana 🍓",
+                5 * 24 * H - 12,
+            ),
+            ("outbound", "text", RECORDATORIO_3H, 5 * 24 * H - 192),
+            ("outbound", "text", RECORDATORIO_23H, 4 * 24 * H - 12),
+        ],
+    },
+    {
+        "wa_id": "573000000020",
+        "name": "Mateo Vélez",
+        "status": "open",
+        "assigned_to": ASESOR_HANDLE,
+        "etiqueta": "conversación abandonada",
+        "messages": [
+            ("inbound", "text", "Hola, qué sabores tienen?", 3 * 24 * H),
+            (
+                "outbound",
+                "text",
+                SABORES + "\n\n¿Con quién tengo el gusto? 😊",
+                3 * 24 * H,
+            ),
+            ("inbound", "text", "Mateo. El de frutos amarillos llega a Bogotá?", 3 * 24 * H - 8),
+            (
+                "outbound",
+                "text",
+                "¡Sí, Mateo! 🚚 Enviamos a toda Colombia, el envío nacional es "
+                "de $8.000. El frasco de 250ml queda en *$25mil* con la promo 🍍",
+                3 * 24 * H - 8,
+            ),
+            ("outbound", "text", RECORDATORIO_3H, 3 * 24 * H - 188),
+            ("outbound", "text", RECORDATORIO_23H, 2 * 24 * H - 8),
+        ],
+    },
+    {
+        "wa_id": "573000000021",
+        "name": "Paula Zapata",
+        "status": "open",
+        "assigned_to": ASESOR_HANDLE,
+        "etiqueta": "conversación abandonada",
+        "messages": [
+            ("inbound", "text", "Buenas, quiero comprar 2 frascos", 2 * 24 * H),
+            (
+                "outbound",
+                "text",
+                "¡Qué rico! 🍹 ¿Con quién tengo el gusto?\n\n" + PIDE_DATOS,
+                2 * 24 * H,
+            ),
+            ("inbound", "text", "Paula. Ya te los mando, dame un momento", 2 * 24 * H - 10),
+            (
+                "outbound",
+                "text",
+                "¡Listo, Paula! Aquí te espero 😊",
+                2 * 24 * H - 10,
+            ),
+            ("outbound", "text", RECORDATORIO_3H, 2 * 24 * H - 190),
+            ("outbound", "text", RECORDATORIO_23H, 24 * H - 10),
+        ],
+    },
+]
+
+
+# ---------------------------------------------------------------------------
+# Agendamientos: la llamada por hacer a quien dejó la conversación a medias.
+# En vivo las crea el bot al dar la conversación por abandonada; aquí se
+# fabrican con el MISMO criterio (`svc.nivel_de_interes`), para que la demo no
+# muestre filas que el sistema real no habría creado.
+#
+# `dias` es la fecha de llamada relativa a hoy: una vencida, una para hoy y una
+# próxima. Así la pantalla se ve como se ve un lunes cualquiera.
+# ---------------------------------------------------------------------------
+AGENDAMIENTOS = [
+    {"wa_id": "573000000017", "dias": -1, "estado": "pendiente", "asesor": "Catalina"},
+    {"wa_id": "573000000020", "dias": 0, "estado": "pendiente", "asesor": "Catalina"},
+    {"wa_id": "573000000021", "dias": 2, "estado": "pendiente", "asesor": "Catalina"},
+    # Ya la llamaron: queda de ejemplo de una llamada cerrada.
+    {"wa_id": "573000000016", "dias": -2, "estado": "cerrado", "asesor": "Catalina"},
 ]
 
 
@@ -364,6 +470,64 @@ GRUPOS = [
 ]
 
 
+# ---------------------------------------------------------------------------
+# Pedidos confirmados. En vivo los crea el bot cuando el cliente manda nombre,
+# dirección y pedido; aquí se siembran para que la ventana de Pedidos tenga
+# historia el día de la demostración.
+#
+# El primero es el de Daniela Ospina y sale de su conversación (la que se abre
+# en la demo): los datos son EXACTAMENTE los que ella escribió en el chat, para
+# que quien siga el hilo encuentre lo mismo en las dos pantallas.
+# ---------------------------------------------------------------------------
+PEDIDOS = [
+    {
+        "wa_id": "573000000011",
+        "nombre": "Daniela Ospina",
+        "direccion": "Cra 43A #18-95, Medellín",
+        "detalle": "2 frutos rojos y 1 maracuyá",
+        "total": "$83.000",
+        "estado": "pendiente",
+        "horas": 1,
+    },
+    {
+        "wa_id": None,
+        "nombre": "Laura Betancur",
+        "direccion": "Calle 33 #70-15, Medellín",
+        "detalle": "2 flor de jamaica",
+        "total": "$58.000",
+        "estado": "pendiente",
+        "horas": 7,
+    },
+    {
+        "wa_id": None,
+        "nombre": "Santiago Arango",
+        "direccion": "Calle 127 #15-40, Bogotá",
+        "detalle": "1 neutro y 1 limoncillo",
+        "total": "$58.000",
+        "estado": "despachado",
+        "horas": 28,
+    },
+    {
+        "wa_id": None,
+        "nombre": "Juliana Posada",
+        "direccion": "Av. 6N #23-51, Cali",
+        "detalle": "3 frutos amarillos",
+        "total": "$83.000",
+        "estado": "despachado",
+        "horas": 52,
+    },
+    {
+        "wa_id": None,
+        "nombre": "Sara Montoya",
+        "direccion": "Cra 80 #32-17, Medellín",
+        "detalle": "1 frutos rojos y 1 maracuyá",
+        "total": "$58.000",
+        "estado": "despachado",
+        "horas": 74,
+    },
+]
+
+
 def _telefono(i: int) -> str:
     """Teléfono sintético `+57 300 000 00XX`. No es un número asignable: la
     demo nunca puede terminar escribiéndole a una persona real (regla #8)."""
@@ -401,6 +565,119 @@ def _seed_conversacion(db, team_id: int, spec: dict) -> str:
     conv.etiqueta = spec["etiqueta"]
     db.commit()
     return "nuevo"
+
+
+def _seed_pedidos(db, team_id: int) -> list[str]:
+    """Siembra los pedidos de ejemplo. Idempotente por (team, nombre, detalle)."""
+    ahora = datetime.utcnow()
+    salida = []
+    for spec in PEDIDOS:
+        ya = (
+            db.query(models.Pedido)
+            .filter(
+                models.Pedido.team_id == team_id,
+                models.Pedido.nombre == spec["nombre"],
+                models.Pedido.detalle == spec["detalle"],
+            )
+            .first()
+        )
+        if ya is not None:
+            salida.append(f"  [skip ] {spec['nombre']}")
+            continue
+
+        conv = None
+        if spec["wa_id"]:
+            conv = (
+                db.query(models.Conversation)
+                .filter(
+                    models.Conversation.team_id == team_id,
+                    models.Conversation.contact_wa_id == spec["wa_id"],
+                )
+                .first()
+            )
+        creado = ahora - timedelta(hours=spec["horas"])
+        db.add(
+            models.Pedido(
+                team_id=team_id,
+                conversation_id=conv.id if conv else None,
+                nombre=spec["nombre"],
+                direccion=spec["direccion"],
+                detalle=spec["detalle"],
+                total=spec["total"],
+                telefono=conv.contact_wa_id if conv else None,
+                origen="whatsapp",
+                estado=spec["estado"],
+                # Los sembrados se dan por escritos en la hoja: son los de
+                # antes de hoy, y un "no llegó a la hoja" en todos sería una
+                # alarma falsa el día de la demostración.
+                en_hoja=True,
+                created_at=creado,
+                updated_at=creado,
+            )
+        )
+        salida.append(
+            f"  [nuevo] {spec['nombre']:<20} {spec['detalle']:<28} "
+            f"{spec['total']:<9} {spec['estado']}"
+        )
+    db.commit()
+    return salida
+
+
+def _seed_agendamientos(db, team_id: int) -> list[str]:
+    """Crea las llamadas por hacer. Idempotente por conversación."""
+    from app.services import agendamientos as svc  # type: ignore
+
+    hoy = svc.hoy_en_colombia()
+    ahora = datetime.utcnow()
+    salida = []
+    for spec in AGENDAMIENTOS:
+        conv = (
+            db.query(models.Conversation)
+            .filter(
+                models.Conversation.team_id == team_id,
+                models.Conversation.contact_wa_id == spec["wa_id"],
+            )
+            .first()
+        )
+        if conv is None:
+            salida.append(f"  [falta] {spec['wa_id']} sin conversación")
+            continue
+
+        ya = (
+            db.query(models.Agendamiento)
+            .filter(models.Agendamiento.conversation_id == conv.id)
+            .first()
+        )
+        if ya is not None:
+            salida.append(f"  [skip ] {conv.contact_name}")
+            continue
+
+        # El mismo clasificador que usa el bot en vivo: si la conversación no
+        # llegó a recibir información, no habría llamada y aquí tampoco.
+        nivel = svc.nivel_de_interes(db, conv)
+        if nivel != models.AGENDAMIENTO_NIVEL_CON_INFORMACION:
+            salida.append(f"  [nivel] {conv.contact_name} → solo bienvenida, sin llamada")
+            continue
+
+        cerrado = spec["estado"] == models.AGENDAMIENTO_CERRADO
+        db.add(
+            models.Agendamiento(
+                team_id=team_id,
+                conversation_id=conv.id,
+                nivel_interes=nivel,
+                fecha_llamada=hoy + timedelta(days=spec["dias"]),
+                estado=spec["estado"],
+                asesor=spec["asesor"],
+                cerrado_at=ahora - timedelta(hours=20) if cerrado else None,
+                created_at=conv.last_message_at,
+            )
+        )
+        fecha = hoy + timedelta(days=spec["dias"])
+        salida.append(
+            f"  [nuevo] {conv.contact_name:<20} llamar el {fecha} · {spec['estado']}"
+        )
+    db.commit()
+    return salida
 
 
 def _meta_account(db, team_id: int) -> models.MetaAccount:
@@ -624,6 +901,14 @@ def main() -> int:
                 f"  [{accion:<5}] {spec['name']:<20} "
                 f"{len(spec['messages']):>2} msgs · {spec['status']}{marca}"
             )
+
+        print("\nPedidos confirmados:")
+        for linea in _seed_pedidos(db, team_id):
+            print(linea)
+
+        print("\nAgendamientos (llamadas por hacer):")
+        for linea in _seed_agendamientos(db, team_id):
+            print(linea)
 
         meta = _meta_account(db, team_id)
         contactos = _seed_contactos(db, team_id)

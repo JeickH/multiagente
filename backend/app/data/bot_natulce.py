@@ -98,6 +98,20 @@ LLM_CONFIG = {
     "assignee": "asesor_1",
     "media": MEDIA,
     "caminos": CAMINOS,
+    # ── Pedidos a la hoja de Drive ──────────────────────────────────────────
+    # Habilita la herramienta `registrar_pedido`: cuando el cliente manda
+    # nombre, dirección y pedido, el bot escribe la fila en la hoja de cálculo
+    # del equipo (ver `services/pedidos_sheet.py`).
+    #
+    # `encrypted_webhook_url` es la URL del Apps Script de la hoja, cifrada con
+    # Fernet: quien la tenga puede escribir filas ahí, así que es un secreto
+    # del tenant y va en la base cifrado, nunca en el repositorio (regla #3).
+    # La escribe `configurar_pedidos_natulce.py`; mientras esté vacía, el bot
+    # sigue funcionando igual y solo deja un warning en el log.
+    "pedidos": {
+        "hoja": "Pedidos Natulcé — WhatsApp",
+        "encrypted_webhook_url": "",
+    },
     # ── Continuidad de la conversación (#377) ───────────────────────────────
     # `seguimiento` es la política de cierre de este bot: cerrar cuando el bot
     # se despide, reenganchar mientras haya silencio y, si tampoco así
