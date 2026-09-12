@@ -6702,3 +6702,24 @@ abajo. En pantallas separadas hay que acordarse de revisar dos.
 
 Migración `migrate_pedidos.py` aplicada en local y en RDS el mismo día
 (paridad). Suite: 1356 passed (10 nuevos en `tests/test_pedidos.py`).
+
+### El reporte de seguimiento de ejemplo
+
+Se sumó `entregables/dashboard_natulce_demo.html`, con el mismo formato de los
+cortes de Arranquemos Pues pero con **datos simulados**: 184 conversaciones, 31
+pedidos, $2.198.000 vendidos por el chat. Sirve para enseñarle al cliente qué se
+mide y cómo se lee un corte, antes de que exista el primero real.
+
+Lleva su propio recuadro diciendo que las cifras son de muestra. Un documento
+que parezca un registro genuino sin serlo no se puede repartir, y menos en una
+reunión de venta.
+
+Las dos secciones que lo venden solo: el recordatorio de las 3 horas (**29 % de
+las ventas del período salieron de conversaciones muertas**) y los 14 sabores
+que la gente pidió y no existen —mango, mora, coco, vainilla—, que es
+investigación de producto con nombre y teléfono. Y el bloque de lo que falló,
+sin el cual el reporte no se cree: 7 pedidos entraron sin ciudad y 2 se quedaron
+sin despachar.
+
+El guion de la demo pasó a tres tramos: 6 minutos de app, 4 de bot y 2 de
+reporte.
