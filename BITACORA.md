@@ -6572,3 +6572,65 @@ esto se despliega solo con el build de Amplify.
 El dominio de la marca no vive solo en Route 53 y en Amplify. Está también en el
 CORS de un bucket, y esa copia no la mueve ningún deploy. Queda anotada en el
 encabezado del script, que es donde la va a leer el que haga la próxima mudanza.
+
+---
+
+## Sprint 31 — Natulcé: la demo de siropes, de cero a producción (2026-09-12)
+
+**Pedido del CEO**: una demo para **Natulcé**, marca colombiana de siropes
+naturales concentrados para sodas italianas. Bot con tres caminos, cuenta
+propia, conversaciones de muestra y los guiones para mostrarlo.
+
+### El bot: tres caminos y un pedido
+
+Mismo patrón que Jerarquía y Arranquemos Pues — motor LLM, contexto a priori en
+`backend/app/bot_contexts/natulce.md`, catálogo de medios y config en
+`backend/app/data/bot_natulce.py` (vive en `app/` y no en `scripts/` para que
+`rds_exec.sh` lo pueda importar; dos copias de una tabla de precios terminan en
+desacuerdo).
+
+1. **Bienvenida** — el texto de la marca tal cual, más `enviar_media` con la
+   imagen de la promo y el video, en el mismo turno, y la mención de que hay
+   promoción activa.
+2. **Porciones y precios** — imagen + 250 ml, más de 30 preparaciones, $29.000
+   que con la promo quedan en $25.000 (15%), envío nacional $8.000.
+3. **Sabores** — 4 siropes (frutos rojos, frutos amarillos, flor de Jamaica,
+   maracuyá) y 2 endulzantes (neutro, limoncillo).
+
+Y el cierre: cuando la persona confirma que quiere comprar, el bot pide
+**nombre, dirección y pedido en un solo mensaje**, los confirma con el total
+(unidades × $25.000 + $8.000) y escala a la asesora. No registra venta ni manda
+link de pago: eso no lo maneja esta marca.
+
+El envío nacional y el rendimiento no los dio el CEO por escrito — salieron de
+**leer la imagen de precios**, que los trae impresos. Sin eso el bot habría
+contestado "el asesor te confirma el envío" a una pregunta que la propia pieza
+gráfica ya responde.
+
+### El reenganche a las 3 horas
+
+`seguimiento.recordatorios` con dos etapas: a los **180 minutos** el texto que
+pidió el CEO —"Hola 👀 me dejaste en visto 🙊…"— y a las **23 horas** el último.
+Las 23 no son redondas por casualidad: pasada la ventana de 24 h de WhatsApp
+haría falta plantilla aprobada y el mensaje saldría `failed`.
+
+### Lo que se ve en la app
+
+`seed_demo_natulce.py` deja 6 conversaciones con sus burbujas de imagen y video,
+18 contactos, 2 grupos, 2 plantillas y 3 campañas (dos completadas con métricas,
+una agendada). Dos de las conversaciones existen para el mismo punto, y por eso
+son dos: **Camila Restrepo** abandonó, recibió el recordatorio de las 3 horas y
+**retomó**; **Marcela Gil** no contestó ni al segundo y quedó etiquetada
+`conversación abandonada`. La primera muestra que el reenganche funciona, la
+segunda que cuando no funciona el sistema igual lo deja anotado.
+
+Los teléfonos son sintéticos (`+57 300 000 00XX`): ninguno es asignable, así
+que la demo no puede terminar escribiéndole a una persona real (regla #8).
+
+### Verificación
+
+Dos guiones corridos contra el simulador local **leyendo las respuestas**, no
+solo asertando: los tres caminos salen con su media, el sabor que no existe
+(mango) se responde ofreciendo frutos amarillos, y tanto el pedido cerrado como
+el "precio al por mayor" terminan en `escalar_a_asesor` con resumen. Suite
+completa: 1346 passed, 103 skipped.
