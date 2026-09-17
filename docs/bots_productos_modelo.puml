@@ -126,8 +126,25 @@ package "Productos de la cuenta — tablas nuevas" {
   }
 }
 
+class bot_recordatorios <<nueva>> #DCEFE8 {
+  id : int <<PK>>
+  team_id : int <<FK>>
+  bot_id : int <<FK, null>>  ' null = todos los bots de la cuenta
+  orden : int  ' 1, 2, 3
+  minutos : int  ' desde que empezó el silencio
+  texto : text
+  omitir_si : jsonb  ' {"tools":["registrar_venta"]}
+  hora_min / hora_max : int  ' franja permitida (Colombia)
+  activo : bool
+  --
+  UNIQUE (bot_id, orden)
+  CHECK (minutos < 1440)  ' ventana de 24 h de WhatsApp
+}
+
 teams "1" *-- "N" bots
 teams "1" *-- "N" bot_productos
+teams "1" *-- "N" bot_recordatorios
+bots "1" -- "0..N" bot_recordatorios : reengancha a\nquien abandona
 bots "1" -- "N" bot_producto_bots
 bot_productos "1" -- "N" bot_producto_bots
 bot_productos "1" *-- "N" bot_producto_variantes

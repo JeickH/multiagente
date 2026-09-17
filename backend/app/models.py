@@ -1,5 +1,6 @@
 from datetime import datetime
 from sqlalchemy import (
+    BigInteger,
     Column,
     Integer,
     String,
@@ -353,6 +354,19 @@ class Bot(Base):
     #                "encrypted_client_secret": "<Fernet>"}}
     # El client_secret de Shopify es secreto de tenant → SIEMPRE cifrado (regla #3).
     llm_config = Column(Text, nullable=True)
+    # Sprint 31: instrucciones de negocio del bot en prosa (nivel 2 del modelo
+    # de `docs/bots_productos_modelo.puml`). Es lo que hoy vive escondido en un
+    # `.md` del repo (`bot_contexts/`) y que el cliente tendría que poder
+    # editar sin un despliegue. `llm_config` sigue siendo SOLO lo técnico
+    # (modelo, medios, credenciales); esto es lo que el negocio dice de sí
+    # mismo. Nivel 3 —lo específico de cada producto— vive en
+    # `bot_productos.instrucciones`.
+    instrucciones = Column(Text, nullable=True)
+    # Sube en 1 cada vez que se guardan `instrucciones`. Sirve para invalidar
+    # el prefijo cacheado del prompt sin comparar textos largos.
+    instrucciones_version = Column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
     # Sprint 9: trigger de activación
     trigger_type = Column(
         String(32), nullable=False, default=BOT_TRIGGER_MANUAL
@@ -489,6 +503,16 @@ class BotLlmDecision(Base):
         index=True,
     )
     source = Column(String(16), nullable=False, default="whatsapp")  # whatsapp | simulador
+    # Sprint 31. OJO con el parecido de los nombres, que se prestan a confusión:
+    #   `source`       → por dónde ENTRÓ el turno: whatsapp | simulador.
+    #   `fuente_datos` → de dónde salieron los DATOS que el bot usó para
+    #                    responder: 'db' (tablas `bot_producto_*`),
+    #                    'prompt' (venían escritos en el contexto) o
+    #                    'json' (los archivos de `app/data/`).
+    # Nullable y SIN default a propósito: así "turno viejo, anterior a esta
+    # columna" (NULL) no se confunde con "turno nuevo que no consultó ninguna
+    # fuente". Mismo criterio que `conversations.etiqueta`.
+    fuente_datos = Column(String(16), nullable=True)
     user_input = Column(Text, nullable=True)          # None en el turno de saludo
     # Camino tomado: derivado de tools/media o clasificador por keywords
     # (llm_config.caminos). Ej: 'tallas', 'estado_pedido', 'escalar_a_asesor'.
@@ -1827,6 +1851,526 @@ class Pedido(Base):
             f"<Pedido id={self.id} team_id={self.team_id} "
             f"estado={self.estado!r} origen={self.origen!r} "
             f"nombre=<REDACTED> direccion=<REDACTED> telefono=<REDACTED>>"
+        )
+
+    __str__ = __repr__
+
+
+# ===== Sprint 31: lo que vende cada cuenta, en la base ====================
+#
+# Modelo completo en `docs/bots_productos_modelo.puml`. La idea de fondo: hoy
+# lo que vende un cliente vive en un `.md` del repo y en JSON sueltos, así que
+# cambiar un precio es un despliegue. Estas ocho tablas lo mueven a la base,
+# con aislamiento por cuenta: TODO cuelga de `teams.id`, directo (`team_id`) o
+# a través de `bot_productos`. Un producto nunca es visible para otra cuenta.
+#
+# Dos decisiones transversales que conviene leer antes de tocar nada:
+#
+# 1. **Centinela `0` en vez de NULL** en `bot_producto_filas.variante_id`,
+#    `bot_producto_medios.variante_id` y `bot_recordatorios.bot_id`. En
+#    Postgres `NULL <> NULL`, así que un UNIQUE que incluya una columna
+#    nullable NO impide duplicados cuando esa columna viene vacía: el
+#    importador volvería a insertar las mismas filas en cada corrida. Ya lo
+#    mordimos con `uq_mascota_origen` (`origen_id` nullable). Aquí `0`
+#    significa "aplica a todas" y es un valor real, así que el UNIQUE sí
+#    muerde. Por eso tampoco llevan FK: `0` no existe en la tabla apuntada.
+#    Mismo motivo para `externo_id`, que es `''` y no NULL cuando la fila no
+#    viene de un archivo externo.
+#
+# 2. **Enums con constantes + CheckConstraint**, como el resto del modelo. Sin
+#    el CHECK, el primer typo del importador ('publicad@') entra a la base y
+#    nadie se entera hasta que el bot deja de mostrar el producto.
+
+# `bot_productos.tipo`
+PRODUCTO_TIPO_PLAN = "plan"                          # un plan de viaje, un paquete
+PRODUCTO_TIPO_PRODUCTO = "producto"                  # un SKU físico
+PRODUCTO_TIPO_CATALOGO_EXTERNO = "catalogo_externo"  # espejo de Shopify/Meta
+PRODUCTO_TIPO_FICHA = "ficha"                        # info que no se vende (sedes, envíos)
+AVAILABLE_PRODUCTO_TIPOS = (
+    PRODUCTO_TIPO_PLAN,
+    PRODUCTO_TIPO_PRODUCTO,
+    PRODUCTO_TIPO_CATALOGO_EXTERNO,
+    PRODUCTO_TIPO_FICHA,
+)
+
+# `bot_productos.estado`
+PRODUCTO_ESTADO_BORRADOR = "borrador"    # se edita; el bot no lo ve
+PRODUCTO_ESTADO_PUBLICADO = "publicado"  # el bot lo puede vender
+PRODUCTO_ESTADO_ARCHIVADO = "archivado"  # ya no se vende, se conserva el historial
+AVAILABLE_PRODUCTO_ESTADOS = (
+    PRODUCTO_ESTADO_BORRADOR,
+    PRODUCTO_ESTADO_PUBLICADO,
+    PRODUCTO_ESTADO_ARCHIVADO,
+)
+
+# `bot_producto_filas.tipo`
+FILA_TIPO_SALIDA = "salida"  # viajes: una fecha de salida con su precio
+FILA_TIPO_PRECIO = "precio"  # una lista de precios sin fecha
+FILA_TIPO_SEDE = "sede"      # Talulah: una sede con su dirección y horario
+FILA_TIPO_ENVIO = "envio"    # tiempos y costos de envío por ciudad
+FILA_TIPO_FAQ = "faq"        # pregunta/respuesta puntual
+AVAILABLE_FILA_TIPOS = (
+    FILA_TIPO_SALIDA,
+    FILA_TIPO_PRECIO,
+    FILA_TIPO_SEDE,
+    FILA_TIPO_ENVIO,
+    FILA_TIPO_FAQ,
+)
+
+# `bot_producto_alias.nivel`
+ALIAS_NIVEL_PRODUCTO = "producto"
+ALIAS_NIVEL_VARIANTE = "variante"
+AVAILABLE_ALIAS_NIVELES = (ALIAS_NIVEL_PRODUCTO, ALIAS_NIVEL_VARIANTE)
+
+# `bot_producto_cargas.estado`
+CARGA_ESTADO_REVISION = "revision"    # el diff está esperando aprobación humana
+CARGA_ESTADO_APLICADO = "aplicado"
+CARGA_ESTADO_RECHAZADO = "rechazado"
+AVAILABLE_CARGA_ESTADOS = (
+    CARGA_ESTADO_REVISION,
+    CARGA_ESTADO_APLICADO,
+    CARGA_ESTADO_RECHAZADO,
+)
+
+#: Valor de "aplica a todas/todos" en las columnas con centinela (ver arriba).
+REF_TODAS = 0
+
+
+class BotProducto(Base):
+    """Algo que una cuenta vende o cuenta: un plan, un SKU, una ficha."""
+
+    __tablename__ = "bot_productos"
+
+    id = Column(Integer, primary_key=True, index=True)
+    team_id = Column(
+        Integer, ForeignKey("teams.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    #: Identificador estable y legible dentro de la cuenta ('covenas_4d3n').
+    #: Es lo que el bot nombra en sus tools, así que no cambia con el nombre
+    #: comercial.
+    slug = Column(String(80), nullable=False)
+    tipo = Column(String(24), nullable=False, default=PRODUCTO_TIPO_PRODUCTO)
+    nombre = Column(String(160), nullable=False)
+    estado = Column(
+        String(16),
+        nullable=False,
+        default=PRODUCTO_ESTADO_BORRADOR,
+        server_default=PRODUCTO_ESTADO_BORRADOR,
+        index=True,
+    )
+    #: Una línea. Es lo único de este producto que entra al índice del prompt,
+    #: de ahí el límite duro: 240 caracteres × N productos es el presupuesto
+    #: de tokens del prefijo cacheado.
+    resumen = Column(String(240), nullable=True)
+    #: Nivel 3: lo que el bot debe saber al vender ESTE producto. Se carga solo
+    #: cuando la conversación llega a él, no en el prefijo.
+    instrucciones = Column(Text, nullable=True)
+    atributos = Column(JSONB, nullable=False, default=dict, server_default="{}")
+    vigencia_desde = Column(Date, nullable=True)
+    vigencia_hasta = Column(Date, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+    )
+
+    __table_args__ = (
+        UniqueConstraint("team_id", "slug", name="uq_bot_productos_team_slug"),
+        CheckConstraint(
+            "tipo IN ('plan','producto','catalogo_externo','ficha')",
+            name="ck_bot_productos_tipo",
+        ),
+        CheckConstraint(
+            "estado IN ('borrador','publicado','archivado')",
+            name="ck_bot_productos_estado",
+        ),
+        # La consulta de siempre: "los publicados de esta cuenta".
+        Index("ix_bot_productos_team_estado", "team_id", "estado"),
+    )
+
+    team = relationship("Team")
+    variantes = relationship(
+        "BotProductoVariante",
+        back_populates="producto",
+        cascade="all, delete-orphan",
+    )
+    filas = relationship(
+        "BotProductoFila", back_populates="producto", cascade="all, delete-orphan"
+    )
+    medios = relationship(
+        "BotProductoMedio", back_populates="producto", cascade="all, delete-orphan"
+    )
+    alias = relationship(
+        "BotProductoAlias", back_populates="producto", cascade="all, delete-orphan"
+    )
+
+    def __repr__(self) -> str:
+        # Regla 1 (CLAUDE.md): `instrucciones` lo escribe el cliente y suele
+        # traer datos de contacto —"si preguntan, el WhatsApp de la sede es
+        # …"—. No sale ni en un repr de debug.
+        return (
+            f"<BotProducto id={self.id} team_id={self.team_id} "
+            f"slug={self.slug!r} tipo={self.tipo!r} estado={self.estado!r} "
+            f"instrucciones=<REDACTED> resumen=<REDACTED>>"
+        )
+
+    __str__ = __repr__
+
+
+class BotProductoVariante(Base):
+    """Una versión del producto: una habitación, un sabor, una talla."""
+
+    __tablename__ = "bot_producto_variantes"
+
+    id = Column(Integer, primary_key=True, index=True)
+    producto_id = Column(
+        Integer,
+        ForeignKey("bot_productos.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    slug = Column(String(80), nullable=False)
+    nombre = Column(String(160), nullable=False)
+    #: Notas cortas para el bot sobre esta variante en particular.
+    instrucciones = Column(Text, nullable=True)
+    atributos = Column(JSONB, nullable=False, default=dict, server_default="{}")
+    #: Auto-FK: "esta variante cobra lo mismo que aquella". Evita duplicar la
+    #: tabla de precios entre dos hoteles que comparten tarifario.
+    precios_de_variante_id = Column(
+        Integer,
+        ForeignKey("bot_producto_variantes.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    activo = Column(Boolean, nullable=False, default=True, server_default="true")
+    orden = Column(Integer, nullable=False, default=0, server_default="0")
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "producto_id", "slug", name="uq_bot_producto_variantes_slug"
+        ),
+    )
+
+    producto = relationship("BotProducto", back_populates="variantes")
+    precios_de = relationship("BotProductoVariante", remote_side=[id])
+
+
+class BotProductoFila(Base):
+    """Una fila del catálogo: una salida, un precio, una sede, un envío.
+
+    Una sola tabla para todos los negocios. Lo que se filtra y se ordena son
+    columnas (`inicio`, `activo`, `tipo`); lo que solo se muestra va en
+    `valores` (JSONB), que es donde caben las columnas que cada cliente trae
+    en su Excel sin migrar la tabla.
+    """
+
+    __tablename__ = "bot_producto_filas"
+
+    # `BigInteger` pelado rompe la suite entera: los fixtures hacen
+    # `create_all()` del metadata completo sobre SQLite, y ahí un BIGINT no
+    # autoincrementa — el primer INSERT muere con "NOT NULL constraint
+    # failed". La variante deja BIGSERIAL en Postgres e INTEGER en SQLite.
+    id = Column(
+        BigInteger().with_variant(Integer, "sqlite"), primary_key=True, index=True
+    )
+    producto_id = Column(
+        Integer,
+        ForeignKey("bot_productos.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    #: Centinela: `0` = la fila aplica a todas las variantes. NOT NULL y sin FK
+    #: a propósito — ver la nota de cabecera de la sección.
+    variante_id = Column(
+        Integer, nullable=False, default=REF_TODAS, server_default="0"
+    )
+    tipo = Column(String(16), nullable=False, default=FILA_TIPO_PRECIO)
+    #: Cómo la nombra el cliente: 'AGOSTO 21 AL 24', 'Sede Poblado'.
+    etiqueta = Column(String(160), nullable=True)
+    inicio = Column(Date, nullable=True)
+    fin = Column(Date, nullable=True)
+    valores = Column(JSONB, nullable=False, default=dict, server_default="{}")
+    nota = Column(Text, nullable=True)
+    orden = Column(Integer, nullable=False, default=0, server_default="0")
+    activo = Column(Boolean, nullable=False, default=True, server_default="true")
+    #: Id de la fila en el archivo de origen. `''` (no NULL) cuando se creó a
+    #: mano: es lo que hace que el UNIQUE sirva de candado al reimportar.
+    externo_id = Column(String(120), nullable=False, default="", server_default="")
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "producto_id",
+            "variante_id",
+            "externo_id",
+            name="uq_bot_producto_filas_externo",
+        ),
+        CheckConstraint(
+            "tipo IN ('salida','precio','sede','envio','faq')",
+            name="ck_bot_producto_filas_tipo",
+        ),
+        # La consulta caliente del bot: "las próximas salidas vigentes de este
+        # producto". Parcial sobre `activo` porque las retiradas no se
+        # consultan nunca y son la mayoría tras unas cuantas temporadas.
+        # Los dos kwargs de dialecto son necesarios: sin `sqlite_where` el
+        # índice se crea completo en la suite (precedente:
+        # `uq_agendamientos_conv_pendiente`).
+        Index(
+            "ix_bot_producto_filas_prod_inicio",
+            "producto_id",
+            "inicio",
+            postgresql_where=text("activo"),
+            sqlite_where=text("activo"),
+        ),
+        # Para preguntar por dentro del JSONB ("las que tengan tarifa doble")
+        # sin escanear la tabla.
+        Index(
+            "ix_bot_producto_filas_valores",
+            "valores",
+            postgresql_using="gin",
+        ),
+    )
+
+    producto = relationship("BotProducto", back_populates="filas")
+
+
+class BotProductoMedio(Base):
+    """Una foto, un video o un PDF que ilustra un producto o una variante."""
+
+    __tablename__ = "bot_producto_medios"
+
+    id = Column(Integer, primary_key=True, index=True)
+    producto_id = Column(
+        Integer,
+        ForeignKey("bot_productos.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    #: Centinela `0` = ilustra al producto entero, no a una variante.
+    variante_id = Column(
+        Integer, nullable=False, default=REF_TODAS, server_default="0"
+    )
+    #: Nombre con el que el bot lo pide ('flyer_siropes').
+    clave = Column(String(80), nullable=False)
+    url = Column(String(1024), nullable=False)
+    #: image | video | document — el mismo vocabulario que ya usa `llm_config`.
+    tipo = Column(String(24), nullable=False, default="image")
+    descripcion = Column(String(300), nullable=True)
+    #: Cuándo corresponde mandarlo. Ej: {"meses": [8, 9, 10, 11]}.
+    aplica = Column(JSONB, nullable=False, default=dict, server_default="{}")
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+    )
+
+    __table_args__ = (
+        Index("ix_bot_producto_medios_prod_clave", "producto_id", "clave"),
+    )
+
+    producto = relationship("BotProducto", back_populates="medios")
+
+
+class BotProductoAlias(Base):
+    """Cómo le dice la gente a un producto o a una variante.
+
+    'el de cove', 'coveñas', 'el del 21' apuntan todos a la misma salida. Sin
+    esto, el bot depende de que el cliente escriba el nombre comercial exacto.
+    """
+
+    __tablename__ = "bot_producto_alias"
+
+    id = Column(Integer, primary_key=True, index=True)
+    producto_id = Column(
+        Integer,
+        ForeignKey("bot_productos.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    #: producto | variante — a qué apunta `ref_id`. No hay FK porque el destino
+    #: depende del nivel.
+    nivel = Column(String(16), nullable=False, default=ALIAS_NIVEL_PRODUCTO)
+    ref_id = Column(Integer, nullable=False, default=REF_TODAS, server_default="0")
+    alias = Column(String(160), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "producto_id", "nivel", "alias", name="uq_bot_producto_alias"
+        ),
+        CheckConstraint(
+            "nivel IN ('producto','variante')", name="ck_bot_producto_alias_nivel"
+        ),
+    )
+
+    producto = relationship("BotProducto", back_populates="alias")
+
+
+class BotProductoBot(Base):
+    """Qué productos ve cada bot. Un bot de soporte no vende el catálogo."""
+
+    __tablename__ = "bot_producto_bots"
+
+    id = Column(Integer, primary_key=True, index=True)
+    bot_id = Column(
+        Integer, ForeignKey("bots.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    producto_id = Column(
+        Integer,
+        ForeignKey("bot_productos.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    activo = Column(Boolean, nullable=False, default=True, server_default="true")
+    orden = Column(Integer, nullable=False, default=0, server_default="0")
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+    )
+
+    __table_args__ = (
+        UniqueConstraint("bot_id", "producto_id", name="uq_bot_producto_bots"),
+    )
+
+    bot = relationship("Bot")
+    producto = relationship("BotProducto")
+
+
+class BotProductoCarga(Base):
+    """Bitácora de cada intento de cargar un archivo del cliente.
+
+    Ninguna fuente entra a la base sin revisión humana: el importador escribe
+    el `diff` en estado `revision`, alguien lo aprueba y recién ahí se aplica.
+    Es el mismo procedimiento de `actualizar_fuente.py` para las mascotas.
+    """
+
+    __tablename__ = "bot_producto_cargas"
+
+    id = Column(Integer, primary_key=True, index=True)
+    producto_id = Column(
+        Integer,
+        ForeignKey("bot_productos.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    archivo = Column(String(300), nullable=False)
+    #: Hash del archivo. Si repite, es el mismo Excel de la vez pasada.
+    hash_sha256 = Column(String(64), nullable=True, index=True)
+    filas_nuevas = Column(Integer, nullable=False, default=0, server_default="0")
+    filas_cambiadas = Column(Integer, nullable=False, default=0, server_default="0")
+    filas_retiradas = Column(Integer, nullable=False, default=0, server_default="0")
+    estado = Column(
+        String(16),
+        nullable=False,
+        default=CARGA_ESTADO_REVISION,
+        server_default=CARGA_ESTADO_REVISION,
+        index=True,
+    )
+    #: El antes/después que se le muestra a quien aprueba.
+    diff = Column(JSONB, nullable=False, default=dict, server_default="{}")
+    aprobado_por_user_id = Column(
+        Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    updated_at = Column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "estado IN ('revision','aplicado','rechazado')",
+            name="ck_bot_producto_cargas_estado",
+        ),
+        Index("ix_bot_producto_cargas_prod_creado", "producto_id", "created_at"),
+    )
+
+    producto = relationship("BotProducto")
+
+    def __repr__(self) -> str:
+        # Regla 1 (CLAUDE.md): `diff` trae filas crudas del Excel del cliente y
+        # ahí puede venir de todo —nombres, teléfonos, direcciones de clientes
+        # finales—. El nombre del archivo también, así que tampoco sale.
+        return (
+            f"<BotProductoCarga id={self.id} producto_id={self.producto_id} "
+            f"estado={self.estado!r} filas_nuevas={self.filas_nuevas} "
+            f"filas_cambiadas={self.filas_cambiadas} "
+            f"filas_retiradas={self.filas_retiradas} "
+            f"archivo=<REDACTED> diff=<REDACTED>>"
+        )
+
+    __str__ = __repr__
+
+
+class BotRecordatorio(Base):
+    """Reenganche a quien dejó de contestar. Configurable por cuenta.
+
+    Hoy la cadena de recordatorios vive quemada en el código del tick; esto la
+    mueve a la base para que cada cliente ponga sus tiempos y sus textos.
+    """
+
+    __tablename__ = "bot_recordatorios"
+
+    id = Column(Integer, primary_key=True, index=True)
+    team_id = Column(
+        Integer, ForeignKey("teams.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    #: Centinela `0` = aplica a todos los bots de la cuenta. NOT NULL y sin FK
+    #: por lo mismo que las otras: con NULL el UNIQUE no muerde.
+    bot_id = Column(Integer, nullable=False, default=REF_TODAS, server_default="0")
+    orden = Column(Integer, nullable=False, default=1)
+    #: Minutos de silencio antes de mandarlo.
+    minutos = Column(Integer, nullable=False)
+    texto = Column(Text, nullable=False)
+    #: Condiciones para saltárselo. Ej: {"tools": ["registrar_venta"]} =
+    #: no molestar a quien ya compró.
+    omitir_si = Column(JSONB, nullable=False, default=dict, server_default="{}")
+    #: Franja horaria permitida, hora de Colombia. Nadie quiere un recordatorio
+    #: comercial a las 3 de la mañana.
+    hora_min = Column(Integer, nullable=False, default=8, server_default="8")
+    hora_max = Column(Integer, nullable=False, default=20, server_default="20")
+    activo = Column(Boolean, nullable=False, default=True, server_default="true")
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+    )
+
+    __table_args__ = (
+        # `team_id` va en el UNIQUE aunque el .puml lo omita: sin él, dos
+        # cuentas que configuren "todos los bots" (bot_id = 0) chocarían en el
+        # recordatorio 1, y la segunda cuenta no podría configurar nada.
+        UniqueConstraint(
+            "team_id", "bot_id", "orden", name="uq_bot_recordatorios_orden"
+        ),
+        # Pasada la ventana de 24 h de WhatsApp ya no se puede escribir sin
+        # plantilla aprobada, así que un recordatorio a los 1500 minutos no
+        # llegaría nunca.
+        CheckConstraint(
+            "minutos > 0 AND minutos < 1440", name="ck_bot_recordatorios_minutos"
+        ),
+        CheckConstraint("orden > 0", name="ck_bot_recordatorios_orden"),
+        CheckConstraint(
+            "hora_min >= 0 AND hora_min <= 23 AND hora_max >= 0 AND hora_max <= 23 "
+            "AND hora_min <= hora_max",
+            name="ck_bot_recordatorios_franja",
+        ),
+        Index("ix_bot_recordatorios_team_bot", "team_id", "bot_id"),
+    )
+
+    team = relationship("Team")
+
+    def __repr__(self) -> str:
+        # `texto` lo escribe el cliente y puede traer datos de contacto.
+        return (
+            f"<BotRecordatorio id={self.id} team_id={self.team_id} "
+            f"bot_id={self.bot_id} orden={self.orden} minutos={self.minutos} "
+            f"activo={self.activo} texto=<REDACTED>>"
         )
 
     __str__ = __repr__
