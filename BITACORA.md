@@ -6852,3 +6852,148 @@ Suite: **1459 passed, 103 skipped, 1 xfailed** (base del día: 1356 passed).
 
 **Pendiente:** desplegar. Nada de esto está en producción todavía; el prompt del
 bot vive en la imagen, así que necesita build + task-def + rollout.
+
+---
+
+## Sprint 31 — Le preguntaba el nombre a quien ya tenía en la ficha (2026-09-16)
+
+**Agente:** Dev Plataforma · **Estado:** DONE (sin desplegar)
+
+El bot de Arranquemos Pues saludaba por el nombre y en la misma frase preguntaba
+cómo se llamaba la persona. **~8% de los turnos**, medido en las dos ramas: 13
+ejecuciones en `main` con 1 fallo y 22 en la de trabajo con 2. No es una
+regresión — `main` ya lo tenía. Lo que pasa es que el modelo a veces pega la
+apertura enlatada **completa**, y esa termina en «¿Con quién tengo el gusto? 😊»
+aunque el nombre esté en `conversations.contact_name`.
+
+Se veía como intermitencia en dos guiones con costo:
+`test_guiones_primer_mensaje.py::TestLoQueNoSePuedeRomper::test_el_nombre_del_canal_tambien_evita_la_pregunta`
+y `test_guiones_continuidad.py::TestRetomaAlDiaSiguiente::test_sigue_donde_quedaron`.
+
+### Por qué en código y no en el prompt
+
+`_bloque_continuidad` ya se lo pide («NO le preguntes cómo se llama… manda la
+apertura sin su última línea»), y el modelo no se olvida: **elige** entre esa
+regla y el texto listo que tiene delante. Es el gotcha ya documentado
+([[insistir-en-el-prompt-no-sirve]]): cuando elige, insistir empata con el
+baseline. Lo mismo que se acababa de hacer con la duración.
+
+### Lo que se hizo
+
+`services/llm_engine.py`, la mitad que faltaba del guardarraíl del nombre:
+
+1. **`_ya_se_sabe_el_nombre(cfg)`** — una sola determinación (`recordar_nombre`
+   + `nombre_saneado(runtime.contact_name)`), la que `_falta_pedir_el_nombre` ya
+   usaba por dentro. Ahora las dos mitades la comparten.
+2. **`_sin_pregunta_por_el_nombre(texto)`** — recorte quirúrgico: se va la
+   frase, no el mensaje. El itinerario, el flyer y los precios del turno salen
+   igual; descartar el turno —lo que hacen `_viola_contacto` y sus hermanos—
+   aquí costaría el material. Corta desde el `¿` que abre la pregunta (frontera
+   dura en español, así «Hola Marcela, ¿cómo te llamas?» no se lleva el saludo),
+   se lleva el «😊» que la acompañaba, y si la frase era su propia línea se va
+   la línea entera con su salto de párrafo. Sin dobles espacios ni renglones en
+   blanco de más.
+3. **Dos excepciones**: sólo recorta **preguntas** (`¿`/`?`) —«ya registré tu
+   nombre» es una afirmación y se queda— y nunca el *nombre completo* con la
+   cédula, que es lo que el bot pide para apartar el cupo y necesita aunque ya
+   sepa que la clienta se llama Marcela.
+4. **Enganche en `_advance_inner`**: `if _ya_se_sabe_el_nombre(cfg): quitar`
+   / `elif _falta_pedir_el_nombre(...): agregar`. Ramas contrarias de la misma
+   condición: el turno no puede caer en las dos, por construcción y no por
+   suerte. Acotado a `recordar_nombre`, así que mascotas y el institucional no
+   se mueven.
+
+### Una constante en vez de cuatro copias
+
+`_PIDE_EL_NOMBRE` vive ahora en el motor y los guiones lo importan de ahí. Había
+**cuatro** copias de esa alternancia y ya se habían desincronizado: a la de
+`test_guiones_pregunta_nombre.py` le faltaban «¿quién eres?» y «¿con quién
+hablo?», así que contaba como «no preguntó» un turno donde sí preguntó. Es el
+mismo arreglo que se le hizo al nombre de la asesora en 56fa816. Ojo: eso vuelve
+un poco más exigente el `assert not` de
+`test_guiones_continuidad.py::test_no_saluda_de_nuevo_ni_insiste`, que ahora
+también atrapa las repreguntas con otras palabras.
+
+### Pruebas
+
+`tests/viajes/test_pregunta_nombre.py` pasa de 27 a 80 casos, todos gratis (el
+modelo va mockeado con `patch.object(llm_engine, "_invoke_model")`): los bordes
+del recorte (línea propia, final de párrafo, en el medio, al principio, sin el
+signo de apertura, el emoji huérfano, el párrafo en blanco), lo que no se toca
+(la pregunta del mes, los datos de la reserva, un mensaje sin pregunta que sale
+carácter por carácter igual), el turno completo con el nombre del canal y con la
+sesión retomada, el historial que guarda el texto ya recortado, el material
+adjunto que no se pierde, un bot sin `recordar_nombre` que no se mueve, y la
+matriz que fija que las dos mitades nunca disparan a la vez.
+
+Suite: **1556 passed, 103 skipped, 1 xfailed** (base: 1503 passed).
+
+**Pendiente:** desplegar (build + task-def + rollout) y que el CEO corra los dos
+guiones con costo unas 12 veces para confirmar que la intermitencia desapareció.
+
+---
+
+## Sprint 31 — La presentación repetida y la fecha que nadie consultó (2026-09-17)
+
+**Agente:** Dev Plataforma · **Estado:** DONE (sin desplegar)
+
+El recorte de la pregunta del nombre quedó verificado por el CEO: **31 vueltas
+contra Bedrock sin un solo fallo**, donde antes era una moneda al aire. Del test
+intermitente `TestRetomaAlDiaSiguiente::test_sigue_donde_quedaron` (~6%, 2 de 31)
+quedaban las otras dos aserciones. Las dos, por el mismo camino determinista.
+
+### Pieza 1 — no se vuelve a presentar
+
+Cuando la clienta vuelve al día siguiente, el bot a veces arranca con «Soy
+*Luisa*, asesora de…», la apertura enlatada otra vez. El documento ya lo prohíbe
+en `_bloque_continuidad`; el modelo **elige**, y por eso se decide en código.
+
+`_sin_la_presentacion` recorta la frase y deja el saludo («¡Hola de nuevo,
+Marcela!» se queda). Aplica cuando `_ya_nos_conocemos`: la sesión trae historial
+o `bot_runner` marcó `retomada`. En el **primer** mensaje no aplica — ahí
+presentarse es obligatorio —, y va detrás del flag `retomar`, el mismo que
+enciende la instrucción en el prompt: sólo lo tienen viajes y Natulcé.
+
+El patrón `_SE_PRESENTA` subió al motor y es **genérico** («soy <Nombre
+propio>»): `llm_engine` lo comparten cinco bots con nombres distintos. La
+mayúscula del nombre es lo único que separa «Soy *Luisa*» de «soy la asesora que
+te acompaña», así que el verbo va en `(?i:…)` y el nombre no. El guion con costo
+lo importa de ahí: su copia tenía «maria camila» escrito a mano, el bot se
+renombró a Luisa en 366c449 y **el assert pasó gratis desde entonces**.
+
+La limpieza se unificó con la del nombre en `_sin_la_frase`, y de paso apareció
+un borde que faltaba: sin punto de por medio, el emoji es el separador de ideas
+de WhatsApp. «Mi nombre es Luisa 😊 Te cuento del plan» son dos frases, y
+recortar la primera se llevaba la segunda por delante.
+
+### Pieza 2 — el guardarraíl de disponibilidad
+
+`_viola_disponibilidad`, quinto hermano de `_viola_contacto`, `_viola_ficha`,
+`_viola_link` y `_viola_duracion`. El bot contestaba «sí, el 18 de septiembre
+sigue disponible» **sin haber llamado `consultar_tarifario`**. No es sólo un
+test inestable: es confirmarle a un cliente una salida que no se revisó.
+
+Dispara con **las dos cosas juntas** en el mismo texto, y con la herramienta sin
+llamar en el turno: (1) una fecha o salida concreta —mes nombrado, «del 11 al
+14», «el 18»— y (2) una afirmación de disponibilidad («sigue disponible», «hay
+cupo», «se agotó», «sí sale»). Una sola no basta.
+
+Las exclusiones son la mitad del trabajo, porque un guardarraíl con falsos
+positivos termina apagado: «déjame consultar y te confirmo» se calla (la frase
+de disponibilidad casi siempre viene dentro); «queda» a secas no entra, que la
+oficina *queda* en el Bosque Plaza; «el 30%» del anticipo no es el día 30;
+«tenemos salidas entre semana» es verdad general del catálogo. Y el `¿` marca
+dónde empieza la pregunta: descartar la frase entera por tener un `?` al final
+dejaba pasar «Sí hay cupos para septiembre, ¿cuántas personas viajan?».
+
+### Pruebas
+
+`tests/viajes/test_disponibilidad.py` (37 casos, la mayoría falsos positivos,
+uno por uno), la clase de la presentación en `tests/viajes/test_continuidad.py`
+(18) y el quinto escenario en `tests/test_correccion_con_tool_use.py`: el
+guardarraíl nuevo reinyecta bien el `tool_use` con su `tool_result`, como los
+otros cuatro.
+
+Suite: **1611 passed, 103 skipped, 1 xfailed** (base: 1556 passed).
+
+**Pendiente:** desplegar, y que el CEO corra el guion de retoma unas 12 veces.

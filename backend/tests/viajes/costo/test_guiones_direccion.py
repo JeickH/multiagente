@@ -42,13 +42,9 @@ _LOCAL = re.compile(r"local\s*#?\s*1087", re.IGNORECASE)
 _REFERENCIAS = re.compile(r"universidad|jard[ií]n\s*bot[aá]nico", re.IGNORECASE)
 #: El punto de salida del viaje, que NO es la oficina.
 _CARABOBO = re.compile(r"carabobo", re.IGNORECASE)
-#: La pregunta del nombre, en las formas en que el modelo la escribe (gemela de
-#: la de `test_guiones_primer_mensaje.py`).
-_PIDE_EL_NOMBRE = re.compile(
-    r"con qui[eé]n tengo el gusto|c[oó]mo te llamas|cu[aá]l es tu nombre|"
-    r"tu nombre\?|me regalas tu nombre",
-    re.IGNORECASE,
-)
+#: La pregunta del nombre, leída del motor: es el mismo patrón con el que el
+#: guardarraíl la agrega y la quita.
+_PIDE_EL_NOMBRE = llm_engine._PIDE_EL_NOMBRE
 
 
 def _dicho(salida) -> str:

@@ -36,17 +36,13 @@ import pytest
 
 from app.services import llm_engine
 
-# La pregunta del nombre, en las formas en que el modelo la escribe.
-#: Ojo con las formas que faltaban: el modelo también pregunta el nombre con
-#: "¿quién eres?" o "¿con quién hablo?". Sin ellas la métrica se equivoca en las
-#: dos direcciones — contaba como "no preguntó" un turno donde sí preguntó, y
-#: dejaba pasar una repregunta cuando el nombre ya se sabía.
-_PIDE_EL_NOMBRE = re.compile(
-    r"con qui[eé]n tengo el gusto|c[oó]mo te llamas|cu[aá]l es tu nombre|"
-    r"tu nombre\?|me regalas tu nombre|qui[eé]n eres|con qui[eé]n hablo|"
-    r"me dices tu nombre|c[oó]mo te digo",
-    re.IGNORECASE,
-)
+# La pregunta del nombre, en las formas en que el modelo la escribe. Se lee del
+# motor y no se copia acá: es el MISMO patrón con el que el motor decide si la
+# agrega (#379) y si la quita (#382), así que la métrica y el guardarraíl no
+# pueden discrepar. Había cuatro copias de esta alternancia y ya se habían
+# desincronizado entre sí — a una le faltaban "¿quién eres?" y "¿con quién
+# hablo?", y contaba como "no preguntó" un turno donde sí preguntó.
+_PIDE_EL_NOMBRE = llm_engine._PIDE_EL_NOMBRE
 #: El resumen del plan que el documento obliga a decir textual. Se acepta
 #: cualquiera de sus piezas: el modelo a veces parte la frase en dos líneas.
 _RESUMEN_DEL_PLAN = re.compile(

@@ -1,7 +1,8 @@
 """Regresión: la corrección de un guardarraíl no puede romper el `tool_use`.
 
 Bug de producción. En `_advance_inner`, cuando un guardarraíl
-(`_viola_contacto`, `_viola_ficha`, `_viola_link`, `_viola_duracion`) rechaza
+(`_viola_contacto`, `_viola_ficha`, `_viola_link`, `_viola_duracion`,
+`_viola_disponibilidad`) rechaza
 lo que escribió el modelo, la ronda se reinyecta con el mensaje del asistente
 completo más un mensaje del usuario con la corrección. Si en ESA MISMA ronda el
 modelo también llamó una herramienta, su bloque `tool_use` viaja dentro de
@@ -227,6 +228,17 @@ ESCENARIOS = [
         id="duracion",
     ),
     pytest.param(
+        CFG_VIAJES,
+        "¡Sí! El 18 de septiembre sigue disponible 🌴",
+        # A propósito NO `consultar_tarifario`: si la hubiera llamado, el dato
+        # vendría del tarifario y el guardarraíl —con razón— no dispara.
+        _tool_use("registrar_nombre", {"nombre": "Marcela"}),
+        "Nombre registrado.",
+        "Déjame reviso esa fecha y te confirmo 😊",
+        "¿el 18 de septiembre sigue?",
+        id="disponibilidad",
+    ),
+    pytest.param(
         CFG_VENTA,
         "Paga aquí: https://jerarquia.com/pagos/123",
         _tool_use("registrar_venta", {"nombre": "cliente"}),
@@ -264,7 +276,7 @@ ESCENARIOS = [
     "cfg, texto_malo, tool, resultado_tool, texto_bueno, user_input", ESCENARIOS
 )
 class TestCorreccionEnUnaRondaConHerramienta:
-    """Los CUATRO guardarrailes, cada uno disparando en una ronda que además
+    """Los CINCO guardarrailes, cada uno disparando en una ronda que además
     llamó una herramienta. Es la combinación que reventaba."""
 
     def test_la_correccion_arranca_con_el_tool_result(

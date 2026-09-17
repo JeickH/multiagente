@@ -18,29 +18,23 @@ Teléfonos y nombres son inventados (regla #8: el repo es público).
 """
 from __future__ import annotations
 
-import re
-
 import pytest
 
 from app.services import llm_engine
-from tests.viajes.costo import test_guiones
 
 # La misma frase de apertura que salió cuatro veces seguidas en el chat real.
-_SALUDO_DE_APERTURA = re.compile(
-    r"con qui[eé]n tengo el gusto|c[oó]mo te llamas|cu[aá]l es tu nombre",
-    re.IGNORECASE,
-)
-# El nombre se lee del contexto del bot y no se escribe a mano: estaba puesto
-# como "maria camila", el bot se renombró a Luisa en 366c449 y este regex dejó
-# de matchear nada. Los dos `assert not _SE_PRESENTA.search(...)` de abajo
-# pasaron gratis desde entonces — verificaban que el bot no se vuelve a
-# presentar, y no podían fallar aunque lo hiciera.
-_SE_PRESENTA = re.compile(
-    r"mi nombre es\s*\*?{n}|soy\s*\*?{n}".format(
-        n=re.escape(test_guiones.NOMBRE_ASESORA)
-    ),
-    re.IGNORECASE,
-)
+# Se lee del motor —es el patrón con el que el guardarraíl la agrega (#379) y la
+# quita (#382)— en vez de copiarla acá: la copia que vivía en este archivo era
+# más estrecha y dejaba pasar las repreguntas con otras palabras ("¿quién
+# eres?", "¿me regalas tu nombre?").
+_SALUDO_DE_APERTURA = llm_engine._PIDE_EL_NOMBRE
+# El patrón del motor, que es el que decide el recorte (#383), en vez de una
+# copia con el nombre de la asesora dentro. Esa copia estaba puesta como "maria
+# camila", el bot se renombró a Luisa en 366c449 y el regex dejó de matchear
+# nada: los dos `assert not _SE_PRESENTA.search(...)` de abajo pasaron gratis
+# desde entonces, verificando algo que no podía fallar. El del motor es genérico
+# ("soy <Nombre propio>"), así que un cambio de nombre no lo vuelve a apagar.
+_SE_PRESENTA = llm_engine._SE_PRESENTA
 
 
 def _dicho(salida) -> str:

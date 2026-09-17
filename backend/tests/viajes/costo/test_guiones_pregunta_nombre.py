@@ -15,17 +15,12 @@ Nombres inventados (regla #8: el repo es público).
 """
 from __future__ import annotations
 
-import re
-
 import pytest
 
 from app.services import llm_engine
 
-_PIDE_EL_NOMBRE = re.compile(
-    r"con qui[eé]n tengo el gusto|c[oó]mo te llamas|cu[aá]l es tu nombre|"
-    r"tu nombre|me regalas tu nombre|qui[eé]n eres|con qui[eé]n hablo",
-    re.IGNORECASE,
-)
+# El mismo patrón con el que el motor decide: se lee de allá, no se copia.
+_PIDE_EL_NOMBRE = llm_engine._PIDE_EL_NOMBRE
 
 
 def _dicho(salida) -> str:
