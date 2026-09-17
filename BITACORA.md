@@ -7173,3 +7173,60 @@ Los dos caminos convergen al mismo esquema. Suite **1667 passed** (1611 + 56),
   no sirve. Los crea `create_all()` y no la migración, así que **RDS los tiene
   y local no los tenía**; tras el ensayo local también los tiene, o sea que la
   paridad quedó mejor, no peor. Limpiarlos es su propio PR.
+
+---
+
+## Sprint 31 — Fase 1 del esquema de productos, desplegada (2026-09-17)
+
+**Agente:** Deploy AWS · **Estado:** DESPLEGADO (task-def **89**)
+
+PRs [#6](https://github.com/JeickH/multiagente/pull/6) y
+[#7](https://github.com/JeickH/multiagente/pull/7) mergeados con el CI en verde.
+Producción en `multiagente-backend:89`, imagen `:sprint31-productos-v2`.
+
+Las 8 tablas y las 3 columnas existen en RDS y en local, y el ORM las ve desde
+ECS. **Nada las lee todavía**: el motor viejo sigue respondiendo y
+`tarifario_covenas.json` no se tocó. Es el criterio de salida de la fase 1.
+
+### Paridad verificada, renglón por renglón
+
+Se volcó `information_schema.columns` de los dos entornos y se comparó:
+
+```
+local: 86 renglones · RDS: 86 renglones
+diff → IDÉNTICOS
+```
+
+Migración corrida **dos veces** contra RDS: la primera reparó 21 defaults, la
+segunda 0. `EXPLAIN` de la consulta caliente da Index Scan sobre el índice
+parcial.
+
+### El desvío: create_all() le ganó a la migración
+
+La primera corrida de la migración salió exit 0 **con la base mal**: 21 columnas
+sin `DEFAULT`. Las 8 tablas ya existían — las había creado el `create_all()` del
+arranque durante el despliegue fallido de la task-def 86 — así que los
+`CREATE TABLE IF NOT EXISTS` fueron no-ops.
+
+La divergencia no fue aleatoria: `create_all()` solo emite `DEFAULT` para
+columnas con `server_default`. Las 21 que fallaron declaraban únicamente
+`default=` de Python.
+
+Y el verificador **dio verde**, porque solo miraba nombres de tabla y de
+columna. Se comprobó corriendo el script viejo contra una base rota a propósito:
+«migración aplicada y verificada», exit 0.
+
+Quedó cerrado en los tres niveles (PR #7): la migración repara además de crear,
+el verificador compara la definición y sale con 1, y `models.py` declara
+`server_default` en las 21 columnas para que los dos caminos converjan. El
+ensayo que lo prueba —dropear las tablas, dejar que las cree `create_all()` y
+correr el verificador— pasa sin reparar nada.
+
+### Pendientes, cada uno con su propio PR
+
+- **`bots.team_id`**: `nullable=True` en el modelo, NOT NULL en la base. Importa
+  porque todo este esquema aísla por cuenta a través de ahí.
+- **8 índices `ix_<tabla>_id` redundantes** que `create_all()` crea por el
+  `index=True` sobre la PK. El patrón está en 36 de las 37 tablas y es anterior
+  a este trabajo.
+- **Fases 2 y 3** (capa de acceso e instrucciones en la base): no arrancadas.
