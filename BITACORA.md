@@ -7230,3 +7230,101 @@ correr el verificador— pasa sin reparar nada.
   `index=True` sobre la PK. El patrón está en 36 de las 37 tablas y es anterior
   a este trabajo.
 - **Fases 2 y 3** (capa de acceso e instrucciones en la base): no arrancadas.
+
+---
+
+## Sprint 31 — Fase 2 del esquema de productos: la capa de acceso (2026-09-17)
+
+**Agente:** Dev Plataforma · **Estado:** LISTO PARA REVISIÓN (local, sin desplegar)
+
+`backend/app/services/productos.py` — lee el catálogo de las ocho tablas,
+resuelve alias, filtra vigencia, ordena, aplica topes y **redacta el texto que
+lee el modelo**. El motor viejo quedó intacto: `services/tarifario.py`,
+`llm_engine.py`, `bot_contexts/demo_viajes.md` y `tarifario_covenas.json` no se
+tocaron, y nadie llama todavía a la capa nueva. Es la red de seguridad hasta la
+fase 8.
+
+### La prueba de oro: 127 de 127, carácter por carácter
+
+Los 127 casos de `tests/viajes/test_tarifario.py` se corren con el módulo viejo
+interceptado: cada llamada ejecuta las dos implementaciones y exige que
+coincidan antes de devolverle al test el valor de siempre. **108 respuestas
+completas de `consultar` y 1.253 comparaciones en total** (las demás son las
+llamadas internas del propio módulo viejo, que también quedan interceptadas).
+Ninguna diferencia de texto: no hubo nada que reportar al CEO.
+
+Que la comparación muerde se comprobó al revés: con el tope de filas en 5,
+58 de los 127 casos dejan de coincidir.
+
+### La decisión de diseño que hubo que tomar para lograrlo
+
+La capa **no puede nombrar** un hotel, un destino ni una acomodación: es la
+misma para los siete bots del portafolio. Pero el texto de `tarifario.py` está
+lleno de negocio. La salida fue que **cada frase viaja como dato**, en
+`bot_productos.atributos["presentacion"]` (~30 plantillas con `{campos}`), y en
+el código queda solo la estructura: qué bloque va antes de cuál, qué se calcula
+sobre qué filas y cuándo hay que escalar. El módulo trae plantillas por defecto
+sosas para el que no configure ninguna, y una plantilla rota (un `{campo}` que
+no existe) se registra server-side y cae de vuelta en la del módulo: un error de
+configuración de un cliente no le tumba el turno al bot.
+
+Un test lee `productos.py` entero y falla si aparece «hotel», «Coveñas»,
+«múltiple», «doble» o cualquiera de las otras.
+
+### Lo que quedó cableado, y por qué
+
+- **Aislamiento por cuenta**: toda consulta filtra por `team_id`, y con `bot_id`
+  el producto además tiene que estar enganchado en `bot_producto_bots`. Con
+  `team_id=None` devuelve vacío **y** registra un warning con el `bot_id`
+  (decisión del CEO: fallar callada acá es peor que fallar).
+- **Producto sin filas vigentes** → ordena escalar a un asesor. Un bot sin datos
+  no dice «no tengo datos»: improvisa, y lo que improvisa se parece a una
+  cotización.
+- **Ciclos de `precios_de_variante_id`** cortados en código: un error de datos
+  del cliente no puede colgar el turno en un `while`.
+- **Tope de filas**: 20 por bloque (configurable). No es 8 porque el período más
+  cargado del catálogo ya migrado tiene 14 filas y el módulo viejo no recortaba:
+  cualquier tope por debajo le cambiaba la respuesta al bot.
+- **Caché**: diccionario en proceso, TTL 60 s. Dentro del TTL, cero consultas;
+  pasado el TTL, **una** que trae `MAX(updated_at)` y `COUNT(*)` de las cinco
+  tablas del producto, y solo si ese sello cambió se releen las filas. El
+  `COUNT(*)` va ahí porque un `DELETE` no mueve el máximo: sin contar, una fila
+  retirada se seguiría vendiendo.
+
+### Pruebas
+
+`backend/tests/productos/` — 181 pasan, 9 se saltan.
+
+- `test_productos.py` (50): aislamiento entre cuentas, alias (incluido el de
+  otra cuenta), vigencia con «hoy» fijo, el año mal escrito portado del
+  tarifario, variante que comparte precio, producto sin datos, topes y caché.
+  Todo contra un **producto de juguete inventado**, no contra el catálogo de un
+  cliente.
+- `test_paridad_tarifario.py` (131): la prueba de oro.
+- `test_postgres.py` (9): lo que SQLite no contesta — operadores JSONB, el
+  índice parcial, la zona horaria. Marcador **`postgres` nuevo**, declarado en
+  `pytest.ini` y **excluido por defecto** (el CI corre sin base), replicando el
+  patrón de `costo`. Se corrieron contra el Postgres local del docker-compose:
+  9 verdes, dentro de un esquema temporal que se borra al final.
+
+Una de ellas atrapó algo que habría salido en producción: **JSONB no conserva el
+orden de las claves**, así que el volcado genérico de `valores` se veía de una
+forma en la suite (SQLite) y de otra en producción. Ahora va ordenado por nombre
+de columna.
+
+### Suite completa
+
+```
+1848 passed, 112 skipped, 1 xfailed  (antes: 1667 / 103 / 1)
+```
+
++181 pasan y +9 se saltan: exactamente lo nuevo, sin una regresión.
+
+### Pendientes de la fase
+
+- Nadie llama todavía a `productos.consultar`: eso es la fase 5 (la tool del
+  motor) y la 8 (retirar el módulo viejo).
+- El helper `tests/productos/covenas.py` es el embrión del importador de la
+  fase 4. Sigue siendo test, no script.
+- Las ~30 plantillas de presentación viven hoy en el helper de pruebas; la fase
+  4 las mete a `atributos` en la base.
