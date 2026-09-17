@@ -6997,3 +6997,60 @@ otros cuatro.
 Suite: **1611 passed, 103 skipped, 1 xfailed** (base: 1556 passed).
 
 **Pendiente:** desplegar, y que el CEO corra el guion de retoma unas 12 veces.
+
+---
+
+## Sprint 31 — Despliegue del arreglo de duración, con un incidente de 5 minutos (2026-09-17)
+
+**Agente:** Deploy AWS · **Estado:** DESPLEGADO (task-def **87**)
+
+PR [#5](https://github.com/JeickH/multiagente/pull/5) mergeado a `main` con el CI
+en verde. Producción quedó en `multiagente-backend:87`, imagen
+`:sprint31-limpia`.
+
+Verificación antes de subir: suite gratuita **1611 passed**, CI reproducido en
+worktree limpio con `TZ=UTC`, y los **69 guiones con pago en verde por primera
+vez** (US$0,59 la corrida).
+
+### El incidente
+
+El primer rollout (task-def 86, imagen `:sprint31-duracion-v2`) tumbó el tick del
+scheduler durante ~5 minutos:
+
+```
+psycopg2.errors.UndefinedColumn: column bots.instrucciones does not exist
+POST /internal/bot-scheduler/tick → 500
+```
+
+**Causa:** la imagen se construyó con `docker buildx build … .` desde el árbol de
+trabajo, que tenía sin commitear el `models.py` de la Fase 1 del esquema de
+productos — el frente que se había decidido explícitamente NO desplegar. O sea,
+el gotcha de siempre al revés: **desplegar el modelo sin migrar**.
+
+**Daño:** 13 errores, todos en el tick. Ningún WhatsApp entrante cayó en la
+ventana; los recordatorios de abandono se atrasaron y se pusieron al día en el
+tick siguiente. `wait services-stable` reportó ESTABLE con el backend reventando:
+no sirve como verificación de salud.
+
+**Contención:** `update-service --task-definition multiagente-backend:85
+--force-new-deployment`. El tick volvió a 200 en menos de dos minutos.
+
+**Corrección:** imagen reconstruida desde `git worktree add --detach
+/tmp/build_limpio origin/main` (0 archivos sucios), y verificada **por dentro**
+antes del rollout:
+
+```
+docker run --rm --entrypoint sh <imagen> -c "grep -c instrucciones app/models.py"  # 0
+```
+
+Ese chequeo de segundos es el que faltaba, y queda como paso obligatorio del
+procedimiento de despliegue.
+
+### Pendiente
+
+- Fase 1 del esquema de productos: **sin commitear y sin desplegar**, retenida
+  por decisión del CEO. Cuando salga, la migración va en RDS **antes** de que
+  arranque la imagen nueva.
+- `test_sigue_donde_quedaron` quedó con ~1% de intermitencia residual (era
+  ~11%). No se persiguió más: el costo de medir por debajo del 1% no lo
+  justifica.
