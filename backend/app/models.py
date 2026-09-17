@@ -13,6 +13,7 @@ from sqlalchemy import (
     UniqueConstraint,
     Index,
     CheckConstraint,
+    func,
     text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
@@ -1880,6 +1881,26 @@ class Pedido(Base):
 # 2. **Enums con constantes + CheckConstraint**, como el resto del modelo. Sin
 #    el CHECK, el primer typo del importador ('publicad@') entra a la base y
 #    nadie se entera hasta que el bot deja de mostrar el producto.
+#
+# 3. **Toda columna con default lleva `server_default`, no sólo `default=`.**
+#    `default=` lo aplica el ORM al insertar y NO llega al DDL: una tabla que
+#    cree `create_all()` queda sin ese DEFAULT en la base. Eso fue justo lo que
+#    pasó en RDS el 2026-09-16: el `create_all()` del arranque se adelantó a
+#    `migrate_sprint31_productos.py`, creó las ocho tablas y dejó 21 columnas
+#    sin default; como las tablas ya existían, el `CREATE TABLE IF NOT EXISTS`
+#    de la migración fue un no-op y no reparó nada.
+#
+#    Los timestamps van con `server_default=func.now()` y no con
+#    `text("NOW()")`: `func.now()` es genérico y lo compila cada dialecto
+#    —`now()` en Postgres, `CURRENT_TIMESTAMP` en SQLite—, que es lo que hace
+#    falta porque la suite corre `create_all()` sobre SQLite en cada fixture y
+#    ahí `NOW()` no existe.
+#
+#    Estos defaults tienen que coincidir con la tabla `DEFAULTS` de
+#    `backend/scripts/migrate_sprint31_productos.py`. No se comparten por
+#    import a propósito (una migración es una foto del pasado y no debe
+#    moverse cuando cambie el modelo); quien los mantiene honestos es
+#    `tests/test_defaults_schema_productos.py`, que falla si divergen.
 
 # `bot_productos.tipo`
 PRODUCTO_TIPO_PLAN = "plan"                          # un plan de viaje, un paquete
@@ -1949,7 +1970,12 @@ class BotProducto(Base):
     #: Es lo que el bot nombra en sus tools, así que no cambia con el nombre
     #: comercial.
     slug = Column(String(80), nullable=False)
-    tipo = Column(String(24), nullable=False, default=PRODUCTO_TIPO_PRODUCTO)
+    tipo = Column(
+        String(24),
+        nullable=False,
+        default=PRODUCTO_TIPO_PRODUCTO,
+        server_default=PRODUCTO_TIPO_PRODUCTO,
+    )
     nombre = Column(String(160), nullable=False)
     estado = Column(
         String(16),
@@ -1968,9 +1994,15 @@ class BotProducto(Base):
     atributos = Column(JSONB, nullable=False, default=dict, server_default="{}")
     vigencia_desde = Column(Date, nullable=True)
     vigencia_hasta = Column(Date, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(
+        DateTime, default=datetime.utcnow, server_default=func.now(), nullable=False
+    )
     updated_at = Column(
-        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+        DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+        server_default=func.now(),
+        nullable=False,
     )
 
     __table_args__ = (
@@ -2042,9 +2074,15 @@ class BotProductoVariante(Base):
     )
     activo = Column(Boolean, nullable=False, default=True, server_default="true")
     orden = Column(Integer, nullable=False, default=0, server_default="0")
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(
+        DateTime, default=datetime.utcnow, server_default=func.now(), nullable=False
+    )
     updated_at = Column(
-        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+        DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+        server_default=func.now(),
+        nullable=False,
     )
 
     __table_args__ = (
@@ -2086,7 +2124,12 @@ class BotProductoFila(Base):
     variante_id = Column(
         Integer, nullable=False, default=REF_TODAS, server_default="0"
     )
-    tipo = Column(String(16), nullable=False, default=FILA_TIPO_PRECIO)
+    tipo = Column(
+        String(16),
+        nullable=False,
+        default=FILA_TIPO_PRECIO,
+        server_default=FILA_TIPO_PRECIO,
+    )
     #: Cómo la nombra el cliente: 'AGOSTO 21 AL 24', 'Sede Poblado'.
     etiqueta = Column(String(160), nullable=True)
     inicio = Column(Date, nullable=True)
@@ -2098,9 +2141,15 @@ class BotProductoFila(Base):
     #: Id de la fila en el archivo de origen. `''` (no NULL) cuando se creó a
     #: mano: es lo que hace que el UNIQUE sirva de candado al reimportar.
     externo_id = Column(String(120), nullable=False, default="", server_default="")
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(
+        DateTime, default=datetime.utcnow, server_default=func.now(), nullable=False
+    )
     updated_at = Column(
-        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+        DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+        server_default=func.now(),
+        nullable=False,
     )
 
     __table_args__ = (
@@ -2159,13 +2208,19 @@ class BotProductoMedio(Base):
     clave = Column(String(80), nullable=False)
     url = Column(String(1024), nullable=False)
     #: image | video | document — el mismo vocabulario que ya usa `llm_config`.
-    tipo = Column(String(24), nullable=False, default="image")
+    tipo = Column(String(24), nullable=False, default="image", server_default="image")
     descripcion = Column(String(300), nullable=True)
     #: Cuándo corresponde mandarlo. Ej: {"meses": [8, 9, 10, 11]}.
     aplica = Column(JSONB, nullable=False, default=dict, server_default="{}")
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(
+        DateTime, default=datetime.utcnow, server_default=func.now(), nullable=False
+    )
     updated_at = Column(
-        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+        DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+        server_default=func.now(),
+        nullable=False,
     )
 
     __table_args__ = (
@@ -2193,12 +2248,23 @@ class BotProductoAlias(Base):
     )
     #: producto | variante — a qué apunta `ref_id`. No hay FK porque el destino
     #: depende del nivel.
-    nivel = Column(String(16), nullable=False, default=ALIAS_NIVEL_PRODUCTO)
+    nivel = Column(
+        String(16),
+        nullable=False,
+        default=ALIAS_NIVEL_PRODUCTO,
+        server_default=ALIAS_NIVEL_PRODUCTO,
+    )
     ref_id = Column(Integer, nullable=False, default=REF_TODAS, server_default="0")
     alias = Column(String(160), nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(
+        DateTime, default=datetime.utcnow, server_default=func.now(), nullable=False
+    )
     updated_at = Column(
-        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+        DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+        server_default=func.now(),
+        nullable=False,
     )
 
     __table_args__ = (
@@ -2230,9 +2296,15 @@ class BotProductoBot(Base):
     )
     activo = Column(Boolean, nullable=False, default=True, server_default="true")
     orden = Column(Integer, nullable=False, default=0, server_default="0")
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(
+        DateTime, default=datetime.utcnow, server_default=func.now(), nullable=False
+    )
     updated_at = Column(
-        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+        DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+        server_default=func.now(),
+        nullable=False,
     )
 
     __table_args__ = (
@@ -2278,9 +2350,19 @@ class BotProductoCarga(Base):
     aprobado_por_user_id = Column(
         Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    created_at = Column(
+        DateTime,
+        default=datetime.utcnow,
+        server_default=func.now(),
+        nullable=False,
+        index=True,
+    )
     updated_at = Column(
-        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+        DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+        server_default=func.now(),
+        nullable=False,
     )
 
     __table_args__ = (
@@ -2324,7 +2406,7 @@ class BotRecordatorio(Base):
     #: Centinela `0` = aplica a todos los bots de la cuenta. NOT NULL y sin FK
     #: por lo mismo que las otras: con NULL el UNIQUE no muerde.
     bot_id = Column(Integer, nullable=False, default=REF_TODAS, server_default="0")
-    orden = Column(Integer, nullable=False, default=1)
+    orden = Column(Integer, nullable=False, default=1, server_default="1")
     #: Minutos de silencio antes de mandarlo.
     minutos = Column(Integer, nullable=False)
     texto = Column(Text, nullable=False)
@@ -2336,9 +2418,15 @@ class BotRecordatorio(Base):
     hora_min = Column(Integer, nullable=False, default=8, server_default="8")
     hora_max = Column(Integer, nullable=False, default=20, server_default="20")
     activo = Column(Boolean, nullable=False, default=True, server_default="true")
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(
+        DateTime, default=datetime.utcnow, server_default=func.now(), nullable=False
+    )
     updated_at = Column(
-        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+        DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+        server_default=func.now(),
+        nullable=False,
     )
 
     __table_args__ = (
