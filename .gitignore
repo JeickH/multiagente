@@ -85,3 +85,7 @@ entregables/
 # son fotos de un momento, no documentación viva: lo que sobrevive de ellos
 # termina en la BITÁCORA o en documentacion_bd/.
 PLAN_*.html
+# Y cualquier otra extensión del mismo documento: al convertir uno de esos HTML
+# a texto plano para leerlo, el .txt resultante quedó fuera del ignore y a un
+# `git add -A` de publicar 7 correos de clientes reales en un repo público.
+PLAN_*

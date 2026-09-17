@@ -973,3 +973,151 @@ class TestLosGuardarrailesDeSiempre:
         texto = llm_engine.texto_de_seguimiento(LLM_CONFIG["seguimiento"])
         assert "$" not in texto
         assert "cuando quieras" in texto.lower()
+
+
+# ---------------------------------------------------------------------------
+# #383 · En una conversación que viene de antes, no se vuelve a presentar
+# ---------------------------------------------------------------------------
+
+def _sin(texto: str) -> str:
+    return llm_engine._sin_la_presentacion(texto)
+
+
+#: La apertura enlatada, que el modelo a veces pega entera al día siguiente.
+SE_PRESENTA = (
+    "¡Hola de nuevo, Marcela! 🌴 Soy *Luisa*, asesora de la *Agencia de Viajes "
+    "Arranquemos Pues*. Claro que sí, el 18 de septiembre sigue en el plan."
+)
+
+
+class TestNoSeVuelveAPresentar:
+    """`assert not _SE_PRESENTA` del guion `TestRetomaAlDiaSiguiente`, que
+    fallaba el ~6% de las veces. Mismo remedio que la pregunta del nombre: el
+    documento ya lo prohíbe, el modelo *elige*, y lo que decide es el código."""
+
+    def test_se_va_la_presentacion_y_se_queda_el_saludo(self):
+        assert _sin(SE_PRESENTA) == (
+            "¡Hola de nuevo, Marcela! Claro que sí, el 18 de septiembre sigue "
+            "en el plan."
+        )
+
+    def test_en_su_propia_linea_se_va_la_linea_entera(self):
+        assert _sin("Soy *Luisa*, asesora de la *Agencia de Viajes "
+                    "Arranquemos Pues*.\nTe cuento del plan 🌴") == (
+            "Te cuento del plan 🌴"
+        )
+
+    def test_el_emoji_no_se_lleva_lo_que_venia_detras(self):
+        """Sin punto de por medio, el emoji es el separador de ideas: lo que
+        sigue es otra frase y se queda."""
+        assert _sin("Mi nombre es Luisa 😊 Te cuento del plan.") == (
+            "Te cuento del plan."
+        )
+        assert _sin("Yo soy Lía, la asistente de Gloma 🤍 ¿En qué te ayudo?") == (
+            "¿En qué te ayudo?"
+        )
+
+    @pytest.mark.parametrize("texto", [
+        "¡Hola de nuevo, Marcela! 🌴 Claro, el 18 sigue en el plan.",
+        "Soy la asesora que te va a acompañar en el viaje 🌴",
+        "Con gusto te ayudo, soy toda oídos 😊",
+        "El plan sale el viernes y regresa el lunes 🌴",
+    ])
+    def test_lo_que_no_es_una_presentacion_no_se_toca(self, texto):
+        """Hace falta un nombre propio detrás: es lo único que separa «Soy
+        *Luisa*» de «soy la asesora que te acompaña»."""
+        assert _sin(texto) == texto
+
+
+class TestCuandoAplicaElRecorteDeLaPresentacion:
+    """Presentarse en el PRIMER mensaje es obligatorio; en el segundo, no."""
+
+    def _cfg(self, **runtime):
+        return {**LLM_CONFIG, "_runtime": dict(runtime)}
+
+    def test_en_una_conversacion_nueva_no_aplica(self):
+        assert not llm_engine._ya_nos_conocemos(self._cfg(), [])
+
+    def test_con_historial_si(self):
+        historia = [{"role": "user", "content": "hola"},
+                    {"role": "assistant", "content": "¡Hola! 🌴"}]
+        assert llm_engine._ya_nos_conocemos(self._cfg(), historia)
+
+    def test_y_con_la_sesion_retomada_tambien(self):
+        """Puede llegar con el historial vacío por otra vía: lo que manda es la
+        marca que puso `bot_runner` al revivir la sesión."""
+        assert llm_engine._ya_nos_conocemos(self._cfg(retomada=True), [])
+
+    def test_un_bot_sin_retomar_no_se_mueve(self):
+        """`llm_engine` lo comparten cinco bots. Esto es la versión
+        determinista de la instrucción que ya vive detrás del mismo flag."""
+        cfg = {k: v for k, v in LLM_CONFIG.items() if k != "retomar"}
+        historia = [{"role": "user", "content": "hola"}]
+        assert not llm_engine._ya_nos_conocemos({**cfg, "_runtime": {}}, historia)
+
+    def test_no_pelea_con_la_pregunta_del_nombre(self):
+        """La inyección de la pregunta sólo existe en el primer mensaje, que es
+        justo donde este recorte no aplica: nunca coinciden."""
+        for runtime in ({}, {"retomada": True}, {"contact_name": "Marcela"}):
+            for historia in ([], [{"role": "user", "content": "hola"}]):
+                cfg = self._cfg(**runtime)
+                agrega = llm_engine._falta_pedir_el_nombre(
+                    cfg, list(historia), ["Te cuento del plan 🌴"], [], False
+                )
+                assert not (agrega and llm_engine._ya_nos_conocemos(cfg, historia))
+
+
+class TestElTurnoRetomadoNoSePresenta:
+    """La cadena entera, con el modelo mockeado."""
+
+    def _turno(self, texto_del_modelo, *, estado, **runtime):
+        class BotViajesFake:
+            id = 12
+            engine = "llm"
+            llm_config = json.dumps(LLM_CONFIG, ensure_ascii=False)
+
+        import unittest.mock as mock
+
+        with mock.patch.object(
+            llm_engine, "_invoke_model", return_value=_respuesta(_texto(texto_del_modelo))
+        ):
+            salida = llm_engine.advance(
+                BotViajesFake(), estado, "¿el 18 de septiembre sigue?",
+                runtime=dict(runtime),
+            )
+        return [a["payload"]["text"] for a in salida["actions"] if a["type"] == "say"]
+
+    ESTADO = {"history": [
+        {"role": "user", "content": "Hola, soy Marcela"},
+        {"role": "assistant", "content": "¡Un gusto, Marcela! 🌴"},
+    ]}
+
+    def test_al_dia_siguiente_no_se_presenta(self):
+        dichos = self._turno(
+            SE_PRESENTA, estado=self.ESTADO,
+            contact_name="Marcela", retomada=True, desde="ayer",
+        )
+        assert dichos == [
+            "¡Hola de nuevo, Marcela! Claro que sí, el 18 de septiembre sigue "
+            "en el plan."
+        ]
+
+    def test_si_no_se_presento_el_texto_queda_intacto(self):
+        texto = "¡Hola de nuevo, Marcela! 🌴 Claro, déjame reviso el 18 y te confirmo."
+        dichos = self._turno(
+            texto, estado=self.ESTADO,
+            contact_name="Marcela", retomada=True, desde="ayer",
+        )
+        assert dichos == [texto]
+
+    def test_en_el_primer_mensaje_la_presentacion_se_respeta(self):
+        """Conversación nueva: presentarse es lo correcto y obligatorio.
+
+        El segundo mensaje que sale es la pregunta del nombre (#379), que en un
+        primer turno sin nombre el motor agrega: la otra mitad sigue viva."""
+        texto = ("¡Hola! 😊 Soy *Luisa*, asesora de la *Agencia de Viajes "
+                 "Arranquemos Pues*. Te cuento del plan 🌴")
+        dichos = self._turno(texto, estado=None)
+
+        assert dichos[0] == texto
+        assert dichos[1:] == [LLM_CONFIG["pregunta_nombre"]]

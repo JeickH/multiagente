@@ -43,7 +43,12 @@ def abandonar_habiendo_informado(db, team, modelo_falso, wa_id: str = WA_ID):
     """
     modelo_falso.guion = [
         _respuesta(_texto("¡Hola! Soy Luisa 😊 ¿Con quién tengo el gusto?")),
-        _respuesta(_texto("¡Un gusto! El plan es de viernes a lunes, 3 noches.")),
+        # 2 noches: se llega el sábado por la mañana y se duerme sábado y
+        # domingo. Antes decía «3 noches», que es justo el bug de producción.
+        # (Un bot real ni siquiera diría la cifra sin haber llamado a
+        # `consultar_tarifario`: `_viola_duracion` le tumba el turno. Lo que a
+        # este test le importa es que hubo un intercambio antes del abandono.)
+        _respuesta(_texto("¡Un gusto! El plan es de viernes a lunes, 2 noches.")),
     ]
     entra_mensaje(db, team, "Hola", wa_id=wa_id)
     conv, _ = entra_mensaje(db, team, "¿cuántas noches son?", wa_id=wa_id)

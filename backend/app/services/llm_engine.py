@@ -698,12 +698,287 @@ def _system_prompt(
 #: Las formas en que el modelo escribe la pregunta del nombre. Es más ancha que
 #: la frase del documento a propósito: cuando ya preguntó "¿quién eres?" no hay
 #: que volver a preguntárselo con otras palabras.
-_YA_PIDIO_EL_NOMBRE = re.compile(
+#:
+#: Vive en el motor y no en cada archivo de pruebas porque las dos mitades del
+#: guardarraíl y los guiones que lo miden tienen que estar de acuerdo en qué es
+#: "preguntar el nombre". Había cuatro copias de esta alternancia y ya se habían
+#: desincronizado entre sí: a una le faltaban "¿quién eres?" y "¿con quién
+#: hablo?", así que contaba como "no preguntó" un turno donde sí preguntó.
+#:
+#: Sin grupos de captura: `findall` se usa para contar cuántas veces aparece.
+_PIDE_EL_NOMBRE = re.compile(
     r"con qui[eé]n tengo el gusto|c[oó]mo te llamas|cu[aá]l es tu nombre|"
-    r"tu nombre|me regalas tu nombre|qui[eé]n eres|con qui[eé]n hablo|"
-    r"c[oó]mo te digo|tu gracia",
+    r"me regalas tu nombre|me dices tu nombre|me compartes tu nombre|"
+    r"qui[eé]n eres|con qui[eé]n hablo|c[oó]mo te digo|tu gracia|"
+    r"tu nombre\s*\?",
     re.IGNORECASE,
 )
+#: La única mención del nombre que NO es la pregunta del saludo: para apartar el
+#: cupo el bot pide *nombre completo* y cédula en un solo mensaje, y eso lo
+#: necesita aunque ya sepa que la clienta se llama Marcela. Sin esta excepción,
+#: quitar "la pregunta del nombre" le borraría al cliente el mensaje con el que
+#: se cierra la reserva.
+_NOMBRE_DE_LA_RESERVA = re.compile(
+    r"nombre completo|c[eé]dula|documento|pasaporte", re.IGNORECASE
+)
+#: Un trozo de texto "dice algo" si tiene alguna letra o número. Lo que queda
+#: sin ninguna es adorno del recorte: el "😊" que acompañaba a la pregunta, una
+#: coma suelta, la línea que era sólo la pregunta.
+_TIENE_LETRAS = re.compile(r"[0-9A-Za-zÀ-ÖØ-öø-ÿ]")
+
+
+def _ya_se_sabe_el_nombre(cfg: Dict[str, Any]) -> bool:
+    """¿Este bot maneja nombres y ya sabe cómo se llama la persona?
+
+    Es **la** determinación, una sola, que usan las dos mitades del guardarraíl
+    del nombre: `_falta_pedir_el_nombre` agrega la pregunta cuando esto es
+    falso y `_sin_pregunta_por_el_nombre` la quita cuando es verdadero. Estando
+    en una sola función no pueden discrepar, y el turno no puede caer en las
+    dos ramas.
+
+    Sale de `runtime`, no del historial: el nombre vive en
+    `conversations.contact_name` y por eso sobrevive a que la sesión se acabe
+    (ver `_bloque_continuidad`).
+
+    `recordar_nombre` es lo que lo deja acotado al bot que lo pidió:
+    `llm_engine` lo comparten el bot de mascotas, el institucional y Natulcé, y
+    una regla global les movería el comportamiento — que es justo lo que pasó
+    con el aviso de "no leo imágenes" (commit 1a7d385).
+    """
+    if not cfg.get("recordar_nombre"):
+        return False
+    runtime = cfg.get("_runtime") or {}
+    return bool(nombre_saneado(runtime.get("contact_name")))
+
+
+def _frases(linea: str) -> List[str]:
+    """La línea partida en frases, sin perder un solo carácter.
+
+    Cada frase se lleva el espacio que la separa de la anterior, así que al
+    quitar una del medio las vecinas quedan pegadas con el espacio que ya
+    tenían y no aparece el doble espacio que delata el recorte.
+    """
+    frases: List[str] = []
+    actual = ""
+    for i, ch in enumerate(linea):
+        actual += ch
+        if ch in ".!?…" and (i + 1 == len(linea) or linea[i + 1] not in ".!?…"):
+            frases.append(actual)
+            actual = ""
+    if actual:
+        frases.append(actual)
+    return frases
+
+
+#: Dónde termina una idea aunque no haya un punto: el "¿"/"¡" que abre otra, o
+#: un emoji — que en WhatsApp es el separador de facto ("Mi nombre es Luisa 😊
+#: Te cuento del plan" son dos frases). Sin este borde, recortar la primera se
+#: llevaba la segunda por delante. La negrilla `*`, los guiones y la puntuación
+#: de siempre NO separan: van dentro de la misma idea.
+_SEPARA_IDEAS_RE = re.compile(
+    r"[¿¡]|[^\w\s.,;:!?'\"()\[\]{}«»\-–—*_/\\$%&+#@=<>|~^`]"
+)
+
+
+def _fin_de_la_frase(frase: str, desde: int) -> int:
+    """Hasta dónde llega el recorte dentro de la frase: el final, o el punto en
+    que arranca otra idea (un `¿` o un emoji con texto detrás)."""
+    for m in _SEPARA_IDEAS_RE.finditer(frase, desde):
+        if not _TIENE_LETRAS.search(frase[m.end():]):
+            continue            # detrás ya no dice nada: se va con la frase
+        # El "¿" abre lo que se conserva; el emoji era de lo que se va.
+        return m.start() if m.group(0) in "¿¡" else m.end()
+    return len(frase)
+
+
+def _linea_sin_la_frase(
+    linea: str,
+    patron: "re.Pattern",
+    *,
+    solo_preguntas: bool = False,
+    excepcion: Optional["re.Pattern"] = None,
+) -> str:
+    """La línea sin la frase que calce con `patron` (si la tiene).
+
+    `solo_preguntas` exige que la frase traiga `¿` o `?`, y entonces corta desde
+    el `¿` en vez de desde el match. `excepcion` deja pasar las frases que
+    calcen con ella. La limpieza de los bordes es la misma para todos los
+    recortes, y por eso vive en un solo sitio.
+    """
+    frases = _frases(linea)
+    for i, frase in enumerate(frases):
+        encontrada = patron.search(frase)
+        if encontrada is None:
+            continue
+        if solo_preguntas and "?" not in frase and "¿" not in frase:
+            # Se quita la **pregunta**, no cualquier mención del nombre: "ya
+            # registré tu nombre" o "me dijiste cómo te llamas" son afirmaciones
+            # y se quedan. El texto enlatado que dispara el bug siempre trae los
+            # dos signos.
+            continue
+        if excepcion is not None and excepcion.search(frase):
+            continue
+        # Se corta desde el "¿" que abre la pregunta —frontera dura en español,
+        # lo de antes no es parte de ella— o, si el modelo lo omitió, desde la
+        # frase misma. Así "Hola Marcela, ¿cómo te llamas?" no se lleva por
+        # delante el saludo.
+        abre = frase.rfind("¿", 0, encontrada.start() + 1) if solo_preguntas else -1
+        corte = abre if abre != -1 else encontrada.start()
+        prefijo = frase[:corte].rstrip(" \t,;:—–-")
+        cola = frase[_fin_de_la_frase(frase, encontrada.end()):]
+        resto = "".join(frases[i + 1:])
+        nueva = "".join(frases[:i])
+        if _TIENE_LETRAS.search(prefijo):
+            nueva += prefijo
+            if (_TIENE_LETRAS.search(cola) or _TIENE_LETRAS.search(resto)) \
+                    and prefijo[-1:].isalnum():
+                # El prefijo se quedó sin el signo que lo separaba de lo que
+                # sigue ("Cuéntame, ¿cómo te llamas? Te paso el plan" no puede
+                # quedar en "Cuéntame Te paso el plan"). Si terminaba en emoji
+                # no hace falta: en WhatsApp el emoji ya separa las frases, y un
+                # punto detrás se ve pegado ("Claro que sí 🌴.").
+                nueva += "."
+        # Lo que sigue se conserva; si ya no dice nada (el "😊" que acompañaba a
+        # la frase), se va con ella.
+        for trozo in (cola, resto):
+            if not _TIENE_LETRAS.search(trozo):
+                continue
+            nueva = f"{nueva} {trozo.strip()}" if nueva else trozo.lstrip()
+        # Otra vez, por si el modelo la escribió dos veces en la misma línea.
+        # Siempre queda más corta, así que la recursión termina.
+        return _linea_sin_la_frase(
+            nueva.rstrip(), patron,
+            solo_preguntas=solo_preguntas, excepcion=excepcion,
+        )
+    return linea
+
+
+def _sin_la_frase(texto: str, patron: "re.Pattern", **kw) -> str:
+    """El mismo texto sin la frase que calce, y sin el rastro del recorte.
+
+    Si la frase era su propia línea se va la línea entera, y con ella el salto
+    de párrafo que la separaba; si iba al final de un párrafo, no queda el emoji
+    huérfano, ni doble espacio, ni un renglón en blanco de más.
+    """
+    if not texto or not patron.search(texto):
+        return texto
+
+    lineas: List[str] = []
+    cambiado = False
+    for linea in texto.split("\n"):
+        nueva = _linea_sin_la_frase(linea, patron, **kw)
+        if nueva != linea:
+            cambiado = True
+            if not _TIENE_LETRAS.search(nueva):
+                continue        # la línea era sólo esa frase: se va entera
+        lineas.append(nueva)
+    if not cambiado:
+        return texto
+    return re.sub(r"\n{3,}", "\n\n", "\n".join(lineas)).strip()
+
+
+def _sin_pregunta_por_el_nombre(texto: str) -> str:
+    """El mismo mensaje, sin la frase que le pregunta el nombre a quien ya se
+    conoce. (#382)
+
+    El reverso de `_falta_pedir_el_nombre`, y determinista por el mismo motivo:
+    el modelo a veces pega la apertura enlatada completa —que termina en "¿Con
+    quién tengo el gusto? 😊"— aunque el nombre ya esté en la ficha. Pasaba ~8%
+    de las veces, medido en las dos ramas, y no es una regresión: viene de
+    antes. El prompt ya se lo pide en `_bloque_continuidad` y el modelo *elige*
+    entre las dos reglas; insistir ahí empata con el baseline.
+
+    Es quirúrgico: se va la frase, no el mensaje. El itinerario, el flyer y los
+    precios que el turno haya redactado salen igual — descartar el turno, que es
+    lo que hacen los guardarraíles de `_viola_contacto`, costaría el material.
+    """
+    return _sin_la_frase(
+        texto, _PIDE_EL_NOMBRE,
+        solo_preguntas=True, excepcion=_NOMBRE_DE_LA_RESERVA,
+    )
+
+
+#: Cómo se presenta un bot. **Genérico a propósito**: `llm_engine` lo comparten
+#: cinco bots —Luisa la asesora de viajes, Lía la de Gloma, la de Natulcé…— y el
+#: motor no puede saberse los nombres. Pide un nombre propio detrás ("Soy
+#: *Luisa*", "Mi nombre es Lía"), que es lo que distingue presentarse de "soy la
+#: asesora que te acompaña" o de un "soy todo oídos".
+#:
+#: El `(?:yo\s+)?` evita dejar un "Yo" colgando cuando el modelo escribe "Yo soy
+#: Luisa". Los `*` son la negrilla de WhatsApp, que el modelo casi siempre pone.
+#:
+#: Ojo con las mayúsculas: el verbo va en `(?i:…)` —el mensaje casi siempre
+#: arranca con "Soy"— pero el nombre propio NO, porque la mayúscula es lo único
+#: que separa "Soy *Luisa*" de "soy la asesora que te acompaña".
+_SE_PRESENTA = re.compile(
+    r"(?i:(?:yo\s+)?(?:soy|mi\s+nombre\s+es|me\s+llamo|te\s+habla))\s+"
+    r"[*_]{0,2}[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+",
+)
+
+
+def _sin_la_presentacion(texto: str) -> str:
+    """El mismo mensaje, sin la frase en la que el bot se presenta. (#383)
+
+    Cuando la persona vuelve al día siguiente, el bot tiene el historial y el
+    nombre, y aun así a veces arranca con "Soy *Luisa*, asesora de…" — la
+    apertura enlatada otra vez, como si no se conocieran. El documento ya lo
+    prohíbe en `_bloque_continuidad` ("no te presentes de nuevo"), y falla el
+    ~6% de las veces por lo de siempre: el modelo elige entre la regla y el
+    texto listo que tiene delante.
+
+    El saludo legítimo se queda: se va "Soy *Luisa*, asesora de la *Agencia de
+    Viajes Arranquemos Pues*." y sobrevive "¡Hola de nuevo, Marcela!".
+    """
+    return _sin_la_frase(texto, _SE_PRESENTA)
+
+
+def _ya_nos_conocemos(cfg: Dict[str, Any], history: List[Dict[str, str]]) -> bool:
+    """¿Esta conversación viene de antes?
+
+    Dos formas de venir de antes: la sesión trae historial, o `bot_runner`
+    marcó `retomada` porque revivió una sesión cerrada dentro de la ventana de
+    `retomar` (ahí el historial puede llegar vacío por otra vía).
+
+    Va detrás de `retomar`, que es el mismo flag que enciende la instrucción de
+    "no te presentes de nuevo" en `_bloque_continuidad`: esto es su versión
+    determinista, no una regla nueva para todos los bots. En el **primer**
+    mensaje de una conversación nueva esto es falso, y ahí presentarse es lo
+    correcto y obligatorio.
+    """
+    if not cfg.get("retomar"):
+        return False
+    runtime = cfg.get("_runtime") or {}
+    return bool(history) or bool(runtime.get("retomada"))
+
+
+def _recortar_lo_dicho(
+    actions: List[Dict[str, Any]], say_texts: List[str], recorte
+) -> bool:
+    """Le pasa `recorte` a todo lo que el turno va a decir. Devuelve si tocó
+    algo (para el log).
+
+    `actions` es lo que lee el cliente y `say_texts` lo que se guarda en el
+    historial: si sólo se limpiara uno, el modelo se copiaría a sí mismo en el
+    turno siguiente. Se recorren aparte —no se asume que vayan alineados—
+    porque la confirmación de pedido se inserta en `actions` en otra posición.
+    """
+    tocado = False
+    limpias: List[Dict[str, Any]] = []
+    for accion in actions:
+        payload = accion.get("payload") or {}
+        if accion.get("type") != "say" or not payload.get("text"):
+            limpias.append(accion)
+            continue
+        nuevo = recorte(payload["text"])
+        if nuevo != payload["text"]:
+            tocado = True
+        if nuevo:
+            payload["text"] = nuevo
+            limpias.append(accion)
+        # Un mensaje que era sólo esa frase no se manda vacío: se cae.
+    actions[:] = limpias
+    say_texts[:] = [t for t in (recorte(texto) for texto in say_texts) if t]
+    return tocado
 
 
 def _falta_pedir_el_nombre(
@@ -736,12 +1011,16 @@ def _falta_pedir_el_nombre(
     Sólo aplica al **primer** turno de la conversación. En los siguientes no:
     insistir con el nombre turno tras turno es exactamente la queja que originó
     #377 ("son muy intensos").
+
+    Su mitad opuesta es `_sin_pregunta_por_el_nombre`, que la quita cuando el
+    nombre ya se conoce. Las dos se deciden con `_ya_se_sabe_el_nombre`, en
+    ramas contrarias: por construcción no pueden dispararse en el mismo turno.
     """
     if not cfg.get("recordar_nombre") or not cfg.get("pregunta_nombre"):
         return False
-    runtime = cfg.get("_runtime") or {}
-    if nombre_saneado(runtime.get("contact_name")):
+    if _ya_se_sabe_el_nombre(cfg):
         return False            # ya se sabe: preguntarlo es el bug #377
+    runtime = cfg.get("_runtime") or {}
     if history or runtime.get("retomada"):
         return False            # no es el primer mensaje
     if finished or not say_texts:
@@ -751,7 +1030,7 @@ def _falta_pedir_el_nombre(
         # Escalando, quien pregunta es el asesor; y si acaba de registrarlo, ya
         # se presentó en este mismo turno.
         return False
-    return not _YA_PIDIO_EL_NOMBRE.search(" ".join(say_texts))
+    return not _PIDE_EL_NOMBRE.search(" ".join(say_texts))
 
 
 def _bloque_continuidad(cfg: Dict[str, Any]) -> str:
@@ -2132,6 +2411,309 @@ def _viola_link(
     return False
 
 
+# Guardarraíl hermano de los de teléfonos y links: la duración del plan de
+# viajes. El contexto del bot trae un itinerario con cuatro bloques de día
+# —viernes de viaje nocturno, sábado, domingo y lunes de regreso— y el modelo
+# los contaba: concluía «4 días» y de ahí deducía «3 noches», cuando la salida
+# que estaba vendiendo era de 3 días / 2 noches.
+#
+# La primera versión de este guardarraíl comparaba contra el MENÚ del mes: si
+# la duración dicha existía en alguna fila del resultado, pasaba. No servía de
+# nada, y se comprobó midiendo contra una respuesta real. Casi todos los meses
+# publican las DOS duraciones —la estándar (2 noches / 3 días) y la de «Obsequio
+# a Barú» (3 noches / 4 días) arrancan el mismo viernes—, así que el bug
+# reportado («4 días y 3 noches» vendiendo la salida del 11 al 14) citaba un par
+# que sí existía en septiembre, solo que de otra salida. Pertenecer al menú del
+# mes no distingue nada.
+#
+# La regla que sí distingue: **una duración vale pegada a la salida a la que
+# pertenece**. El resultado de la herramienta ya las trae emparejadas, una por
+# línea, con la etiqueta de la salida delante.
+_CORRECCION_DURACION = (
+    "ALTO: la duración que acabas de decir (noches o días de plan) no es la de "
+    "la salida que estás ofreciendo. Ese mensaje NO se le envió al cliente. "
+    "Cada salida trae la suya entre paréntesis en el resultado de "
+    "`consultar_tarifario`, y en un mismo mes conviven salidas de distinta "
+    "duración: la del viernes al lunes y la de «Obsequio a Barú» arrancan el "
+    "mismo día y NO duran lo mismo. Dos errores que no puedes cometer: pegarle "
+    "a una salida la duración de otra, y decir una duración «del plan» en "
+    "general cuando el mes tiene salidas de duraciones distintas. Tampoco la "
+    "cuentes de los bloques del itinerario: el viernes es el viaje de noche en "
+    "bus y no cuenta como día de plan. Vuelve a responder nombrando la salida "
+    "(su fecha) y copiando TEXTUALMENTE la duración que la herramienta le puso "
+    "al lado; si no has llamado la herramienta, llámala con el mes, o responde "
+    "sin mencionar cuántos días ni cuántas noches son."
+)
+
+# "2 noches / 3 días", "3 días y 4 noches", "2 noches - 3 días".
+_DURACION_PAR_RE = re.compile(
+    r"(\d{1,2})\s*(noches?|d[ií]as?)\s*(?:[/·,\-–—]|y|and)?\s*"
+    r"(\d{1,2})\s*(noches?|d[ií]as?)",
+    re.IGNORECASE,
+)
+
+# Las noches sueltas. A propósito NO se miran los "días" sueltos: el bot dice
+# legítimamente "de 8 a 10 días hábiles antes del viaje" y "8 días antes", y un
+# guardarraíl que tumbe esos turnos hace más daño que el bug que arregla.
+# "Noches" en cambio solo aparece hablando de la duración del alojamiento.
+_NOCHES_RE = re.compile(r"(\d{1,2})\s*noches?\b", re.IGNORECASE)
+
+# Cómo se nombra una salida. Lo identificador es el par día-inicio / día-fin,
+# que es lo único estable entre "SEPTIEMBRE 11 AL 14", "del 11 al 14" y
+# "*11 al 15*" con la negrilla de WhatsApp pegada. Se exige el "al" y no un "a"
+# suelto a propósito: "de 8 a 10 días hábiles" es una frase legítima del bot y
+# con "a" quedaría leída como una salida.
+_SALIDA_REF_RE = re.compile(r"(\d{1,2})\s*[*_]?\s*al\s*[*_]?\s*(\d{1,2})\b",
+                            re.IGNORECASE)
+
+
+def _menciones_de_duracion(texto: str) -> List[tuple]:
+    """Las duraciones de un texto, cada una con la salida a la que se refiere.
+
+    Devuelve `[(ref, clase, valor), ...]` en orden de aparición, donde `ref` es
+    el `(día inicio, día fin)` de la salida nombrada —o `None` si el texto no
+    nombró ninguna—, `clase` es `"par"` (con `(noches, días)`) o `"noches"`
+    (con el número suelto).
+
+    La salida de cada duración es la nombrada más cerca ANTES de ella, que es
+    como se escribe de verdad ("la del *11 al 14* son 2 noches / 3 días"). Si
+    no hay ninguna antes pero el texto nombra exactamente una salida, se usa
+    esa: "son 3 días y 2 noches saliendo el 11 al 14" habla de esa misma.
+    """
+    texto = texto or ""
+    refs = [
+        (m.start(), (int(m.group(1)), int(m.group(2))))
+        for m in _SALIDA_REF_RE.finditer(texto)
+    ]
+
+    menciones: List[tuple] = []
+    tramos: List[tuple] = []
+    for m in _DURACION_PAR_RE.finditer(texto):
+        n1, p1, n2, p2 = m.groups()
+        primera_noche = p1.lower().startswith("noche")
+        if primera_noche == p2.lower().startswith("noche"):
+            continue        # "2 noches y 3 noches" no es un par de duración
+        noches, dias = (n1, n2) if primera_noche else (n2, n1)
+        tramos.append((m.start(), m.end()))
+        menciones.append((m.start(), "par", (int(noches), int(dias))))
+    for m in _NOCHES_RE.finditer(texto):
+        # Las noches que ya van dentro de un par no se cuentan dos veces.
+        if any(a <= m.start() < b for a, b in tramos):
+            continue
+        menciones.append((m.start(), "noches", int(m.group(1))))
+
+    salida: List[tuple] = []
+    for pos, clase, valor in sorted(menciones):
+        previas = [r for p, r in refs if p < pos]
+        if previas:
+            ref = previas[-1]
+        elif len(refs) == 1:
+            ref = refs[0][1]
+        else:
+            ref = None
+        salida.append((ref, clase, valor))
+    return salida
+
+
+def _viola_duracion(
+    cfg: Dict[str, Any],
+    textos_de_la_ronda: List[str],
+    duraciones_ok: List[str],
+) -> bool:
+    """¿El bot le pegó a una salida una duración que no es la suya?
+
+    `duraciones_ok` son los resultados COMPLETOS de `consultar_tarifario` de la
+    ronda. Se leen aparte de `tools_called` por lo mismo que los teléfonos: allí
+    el resultado viene recortado a 300 caracteres y las duraciones quedan fuera
+    del corte casi siempre, así que leerlas de ahí daría falso positivo en todos
+    los turnos.
+
+    Tres decisiones, y las tres son conservadoras a propósito:
+
+      · **El texto nombra una salida y dice una duración** → tiene que ser la de
+        esa salida. Es el caso del bug.
+      · **Dice una duración sin nombrar salida** → está generalizando. Solo vale
+        si TODAS las salidas del resultado duran lo mismo; si el mes publica dos
+        duraciones, "el plan es de 3 noches" es falso para la mitad.
+      · **No dice ninguna duración** → no viola. La inmensa mayoría de los
+        turnos cae aquí, incluidos los "8 días antes" y "de 8 a 10 días
+        hábiles" que nunca se deben tumbar.
+    """
+    if not cfg.get("tarifario") or not textos_de_la_ronda:
+        return False
+
+    por_salida: Dict[tuple, set] = {}
+    todas: set = set()
+    for resultado in duraciones_ok:
+        for ref, clase, valor in _menciones_de_duracion(resultado):
+            if clase != "par":
+                continue
+            todas.add(valor)
+            if ref is not None:
+                por_salida.setdefault(ref, set()).add(valor)
+
+    for texto in textos_de_la_ronda:
+        for ref, clase, valor in _menciones_de_duracion(texto):
+            permitidas = por_salida.get(ref) if ref is not None else None
+            if permitidas is None:
+                # Sin salida identificable (o con una que la herramienta no
+                # devolvió): se juzga como generalización.
+                if len(todas) != 1:
+                    return True
+                permitidas = todas
+            if clase == "par":
+                if valor not in permitidas:
+                    return True
+            elif valor not in {noches for noches, _ in permitidas}:
+                return True
+    return False
+
+
+# ---------------------------------------------------------------------------
+# Guardarraíl de disponibilidad (#383): quinto hermano de `_viola_contacto`,
+# `_viola_ficha`, `_viola_link` y `_viola_duracion`.
+# ---------------------------------------------------------------------------
+#
+# La clienta pregunta "¿el 18 de septiembre sigue?" y el bot a veces contesta
+# que sí **sin haber consultado nada**. No es sólo un test inestable: es el bot
+# confirmándole a un cliente una fecha que no revisó, y que puede estar llena o
+# no existir. La disponibilidad no está en su memoria: vive en el tarifario.
+#
+# Conservador a propósito, y por eso exige **las dos cosas juntas** (fecha
+# concreta Y afirmación de disponibilidad). Un guardarraíl con falsos positivos
+# le tumba turnos a un bot que estaba respondiendo bien, y termina apagado.
+
+_MESES_RE = (
+    r"enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|setiembre|"
+    r"octubre|noviembre|diciembre"
+)
+
+#: Una fecha o una salida concreta: un mes nombrado, un rango de salida ("del
+#: *11 al 14*", como lo escribe el tarifario) o un día suelto ("el 18").
+#:
+#: El día suelto trae exclusiones porque el bot habla de plata y de plazos todo
+#: el tiempo: "el 30%" del anticipo, "el 8 de cada mes", "el 15 para 3
+#: personas". Sin ellas, un mensaje de pagos con un "quedan cupos" al final
+#: dispararía sin haber hablado de ninguna fecha.
+_FECHA_CONCRETA_RE = re.compile(
+    rf"\b(?:{_MESES_RE})\b"
+    r"|\b\d{1,2}\s*[*_]?\s*al\s*[*_]?\s*\d{1,2}\b"
+    r"|\b\d{1,2}/\d{1,2}(?:/\d{2,4})?\b"
+    r"|\bel\s+\d{1,2}\b(?!\s*(?:%|por\s*ciento|mil|pesos|personas?|a[nñ]os?|"
+    r"noches?|d[ií]as?|horas?|a\.?\s*m|p\.?\s*m|:))",
+    re.IGNORECASE,
+)
+
+#: Afirmar (o negar) que hay cupo. Lista corta y pegada al vocabulario del
+#: negocio: "hay cupo", "sigue disponible", "se agotó". **No** entra "queda" a
+#: secas — la oficina "queda en el Bosque Plaza" y eso no es disponibilidad —
+#: ni "tenemos salidas entre semana", que es una verdad general del catálogo
+#: que el documento autoriza a decir sin consultar.
+_AFIRMA_DISPONIBILIDAD_RE = re.compile(
+    r"(?:sigue|siguen|est[áa]|est[áa]n|contin[uú]an?)\s+"
+    r"(?:disponible|disponibles|abiert[ao]s?|vigentes?)"
+    r"|(?:hay|tenemos|contamos\s+con|queda|quedan|nos\s+quedan)\s+"
+    r"(?:\w+\s+){0,2}(?:cupo|cupos|disponibilidad|puestos|sillas|lugares)"
+    r"|cupos?\s+disponibles?|disponibilidad\s+(?:para|el|en)\b"
+    r"|(?:se\s+)?agot[oó]|agotad[oa]s?|sin\s+cupos?|sin\s+disponibilidad"
+    r"|ya\s+no\s+(?:hay|queda|quedan)\s+(?:\w+\s+){0,2}"
+    r"(?:cupo|cupos|disponibilidad|puestos|salida|salidas)"
+    r"|ya\s+no\s+(?:est[áa]|sigue)\s+disponible"
+    r"|s[ií]\s+sale\b|s[ií]\s+hay\s+salida",
+    re.IGNORECASE,
+)
+
+#: "Déjame consultar y te confirmo" es exactamente lo que se quiere que haga:
+#: anuncia que va a revisar y no afirma nada. Si esto aparece en el texto, el
+#: guardarraíl se calla aunque la frase de disponibilidad esté ahí — casi
+#: siempre lo está, en la forma "déjame confirmar si el 18 sigue disponible".
+_VA_A_CONSULTAR_RE = re.compile(
+    r"d[eé]jame|perm[ií]teme|dame\s+(?:un|unos)|un\s+momento|unos\s+minutos|"
+    r"ya\s+te\s+(?:digo|confirmo|cuento|aviso|averiguo)|"
+    r"(?:voy|vamos)\s+a\s+"
+    r"(?:consultar|revisar|verificar|confirmar|mirar|preguntar|validar)|"
+    r"(?:enseguida|ahora\s+mismo|en\s+un\s+momento|en\s+seguida)\s+"
+    r"(?:te\s+)?(?:consulto|reviso|confirmo|digo|verifico)|"
+    r"estoy\s+(?:consultando|revisando|verificando)|"
+    r"lo\s+(?:consulto|reviso|verifico|confirmo)\s+y",
+    re.IGNORECASE,
+)
+
+#: "para ver **si** sigue disponible" no afirma nada: es la subordinada de lo
+#: que va a consultar.
+_CONDICIONAL_RE = re.compile(r"\bsi\b\s*$", re.IGNORECASE)
+
+
+def _es_pregunta(frase: str, hasta: int) -> bool:
+    """¿Lo que hay en `hasta` cae dentro de una pregunta?
+
+    No basta con mirar si la frase tiene un "?" en alguna parte: "Sí hay cupos
+    para septiembre, ¿cuántas personas viajan?" afirma y pregunta en el mismo
+    renglón, y descartarla entera dejaría pasar justo el caso del bug. El "¿"
+    del español marca dónde empieza la pregunta, así que se mira si hay uno
+    abierto —y sin cerrar— antes del punto en cuestión.
+    """
+    antes = frase[:hasta]
+    if antes.rfind("¿") > antes.rfind("?"):
+        return True
+    # Sin "¿" de apertura sólo queda el signo final: ahí sí es toda la frase.
+    return "¿" not in frase and frase.rstrip().endswith("?")
+
+_CORRECCION_DISPONIBILIDAD = (
+    "ALTO: acabas de decirle a la persona que una fecha está disponible (o que "
+    "no lo está) sin haber llamado `consultar_tarifario` en este turno. La "
+    "disponibilidad no está en tu memoria y no se deduce: sale del tarifario, y "
+    "la salida que le estás confirmando puede estar llena o no existir. Ese "
+    "mensaje NO se le envió. Vuelve a responder llamando `consultar_tarifario` "
+    "con el mes por el que te preguntaron, y dile SOLO lo que te devuelva: si "
+    "esa salida está en el resultado, confírmasela con su fecha; si no está, "
+    "ofrécele las que sí quedan. Si prefieres, dile que lo revisas y no afirmes "
+    "nada todavía."
+)
+
+
+def _viola_disponibilidad(
+    cfg: Dict[str, Any],
+    textos_de_la_ronda: List[str],
+    tools_called: List[Dict[str, Any]],
+) -> bool:
+    """¿El bot confirmó (o descartó) una fecha sin mirar el tarifario?
+
+    Dispara sólo con las **dos** condiciones juntas en el mismo texto:
+
+      1. una referencia a una fecha o salida concreta (`_FECHA_CONCRETA_RE`), y
+      2. una afirmación de disponibilidad (`_AFIRMA_DISPONIBILIDAD_RE`) que no
+         sea una pregunta, ni la subordinada de un "si", ni parte de un
+         "déjame consultar y te confirmo".
+
+    Una sola de las dos no basta: "¿para qué mes lo estás pensando?" no tiene
+    afirmación, y "tenemos salidas entre semana" no tiene fecha ni afirmación.
+    Hablar del plan, del itinerario, de los hoteles o de los pagos tampoco
+    dispara, porque nada de eso afirma cupo.
+    """
+    if not cfg.get("tarifario") or not textos_de_la_ronda:
+        return False
+    if any(t.get("tool") == "consultar_tarifario" for t in tools_called):
+        return False
+
+    for texto in textos_de_la_ronda:
+        texto = texto or ""
+        if _VA_A_CONSULTAR_RE.search(texto):
+            continue            # va a revisar: es lo correcto
+        if not _FECHA_CONCRETA_RE.search(texto):
+            continue            # sin fecha concreta no hay nada que confirmar
+        for frase in _frases(texto):
+            afirma = _AFIRMA_DISPONIBILIDAD_RE.search(frase)
+            if afirma is None:
+                continue
+            if _es_pregunta(frase, afirma.start()):
+                continue        # preguntar no es afirmar
+            if _CONDICIONAL_RE.search(frase[:afirma.start()]):
+                continue        # "…para ver si sigue disponible"
+            return True
+    return False
+
+
 #: Confirmación por defecto de un pedido. La plantilla la puede cambiar el
 #: tenant en `pedidos.confirmacion`: es su voz, no la del motor.
 _CONFIRMACION_PEDIDO = (
@@ -2852,6 +3434,9 @@ def _advance_inner(
         if m.get("role") == "user"
         for d in _digitos_de_telefonos(m.get("content") or "")
     ]
+    # Resultados completos de `consultar_tarifario` en el turno: las únicas
+    # duraciones que el bot puede escribir (ver `_viola_duracion`).
+    duraciones_ok: List[str] = []
     # Consumo del turno, sumando todas las rondas (#366).
     uso = {"tokens_in": 0, "tokens_out": 0, "cache_read": 0, "cache_write": 0}
 
@@ -2900,6 +3485,11 @@ def _advance_inner(
                 # lo tomaría por inventado y tumbaría un turno correcto.
                 if name == "entregar_contacto":
                     telefonos_ok.extend(_digitos_de_telefonos(result_text))
+                # Mismo motivo para las duraciones del plan de viajes: viven al
+                # final de cada línea de salida, muy por fuera de los 300
+                # caracteres del registro de arriba.
+                if name == "consultar_tarifario":
+                    duraciones_ok.append(result_text)
                 if name == "escalar_a_asesor":
                     # Vacío significa "lo decide el turno del team al entregar";
                     # el asesor concreto lo resuelve `bot_runner`.
@@ -2926,6 +3516,14 @@ def _advance_inner(
                 correccion, motivo = _CORRECCION_FICHA, "ficha descrita sin consultarla"
             elif _viola_link(cfg, say_texts[textos_previos:], tools_called):
                 correccion, motivo = _CORRECCION_LINK, "link de pago inventado"
+            elif _viola_duracion(cfg, say_texts[textos_previos:], duraciones_ok):
+                correccion, motivo = _CORRECCION_DURACION, "duración inventada"
+            elif _viola_disponibilidad(
+                cfg, say_texts[textos_previos:], tools_called
+            ):
+                correccion, motivo = (
+                    _CORRECCION_DISPONIBILIDAD, "disponibilidad sin consultar"
+                )
         if correccion is not None:
             correcciones += 1
             del actions[acciones_previas:]
@@ -2935,7 +3533,23 @@ def _advance_inner(
                 motivo, getattr(bot, "id", "?"), correcciones,
             )
             working.append({"role": "assistant", "content": content})
-            working.append({"role": "user", "content": correccion})
+            # Si en esta misma ronda el modelo llamó una herramienta, su
+            # `tool_use` va dentro de `content` y la API EXIGE que el mensaje
+            # siguiente arranque con el `tool_result` correspondiente. Mandar
+            # solo el texto de la corrección revienta la llamada con
+            # `tool_use ids were found without tool_result blocks immediately
+            # after`, el turno se va al fail-safe y el cliente recibe la
+            # disculpa genérica. El defecto estaba desde los tres guardarrailes
+            # anteriores; no se veía porque ninguno solía dispararse en una
+            # ronda con herramienta. El de duración sí: la duración viaja
+            # pegada a `consultar_tarifario`.
+            if tool_results:
+                working.append({
+                    "role": "user",
+                    "content": tool_results + [{"type": "text", "text": correccion}],
+                })
+            else:
+                working.append({"role": "user", "content": correccion})
             continue
 
         if finished or data.get("stop_reason") != "tool_use" or not tool_results:
@@ -2984,8 +3598,41 @@ def _advance_inner(
                 getattr(bot, "id", "?"),
             )
 
+    # El nombre, en sus dos mitades. Van en `if/elif` sobre la MISMA condición
+    # a propósito: una agrega la pregunta y la otra la quita, y un turno no
+    # puede caer en las dos. Que sea imposible por construcción y no por suerte
+    # lo fija `tests/viajes/test_pregunta_nombre.py`.
+    #
+    # #382: con el nombre ya en la ficha, la pregunta no sale — la haya escrito
+    # el modelo o no.
+    # #383: en una conversación que viene de antes, el bot no se vuelve a
+    # presentar. Es la otra mitad de lo mismo y no pelea con lo de abajo: la
+    # inyección de la pregunta sólo existe en el PRIMER mensaje, donde esto es
+    # falso y presentarse es obligatorio.
+    if _ya_nos_conocemos(cfg, history):
+        if _recortar_lo_dicho(actions, say_texts, _sin_la_presentacion):
+            logger.info(
+                "llm_engine: presentación quitada, la conversación venía de "
+                "antes (bot=%s)", getattr(bot, "id", "?"),
+            )
+
+    if _ya_se_sabe_el_nombre(cfg):
+        if _recortar_lo_dicho(actions, say_texts, _sin_pregunta_por_el_nombre):
+            logger.info(
+                "llm_engine: pregunta del nombre quitada, ya se sabía (bot=%s)",
+                getattr(bot, "id", "?"),
+            )
+            if not any(t.strip() for t in say_texts):
+                # No debería pasar: cuando el nombre se sabe, el turno saluda
+                # por él y dice algo más. Si alguna vez el mensaje entero fue la
+                # pregunta, queda la huella de por qué el cliente no recibió
+                # texto (sin contenido en el log, regla #1).
+                logger.warning(
+                    "llm_engine: el turno se quedó sin texto al quitar la "
+                    "pregunta del nombre (bot=%s)", getattr(bot, "id", "?"),
+                )
     # #379: el primer mensaje tiene que salir con la pregunta del nombre.
-    if _falta_pedir_el_nombre(cfg, history, say_texts, tools_called, finished):
+    elif _falta_pedir_el_nombre(cfg, history, say_texts, tools_called, finished):
         pregunta = str(cfg.get("pregunta_nombre") or "").strip()
         actions.append({"type": "say", "payload": {"text": pregunta}})
         say_texts.append(pregunta)

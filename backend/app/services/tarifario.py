@@ -141,6 +141,21 @@ def _pesos(valor: int) -> str:
     return f"${valor:,.0f}".replace(",", ".")
 
 
+def _duracion(plan: Dict[str, Any]) -> str:
+    """«2 noches / 3 días» de esa salida, leído de la fila. Nunca a mano.
+
+    La temporada publica **dos planes de distinta duración**: el de fin de
+    semana (viernes con lunes) y el de lunes con jueves son de 2 noches / 3
+    días, y el de «Obsequio a Barú» (viernes con martes) es de 3 noches / 4
+    días. El modelo no puede deducirlo del itinerario del contexto —que tiene
+    cuatro bloques de día porque el viernes es el viaje nocturno y no cuenta
+    como día de plan— y cuando lo intentó terminó vendiendo «4 días / 3 noches»
+    un plan de 3 días / 2 noches. Por eso la duración viaja pegada a CADA
+    salida que esta herramienta ofrece, y sale de `noches` y `dias` de la fila.
+    """
+    return f"{plan['noches']} noches / {plan['dias']} días"
+
+
 def _meses_por_cercania(hoy: date) -> List[int]:
     """Los 12 meses desde el actual hacia adelante, dando la vuelta.
 
@@ -301,7 +316,7 @@ def _bloque_hotel(
         lineas.append(
             f"  · {plan['fecha']} — múltiple {_pesos(plan['multiple'])} · "
             f"doble {_pesos(plan['doble'])} "
-            f"({plan['noches']} noches / {plan['dias']} días{obs}){marca}"
+            f"({_duracion(plan)}{obs}){marca}"
         )
 
     if fecha is not None and not any(
@@ -317,11 +332,14 @@ def _bloque_hotel(
             por_inicio.values(),
             key=lambda p: abs((date.fromisoformat(p["inicio"]) - fecha).days),
         )[:2]
+        # Cada cercana va con su duración: las dos más próximas a una fecha
+        # pueden ser de planes distintos (la estándar y la de Barú), y sin el
+        # dato al lado el modelo le pone a las dos la misma duración.
         lineas.append(
             f"  OJO: no hay salida que arranque el {fecha.isoformat()} en "
             f"{nombre}. Las más cercanas son: "
-            + " y ".join(p["fecha"] for p in cercanos)
-            + ". Ofrécele esas con su precio — NO escales por esto."
+            + " y ".join(f"{p['fecha']} ({_duracion(p)})" for p in cercanos)
+            + ". Ofrécele esas con su precio y su duración — NO escales por esto."
         )
 
     clave = clave_imagen(cfg, hotel, mes)
@@ -389,16 +407,17 @@ def _lineas_desde(
         ambito = _NOMBRE_MES[mes]
         lineas = [
             f"{etiqueta} — «desde» de {ambito}: {_pesos(barato['multiple'])} por "
-            f"persona en múltiple ({barato['fecha']}). Es el valor MÁS BAJO que "
-            f"queda publicado en {ambito}: no cites un «desde» más barato para "
-            f"ese mes, ni el de otro mes."
+            f"persona en múltiple ({barato['fecha']}, {_duracion(barato)}). Es el "
+            f"valor MÁS BAJO que queda publicado en {ambito}: no cites un «desde» "
+            f"más barato para ese mes, ni el de otro mes."
         ]
     else:
         ambito = "los meses publicados"
         lineas = [
             f"{etiqueta} — «desde» de TODOS {ambito} (ojo: NO es de un mes en "
             f"particular): {_pesos(barato['multiple'])} por persona en múltiple, "
-            f"y cae en {barato['fecha']}. Si el cliente ya dijo un mes, este "
+            f"y cae en {barato['fecha']} ({_duracion(barato)}). Si el cliente ya "
+            f"dijo un mes, este "
             f"valor NO le sirve: vuelve a consultar con ese mes, que tiene su "
             f"propio «desde»."
         ]
@@ -409,7 +428,8 @@ def _lineas_desde(
         lineas.append(
             f"  Entre semana (lunes con jueves) en {ambito}: {len(semana)} "
             f"salida(s), desde {_pesos(barato_semana['multiple'])} por persona "
-            f"en múltiple ({barato_semana['fecha']}).{coletilla}"
+            f"en múltiple ({barato_semana['fecha']}, "
+            f"{_duracion(barato_semana)}).{coletilla}"
         )
     else:
         lineas.append(
@@ -553,7 +573,8 @@ def _bloque_presupuesto(
                     f"  PERO en otros meses sí le alcanza: {nombres}. La más "
                     f"económica de todas es "
                     f"{_pesos(barato_otro['multiple'])} en "
-                    f"{_NOMBRE_MES[barato_otro['mes']]} ({barato_otro['fecha']}). "
+                    f"{_NOMBRE_MES[barato_otro['mes']]} ({barato_otro['fecha']}, "
+                    f"{_duracion(barato_otro)}). "
                     f"Pregúntale si puede mover el viaje a alguno de esos meses "
                     f"— si dice que sí, vuelve a consultar con ese mes."
                 )
@@ -652,7 +673,11 @@ def consultar(
 
     partes: List[str] = [
         f"Tarifario de Coveñas — valores POR PERSONA (hoy es {hoy.isoformat()}; "
-        "solo se listan salidas que todavía no han pasado)."
+        "solo se listan salidas que todavía no han pasado).",
+        "DURACIÓN: cada salida de abajo trae la suya entre paréntesis (noches / "
+        "días) y no todas duran lo mismo. Cópiala tal cual de la salida que "
+        "estés ofreciendo. NO la cuentes de los bloques del itinerario: el "
+        "viernes es el viaje de noche en bus y no cuenta como día de plan.",
     ]
     if aviso_vencida:
         partes.append(aviso_vencida)
