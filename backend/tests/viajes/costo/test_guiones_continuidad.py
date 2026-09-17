@@ -23,14 +23,23 @@ import re
 import pytest
 
 from app.services import llm_engine
+from tests.viajes.costo import test_guiones
 
 # La misma frase de apertura que salió cuatro veces seguidas en el chat real.
 _SALUDO_DE_APERTURA = re.compile(
     r"con qui[eé]n tengo el gusto|c[oó]mo te llamas|cu[aá]l es tu nombre",
     re.IGNORECASE,
 )
+# El nombre se lee del contexto del bot y no se escribe a mano: estaba puesto
+# como "maria camila", el bot se renombró a Luisa en 366c449 y este regex dejó
+# de matchear nada. Los dos `assert not _SE_PRESENTA.search(...)` de abajo
+# pasaron gratis desde entonces — verificaban que el bot no se vuelve a
+# presentar, y no podían fallar aunque lo hiciera.
 _SE_PRESENTA = re.compile(
-    r"mi nombre es\s*\*?maria camila|soy\s*\*?maria camila", re.IGNORECASE
+    r"mi nombre es\s*\*?{n}|soy\s*\*?{n}".format(
+        n=re.escape(test_guiones.NOMBRE_ASESORA)
+    ),
+    re.IGNORECASE,
 )
 
 

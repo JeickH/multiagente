@@ -57,6 +57,30 @@ def _precios_del_tarifario() -> set:
 
 PRECIOS_DEL_TARIFARIO = _precios_del_tarifario()
 
+
+def _nombre_de_la_asesora() -> str:
+    """Cómo se llama la asesora, leído del propio contexto del bot.
+
+    Estaba escrito a mano —"maria camila"— y el bot se renombró a Luisa en
+    366c449 sin que nadie tocara estas pruebas. Este archivo quedó fallando
+    siempre, y el regex hermano de `test_guiones_continuidad.py` quedó peor:
+    como ya no matcheaba nada, sus dos `assert not ...` pasaban gratis.
+    Derivándolo del `.md`, el próximo renombre arrastra las pruebas con él.
+    """
+    ruta = (
+        Path(__file__).resolve().parents[3]
+        / "app" / "bot_contexts" / "demo_viajes.md"
+    )
+    m = re.search(
+        r"Soy \*([A-ZÁÉÍÓÚÑ][a-záéíóúñ]+)\*,\s*asesora",
+        ruta.read_text(encoding="utf-8"),
+    )
+    assert m, "no se pudo leer el nombre de la asesora en demo_viajes.md"
+    return m.group(1)
+
+
+NOMBRE_ASESORA = _nombre_de_la_asesora()
+
 _MESES_ES = [
     "enero", "febrero", "marzo", "abril", "mayo", "junio",
     "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre",
@@ -204,7 +228,7 @@ class TestPrimerContacto:
         modelo_real["actual"] = "C1 saludo"
         s = conversar(bot, [None, "Buenas tardes"])
         texto = dicho(*s).lower()
-        assert "maria camila" in texto
+        assert NOMBRE_ASESORA.lower() in texto
         assert "arranquemos" in texto
 
     def test_no_pregunta_el_nombre_a_quien_acaba_de_darlo(self, bot, modelo_real):
