@@ -6723,3 +6723,132 @@ sin despachar.
 
 El guion de la demo pasó a tres tramos: 6 minutos de app, 4 de bot y 2 de
 reporte.
+
+---
+
+## Sprint 31 — La duración del plan salía de contar bloques (2026-09-16)
+
+**Agente:** Dev Plataforma · **Estado:** DONE (sin desplegar)
+
+Bug real de producción en el bot de Arranquemos Pues: decía «4 días / 3 noches»
+un plan que es de **3 días / 2 noches**. El CEO confirmó la regla del negocio y
+la dejó fuera de discusión: el viernes se viaja de noche en bus y **no cuenta
+como día de plan** — se llega el sábado, se duerme sábado y domingo, y se está
+sábado, domingo y lunes.
+
+`app/data/tarifario_covenas.json` nunca estuvo mal: sus 102 filas traen
+`noches` y `dias` correctos, y **no se tocó ni una**. La temporada publica dos
+planes con duración distinta: el estándar de fin de semana y el de lunes con
+jueves son de 2 noches / 3 días (53 filas), y el de «Obsequio a Barú» (viernes
+con martes) es de 3 noches / 4 días (31 filas).
+
+### La causa
+
+`bot_contexts/demo_viajes.md` mandaba enviar en casi todo primer mensaje un
+itinerario con **cuatro bloques de día** (🚌 viernes, 📍 sábado, 📍 domingo,
+🚌 lunes). El modelo los contaba, concluía «4 días» y deducía «3 noches».
+`consultar_tarifario` ya le había entregado «2 noches / 3 días» en ese mismo
+turno, y el modelo prefería la frase del prompt sobre el dato de la
+herramienta. Es el gotcha de siempre: las reglas del prompt se diluyen entre sí,
+y la palabra «noches» no aparecía una sola vez en las 537 líneas del documento.
+
+### Lo que se hizo, en tres capas
+
+1. **Cobertura del dato** (`services/tarifario.py`): helper `_duracion(plan)`,
+   que lee `noches` y `dias` de la fila y no escribe ninguna cifra a mano. Ahora
+   toda salida que la herramienta pone sobre la mesa va con su duración al lado:
+   las líneas del bloque del hotel, las dos fechas cercanas del caso «no hay
+   salida que arranque el <fecha>» (que iban peladas, y ahí el modelo volvía a
+   inventar), los dos «desde», la promo de entre semana y el cambio de mes de la
+   búsqueda por presupuesto. La cabecera de la respuesta recuerda que la
+   duración se copia de la salida y no se cuenta del itinerario.
+2. **El prompt**: un párrafo de cinco líneas en *Días de salida*, pegado a las
+   dos reglas hermanas que ya viven ahí («las fechas concretas nunca salen de tu
+   memoria» y «y los precios, exactamente igual»), más dos palabras en la línea
+   de «lo que no sabes es el precio» → «el precio ni la duración». Total: **7
+   líneas netas**. Ver abajo por qué tan poco.
+3. **Guardarraíl determinista** (`services/llm_engine.py`): `_viola_duracion`,
+   cuarto hermano de `_viola_contacto`, `_viola_ficha` y `_viola_link`. Se
+   alimenta de una lista `duraciones_ok` con los resultados COMPLETOS de la
+   tool, porque `tools_called[i]["resultado"]` va recortado a 300 caracteres y
+   las duraciones caen fuera del corte casi siempre — leerlas de ahí habría dado
+   falso positivo en todos los turnos. **No** mira «N días» a secas, porque el
+   bot dice legítimamente «8 días antes» y «de 8 a 10 días hábiles», y un
+   guardarraíl con falsos positivos le tumba el turno a un bot que respondía
+   bien.
+
+### El prompt gordo abría una conversación cerrada
+
+La primera versión del cambio le metía **93 líneas** al `.md`: sección propia
+*Cuánto dura el plan*, ejemplos nuevos, «Mal también» nuevos y varias frases de
+contención («no tienes duración que decir», «responde sin mencionar cuántos
+días», «sin ninguna cifra, ni de precio ni de duración»). Medido contra el
+modelo real sobre `test_guiones_continuidad.py::TestLaVentaEnPausaNoSeCierra`:
+
+| | Ejecuciones | Fallos |
+|---|---|---|
+| Base | 16 | 0 |
+| Con las 93 líneas | 16 | **4 (25%)** |
+
+El fallo: ante «listo, gracias! luego te escribo para reservar» el bot pasó a
+llamar `no_responder` y cerrar el turno. Una venta en pausa cerrada sola es una
+venta perdida, y esa clase existe para impedirlo. El tono de «mejor no digas
+nada» se arrastró hasta la decisión de si seguir conversando — el gotcha ya
+documentado de que **las reglas del prompt se diluyen y se contaminan entre
+sí**, esta vez por proximidad al bloque de cierre.
+
+Quedó en 7 líneas netas, tres hechos dichos una vez, cero prohibiciones nuevas y
+lejos de las secciones que gobiernan `no_responder` y el cierre. **La
+prohibición la ejecuta el código**: el guardarraíl determinista es la protección
+real, y el documento solo tiene que no mentir.
+
+### El guardarraíl que no atrapaba el bug
+
+La primera versión comparaba contra el **menú del mes**: si la duración dicha
+existía en alguna fila del resultado, pasaba. Medido contra una respuesta real
+de `consultar()`, el caso reportado pasaba intacto. Casi todos los meses
+publican las dos duraciones —la estándar y la de Barú arrancan el mismo
+viernes—, así que «4 días y 3 noches» citaba un par que sí existe en
+septiembre, solo que de otra salida. Pertenecer al menú del mes no distingue
+nada, y el guardarraíl era decorativo justo en el caso para el que se escribió.
+
+Y las pruebas pasaban porque se les daba un `duraciones_ok` fabricado con una
+sola duración. Es el patrón documentado en [[probar-bots-leyendo]]: 63 chequeos
+verdes con el bot perdiendo ventas igual. **Las pruebas del guardarraíl se
+alimentan ahora con la salida real de `consultar()` para un mes que publica las
+dos.**
+
+La regla que sí distingue: **una duración vale pegada a la salida a la que
+pertenece**. `_menciones_de_duracion` parsea el resultado a un mapa
+`(día inicio, día fin) -> (noches, días)`; en el texto del bot busca referencias
+a una salida tolerando cómo escribe el modelo (`SEPTIEMBRE 11 AL 14`,
+`del 11 al 14`, `*11 al 15*` con negrilla) y le asigna a cada duración la salida
+nombrada más cerca antes de ella. Tres decisiones: si nombra salida, la duración
+tiene que ser la de esa; si no nombra ninguna está generalizando, y solo vale
+cuando todas las salidas del resultado duran lo mismo; si no dice duración, no
+viola. El «al» se exige y no un «a» suelto, para que «de 8 a 10 días hábiles» no
+se lea como una salida.
+
+### Pruebas
+
+`tests/viajes/test_duracion.py`, 130 casos nuevos: los dos planes fijados contra
+el JSON (47 filas viernes→lunes, 31 viernes→martes, 6 lunes→jueves), paridad de
+duración parametrizada sobre hoteles × meses leyendo el JSON por su cuenta, el
+par concreto SEPTIEMBRE 11 AL 14 (2n/3d) contra SEPTIEMBRE 11 AL 15 (3n/4d) —
+que arrancan el mismo viernes y eran los que se contagiaban—, y las unitarias
+del guardarraíl con el modelo mockeado, incluidas las frases legítimas que no
+deben dispararlo. El «hoy» va por parámetro (`HOY = date(2026, 8, 19)`).
+
+El ámbito de una sola duración —para el caso en que generalizar sí vale— se
+busca en los datos y no se inventa: `consultar(hotel="Amor de Dios",
+presupuesto="460 mil")`, porque ninguna salida de Barú cabe en ese tope. Y un
+test verifica que los dos ámbitos de prueba siguen siendo lo que se cree, para
+que un Excel nuevo no vuelva decorativa la clase entera sin avisar.
+
+Se corrigió además el enlatado de `test_agendamiento_por_abandono.py`, que tenía
+«3 noches» escrito a mano en el repo.
+
+Suite: **1459 passed, 103 skipped, 1 xfailed** (base del día: 1356 passed).
+
+**Pendiente:** desplegar. Nada de esto está en producción todavía; el prompt del
+bot vive en la imagen, así que necesita build + task-def + rollout.

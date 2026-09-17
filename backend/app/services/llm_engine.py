@@ -2132,6 +2132,164 @@ def _viola_link(
     return False
 
 
+# Guardarraíl hermano de los de teléfonos y links: la duración del plan de
+# viajes. El contexto del bot trae un itinerario con cuatro bloques de día
+# —viernes de viaje nocturno, sábado, domingo y lunes de regreso— y el modelo
+# los contaba: concluía «4 días» y de ahí deducía «3 noches», cuando la salida
+# que estaba vendiendo era de 3 días / 2 noches.
+#
+# La primera versión de este guardarraíl comparaba contra el MENÚ del mes: si
+# la duración dicha existía en alguna fila del resultado, pasaba. No servía de
+# nada, y se comprobó midiendo contra una respuesta real. Casi todos los meses
+# publican las DOS duraciones —la estándar (2 noches / 3 días) y la de «Obsequio
+# a Barú» (3 noches / 4 días) arrancan el mismo viernes—, así que el bug
+# reportado («4 días y 3 noches» vendiendo la salida del 11 al 14) citaba un par
+# que sí existía en septiembre, solo que de otra salida. Pertenecer al menú del
+# mes no distingue nada.
+#
+# La regla que sí distingue: **una duración vale pegada a la salida a la que
+# pertenece**. El resultado de la herramienta ya las trae emparejadas, una por
+# línea, con la etiqueta de la salida delante.
+_CORRECCION_DURACION = (
+    "ALTO: la duración que acabas de decir (noches o días de plan) no es la de "
+    "la salida que estás ofreciendo. Ese mensaje NO se le envió al cliente. "
+    "Cada salida trae la suya entre paréntesis en el resultado de "
+    "`consultar_tarifario`, y en un mismo mes conviven salidas de distinta "
+    "duración: la del viernes al lunes y la de «Obsequio a Barú» arrancan el "
+    "mismo día y NO duran lo mismo. Dos errores que no puedes cometer: pegarle "
+    "a una salida la duración de otra, y decir una duración «del plan» en "
+    "general cuando el mes tiene salidas de duraciones distintas. Tampoco la "
+    "cuentes de los bloques del itinerario: el viernes es el viaje de noche en "
+    "bus y no cuenta como día de plan. Vuelve a responder nombrando la salida "
+    "(su fecha) y copiando TEXTUALMENTE la duración que la herramienta le puso "
+    "al lado; si no has llamado la herramienta, llámala con el mes, o responde "
+    "sin mencionar cuántos días ni cuántas noches son."
+)
+
+# "2 noches / 3 días", "3 días y 4 noches", "2 noches - 3 días".
+_DURACION_PAR_RE = re.compile(
+    r"(\d{1,2})\s*(noches?|d[ií]as?)\s*(?:[/·,\-–—]|y|and)?\s*"
+    r"(\d{1,2})\s*(noches?|d[ií]as?)",
+    re.IGNORECASE,
+)
+
+# Las noches sueltas. A propósito NO se miran los "días" sueltos: el bot dice
+# legítimamente "de 8 a 10 días hábiles antes del viaje" y "8 días antes", y un
+# guardarraíl que tumbe esos turnos hace más daño que el bug que arregla.
+# "Noches" en cambio solo aparece hablando de la duración del alojamiento.
+_NOCHES_RE = re.compile(r"(\d{1,2})\s*noches?\b", re.IGNORECASE)
+
+# Cómo se nombra una salida. Lo identificador es el par día-inicio / día-fin,
+# que es lo único estable entre "SEPTIEMBRE 11 AL 14", "del 11 al 14" y
+# "*11 al 15*" con la negrilla de WhatsApp pegada. Se exige el "al" y no un "a"
+# suelto a propósito: "de 8 a 10 días hábiles" es una frase legítima del bot y
+# con "a" quedaría leída como una salida.
+_SALIDA_REF_RE = re.compile(r"(\d{1,2})\s*[*_]?\s*al\s*[*_]?\s*(\d{1,2})\b",
+                            re.IGNORECASE)
+
+
+def _menciones_de_duracion(texto: str) -> List[tuple]:
+    """Las duraciones de un texto, cada una con la salida a la que se refiere.
+
+    Devuelve `[(ref, clase, valor), ...]` en orden de aparición, donde `ref` es
+    el `(día inicio, día fin)` de la salida nombrada —o `None` si el texto no
+    nombró ninguna—, `clase` es `"par"` (con `(noches, días)`) o `"noches"`
+    (con el número suelto).
+
+    La salida de cada duración es la nombrada más cerca ANTES de ella, que es
+    como se escribe de verdad ("la del *11 al 14* son 2 noches / 3 días"). Si
+    no hay ninguna antes pero el texto nombra exactamente una salida, se usa
+    esa: "son 3 días y 2 noches saliendo el 11 al 14" habla de esa misma.
+    """
+    texto = texto or ""
+    refs = [
+        (m.start(), (int(m.group(1)), int(m.group(2))))
+        for m in _SALIDA_REF_RE.finditer(texto)
+    ]
+
+    menciones: List[tuple] = []
+    tramos: List[tuple] = []
+    for m in _DURACION_PAR_RE.finditer(texto):
+        n1, p1, n2, p2 = m.groups()
+        primera_noche = p1.lower().startswith("noche")
+        if primera_noche == p2.lower().startswith("noche"):
+            continue        # "2 noches y 3 noches" no es un par de duración
+        noches, dias = (n1, n2) if primera_noche else (n2, n1)
+        tramos.append((m.start(), m.end()))
+        menciones.append((m.start(), "par", (int(noches), int(dias))))
+    for m in _NOCHES_RE.finditer(texto):
+        # Las noches que ya van dentro de un par no se cuentan dos veces.
+        if any(a <= m.start() < b for a, b in tramos):
+            continue
+        menciones.append((m.start(), "noches", int(m.group(1))))
+
+    salida: List[tuple] = []
+    for pos, clase, valor in sorted(menciones):
+        previas = [r for p, r in refs if p < pos]
+        if previas:
+            ref = previas[-1]
+        elif len(refs) == 1:
+            ref = refs[0][1]
+        else:
+            ref = None
+        salida.append((ref, clase, valor))
+    return salida
+
+
+def _viola_duracion(
+    cfg: Dict[str, Any],
+    textos_de_la_ronda: List[str],
+    duraciones_ok: List[str],
+) -> bool:
+    """¿El bot le pegó a una salida una duración que no es la suya?
+
+    `duraciones_ok` son los resultados COMPLETOS de `consultar_tarifario` de la
+    ronda. Se leen aparte de `tools_called` por lo mismo que los teléfonos: allí
+    el resultado viene recortado a 300 caracteres y las duraciones quedan fuera
+    del corte casi siempre, así que leerlas de ahí daría falso positivo en todos
+    los turnos.
+
+    Tres decisiones, y las tres son conservadoras a propósito:
+
+      · **El texto nombra una salida y dice una duración** → tiene que ser la de
+        esa salida. Es el caso del bug.
+      · **Dice una duración sin nombrar salida** → está generalizando. Solo vale
+        si TODAS las salidas del resultado duran lo mismo; si el mes publica dos
+        duraciones, "el plan es de 3 noches" es falso para la mitad.
+      · **No dice ninguna duración** → no viola. La inmensa mayoría de los
+        turnos cae aquí, incluidos los "8 días antes" y "de 8 a 10 días
+        hábiles" que nunca se deben tumbar.
+    """
+    if not cfg.get("tarifario") or not textos_de_la_ronda:
+        return False
+
+    por_salida: Dict[tuple, set] = {}
+    todas: set = set()
+    for resultado in duraciones_ok:
+        for ref, clase, valor in _menciones_de_duracion(resultado):
+            if clase != "par":
+                continue
+            todas.add(valor)
+            if ref is not None:
+                por_salida.setdefault(ref, set()).add(valor)
+
+    for texto in textos_de_la_ronda:
+        for ref, clase, valor in _menciones_de_duracion(texto):
+            permitidas = por_salida.get(ref) if ref is not None else None
+            if permitidas is None:
+                # Sin salida identificable (o con una que la herramienta no
+                # devolvió): se juzga como generalización.
+                if len(todas) != 1:
+                    return True
+                permitidas = todas
+            if clase == "par":
+                if valor not in permitidas:
+                    return True
+            elif valor not in {noches for noches, _ in permitidas}:
+                return True
+    return False
+
+
 #: Confirmación por defecto de un pedido. La plantilla la puede cambiar el
 #: tenant en `pedidos.confirmacion`: es su voz, no la del motor.
 _CONFIRMACION_PEDIDO = (
@@ -2852,6 +3010,9 @@ def _advance_inner(
         if m.get("role") == "user"
         for d in _digitos_de_telefonos(m.get("content") or "")
     ]
+    # Resultados completos de `consultar_tarifario` en el turno: las únicas
+    # duraciones que el bot puede escribir (ver `_viola_duracion`).
+    duraciones_ok: List[str] = []
     # Consumo del turno, sumando todas las rondas (#366).
     uso = {"tokens_in": 0, "tokens_out": 0, "cache_read": 0, "cache_write": 0}
 
@@ -2900,6 +3061,11 @@ def _advance_inner(
                 # lo tomaría por inventado y tumbaría un turno correcto.
                 if name == "entregar_contacto":
                     telefonos_ok.extend(_digitos_de_telefonos(result_text))
+                # Mismo motivo para las duraciones del plan de viajes: viven al
+                # final de cada línea de salida, muy por fuera de los 300
+                # caracteres del registro de arriba.
+                if name == "consultar_tarifario":
+                    duraciones_ok.append(result_text)
                 if name == "escalar_a_asesor":
                     # Vacío significa "lo decide el turno del team al entregar";
                     # el asesor concreto lo resuelve `bot_runner`.
@@ -2926,6 +3092,8 @@ def _advance_inner(
                 correccion, motivo = _CORRECCION_FICHA, "ficha descrita sin consultarla"
             elif _viola_link(cfg, say_texts[textos_previos:], tools_called):
                 correccion, motivo = _CORRECCION_LINK, "link de pago inventado"
+            elif _viola_duracion(cfg, say_texts[textos_previos:], duraciones_ok):
+                correccion, motivo = _CORRECCION_DURACION, "duración inventada"
         if correccion is not None:
             correcciones += 1
             del actions[acciones_previas:]
@@ -2935,7 +3103,23 @@ def _advance_inner(
                 motivo, getattr(bot, "id", "?"), correcciones,
             )
             working.append({"role": "assistant", "content": content})
-            working.append({"role": "user", "content": correccion})
+            # Si en esta misma ronda el modelo llamó una herramienta, su
+            # `tool_use` va dentro de `content` y la API EXIGE que el mensaje
+            # siguiente arranque con el `tool_result` correspondiente. Mandar
+            # solo el texto de la corrección revienta la llamada con
+            # `tool_use ids were found without tool_result blocks immediately
+            # after`, el turno se va al fail-safe y el cliente recibe la
+            # disculpa genérica. El defecto estaba desde los tres guardarrailes
+            # anteriores; no se veía porque ninguno solía dispararse en una
+            # ronda con herramienta. El de duración sí: la duración viaja
+            # pegada a `consultar_tarifario`.
+            if tool_results:
+                working.append({
+                    "role": "user",
+                    "content": tool_results + [{"type": "text", "text": correccion}],
+                })
+            else:
+                working.append({"role": "user", "content": correccion})
             continue
 
         if finished or data.get("stop_reason") != "tool_use" or not tool_results:
