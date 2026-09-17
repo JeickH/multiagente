@@ -7054,3 +7054,122 @@ procedimiento de despliegue.
 - `test_sigue_donde_quedaron` quedó con ~1% de intermitencia residual (era
   ~11%). No se persiguió más: el costo de medir por debajo del 1% no lo
   justifica.
+
+---
+
+## Sprint 31 — La migración de productos ahora repara, y el verificador ya muerde (2026-09-17)
+
+**Agente:** Experto en BD · **Estado:** LISTO EN LOCAL — el rollout a RDS lo hace
+el CEO con este script
+
+`migrate_sprint31_productos.py` se corrió contra RDS, salió **exit 0** y reportó
+"8 tablas, 3 columnas, 19 índices". Las ocho tablas ya existían: las había creado
+el `create_all()` del arranque del backend durante el despliegue fallido de cinco
+minutos de la entrada anterior. Los `CREATE TABLE IF NOT EXISTS` fueron no-ops y
+los `DEFAULT` del DDL nunca se aplicaron.
+
+Comparado `information_schema.columns` de local contra RDS, la diferencia es
+exacta y acotada: **sólo `column_default`, en 21 columnas**. Tipos, nombres y
+nullability idénticos. Las 8 tablas están vacías y ningún código las lee todavía.
+
+### Por qué faltaban esas 21 y no otras
+
+Son exactamente las columnas que `models.py` declara con `default=` de Python y
+**sin `server_default`**: los 16 `created_at`/`updated_at`
+(`default=datetime.utcnow`), `bot_productos.tipo`, `bot_producto_filas.tipo`,
+`bot_producto_medios.tipo`, `bot_producto_alias.nivel` y
+`bot_recordatorios.orden`. Un `default=` de Python lo aplica el ORM al insertar;
+no llega a la base. Las otras 25 defaults de esas mismas tablas sí tienen
+`server_default` y por eso `create_all()` las creó bien.
+
+### Lo que se hizo
+
+1. **Los defaults son una sola fuente de verdad.** Estaban escritos dentro del
+   DDL; ahora viven en un dict `DEFAULTS` y el `CREATE TABLE` los interpola
+   (`${columna}`, vía `string.Template`). El DDL renderizado quedó
+   **byte-idéntico** al de HEAD — verificado con un diff programático contra la
+   versión commiteada.
+2. **Sección correctiva**: `ALTER TABLE … ALTER COLUMN … SET DEFAULT` sobre las
+   47 columnas con default (46 de las 8 tablas + `bots.instrucciones_version`),
+   leyendo del mismo dict. Sólo emite el ALTER cuando el default real difiere,
+   así la segunda corrida reporta "0 reparados" en vez de callar.
+3. **El verificador compara definición, no nombres.** Ahora mira el
+   `column_default` real (normalizado: Postgres devuelve `'producto'` como
+   `'producto'::character varying`) y los 14 CHECK/UNIQUE esperados, que se leen
+   del propio DDL con una expresión regular protegida por un guardarraíl: si
+   declara un CHECK que la regex no sabe leer, revienta al importar en vez de
+   verificar de menos.
+4. **`--verificar`**: audita sin tocar la base.
+
+### La prueba: reproducir el defecto, no sólo correrlo dos veces
+
+Con la base local sana no se prueba nada. Se tumbaron defaults a mano y:
+
+| paso | resultado |
+|------|-----------|
+| verificador sobre 2 defaults tumbados | **exit 1**, nombra las dos |
+| **script viejo (HEAD) sobre la misma base rota** | **exit 0**, "migración aplicada y verificada" — el incidente, en vivo |
+| verificador sobre las 21 de RDS | **exit 1**, lista las 21 exactas |
+| migración completa | 21 reparados, exit 0 |
+| migración otra vez | 0 reparados, exit 0 |
+| `information_schema` | 46 defaults en las 8 tablas, 0 columnas sin default |
+
+También se tumbó un CHECK y un UNIQUE: el verificador los nombra y la migración
+completa **sale con 1** en vez de fingir que quedó bien. Un CHECK ausente no se
+repara solo — se agrega a mano con el DDL del archivo, y el mensaje de error lo
+dice.
+
+Base local devuelta a su estado exacto (diff contra el snapshot previo: sin
+cambios).
+
+### La raíz, cerrada en el mismo PR
+
+Por decisión del CEO (el rollout de la Fase 1 está detenido, así que no hay
+imagen desplegada que contradecir), las 21 columnas llevan ahora `server_default`
+en `models.py`. `create_all()` ya no puede crear estas tablas sin defaults.
+
+Los timestamps van con **`server_default=func.now()`**, no con `text("NOW()")`:
+`func.now()` es genérico y lo compila cada dialecto — `now()` en Postgres,
+`CURRENT_TIMESTAMP` en SQLite —, que es lo que hace falta porque la suite corre
+`create_all()` sobre SQLite en cada fixture y ahí `NOW()` no existe (con
+`text("NOW()")` SQLite emite `DEFAULT (NOW())`: crea la tabla y revienta recién
+al insertar).
+
+**Los dos lados no se comparten por import a propósito.** Una migración es una
+foto de cómo estaba el esquema ese día; si importara del modelo, cambiaría sola
+cada vez que alguien toque `models.py`, que es justo lo que una migración no
+puede hacer. El contrato lo sostiene
+`backend/tests/test_defaults_schema_productos.py` (56 casos), que compara el
+`server_default` de cada columna del metadata contra la tabla `DEFAULTS` de la
+migración, en las dos direcciones. Se comprobó que **falla** en los cuatro modos
+de divergencia: `server_default` borrado, valor cambiado en un solo lado,
+default nuevo en el modelo que la migración no conoce, y timestamps vueltos a
+`text("NOW()")`.
+
+### El ensayo que lo demuestra
+
+Se dropearon las 8 tablas (vacías) en local y se dejó que las creara
+`create_all()` al arrancar el backend, sin correr la migración:
+
+| `models.py` | resultado del verificador |
+|-------------|---------------------------|
+| el de HEAD (control) | **exit 1 — 21 defaults ausentes**: el incidente de RDS reproducido desde cero |
+| el arreglado | **exit 0** — 8 tablas, 19 índices, 47 defaults, 14 CHECK/UNIQUE |
+
+Y la migración corrida encima de lo que hizo `create_all()`: **0 reparados**.
+Los dos caminos convergen al mismo esquema. Suite **1667 passed** (1611 + 56),
+103 skipped, 1 xfailed.
+
+### Pendiente
+
+- **Rollout a RDS**: lo corre el CEO. Repondrá 21 defaults.
+- **`bots.team_id`**: `models.py` lo declara `nullable=True` y la base local lo
+  tiene `NOT NULL`. Tabla viva y desplegada, anterior a este trabajo: **no se
+  tocó**. Merece su propio PR con verificación en RDS antes de apoyarse en
+  `bots.team_id` para aislar por cuenta — que es como filtra todo este modelo.
+- **8 índices redundantes** `ix_<tabla>_id` sobre las PK de las tablas nuevas.
+  Salen de `id = Column(..., primary_key=True, index=True)`, patrón que usan 36
+  de las 37 tablas del modelo: la PK ya tiene índice único, ese segundo índice
+  no sirve. Los crea `create_all()` y no la migración, así que **RDS los tiene
+  y local no los tenía**; tras el ensayo local también los tiene, o sea que la
+  paridad quedó mejor, no peor. Limpiarlos es su propio PR.
