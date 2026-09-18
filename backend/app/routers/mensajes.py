@@ -322,7 +322,7 @@ def _conversacion_lista_para_adjunto(
     """La conversación y la cuenta, o el error que corresponda.
 
     Lo comparten los tres endpoints de adjunto. Va primero, y en particular va
-    **antes** de firmar una subida: no tiene sentido dejar subir 12 MB a una
+    **antes** de firmar una subida: no tiene sentido dejar subir 16 MB a una
     conversación que no existe o a una cuenta de WhatsApp desconectada.
     """
     conv = crud.get_conversation(db, member.team_id, conversation_id)
