@@ -7230,3 +7230,93 @@ correr el verificador— pasa sin reparar nada.
   `index=True` sobre la PK. El patrón está en 36 de las 37 tablas y es anterior
   a este trabajo.
 - **Fases 2 y 3** (capa de acceso e instrucciones en la base): no arrancadas.
+
+---
+
+## Sprint 31 — El video se quedaba en 12 MB por un número nuestro (2026-09-18)
+
+**Pedido del CEO**: una asesora de Arranquemos Pues no podía mandar por
+`/mensajes` un video de más de 12 MB. La pregunta no fue «arréglalo», fue
+**«esa limitación es de nosotros o de Twilio?»**.
+
+Era nuestra. El tope vivía en dos archivos —`LIMITES` en
+`backend/app/services/adjuntos.py` y `REGLAS` en `frontend/lib/adjuntos.ts`— y
+el comentario del código lo decía sin rodeos: «por decisión de producto, es el
+tope que se le prometió al asesor en la interfaz».
+
+Twilio y Meta aceptan **16 MB** para video, audio y documento, y 5 MB para
+imagen. La cuenta de Arranquemos Pues va por Twilio (`meta_accounts.id=3`,
+`provider='twilio'`), y el changelog de Twilio confirma los 16 MB. Los 4 MB de
+diferencia eran margen que nos habíamos guardado nosotros.
+
+**Por qué el margen ya no tenía sentido**: cuando se fijó, el archivo subía por
+`/api/*` y se moría antes en dos techos invisibles (Amplify ~4,4 MB, API Gateway
+10 MB). Desde el Sprint 26 sube directo a S3 con POST prefirmado y esos techos
+dejaron de existir. Lo único que seguía frenando el video era nuestro número.
+
+### Lo que se hizo
+
+El tope del video queda en 16 MB, pegado al del proveedor. De ahí para arriba
+rechaza Twilio, que **no transcodifica lo saliente**: un archivo más grande hay
+que comprimirlo antes.
+
+Son dos números y se mueven juntos: `LIMITES` firma el `content-length-range`
+del POST a S3, así que subirlo solo en el navegador dejaría a S3 rebotando el
+archivo con la barra de progreso completa de por medio.
+
+Una prueba se reescribió. `test_mentir_en_el_tipo_declarado_no_ayuda` colaba un
+video bajo el tope del audio; con los dos en 16 esa puerta se cerró sola. Ahora
+cuela una imagen —la única categoría que quedó con un tope más bajo— y el
+invariante que protege sigue siendo el mismo: **el tipo lo deciden los bytes, no
+lo que declaró el cliente**.
+
+### Convivencia con la sesión del esquema de productos
+
+Había otro despliegue pausado hasta el lunes. Antes de tocar nada se verificó:
+`main` local y remoto en `9b0e65f`, nada suelto en el árbol, y la imagen en
+producción (`sprint31-productos-v2`) construida del commit de las 14:45 —lo
+único que `main` tiene encima es el commit de BITACORA—. O sea: **cero deriva
+entre `main` y producción**, construir desde ahí no arrastraba backend sin
+desplegar.
+
+El único archivo compartido con esa sesión es `routers/mensajes.py`, y solo por
+una palabra de un docstring. Su pendiente que lo toca (el 502 del envío manual)
+está sin arrancar.
+
+La imagen se construyó desde un **worktree limpio** (`git worktree add --detach`,
+`git status --porcelain` = 0), no desde el árbol de trabajo: es el error que
+costó 5 minutos de producción el día anterior.
+
+### Orden del despliegue, a propósito
+
+**ECS antes del merge.** Amplify buildea solo al mergear y el rollout de ECS es
+manual: mergear primero deja una ventana con el frontend dejando pasar 16 MB
+contra un backend que todavía firma a 12, y la asesora se come el rebote de S3.
+Al revés no duele —backend en 16 con frontend en 12 solo significa que el tope
+aún no subió—.
+
+Sin migración: no toca la base.
+
+### Cómo se verificó
+
+`wait services-stable` **no** es la prueba: ayer reportó estable con el backend
+reventando. Se comprobó en tres niveles:
+
+```
+openapi.json                        → HTTP 200
+POST /login, correo inexistente     → HTTP 401  (FastAPI + SQLAlchemy + RDS vivos)
+run-task sobre la rev 90:
+  {'image': 5, 'audio': 16, 'video': 16, 'document': 16} MB   exit 0
+```
+
+El tercero es el que importa: el número sale de la **imagen que está corriendo**,
+no del archivo que edité. Es la contracara del gotcha de migrar sin desplegar —
+ahí el ORM no veía las columnas nuevas; acá el riesgo era creer que un número
+cambió en producción porque cambió en el editor.
+
+**Desplegado**: task-def **90**, imagen `:video-16mb`, 1/1 corriendo. Frontend
+por Amplify al mergear el PR #8.
+
+Pendiente de nadie: la asesora solo tiene que recargar la página. No hay que
+cerrar sesión ni limpiar caché — el tope no viaja en el token ni en nada que el
+navegador guarde.
