@@ -9,8 +9,9 @@
  * ahorra la barra de progreso completa para terminar en un 400. Si la lista del
  * backend cambia, esta se actualiza detrás.
  *
- * Los límites salen de lo que acepta WhatsApp (Meta): 5 MB imagen, 16 MB el
- * resto. El video va en 12 MB, que es lo que se le promete al asesor.
+ * Los límites salen de lo que acepta WhatsApp: 5 MB imagen, 16 MB el resto, y
+ * Meta y Twilio coinciden. El video estuvo en 12 MB por decisión de producto
+ * hasta que rebotó uno que WhatsApp sí aceptaba; hoy no queda margen propio.
  *
  * Estos números son los únicos que quedan: el archivo ya no sube por nuestra
  * API sino directo a S3 (`subirAdjunto`), justamente porque el camino viejo
@@ -59,7 +60,7 @@ const REGLAS: Regla[] = [
     // a la asesora sin poder mandar el video que tiene a mano.
     mimes: ['video/mp4', 'video/3gpp', 'video/quicktime'],
     extensiones: ['mp4', '3gp', '3gpp', 'mov', 'qt'],
-    maxBytes: 12 * MB,
+    maxBytes: 16 * MB,
   },
   {
     clase: 'document',

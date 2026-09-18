@@ -235,10 +235,10 @@ class TestVideoGrande:
         assert len(guardado) == 1
         assert len(s3.objetos[guardado[0]]) == len(video)
 
-    def test_a_los_12_mb_todavia_pasa(
+    def test_a_los_16_mb_todavia_pasa(
         self, db_session, equipo, conversacion, s3, enviados
     ):
-        video = _mp4(12 * 1024 * 1024)
+        video = _mp4(16 * 1024 * 1024)
         plan = _preparar(
             db_session, equipo, conversacion.id,
             filename="tour.mp4", content_type="video/mp4", size=len(video),
@@ -250,7 +250,7 @@ class TestVideoGrande:
         )
         assert msg.status == "sent"
 
-    def test_pasados_los_12_mb_se_rechaza_antes_de_subir(
+    def test_pasados_los_16_mb_se_rechaza_antes_de_subir(
         self, db_session, equipo, conversacion, s3
     ):
         """Rebotar acá le ahorra al asesor la barra de progreso completa."""
@@ -258,10 +258,10 @@ class TestVideoGrande:
             _preparar(
                 db_session, equipo, conversacion.id,
                 filename="tour.mp4", content_type="video/mp4",
-                size=13 * 1024 * 1024,
+                size=17 * 1024 * 1024,
             )
         assert exc.value.status_code == 400
-        assert "12 MB" in exc.value.detail
+        assert "16 MB" in exc.value.detail
         # Y no se firmó nada: no hay a dónde subir.
         assert s3.firmas == []
 
@@ -292,7 +292,7 @@ class TestLoQueSeFirma:
             db_session, equipo, conversacion.id,
             filename="tour.mp4", content_type="video/mp4", size=1000,
         )
-        assert ["content-length-range", 1, 12 * 1024 * 1024] in s3.firmas[0]["condiciones"]
+        assert ["content-length-range", 1, 16 * 1024 * 1024] in s3.firmas[0]["condiciones"]
 
     def test_no_se_firma_ningun_campo_libre(
         self, db_session, equipo, conversacion, s3
@@ -376,21 +376,27 @@ class TestLaPuertaDeAtras:
     def test_mentir_en_el_tipo_declarado_no_ayuda(
         self, db_session, equipo, conversacion, s3, enviados
     ):
-        """Firmarse el tope de audio (16 MB) para colar un video de 13 no sirve:
-        `preparar` mira los bytes, ve un video y le aplica el tope del video."""
+        """Firmarse el tope del video (16 MB) para colar una imagen de 6 no
+        sirve: `preparar` mira los bytes, ve un JPEG y le aplica el tope de la
+        imagen, que es el único más bajo que tenemos (5 MB, de Meta y Twilio).
+
+        El JPEG va rellenado con ceros al final en vez de ser una foto enorme de
+        verdad: el tamaño se revisa antes de decodificar nada, así que basta con
+        que la cabecera sea un JPEG real para recorrer el mismo camino."""
         plan = _preparar(
             db_session, equipo, conversacion.id,
-            filename="nota.mp3", content_type="audio/mpeg", size=13 * 1024 * 1024,
+            filename="tour.mp4", content_type="video/mp4", size=16 * 1024 * 1024,
         )
-        s3.objetos[s3.firmas[0]["key"]] = _mp4(13 * 1024 * 1024)
+        gorda = _jpeg() + b"\x00" * (6 * 1024 * 1024)
+        s3.objetos[s3.firmas[0]["key"]] = gorda
 
         with pytest.raises(HTTPException) as exc:
             _confirmar(
                 db_session, equipo, conversacion.id, plan.referencia,
-                filename="tour.mp4", content_type="video/mp4",
+                filename="hotel.jpg", content_type="image/jpeg",
             )
         assert exc.value.status_code == 400
-        assert "12 MB" in exc.value.detail
+        assert "5 MB" in exc.value.detail
         assert enviados == []
 
     def test_confirmar_sin_haber_subido_nada_no_revienta(
@@ -591,8 +597,8 @@ class TestParidadConElCaminoViejo:
         """El número sale de `LIMITES` en los dos casos: si alguien sube el
         tope y solo toca un texto, esto lo caza."""
         previo, problema = adjuntos.preparar(
-            _mp4(13 * 1024 * 1024), "video/mp4", "tour.mp4"
+            _mp4(17 * 1024 * 1024), "video/mp4", "tour.mp4"
         )
         assert previo is None
         assert problema == adjuntos.texto_excede(adjuntos.VIDEO)
-        assert "12 MB" in problema
+        assert "16 MB" in problema
