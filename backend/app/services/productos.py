@@ -188,6 +188,11 @@ def normalizar_presupuesto(texto: str) -> Optional[int]:
     return valor if 1_000 <= valor <= 100_000_000 else None
 
 
+def nombre_mes(mes: int) -> str:
+    """'Marzo'. Público: el puente con el bot arma su calendario con esto."""
+    return _NOMBRE_MES.get(int(mes), "")
+
+
 def _meses_por_cercania(hoy: date) -> List[int]:
     """Los 12 meses desde el actual hacia adelante, dando la vuelta.
 
@@ -445,6 +450,11 @@ class Catalogo:
     resumen: Optional[str]
     instrucciones: Optional[str]
     atributos: Dict[str, Any]
+    #: Ventana en que el producto se puede ofrecer. `None` a cada lado = sin
+    #: límite. Es distinto de la vigencia de una fila: acá vence el producto
+    #: entero (una campaña de temporada), allá vence una fecha suelta.
+    vigencia_desde: Optional[date]
+    vigencia_hasta: Optional[date]
     variantes: Tuple[Variante, ...]
     filas: Tuple[Fila, ...]
     medios: Tuple[Medio, ...]
@@ -624,6 +634,8 @@ def _leer_catalogo(db: Session, team_id: int, producto_id: int) -> Optional[Cata
         resumen=producto.resumen,
         instrucciones=producto.instrucciones,
         atributos=dict(producto.atributos or {}),
+        vigencia_desde=producto.vigencia_desde,
+        vigencia_hasta=producto.vigencia_hasta,
         variantes=variantes,
         filas=filas,
         medios=medios,
@@ -781,6 +793,21 @@ def resolver_variante(catalogo: Catalogo, texto: str) -> Optional[Variante]:
 # ---------------------------------------------------------------------------
 # Filas: de quién son, cuáles siguen vigentes, cómo se ordenan
 # ---------------------------------------------------------------------------
+
+def vigente(catalogo: Catalogo, hoy: Optional[date] = None) -> bool:
+    """¿El producto entero está dentro de su ventana de vigencia?
+
+    Un producto publicado pero fuera de ventana (una campaña de temporada que
+    ya cerró) no se le nombra al modelo: mencionarlo es invitarlo a ofrecerlo.
+    Sin ventana declarada, siempre vigente.
+    """
+    hoy = hoy or hoy_colombia()
+    if catalogo.vigencia_desde is not None and hoy < catalogo.vigencia_desde:
+        return False
+    if catalogo.vigencia_hasta is not None and hoy > catalogo.vigencia_hasta:
+        return False
+    return True
+
 
 def origen_de_precios(catalogo: Catalogo, variante: Variante) -> Variante:
     """La variante de la que salen los precios de ésta.
@@ -1018,6 +1045,37 @@ def _periodos_con_filas(
         m for m in _meses_por_cercania(hoy)
         if filas_vigentes(catalogo, variante=variante, mes=m, hoy=hoy)
     ]
+
+
+def meses_por_cercania(hoy: Optional[date] = None) -> List[int]:
+    """Los 12 períodos desde el actual hacia adelante. Público, ver arriba."""
+    return _meses_por_cercania(hoy or hoy_colombia())
+
+
+def periodos_con_filas(
+    catalogo: Catalogo,
+    *,
+    variante: Optional[Variante] = None,
+    hoy: Optional[date] = None,
+) -> List[int]:
+    """Los períodos que todavía tienen algo que ofrecer, del más próximo al
+    más lejano. Sin `variante`, los del producto entero."""
+    hoy = hoy or hoy_colombia()
+    return [
+        m for m in _meses_por_cercania(hoy)
+        if filas_vigentes(catalogo, variante=variante, mes=m, hoy=hoy)
+    ]
+
+
+def texto_de(catalogo: Optional[Catalogo], clave: str, **datos: Any) -> str:
+    """Renderiza una plantilla del producto (o la del módulo si no la pisa).
+
+    Es el acceso público a la redacción: quien le habla al modelo desde fuera
+    de este archivo no escribe el texto a mano, lo pide por su clave. Así el
+    cliente que quiera decirlo con su voz lo sigue haciendo desde sus datos.
+    """
+    plantillas = catalogo.plantillas if catalogo is not None else {}
+    return _fmt(plantillas, clave, datos)
 
 
 def _bloque_variante(

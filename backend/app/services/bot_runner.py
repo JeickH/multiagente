@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from sqlalchemy.orm import Session
@@ -127,12 +127,42 @@ def _cancelar_pendientes(db: Session, session: models.BotSession) -> int:
     return len(pendientes)
 
 
+#: Colombia, sin horario de verano. Las franjas de `bot_recordatorios` están
+#: en hora de allá, que es donde vive quien recibe el mensaje; el servidor
+#: corre en UTC.
+_TZ_CO = timezone(timedelta(hours=-5))
+
+
+def _dentro_de_la_franja(cuando: datetime, hora_min: int, hora_max: int) -> datetime:
+    """Corre la cita a la próxima hora permitida, en hora de Colombia.
+
+    `cuando` es UTC sin marcar (lo que guarda la tabla). Un silencio que
+    empieza a las 11 de la noche tiene su reenganche de las 5 horas a las 4 de
+    la mañana: con la franja puesta, ese mensaje sale a las 8 y no despierta a
+    nadie. Lo que se mueve es **cuándo se manda**, no el orden ni los textos.
+
+    La franja por defecto (0-23) no mueve nada: es lo que usan los
+    recordatorios que vienen del JSON, que no pueden cambiar de comportamiento.
+    """
+    local = cuando + _TZ_CO.utcoffset(None)
+    if local.hour < hora_min:
+        local = local.replace(hour=hora_min, minute=0, second=0, microsecond=0)
+    elif local.hour > hora_max:
+        local = (local + timedelta(days=1)).replace(
+            hour=hora_min, minute=0, second=0, microsecond=0
+        )
+    else:
+        return cuando
+    return local - _TZ_CO.utcoffset(None)
+
+
 def _programar(
     db: Session,
     session: models.BotSession,
     action_type: str,
     minutos: int,
     etapa: int = 0,
+    franja: Optional[tuple] = None,
 ) -> models.BotPendingAction:
     """Agenda una acción de silencio, reemplazando la que hubiera.
 
@@ -143,11 +173,17 @@ def _programar(
     procesadas no sirve — `_cancelar_pendientes` marca `done` también las que
     cancela, así que un cliente que contesta y vuelve a callarse arrancaría en
     la etapa 2 y se saltaría el primer recordatorio.
+
+    `franja` es la `(hora_min, hora_max)` **de la etapa que se está agendando**
+    (no de la que acaba de salir), en hora de Colombia.
     """
     _cancelar_pendientes(db, session)
+    cuando = datetime.utcnow() + timedelta(minutes=max(1, minutos))
+    if franja:
+        cuando = _dentro_de_la_franja(cuando, int(franja[0]), int(franja[1]))
     pa = models.BotPendingAction(
         session_id=session.id,
-        scheduled_at=datetime.utcnow() + timedelta(minutes=max(1, minutos)),
+        scheduled_at=cuando,
         action_type=action_type,
         payload=json.dumps({"etapa": max(0, int(etapa))}),
         status=models.BOT_PENDING_STATUS_PENDING,
@@ -413,7 +449,11 @@ def run_turn(
     # 'flow' = pasos clásicos. Mismo contrato de actions/next_state/finished.
     is_llm = getattr(bot, "engine", "flow") == "llm"
     cfg = llm_engine.config_de(bot) if is_llm else {}
-    seguimiento = llm_engine.seguimiento_de(cfg) if is_llm else None
+    # Con el **bot**, no con la cfg: los recordatorios pueden venir de
+    # `bot_recordatorios`, que se consulta por `(team_id, bot_id)`, y un dict
+    # de config no tiene identidad. Pasar el bot es lo que evita tener que
+    # meterle el `bot_id` adentro a la cfg, que se copia de un turno a otro.
+    seguimiento = llm_engine.seguimiento_de(bot) if is_llm else None
 
     # #377: `bot_router` puede devolver una sesión ya cerrada para **retomarla**
     # (dentro de la ventana `retomar.horas`). Se revive conservando su `state`,
@@ -586,12 +626,14 @@ def run_turn(
     if seguimiento is not None:
         _cancelar_pendientes(db, session)
         if not finished:
+            primera = llm_engine.recordatorios_de(seguimiento, db=db, bot=bot)[0]
             _programar(
                 db,
                 session,
                 models.BOT_PENDING_ACTION_SEGUIMIENTO,
-                llm_engine.recordatorios_de(seguimiento)[0]["minutos"],
+                primera["minutos"],
                 etapa=0,
+                franja=(primera["hora_min"], primera["hora_max"]),
             )
     return session
 
@@ -839,6 +881,54 @@ def _cerrar_accion(
     logger.info("bot_runner: acción %s sin efecto (%s)", pa.action_type, motivo)
 
 
+def _condicion_cumplida(
+    db: Session, conversation: models.Conversation, omitir_si
+) -> Optional[str]:
+    """¿Esta conversación ya cumplió lo que haría innecesario el recordatorio?
+
+    Hoy la única condición es `{"tools": ["registrar_venta"]}` = no insistirle
+    a quien ya compró. Se responde con `bot_llm_decisions`, que es donde queda
+    la bitácora de qué herramientas llamó el bot en cada turno — la fuente que
+    ya existe, en vez de una columna nueva en la conversación.
+
+    Devuelve el motivo (para el log) o `None`. Ante cualquier error devuelve
+    `None`: el costo de equivocarse acá es mandar un recordatorio de más, y el
+    contrario sería tragarse la cadena entera por una consulta que falló.
+    """
+    if not isinstance(omitir_si, dict) or not omitir_si:
+        return None
+    herramientas = [
+        str(t).strip() for t in (omitir_si.get("tools") or []) if str(t).strip()
+    ]
+    if not herramientas:
+        return None
+    try:
+        registros = (
+            db.query(models.BotLlmDecision.tools_called)
+            .filter(
+                models.BotLlmDecision.conversation_id == conversation.id,
+                models.BotLlmDecision.tools_called.isnot(None),
+            )
+            .all()
+        )
+    except Exception:  # pragma: no cover - defensivo
+        logger.exception(
+            "bot_runner: no se pudo revisar `omitir_si` conv=%s", conversation.id
+        )
+        return None
+
+    for (crudo,) in registros:
+        try:
+            llamadas = json.loads(crudo or "[]")
+        except (ValueError, TypeError):
+            continue
+        for llamada in llamadas if isinstance(llamadas, list) else []:
+            nombre = (llamada or {}).get("tool") if isinstance(llamada, dict) else None
+            if nombre in herramientas:
+                return f"omitir_si tools={nombre}"
+    return None
+
+
 def _procesar_silencio(db: Session, pa: models.BotPendingAction) -> None:
     """Atiende un `seguimiento` o un `abandono` vencido. NUNCA llama al modelo.
 
@@ -872,16 +962,31 @@ def _procesar_silencio(db: Session, pa: models.BotPendingAction) -> None:
     if crud.hay_entrante_despues(db, conversation.id, pa.created_at):
         return _cerrar_accion(db, pa, "la persona ya escribió")
 
+    # Después de los cortes: las acciones que se cierran sin efecto no tienen
+    # por qué pagar la consulta de la cadena. La necesitan las dos ramas de
+    # abajo — el reenganche para saber qué toca, el abandono para contárselo al
+    # asesor que recibe el chat frío.
+    etapas = llm_engine.recordatorios_de(seguimiento, db=db, bot=bot)
+
     if pa.action_type == models.BOT_PENDING_ACTION_SEGUIMIENTO:
         # Cadena de reenganches (Sprint 27). Con un solo recordatorio
         # configurado esto se comporta igual que antes; con tres, cada uno
         # agenda el siguiente y sólo el último le abre paso al abandono.
-        etapas = llm_engine.recordatorios_de(seguimiento)
         etapa = min(_etapa_de(pa), len(etapas) - 1)
         texto = etapas[etapa]["texto"]
-        account = crud.get_meta_account_for_team(db, conversation.team_id)
-        _send_text(db, conversation, bot, account, texto)
-        _apuntar_en_el_historial(db, session, texto)
+        omitido = _condicion_cumplida(db, conversation, etapas[etapa].get("omitir_si"))
+        if omitido:
+            # A quien ya cumplió lo que se le estaba pidiendo (comprar, dejar
+            # sus datos) no se le insiste. Se salta el mensaje, no la cadena:
+            # `omitir_si` se declara por recordatorio y cada uno se juzga solo.
+            logger.info(
+                "bot_runner: recordatorio %s omitido por %s conv=%s bot=%s",
+                etapa + 1, omitido, conversation.id, bot.id,
+            )
+        else:
+            account = crud.get_meta_account_for_team(db, conversation.team_id)
+            _send_text(db, conversation, bot, account, texto)
+            _apuntar_en_el_historial(db, session, texto)
 
         siguiente = etapa + 1
         if siguiente < len(etapas):
@@ -893,6 +998,9 @@ def _procesar_silencio(db: Session, pa: models.BotPendingAction) -> None:
                 models.BOT_PENDING_ACTION_SEGUIMIENTO,
                 etapas[siguiente]["minutos"] - etapas[etapa]["minutos"],
                 etapa=siguiente,
+                franja=(
+                    etapas[siguiente]["hora_min"], etapas[siguiente]["hora_max"]
+                ),
             )
         else:
             _programar(
@@ -919,7 +1027,7 @@ def _procesar_silencio(db: Session, pa: models.BotPendingAction) -> None:
         conversation,
         etiqueta=llm_engine.etiqueta_de_abandono(seguimiento),
         minutos=llm_engine.minutos_de_seguimiento(seguimiento),
-        etapas=llm_engine.recordatorios_de(seguimiento),
+        etapas=etapas,
     )
     session.status = models.BOT_SESSION_FINISHED
     session.finished_at = datetime.utcnow()

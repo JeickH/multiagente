@@ -57,7 +57,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from . import shopify_client, tarifario
+from . import productos, productos_bot, shopify_client, tarifario
 from .crypto import encrypt_secret
 from .messaging.base import MARCADOR_NOTA_DE_VOZ
 
@@ -187,11 +187,115 @@ def texto_de_seguimiento(seg: Optional[Dict[str, Any]]) -> str:
     return str((seg or {}).get("texto") or TEXTO_SEGUIMIENTO_DEFAULT)
 
 
-def recordatorios_de(seg: Optional[Dict[str, Any]]) -> List[Dict[str, Any]]:
+#: Franja en que se permite escribir cuando nadie configuró una. De 0 a 23 = a
+#: cualquier hora, que es lo que hace el motor desde #377: los recordatorios
+#: del JSON no pueden cambiar de comportamiento el día que se despliegue esto.
+FRANJA_LIBRE = (0, 23)
+
+
+def _etapa(
+    minutos: int,
+    texto: str,
+    *,
+    hora_min: int = FRANJA_LIBRE[0],
+    hora_max: int = FRANJA_LIBRE[1],
+    omitir_si: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Un reenganche ya normalizado, venga de la tabla o del JSON.
+
+    Los cinco campos existen siempre: quien agenda no tiene que preguntarse de
+    dónde salió la etapa.
+    """
+    return {
+        "minutos": minutos,
+        "texto": texto,
+        "hora_min": int(hora_min),
+        "hora_max": int(hora_max),
+        "omitir_si": omitir_si if isinstance(omitir_si, dict) else {},
+    }
+
+
+def _recordatorios_de_la_tabla(db, bot) -> List[Dict[str, Any]]:
+    """Los reenganches configurados en `bot_recordatorios` para ESE bot.
+
+    Lista vacía cuando no hay tabla, ni bot, ni cuenta, ni filas — y entonces
+    manda el JSON de `llm_config`, que es el comportamiento desplegado. Que el
+    respaldo sea la lista vacía y no una excepción es a propósito: el día que
+    esta consulta falle, el bot sigue reenganchando como ayer.
+
+    Las filas del bot le ganan a las de la cuenta (`bot_id = 0`): configurar
+    "todos mis bots" y después afinar uno tiene que ser posible sin borrar lo
+    otro. Y **todo** sale filtrado por `team_id`: el peor error posible de este
+    esquema es que a una cuenta le salgan los textos de otra.
+    """
+    if db is None or bot is None:
+        return []
+    team_id = getattr(bot, "team_id", None)
+    bot_id = getattr(bot, "id", None)
+    if team_id is None:
+        logger.warning(
+            "llm_engine: bot sin team_id (bot=%s); los recordatorios salen de "
+            "la config, no de la tabla", bot_id,
+        )
+        return []
+    try:
+        from .. import models
+
+        filas = (
+            db.query(models.BotRecordatorio)
+            .filter(
+                models.BotRecordatorio.team_id == team_id,
+                models.BotRecordatorio.bot_id.in_(
+                    [i for i in (bot_id, models.REF_TODAS) if i is not None]
+                ),
+                models.BotRecordatorio.activo.is_(True),
+            )
+            .all()
+        )
+    except Exception:
+        logger.exception(
+            "llm_engine: no se pudieron leer los recordatorios (bot=%s); se "
+            "usa la config", bot_id,
+        )
+        return []
+
+    propias = [f for f in filas if f.bot_id == bot_id]
+    elegidas = propias or [f for f in filas if f.bot_id == models.REF_TODAS]
+    return [
+        _etapa(
+            max(1, int(f.minutos or SEGUIMIENTO_MINUTOS_DEFAULT)),
+            str(f.texto or TEXTO_SEGUIMIENTO_DEFAULT),
+            hora_min=f.hora_min if f.hora_min is not None else FRANJA_LIBRE[0],
+            hora_max=f.hora_max if f.hora_max is not None else FRANJA_LIBRE[1],
+            omitir_si=f.omitir_si,
+        )
+        for f in sorted(elegidas, key=lambda f: (f.orden or 0, f.id))
+    ]
+
+
+def recordatorios_de(
+    seg: Optional[Dict[str, Any]],
+    *,
+    db: Optional[Any] = None,
+    bot: Optional[Any] = None,
+) -> List[Dict[str, Any]]:
     """Los reenganches de silencio, en orden y ya normalizados.
 
-    Cada elemento es `{"minutos": int, "texto": str}` y **`minutos` se cuenta
-    desde que empezó el silencio**, no desde el recordatorio anterior. Es la
+    **Manda la tabla `bot_recordatorios`; el JSON es el respaldo.** Mientras la
+    tabla esté vacía para ese bot se lee `llm_config.seguimiento` exactamente
+    como hasta hoy: el bot que ya está en producción no puede cambiar de
+    comportamiento el día del despliegue, cambia el día que se carguen sus
+    filas. Por eso hacen falta `db` y `bot` — y llegan por parámetro y no
+    metiendo el `bot_id` en la cfg, que es un dict sin identidad y se copia
+    entre turnos.
+
+    La tabla **no enciende** la política: eso lo sigue decidiendo
+    `llm_config.seguimiento` (ver `seguimiento_de`). Acá sólo se decide con
+    qué tiempos y con qué textos.
+
+    Cada elemento es `{"minutos", "texto", "hora_min", "hora_max",
+    "omitir_si"}` y **`minutos` se cuenta desde que empezó el silencio**, no
+    desde el recordatorio anterior. Es la
     forma en que se piensa la política ("a los 15 minutos, a las 5 horas y a
     las 23") y evita el error de leer una lista `[15, 285, 1080]` como si
     fueran offsets absolutos. Quien agenda calcula la diferencia.
@@ -206,14 +310,13 @@ def recordatorios_de(seg: Optional[Dict[str, Any]]) -> List[Dict[str, Any]]:
     por Meta, así que un recordatorio a las 25 horas no llegaría — saldría
     `failed` y nadie se enteraría.
     """
+    de_la_tabla = _recordatorios_de_la_tabla(db, bot)
+    if de_la_tabla:
+        return _ordenadas(de_la_tabla)
+
     crudos = (seg or {}).get("recordatorios")
     if not isinstance(crudos, list) or not crudos:
-        return [
-            {
-                "minutos": minutos_de_seguimiento(seg),
-                "texto": texto_de_seguimiento(seg),
-            }
-        ]
+        return [_etapa(minutos_de_seguimiento(seg), texto_de_seguimiento(seg))]
 
     etapas: List[Dict[str, Any]] = []
     for item in crudos:
@@ -224,17 +327,22 @@ def recordatorios_de(seg: Optional[Dict[str, Any]]) -> List[Dict[str, Any]]:
         except (TypeError, ValueError):
             minutos = SEGUIMIENTO_MINUTOS_DEFAULT
         etapas.append(
-            {
-                "minutos": minutos,
-                "texto": str(item.get("texto") or TEXTO_SEGUIMIENTO_DEFAULT),
-            }
+            _etapa(minutos, str(item.get("texto") or TEXTO_SEGUIMIENTO_DEFAULT))
         )
     if not etapas:
         return recordatorios_de(None)
+    return _ordenadas(etapas)
 
-    # Orden y sin repetidos: dos etapas al mismo minuto son dos mensajes
-    # seguidos al mismo segundo, que se lee como un bot roto. Con la lista
-    # ordenada, además, la resta que hace `bot_runner` nunca es negativa.
+
+def _ordenadas(etapas: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Por minuto de silencio y sin repetidos.
+
+    Dos etapas al mismo minuto son dos mensajes seguidos al mismo segundo, que
+    se lee como un bot roto. Con la lista ordenada, además, la resta que hace
+    `bot_runner` para agendar la siguiente nunca es negativa — y ese orden es
+    por **minutos**, no por la columna `orden` de la tabla: quien las configura
+    puede numerarlas al revés, y el reloj no se negocia.
+    """
     etapas.sort(key=lambda e: e["minutos"])
     unicas: List[Dict[str, Any]] = []
     for etapa in etapas:
@@ -382,13 +490,28 @@ def _lista_de_claves(valor: Any) -> List[str]:
     return [str(v).strip() for v in valor if str(v).strip()]
 
 
-def _media_catalog(cfg: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+def _media_catalog(
+    cfg: Dict[str, Any], ctx_productos: Optional[Any] = None
+) -> Dict[str, Dict[str, Any]]:
+    """Las claves que `enviar_media` puede mandar.
+
+    Con catálogo en la base, sus medios se suman a los de `llm_config`: una
+    consulta de precios puede terminar diciéndole al modelo "manda `flyer_x`",
+    y si esa clave no existiera el envío fallaría en silencio. Las declaradas a
+    mano mandan sobre las de la base — nadie pierde un medio configurado por
+    culpa de una fila nueva.
+    """
     media = cfg.get("media")
-    if not isinstance(media, dict):
-        return {}
-    return {
-        str(k): v for k, v in media.items() if isinstance(v, dict) and v.get("url")
-    }
+    declarados = (
+        {str(k): v for k, v in media.items() if isinstance(v, dict) and v.get("url")}
+        if isinstance(media, dict)
+        else {}
+    )
+    if ctx_productos is None:
+        return declarados
+    del_catalogo = productos_bot.medios_declarados(ctx_productos)
+    del_catalogo.update(declarados)
+    return del_catalogo
 
 
 # ---------------------------------------------------------------------------
@@ -625,18 +748,35 @@ def _bloque_mascotas(
     return "\n".join(lineas)
 
 
+def _instrucciones_de(bot, cfg: Dict[str, Any]) -> str:
+    """Nivel 2: lo que el negocio dice de sí mismo.
+
+    Sale de `bots.instrucciones` si la columna tiene algo, y si no del `.md`
+    empaquetado en la imagen (`bot_contexts/<context_key>.md`), como hasta hoy.
+    **La columna vacía es la bandera**: no hay interruptor que mantener
+    sincronizado, y el día que alguien pegue ahí el texto de su bot, ese texto
+    manda desde el turno siguiente — sin desplegar, que es el punto entero de
+    haber movido esto a la base.
+    """
+    texto = str(getattr(bot, "instrucciones", None) or "").strip()
+    if texto:
+        return texto
+    return _load_context(cfg.get("context_key", ""))
+
+
 def _system_prompt(
     bot,
     cfg: Dict[str, Any],
     history: Optional[List[Dict[str, str]]] = None,
     user_text: Optional[str] = None,
+    ctx_productos: Optional[Any] = None,
 ) -> str:
-    parts = [_load_context(cfg.get("context_key", ""))]
+    parts = [_instrucciones_de(bot, cfg)]
     if cfg.get("agenda") is not None:
         parts.append(_bloque_agenda(cfg))
     if cfg.get("mascotas") is not None:
         parts.append(_bloque_mascotas(cfg, history, user_text))
-    media = _media_catalog(cfg)
+    media = _media_catalog(cfg, ctx_productos)
     if media:
         lines = [
             f"- `{key}` ({item.get('media_type', 'image')}): "
@@ -692,7 +832,27 @@ def _system_prompt(
         # Va de últimas a propósito: es lo último que el modelo lee antes del
         # historial, y es la instrucción que en producción se le olvidaba.
         parts.append(continuidad)
-    return "\n\n".join(p for p in parts if p)
+
+    partes = [p for p in parts if p]
+    if ctx_productos is not None:
+        # El índice del catálogo va pegado a las instrucciones del negocio (es
+        # lo mismo: qué vende esta cuenta) y antes de todo lo operativo.
+        #
+        # Si el bot vende uno solo, sus instrucciones pueden entrar aquí en vez
+        # de viajar como resultado de herramienta — pero sólo si con ellas el
+        # prefijo queda por encima del mínimo cacheable. La decisión se mide,
+        # no se supone: ver `productos_bot.ficha_en_el_prefijo`.
+        sin_ficha = "\n\n".join(partes)
+        partes.insert(
+            1,
+            productos_bot.bloque_indice(
+                ctx_productos,
+                con_ficha=productos_bot.ficha_en_el_prefijo(
+                    ctx_productos, sin_ficha
+                ),
+            ),
+        )
+    return "\n\n".join(partes)
 
 
 #: Las formas en que el modelo escribe la pregunta del nombre. Es más ancha que
@@ -1107,7 +1267,9 @@ def _bloque_continuidad(cfg: Dict[str, Any]) -> str:
 # Tools
 # ---------------------------------------------------------------------------
 
-def _tools_for(cfg: Dict[str, Any]) -> List[Dict[str, Any]]:
+def _tools_for(
+    cfg: Dict[str, Any], ctx_productos: Optional[Any] = None
+) -> List[Dict[str, Any]]:
     tools: List[Dict[str, Any]] = [
         {
             "name": "escalar_a_asesor",
@@ -1192,7 +1354,7 @@ def _tools_for(cfg: Dict[str, Any]) -> List[Dict[str, Any]]:
                 "input_schema": {"type": "object", "properties": {}},
             }
         )
-    if _media_catalog(cfg):
+    if _media_catalog(cfg, ctx_productos):
         tools.append(
             {
                 "name": "enviar_media",
@@ -1362,7 +1524,14 @@ def _tools_for(cfg: Dict[str, Any]) -> List[Dict[str, Any]]:
                 },
             }
         )
-    if cfg.get("tarifario"):
+    if ctx_productos is not None:
+        # Las tres herramientas derivadas del producto **reemplazan** a
+        # `consultar_tarifario`: declarar las dos sería darle al modelo dos
+        # fuentes de precios para el mismo turno, y elegiría por su cuenta.
+        # Sin productos asignados, `ctx_productos` es None y el bot mantiene
+        # exactamente las herramientas de hoy.
+        tools.extend(productos_bot.tools(ctx_productos))
+    elif cfg.get("tarifario"):
         tools.append(
             {
                 "name": "consultar_tarifario",
@@ -1898,6 +2067,17 @@ def _mascotas_db():
     El motor no recibe la sesión del request (contrato `advance(bot, state,
     input)` compartido con el motor de flujos), así que abre la suya y la
     cierra en el mismo turno.
+    """
+    from ..database import SessionLocal
+
+    return SessionLocal()
+
+
+def _productos_db():
+    """Sesión propia para el catálogo, por el mismo motivo que la de arriba.
+
+    Se abre una sola vez por turno (el índice del prompt y las herramientas
+    leen lo mismo) y se cierra al terminarlo, pase lo que pase.
     """
     from ..database import SessionLocal
 
@@ -2693,7 +2873,12 @@ def _viola_disponibilidad(
     """
     if not cfg.get("tarifario") or not textos_de_la_ronda:
         return False
-    if any(t.get("tool") == "consultar_tarifario" for t in tools_called):
+    # `consultar_precios` es el reemplazo de `consultar_tarifario` (Sprint 31):
+    # haber consultado la fuente nueva cuenta igual que haber consultado la
+    # vieja. Sin esto, el bot que se cambia de fuente hace lo correcto —mirar
+    # antes de afirmar— y el guardarraíl le tumba el turno igual.
+    consultas = ("consultar_tarifario", productos_bot.PRECIOS)
+    if any(t.get("tool") in consultas for t in tools_called):
         return False
 
     for texto in textos_de_la_ronda:
@@ -2749,6 +2934,28 @@ def _texto_de_confirmacion(cfg: Dict[str, Any], pedido: Dict[str, Any]) -> str:
         return _CONFIRMACION_PEDIDO.format(**campos)
 
 
+def _fallback_de_producto(
+    cfg: Dict[str, Any], name: str, tool_input: Dict[str, Any]
+) -> str:
+    """Qué se le responde al modelo cuando la capa nueva reventó a mitad de turno.
+
+    El turno **se completa igual**: el cliente no ve un error. Si el bot tiene
+    todavía configurado el motor viejo, la consulta se le pasa a él —
+    `consultar_precios` es el reemplazo de `consultar_tarifario`, así que los
+    argumentos calzan uno a uno—. Si no lo tiene, no se improvisa nada: se le
+    ordena escalar, que es la regla de siempre cuando no hay datos.
+    """
+    if cfg.get("tarifario") and name in (productos_bot.PRECIOS, productos_bot.FECHAS):
+        return tarifario.consultar(
+            cfg,
+            hotel=str(tool_input.get("variante", "") or ""),
+            mes=str(tool_input.get("mes", "") or tool_input.get("desde_mes", "") or ""),
+            fecha=str(tool_input.get("fecha", "") or ""),
+            presupuesto=str(tool_input.get("presupuesto", "") or ""),
+        )
+    return str(productos.PLANTILLA["sin_datos"])
+
+
 def _run_tool(
     name: str,
     tool_input: Dict[str, Any],
@@ -2758,8 +2965,36 @@ def _run_tool(
     bookings: Optional[List[Dict[str, str]]] = None,
     notas: Optional[List[str]] = None,
     pedidos: Optional[List[Dict[str, str]]] = None,
+    *,
+    db: Optional[Any] = None,
+    ctx_productos: Optional[Any] = None,
+    fallbacks: Optional[List[str]] = None,
 ) -> tuple[str, bool]:
-    """Ejecuta una tool. Devuelve (tool_result_text, turno_terminado)."""
+    """Ejecuta una tool. Devuelve (tool_result_text, turno_terminado).
+
+    `fallbacks` recoge el motivo de cada vez que la capa nueva falló y respondió
+    la vieja; el turno lo marca en `bot_llm_decisions.fuente_datos`.
+    """
+    if name in productos_bot.TOOLS:
+        if ctx_productos is None or db is None:
+            # El modelo llamó una herramienta que ya no está declarada (puede
+            # pasar tras un fallback al armar el contexto: el historial trae la
+            # llamada anterior). No es un error del turno.
+            return _fallback_de_producto(cfg, name, tool_input), False
+        try:
+            return productos_bot.ejecutar(db, ctx_productos, name, tool_input), False
+        except Exception:
+            # Regla #6: el detalle completo sólo server-side. Y el fallback
+            # nunca es silencioso — queda el warning y la marca en la
+            # telemetría del turno.
+            logger.exception(
+                "llm_engine: la capa de productos falló en %s; responde la "
+                "fuente vieja", name,
+            )
+            if fallbacks is not None:
+                fallbacks.append(name)
+            return _fallback_de_producto(cfg, name, tool_input), False
+
     if name == "registrar_demo":
         booking, problema = _clean_booking(tool_input, cfg)
         if booking is None:
@@ -2886,7 +3121,7 @@ def _run_tool(
         return "listo: no se le envió nada y la conversación queda cerrada", True
 
     if name == "enviar_media":
-        media = _media_catalog(cfg)
+        media = _media_catalog(cfg, ctx_productos)
         claves = _lista_de_claves(tool_input.get("claves"))
         sent, unknown = [], []
         for key in claves:
@@ -3115,6 +3350,7 @@ def record_decision(
             session_id=session_id,
             conversation_id=conversation_id,
             source=source,
+            fuente_datos=telemetry.get("fuente_datos"),
             user_input=telemetry.get("user_input"),
             camino=telemetry.get("camino", "respuesta_libre"),
             tools_called=json.dumps(telemetry.get("tools") or [], ensure_ascii=False)
@@ -3379,7 +3615,7 @@ def advance(
     tel = result.get("telemetry") or {}
     logger.info(
         "llm_decision bot=%s camino=%s tools=%s rounds=%s latency_ms=%s "
-        "finished=%s escalado=%s failsafe=%s",
+        "finished=%s escalado=%s failsafe=%s fuente=%s",
         getattr(bot, "id", "?"),
         tel.get("camino"),
         ",".join(t.get("tool", "?") for t in tel.get("tools") or []) or "-",
@@ -3388,8 +3624,79 @@ def advance(
         tel.get("finished"),
         tel.get("escalated_to") or "-",
         tel.get("failsafe"),
+        tel.get("fuente_datos") or "-",
     )
     return result
+
+
+def _cerrar(db) -> None:
+    if db is None:
+        return
+    try:
+        db.close()
+    except Exception:            # pragma: no cover - defensivo
+        logger.exception("llm_engine: no se pudo cerrar la sesión del catálogo")
+
+
+def _abrir_productos(bot, cfg: Dict[str, Any]) -> tuple:
+    """Abre el catálogo del bot si su config lo manda a la base.
+
+    Devuelve `(db, ctx, fallbacks)`. Tres salidas, y las tres terminan con un
+    turno normal para el cliente:
+
+      · el bot no está apuntado a la capa nueva (lo normal hoy, porque el valor
+        por defecto de `fuente_datos` es la fuente vieja) → `(None, None, [])`;
+      · está apuntado pero no tiene productos asignados → igual, y el bot se
+        queda con el prompt y las herramientas de siempre;
+      · está apuntado y algo revienta al leer → se apaga la capa nueva para
+        **todo** el turno y queda la marca `fallback`. Apagarla entera y no
+        consulta por consulta es deliberado: con el índice ya metido en el
+        prompt y las herramientas declaradas, un fallo a mitad de camino le
+        dejaría al modelo un catálogo que no puede consultar.
+    """
+    fallbacks: List[str] = []
+    if productos_bot.fuente_de(cfg) != productos_bot.FUENTE_PRODUCTOS:
+        return None, None, fallbacks
+    db = None
+    try:
+        db = _productos_db()
+        ctx = productos_bot.abrir(
+            db,
+            team_id=getattr(bot, "team_id", None),
+            bot_id=getattr(bot, "id", None),
+        )
+    except Exception:
+        # Regla #6: el detalle sólo server-side. Y que se vea: un fallback que
+        # nadie mira es un motor nuevo que lleva tres semanas sin usarse.
+        logger.exception(
+            "llm_engine: no se pudo abrir el catálogo (bot=%s); el turno "
+            "responde con la fuente vieja", getattr(bot, "id", "?"),
+        )
+        fallbacks.append("catalogo")
+        _cerrar(db)
+        return None, None, fallbacks
+    if ctx is None:
+        _cerrar(db)
+        return None, None, fallbacks
+    return db, ctx, fallbacks
+
+
+def _fuente_datos(
+    cfg: Dict[str, Any], ctx_productos: Optional[Any], fallbacks: List[str]
+) -> Optional[str]:
+    """De dónde salieron los datos con los que el bot respondió ESTE turno.
+
+    `None` —y no una cadena— cuando el bot no consulta ninguna fuente (el de
+    mascotas, el institucional): la columna es nullable justamente para que
+    "no consultó nada" no se confunda con "consultó la vieja".
+    """
+    if fallbacks:
+        return productos_bot.FUENTE_FALLBACK
+    if ctx_productos is not None:
+        return productos_bot.FUENTE_PRODUCTOS
+    if cfg.get("tarifario"):
+        return productos_bot.FUENTE_TARIFARIO
+    return None
 
 
 def _advance_inner(
@@ -3400,10 +3707,34 @@ def _advance_inner(
     actions: List[Dict[str, Any]],
     t0: float,
 ) -> Dict[str, Any]:
+    """Un turno, con la sesión del catálogo abierta sólo si al bot le toca."""
+    db, ctx_productos, fallbacks = _abrir_productos(bot, cfg)
+    try:
+        return _turno(
+            bot, cfg, state, user_input, actions, t0,
+            db=db, ctx_productos=ctx_productos, fallbacks=fallbacks,
+        )
+    finally:
+        _cerrar(db)
+
+
+def _turno(
+    bot,
+    cfg: Dict[str, Any],
+    state: Optional[Dict[str, Any]],
+    user_input: Optional[str],
+    actions: List[Dict[str, Any]],
+    t0: float,
+    *,
+    db: Optional[Any] = None,
+    ctx_productos: Optional[Any] = None,
+    fallbacks: Optional[List[str]] = None,
+) -> Dict[str, Any]:
+    fallbacks = fallbacks if fallbacks is not None else []
     history = _load_history(state)
     user_text = (user_input or "").strip() or _FIRST_TURN_PROMPT
-    system = _system_prompt(bot, cfg, history, user_text)
-    tools = _tools_for(cfg)
+    system = _system_prompt(bot, cfg, history, user_text, ctx_productos)
+    tools = _tools_for(cfg, ctx_productos)
     model_id = cfg.get("model_id") or _env_model_id()
 
     # Mensajes de trabajo del turno (el historial persistido queda aplanado).
@@ -3434,8 +3765,8 @@ def _advance_inner(
         if m.get("role") == "user"
         for d in _digitos_de_telefonos(m.get("content") or "")
     ]
-    # Resultados completos de `consultar_tarifario` en el turno: las únicas
-    # duraciones que el bot puede escribir (ver `_viola_duracion`).
+    # Resultados completos de la consulta de precios del turno (la vieja o la
+    # nueva): las únicas duraciones que el bot puede escribir (`_viola_duracion`).
     duraciones_ok: List[str] = []
     # Consumo del turno, sumando todas las rondas (#366).
     uso = {"tokens_in": 0, "tokens_out": 0, "cache_read": 0, "cache_write": 0}
@@ -3470,6 +3801,7 @@ def _advance_inner(
                 result_text, ended = _run_tool(
                     name, tool_input, cfg, actions, sent_media_log, bookings,
                     notas_historial, pedidos_cerrados,
+                    db=db, ctx_productos=ctx_productos, fallbacks=fallbacks,
                 )
                 # #255: cada tool llamada es una decisión — queda registrada.
                 tools_called.append(
@@ -3488,7 +3820,7 @@ def _advance_inner(
                 # Mismo motivo para las duraciones del plan de viajes: viven al
                 # final de cada línea de salida, muy por fuera de los 300
                 # caracteres del registro de arriba.
-                if name == "consultar_tarifario":
+                if name in ("consultar_tarifario", productos_bot.PRECIOS):
                     duraciones_ok.append(result_text)
                 if name == "escalar_a_asesor":
                     # Vacío significa "lo decide el turno del team al entregar";
@@ -3521,8 +3853,14 @@ def _advance_inner(
             elif _viola_disponibilidad(
                 cfg, say_texts[textos_previos:], tools_called
             ):
+                # La corrección nombra la herramienta que el bot SÍ tiene
+                # declarada en este turno: mandarlo a llamar una que no existe
+                # es garantizar la segunda corrección.
                 correccion, motivo = (
-                    _CORRECCION_DISPONIBILIDAD, "disponibilidad sin consultar"
+                    _CORRECCION_DISPONIBILIDAD.replace(
+                        "consultar_tarifario", productos_bot.PRECIOS
+                    ) if ctx_productos is not None else _CORRECCION_DISPONIBILIDAD,
+                    "disponibilidad sin consultar",
                 )
         if correccion is not None:
             correcciones += 1
@@ -3674,6 +4012,10 @@ def _advance_inner(
         "finished": finished,
         "escalated_to": escalated_to,
         "failsafe": False,
+        # Sprint 31: de dónde salieron los datos de ESTE turno. `fallback`
+        # significa que la capa nueva falló y respondió la vieja — y se puede
+        # contar con un `GROUP BY` en vez de rastreando logs.
+        "fuente_datos": _fuente_datos(cfg, ctx_productos, fallbacks),
         **uso,
     }
     return {
