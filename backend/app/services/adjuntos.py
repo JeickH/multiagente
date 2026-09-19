@@ -143,16 +143,18 @@ _DOCUMENTOS_DE_TEXTO = frozenset({"text/plain", "text/csv"})
 # el archivo, no una fila con metadatos).
 EXTENSIONES: Dict[str, str] = {ext: mime for mime, (_, ext) in TIPOS_PERMITIDOS.items()}
 
-# Límites por categoría. El de imagen es el de Meta (5 MB); el resto, 16 MB.
+# Límites por categoría: son los del proveedor, no nuestros. Imagen 5 MB, el
+# resto 16 MB — Meta y Twilio dicen exactamente lo mismo.
 #
-# El video va en 12 MB y no en los 16 de Meta por decisión de producto: es el
-# tope que se le prometió al asesor en la interfaz. Subirlo hasta 16 es cambiar
-# este número y el de `frontend/lib/adjuntos.ts`, nada más — el camino de subida
-# ya no tiene techo propio (ver `presignar_subida`).
+# El video estuvo en 12 MB por decisión de producto (era el tope prometido en la
+# interfaz) hasta que a una asesora de Arranquemos Pues le rebotó un video que
+# WhatsApp sí aceptaba. Ya no queda margen que regalar: de acá para arriba el
+# que rechaza es el proveedor, y Twilio **no** transcodifica lo saliente, así
+# que un archivo más grande hay que comprimirlo antes de mandarlo.
 LIMITES: Dict[str, int] = {
     IMAGEN: 5 * 1024 * 1024,
     AUDIO: 16 * 1024 * 1024,
-    VIDEO: 12 * 1024 * 1024,
+    VIDEO: 16 * 1024 * 1024,
     DOCUMENTO: 16 * 1024 * 1024,
 }
 MAX_BYTES = max(LIMITES.values())
@@ -183,7 +185,7 @@ PREFIJO_TMP = "adjuntos-tmp"
 RUTA_PUBLICA = "/mensajes/adjunto"
 
 # Cuánto vale el POST prefirmado. Diez minutos alcanzan de sobra para subir
-# 12 MB por una conexión mala y no dejan una credencial viva dando vueltas.
+# 16 MB por una conexión mala y no dejan una credencial viva dando vueltas.
 EXPIRA_SUBIDA = 600
 
 # La carpeta es un uuid4 en hex y nada más: es lo que hace que un adjunto no se
@@ -931,9 +933,11 @@ def preparar(
             )
         data, mime, extension = convertido, "video/mp4", ".mp4"
         if len(data) > LIMITES[VIDEO]:
-            # Convertir puede agrandar: un .mov de 11 MB copiado a MP4 pesa casi
+            # Convertir puede agrandar: un .mov de 15 MB copiado a MP4 pesa casi
             # lo mismo, y ahí el tope se pasa por poco. Se avisa con el número
-            # real en vez de dejar que lo rechace WhatsApp.
+            # real en vez de dejar que lo rechace WhatsApp. Con el tope pegado al
+            # del proveedor esto ya no es teórico: lo que antes sobrepasaba
+            # nuestro margen ahora sobrepasa el de Twilio.
             return None, (
                 "El video pesa demasiado incluso convertido: el máximo es "
                 f"{LIMITES[VIDEO] // (1024 * 1024)} MB."
