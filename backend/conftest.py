@@ -1,6 +1,6 @@
 """Configuración común de la suite del backend.
 
-Aquí viven las dos cosas que valen para todos los tests:
+Aquí viven las tres cosas que valen para todos los tests:
 
 1. **La bandera `--con-costo`.** Las pruebas marcadas con `@pytest.mark.costo`
    gastan plata de verdad: invocan el modelo en Bedrock, tocan S3 o salen a la
@@ -14,7 +14,21 @@ Aquí viven las dos cosas que valen para todos los tests:
 
    También se activa con `PYTEST_CON_COSTO=1`, que es más cómodo desde un job.
 
-2. **El shim de SQLite.** Los tests montan la base en SQLite en memoria para no
+2. **La bandera `--con-postgres`.** Mismo patrón, otro motivo: las pruebas
+   marcadas con `@pytest.mark.postgres` necesitan un Postgres de verdad porque
+   comprueban cosas que SQLite no tiene (operadores JSONB, índices parciales,
+   zonas horarias). No cuestan plata, cuestan una base levantada — y el CI
+   corre sin ella, así que entran deseleccionadas por defecto o el primer push
+   se cae. Para incluirlas:
+
+       pytest --con-postgres                 # todo, incluidas las de Postgres
+       pytest --con-postgres -m postgres     # SOLO las de Postgres
+
+   También con `PYTEST_CON_POSTGRES=1`. La base sale de `POSTGRES_TEST_URL` o,
+   si no está, de las mismas variables `POSTGRES_*` del backend (el
+   docker-compose local).
+
+3. **El shim de SQLite.** Los tests montan la base en SQLite en memoria para no
    depender de Postgres, pero el modelo está escrito contra Postgres. Dos cosas
    no se traducen solas y se arreglan aquí, una sola vez para toda la suite.
 """
@@ -68,7 +82,7 @@ def _quitar_checks_solo_de_postgres() -> None:
 
 
 # ---------------------------------------------------------------------------
-# La bandera de costo
+# Las banderas: costo y Postgres
 # ---------------------------------------------------------------------------
 
 def pytest_addoption(parser: pytest.Parser) -> None:
@@ -81,6 +95,16 @@ def pytest_addoption(parser: pytest.Parser) -> None:
             "facturables (Bedrock, S3, red externa). Sin esta bandera se saltan."
         ),
     )
+    parser.addoption(
+        "--con-postgres",
+        action="store_true",
+        default=False,
+        help=(
+            "Incluye las pruebas marcadas `postgres`, que necesitan una base "
+            "Postgres levantada (JSONB, índices parciales, zonas horarias). "
+            "Sin esta bandera se saltan."
+        ),
+    )
 
 
 def pytest_configure(config: pytest.Config) -> None:
@@ -88,6 +112,11 @@ def pytest_configure(config: pytest.Config) -> None:
         "markers",
         "costo: hace llamadas facturables (Bedrock, S3 o el sitio público en "
         "producción). Se salta salvo que se pase --con-costo.",
+    )
+    config.addinivalue_line(
+        "markers",
+        "postgres: necesita un Postgres de verdad (lo que SQLite no traduce). "
+        "Se salta salvo que se pase --con-postgres.",
     )
     config.addinivalue_line(
         "markers", "lento: tarda segundos, no milisegundos.",
@@ -120,19 +149,45 @@ def con_costo_activo(config: pytest.Config) -> bool:
     return bool(config.getoption("--con-costo")) or os.getenv("PYTEST_CON_COSTO") == "1"
 
 
+def con_postgres_activo(config: pytest.Config) -> bool:
+    return (
+        bool(config.getoption("--con-postgres"))
+        or os.getenv("PYTEST_CON_POSTGRES") == "1"
+    )
+
+
 def pytest_collection_modifyitems(
     config: pytest.Config, items: list[pytest.Item]
 ) -> None:
-    if con_costo_activo(config):
+    saltos = []
+    if not con_costo_activo(config):
+        saltos.append((
+            "costo",
+            pytest.mark.skip(
+                reason="prueba con costo: córrela con --con-costo "
+                       "(o PYTEST_CON_COSTO=1)"
+            ),
+        ))
+    if not con_postgres_activo(config):
+        saltos.append((
+            "postgres",
+            pytest.mark.skip(
+                reason="prueba que necesita Postgres: córrela con "
+                       "--con-postgres (o PYTEST_CON_POSTGRES=1)"
+            ),
+        ))
+    if not saltos:
         return
-    saltar = pytest.mark.skip(
-        reason="prueba con costo: córrela con --con-costo (o PYTEST_CON_COSTO=1)"
-    )
     for item in items:
-        if "costo" in item.keywords:
-            item.add_marker(saltar)
+        for marcador, saltar in saltos:
+            if marcador in item.keywords:
+                item.add_marker(saltar)
 
 
-def pytest_report_header(config: pytest.Config) -> str:
-    estado = "SÍ (se van a facturar)" if con_costo_activo(config) else "no"
-    return f"pruebas con costo: {estado}"
+def pytest_report_header(config: pytest.Config) -> list[str]:
+    costo = "SÍ (se van a facturar)" if con_costo_activo(config) else "no"
+    postgres = "SÍ" if con_postgres_activo(config) else "no"
+    return [
+        f"pruebas con costo: {costo}",
+        f"pruebas contra Postgres: {postgres}",
+    ]
