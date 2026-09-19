@@ -7596,3 +7596,47 @@ mutación tiene que borrar los `__pycache__` entre corrida y corrida.
   plantillas de presentación, que hoy viven en el helper de pruebas.
 - `services/tarifario.py`, `tarifario_covenas.json` y `consultar_tarifario`
   siguen intactos y encendibles. Los retira la fase 8.
+
+---
+
+## Sprint 31 — Fases 1 a 3 del esquema de productos, desplegadas (2026-09-19)
+
+**Estado:** DESPLEGADO (task-def **92**, imagen `:fase3`)
+
+Cierra el sprint. Las tres fases están en producción y **ninguna enciende nada**:
+`llm_config.fuente_datos` viene en `tarifario`, ningún bot tiene productos
+asignados y `bot_recordatorios` está vacía. Verificado contra la configuración
+real antes de desplegar: el bot sigue declarando `consultar_tarifario` y ninguna
+de las tres herramientas nuevas.
+
+| Fase | Qué quedó |
+|---|---|
+| 1 | 8 tablas + 3 columnas, paridad local ↔ RDS verificada renglón por renglón |
+| 2 | `services/productos.py`, con la prueba de oro en verde: 1.253 comparaciones contra el motor viejo, cero diferencias de texto |
+| 3 | `bots.instrucciones`, el índice en el prompt, las tres herramientas y el seguimiento desde la tabla — todo detrás del interruptor |
+
+El motor viejo queda intacto y encendible: `services/tarifario.py`,
+`tarifario_covenas.json` y `consultar_tarifario` no se tocaron. Lo retira la
+fase 8, y solo cuando se cumplan sus cuatro criterios de salida.
+
+### El desvío del despliegue
+
+`register-task-definition` devolvió **91** cuando se esperaba la 90: otra sesión
+había registrado la 90 unas horas antes sin desplegarla. El `update-service`
+llevaba el número escrito a mano y **se desplegó la imagen ajena** durante unos
+minutos. No rompió nada —esa imagen salía de `main` y llevaba el mismo
+`models.py`— pero producción corrió algo que nadie eligió.
+
+Regla que queda: **nunca escribir el número de revisión a mano**, capturarlo de
+la salida del registro, y confirmar qué imagen trae esa revisión antes del
+rollout.
+
+### Pendiente
+
+- **Fases 4 a 7**: importador con revisión, encender el piloto, pantalla de
+  productos y el resto de las cuentas.
+- **Fase 8**: retirar el motor viejo. Exige 14 días corridos con conversaciones
+  reales y cero fallbacks en los últimos 7. Es calendario, no trabajo.
+- El 502 del envío manual cuando el texto supera los 1.600 caracteres: hoy la
+  asesora recibe un Bad Gateway que no le dice nada.
+- `bots.team_id` y los 8 índices `ix_<tabla>_id` redundantes, cada uno con su PR.
