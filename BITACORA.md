@@ -7415,3 +7415,184 @@ por Amplify al mergear el PR #8.
 Pendiente de nadie: la asesora solo tiene que recargar la página. No hay que
 cerrar sesión ni limpiar caché — el tope no viaja en el token ni en nada que el
 navegador guarde.
+
+## Sprint 31 — Fase 3 del esquema de productos: el bot ya puede leer de la base (2026-09-18)
+
+**Agente:** Dev Plataforma · **Estado:** LISTO PARA REVISIÓN (local, sin desplegar)
+
+La fase 2 dejó `services/productos.py` leyendo el catálogo y redactando el texto
+que ve el modelo, pero **nadie la llamaba**. Esta fase la enchufa al motor. Con
+una condición que se cumple: al desplegarla, ningún bot cambia de
+comportamiento.
+
+### El interruptor, y por qué esta fase no enciende nada
+
+`llm_config.fuente_datos` con dos valores, `productos` | `tarifario`, y **por
+defecto `tarifario`**. Los seis bots de producción no traen la clave, así que
+siguen con `consultar_tarifario`, su `.md` y su JSON. Encender uno es una línea
+en su config, y eso es la fase 5.
+
+### Las cuatro piezas
+
+**1. `bots.instrucciones` (nivel 2).** El prompt del bot puede venir de la
+columna en vez del `.md` de la imagen. **La columna vacía es la bandera**: si
+está NULL o en blanco, se lee `bot_contexts/<context_key>.md` como hasta hoy.
+Un interruptor menos que mantener sincronizado, y el día que el cliente pegue su
+texto ahí manda desde el turno siguiente, sin desplegar.
+
+**2. El índice de productos en el prompt.** Dos líneas por producto publicado y
+vigente que el bot tenga asignado: la clave con la que se nombra y su resumen.
+Sin productos, el prompt queda byte por byte como hoy.
+
+La decisión que define si esto sale barato o caro: **si el bot vende uno solo,
+sus instrucciones pueden ir dentro del prefijo** — son tan estables como el
+resto del prompt y ahí se cachean. Pero solo si el prefijo **queda por encima de
+los 4.096 tokens** que Bedrock exige para cachear; por debajo no cachea, no
+avisa y esos tokens se repagan enteros en cada ronda de cada turno (gotcha del
+18-ago). Así que se mide: `productos_bot.ficha_en_el_prefijo()` cuenta el prompt
+ya armado más la ficha y solo entonces decide. Con dos o más productos no entra
+ninguna ficha — la que hiciera falta dependería de la conversación y el prefijo
+dejaría de repetirse, que es justo lo que la caché necesita.
+
+**3. Las tres herramientas derivadas del producto**, declaradas **solo** si la
+cuenta tiene productos enganchados a ese bot:
+
+| Herramienta | Qué devuelve |
+|---|---|
+| `abrir_producto` | sus instrucciones completas, sus versiones y en qué períodos hay filas |
+| `consultar_precios` | las filas exactas, vigentes, ordenadas, y qué imagen mandar. **Reemplaza a `consultar_tarifario`** |
+| `fechas_disponibles` | el calendario compacto, sin una sola cifra |
+
+Se declaran **en lugar de** `consultar_tarifario`, no además: dos fuentes de
+precios en el mismo turno es pedirle al modelo que elija por su cuenta. La ficha
+del producto entra como **resultado de herramienta**, nunca metida en el bloque
+`system` — es la decisión que mantiene viva la caché del prefijo.
+
+**4. El seguimiento lee `bot_recordatorios`**, con `llm_config.seguimiento` como
+respaldo: mientras la tabla esté vacía para ese bot, el motor lee el JSON como
+hasta hoy. Arranquemos Pues sigue reenganchando a los 15 min, a las 5 h y a las
+23 h hasta el día que se carguen sus filas. Se respetan `hora_min`/`hora_max`
+(franja en hora de Colombia, aplicada al agendar) y `omitir_si`
+(`{"tools":["registrar_venta"]}` → a quien ya compró no se le insiste, y se
+consulta en `bot_llm_decisions`, que es donde ya queda la huella).
+
+### La arista del `bot_runner`, y cómo se resolvió
+
+`bot_runner.py:416` llamaba `llm_engine.seguimiento_de(cfg)` — un dict sin
+identidad de bot. Para consultar una tabla por `(team_id, bot_id)` hace falta el
+bot. **Se pasa el bot, no se le mete el `bot_id` a la cfg**: la cfg se copia de
+un turno a otro y se le agrega `_runtime` por encima; meterle identidad ahí es
+sembrar un `bot_id` viejo esperando fecha. `recordatorios_de(seg, *, db, bot)`
+recibe los dos por parámetro y, sin ellos, se comporta exactamente como antes
+(lo llaman desde sitios que no tienen base a mano).
+
+La tabla **no enciende** la política, solo configura sus tiempos y sus textos:
+que un bot reenganche o no lo sigue decidiendo `llm_config.seguimiento`. Mover
+también esa decisión habría cambiado `_tools_for` y `bot_router` de paso.
+
+### El fallback, en dos puntos y nunca silencioso
+
+- **Al armar el contexto** (`llm_engine._abrir_productos`, antes de la primera
+  llamada al modelo): si algo revienta, la capa nueva se apaga para **todo** el
+  turno y el bot sale con su prompt y sus herramientas de siempre. Apagarla
+  entera y no consulta por consulta es deliberado: con el índice ya en el prompt
+  y las herramientas declaradas, un fallo a mitad de camino le dejaría al modelo
+  un catálogo que no puede consultar.
+- **Al ejecutar una de las tres tools** (`llm_engine._run_tool`): la consulta se
+  le pasa al motor viejo — `consultar_precios` es el reemplazo de
+  `consultar_tarifario` y los argumentos calzan uno a uno—. Si el bot ya no
+  tiene el viejo configurado, no se improvisa: se ordena escalar.
+
+En los dos casos el cliente recibe su respuesta normal, queda un
+`logger.warning` con el motivo (sin contenido, reglas #1/#6) y **el turno se
+marca `fuente_datos='fallback'` en `bot_llm_decisions`**. Un fallback que nadie
+ve es un motor nuevo que lleva tres semanas sin usarse y nadie lo sabe; con la
+columna se cuenta con un `GROUP BY`.
+
+Los valores que escribe la columna son `productos` | `tarifario` | `fallback`, y
+**`NULL` para el bot que no consulta ninguna fuente** (el de mascotas, el
+institucional): por eso es nullable. El comentario de `models.py` decía
+`db`/`prompt`/`json`; quedó corregido a lo que de verdad se escribe.
+
+### Dos cosas que había que tocar para no romper lo que ya funciona
+
+- **Los guardarraíles de duración y disponibilidad** reconocen ahora
+  `consultar_precios` igual que `consultar_tarifario`, y la corrección que se le
+  manda al modelo nombra la herramienta que el bot **sí** tiene declarada. Sin
+  esto, el bot que se cambia de fuente hace lo correcto —mirar antes de
+  afirmar— y el guardarraíl le tumba el turno igual.
+- **Los medios del catálogo** (`bot_producto_medios`) se suman al catálogo de
+  `enviar_media`. `consultar_precios` puede terminar diciendo «manda
+  `flyer_x`»; si esa clave no existiera, el envío falla en silencio y el bot
+  queda diciendo «te dejo la imagen 👇» sin adjuntar nada. Las claves declaradas
+  a mano en `llm_config` mandan sobre las de la base.
+
+### Una decisión que me salí del plan a tomar, y hay que revisarla
+
+El plan lista `consultar_precios(producto, variante?, mes?, fecha?)`. Le agregué
+**`presupuesto`**, que `consultar_tarifario` sí tiene y `productos.consultar()`
+ya soporta. Motivo: la herramienta se declara como reemplazo de la vieja, y
+media clientela pregunta al revés («tengo 450 mil, ¿qué me alcanza?»). Sin ese
+argumento, el día que la fase 5 encienda a Arranquemos Pues se pierde la
+búsqueda por presupuesto sin que nadie lo note. Es el único punto en que me
+aparté del diseño aprobado: si se quiere fuera, se quita en una línea.
+
+### Pruebas
+
+`backend/tests/productos/` — **46 nuevas**, todas con el modelo mockeado y sobre
+SQLite: cero costo, cero red.
+
+`test_bot_turno.py` (26): la columna vacía deja el `.md` y poblada manda la
+columna; el índice con 1 producto (ficha dentro y ficha fuera, según la medida
+del prefijo) y con 3 (solo el índice); el borrador y el producto fuera de
+vigencia no se le nombran al modelo; el interruptor conmuta sin tocar nada más;
+las tres tools; sin filas vigentes se ordena escalar; **el aislamiento por
+cuenta y por bot**; y el fallback en sus cuatro formas — la capa revienta al
+armar el catálogo, revienta a mitad de consulta, revienta sin motor viejo
+detrás, y el turno que no falla **no** queda marcado.
+
+`test_recordatorios.py` (20): tabla vacía → el JSON, y viajes manda sus tres
+mensajes igual que antes; con filas → el orden lo manda el reloj y no la
+columna `orden`; **el segundo se agenda a 4 h 45 del primero, no a 5 h** (los
+minutos se cuentan desde que empezó el silencio; leerlos como offsets es el
+error fácil); la franja horaria, con el caso del enunciado puesto a mano (un
+silencio de las 11 p.m. no dispara nada a las 4 a.m., sale a las 8);
+`omitir_si` con su contrapunto; y el aislamiento por cuenta.
+
+Que las pruebas muerden se comprobó al revés, rompiendo el código de producción
+a propósito: el `omitir_si` que siempre deja pasar, la franja que no corre nada,
+la tabla que nunca se lee, las dos marcas de `fallback` (la del contexto y la de
+la consulta), la columna de instrucciones que se ignora, la ficha que entra
+siempre al prefijo, la vigencia que no filtra y el `team_id` de los
+recordatorios. **Las nueve las detectó la suite.**
+
+La décima no, y la respuesta es interesante: quitarle el `team_id` a
+`catalogos_de_bot` **no** rompe ninguna prueba, porque el aislamiento está en
+capas — `cargar_catalogo` vuelve a filtrar al leer y al sellar. Con las tres
+cerraduras caídas a la vez, la prueba sí muerde. Queda anotado para que nadie
+lea ese resultado como un hueco.
+
+### Una trampa del tooling que costó media hora
+
+Mutar `if texto:` a `if False:` y revertir en el mismo segundo deja un `.pyc`
+que Python da por válido: valida por **(mtime, size)** y las dos cadenas miden
+lo mismo. Resultado: el archivo en disco correcto, la suite corriendo código
+viejo y dos pruebas fallando solo en la corrida completa. Cualquier script de
+mutación tiene que borrar los `__pycache__` entre corrida y corrida.
+
+### Suite completa
+
+```
+1894 passed, 112 skipped, 1 xfailed   (antes: 1848 / 112 / 1)
+```
+
++46, sin una regresión.
+
+### Pendientes de la fase
+
+- Nada de esto está encendido para ningún bot: la fase 5 lo enciende, con el
+  interruptor y midiendo el antes/después de tokens.
+- La fase 4 (importador) es la que carga el catálogo de verdad y las ~30
+  plantillas de presentación, que hoy viven en el helper de pruebas.
+- `services/tarifario.py`, `tarifario_covenas.json` y `consultar_tarifario`
+  siguen intactos y encendibles. Los retira la fase 8.

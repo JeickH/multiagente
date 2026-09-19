@@ -507,9 +507,10 @@ class BotLlmDecision(Base):
     # Sprint 31. OJO con el parecido de los nombres, que se prestan a confusión:
     #   `source`       → por dónde ENTRÓ el turno: whatsapp | simulador.
     #   `fuente_datos` → de dónde salieron los DATOS que el bot usó para
-    #                    responder: 'db' (tablas `bot_producto_*`),
-    #                    'prompt' (venían escritos en el contexto) o
-    #                    'json' (los archivos de `app/data/`).
+    #                    responder: 'productos' (las tablas `bot_producto_*`),
+    #                    'tarifario' (los archivos de `app/data/`, el motor
+    #                    viejo) o 'fallback' (la capa nueva falló en ese turno
+    #                    y respondió la vieja; va con un warning en el log).
     # Nullable y SIN default a propósito: así "turno viejo, anterior a esta
     # columna" (NULL) no se confunde con "turno nuevo que no consultó ninguna
     # fuente". Mismo criterio que `conversations.etiqueta`.
