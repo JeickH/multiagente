@@ -28,7 +28,15 @@ from typing import Any, Dict, Optional, Tuple
 
 import httpx
 
-from .base import MessagingError, NormalizedInbound, NormalizedStatus, team_is_demo
+from .base import (
+    MAX_TEXTO_WHATSAPP,
+    TWILIO_CODE_BODY_MUY_LARGO,
+    MessagingError,
+    NormalizedInbound,
+    NormalizedStatus,
+    TextoMuyLargoError,
+    team_is_demo,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -142,6 +150,13 @@ def _post_message(account, data: Dict[str, str]) -> Tuple[str, Dict[str, Any]]:
         code = err.get("code")
         status = exc.response.status_code
         logger.warning("twilio.send http_error status=%s code=%s", status, code)
+        if code == TWILIO_CODE_BODY_MUY_LARGO:
+            # Red de seguridad: `send_text` ya mide antes de salir, así que
+            # llegar acá significa que el texto creció en el camino (un caption,
+            # una plantilla armada por variables). Se traduce igual, para que la
+            # persona lea "pártelo en dos" y no un 502.
+            largo = len(data.get("Body") or "")
+            raise TextoMuyLargoError(largo, provider="twilio") from exc
         raise MessagingError(
             "Twilio rechazó el envío",
             provider="twilio",
@@ -164,7 +179,14 @@ def _post_message(account, data: Dict[str, str]) -> Tuple[str, Dict[str, Any]]:
 
 
 def send_text(account, to_wa_id: str, body: str) -> Tuple[str, Dict[str, Any]]:
-    """Texto libre (dentro de la ventana de servicio de 24h)."""
+    """Texto libre (dentro de la ventana de servicio de 24h).
+
+    La medida va ANTES del atajo de sandbox a propósito: si en demo pasara un
+    texto de 2.000 caracteres, la misma conversación fallaría al pasar a
+    producción y nadie se habría enterado probando.
+    """
+    if len(body or "") > MAX_TEXTO_WHATSAPP:
+        raise TextoMuyLargoError(len(body or ""), provider="twilio")
     if is_sandbox(account):
         return f"SM.local-{uuid.uuid4().hex[:24]}", {"sandbox": True, "provider": "twilio"}
     return _post_message(account, {"To": _as_whatsapp(to_wa_id), "Body": body})

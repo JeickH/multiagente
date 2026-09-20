@@ -43,6 +43,45 @@ def team_is_demo(account) -> bool:
         return True
 
 
+# Tope de caracteres de un mensaje de texto saliente.
+#
+# El número es de Twilio, no nuestro: su plataforma corta en 1.600 caracteres el
+# `Body` de CUALQUIER canal (SMS, WhatsApp, Messenger) y responde HTTP 400 con
+# el código 21617 — "The concatenated message body exceeds the 1600 character
+# limit" (https://www.twilio.com/docs/api/errors/21617). WhatsApp por su cuenta
+# aceptaría 4.096, pero nuestros mensajes pasan por Twilio, así que manda el más
+# chico. Se aplica igual a las cuentas Meta: un solo número, uno para todos, es
+# lo que hace que el contador del navegador no pueda mentir.
+#
+# ⚠ Este valor está declarado DOS veces a propósito: acá y en
+# `frontend/lib/mensajeTexto.ts` (`MAX_TEXTO_WHATSAPP`), para que el compositor
+# pueda avisar sin ir al servidor. Que no se desincronicen lo cuida
+# `backend/tests/test_mensaje_largo.py::test_el_frontend_declara_el_mismo_limite`,
+# que lee el .ts y compara. Si cambias uno, el test te obliga a cambiar el otro.
+MAX_TEXTO_WHATSAPP = 1600
+
+# Código de Twilio para "el cuerpo excede el límite de caracteres".
+TWILIO_CODE_BODY_MUY_LARGO = 21617
+
+
+def _miles(n: int) -> str:
+    """1742 → "1.742". Separador de miles con punto, como se lee en Colombia."""
+    return f"{n:,}".replace(",", ".")
+
+
+def mensaje_texto_muy_largo(largo: int, maximo: int = MAX_TEXTO_WHATSAPP) -> str:
+    """Lo que se le dice a la asesora cuando el mensaje no cabe.
+
+    Es el texto que llega al navegador, así que dice qué pasó y qué hacer, sin
+    una palabra del proveedor (regla #6: el detalle de Twilio va sólo al log).
+    El número sale siempre de `MAX_TEXTO_WHATSAPP` y nunca escrito a mano.
+    """
+    return (
+        f"El mensaje es muy largo para WhatsApp: tiene {_miles(largo)} caracteres "
+        f"y el máximo son {_miles(maximo)}. Pártelo en dos y vuelve a enviarlo."
+    )
+
+
 class MessagingError(Exception):
     """Error al enviar/consultar un proveedor de mensajería.
 
@@ -71,6 +110,30 @@ class MessagingError(Exception):
         self.payload = payload or {}
         self.provider_code = provider_code
         self.retryable = retryable
+
+
+class TextoMuyLargoError(MessagingError):
+    """El cuerpo del mensaje pasa de `MAX_TEXTO_WHATSAPP`.
+
+    Es culpa de quien escribió, no del proveedor ni de la red: por eso es la
+    única `MessagingError` que el router traduce a **400** y no a 502, y por eso
+    `retryable=False` — reintentar el mismo texto va a fallar igual.
+
+    `mensaje_para_la_persona` es lo ÚNICO de esta excepción que puede viajar al
+    navegador; ya viene redactado y sin datos del proveedor.
+    """
+
+    def __init__(self, largo: int, *, maximo: int = MAX_TEXTO_WHATSAPP, provider: str = "unknown"):
+        self.largo = largo
+        self.maximo = maximo
+        self.mensaje_para_la_persona = mensaje_texto_muy_largo(largo, maximo)
+        super().__init__(
+            f"Texto de {largo} caracteres; el máximo es {maximo}",
+            provider=provider,
+            status_code=400,
+            provider_code=TWILIO_CODE_BODY_MUY_LARGO,
+            retryable=False,
+        )
 
 
 @dataclass

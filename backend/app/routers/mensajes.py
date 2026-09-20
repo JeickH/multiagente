@@ -283,6 +283,18 @@ def send_message_in_conversation(
             detail="La cuenta de WhatsApp no está activa. El propietario debe conectarla desde Mi Plan.",
         )
 
+    # El tope de caracteres se mide ACÁ, antes de tocar al proveedor: el texto
+    # ya está escrito y no hay nada que reintentar, así que es un 400 —un error
+    # de la petición— y no un 502. Es el mismo número que el contador del
+    # compositor (`frontend/lib/mensajeTexto.ts`); ver `messaging/base.py`.
+    # No se persiste un mensaje fallido: no se intentó enviar nada, y una
+    # burbuja roja con el texto completo sólo le ensucia el chat a la asesora.
+    if len(payload.content or "") > messaging.MAX_TEXTO_WHATSAPP:
+        raise HTTPException(
+            status_code=400,
+            detail=messaging.mensaje_texto_muy_largo(len(payload.content or "")),
+        )
+
     try:
         # Sprint 19 (#254): envío por el puerto multi-proveedor (Meta o Twilio
         # según account.provider) — mismo cambio que campañas/bots en Sprint 18.
@@ -310,6 +322,24 @@ def send_message_in_conversation(
             sent_by_user_id=member.user_id,
             status="failed",
             error_detail=str(exc),
+        )
+        if isinstance(exc, messaging.TextoMuyLargoError):
+            # Twilio rebotó por largo (21617) algo que el chequeo de arriba dejó
+            # pasar. Lo que ve la asesora es la instrucción; el código y la
+            # respuesta del proveedor se quedan en el log (regla #6).
+            logger.warning(
+                "mensaje.texto_muy_largo conversation_id=%s largo=%s maximo=%s provider=%s",
+                conv.id,
+                exc.largo,
+                exc.maximo,
+                exc.provider,
+            )
+            raise HTTPException(status_code=400, detail=exc.mensaje_para_la_persona)
+        logger.exception(
+            "mensaje.envio_fallido conversation_id=%s provider=%s code=%s",
+            conv.id,
+            exc.provider,
+            exc.provider_code,
         )
         raise HTTPException(
             status_code=502, detail="Error del proveedor de WhatsApp al enviar el mensaje"

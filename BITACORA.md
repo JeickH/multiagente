@@ -7640,3 +7640,152 @@ rollout.
 - El 502 del envío manual cuando el texto supera los 1.600 caracteres: hoy la
   asesora recibe un Bad Gateway que no le dice nada.
 - `bots.team_id` y los 8 índices `ix_<tabla>_id` redundantes, cada uno con su PR.
+
+---
+
+## Sprint 31 — El texto largo daba 502 y no decía nada (2026-09-20)
+
+**Pedido del CEO**: una asesora de Arranquemos Pues manda desde `/mensajes` un
+texto de más de ~1.600 caracteres y le sale `502 Bad Gateway`. En los logs:
+`twilio.send http_error status=400 code=21617`. Que el error le diga qué hacer,
+que se pueda evitar antes de enviarlo, y que el límite no quede escrito en dos
+sitios sin relación (la lección del video de 12 MB, dos días atrás).
+
+**El número, verificado**: **1.600 caracteres**, y esta vez el límite sí es de
+Twilio, no nuestro. Su plataforma corta el `Body` de **cualquier** canal —SMS,
+MMS, WhatsApp, Messenger— en 1.600 y responde 400 con el código 21617: «The
+concatenated message body exceeds the 1600 character limit»
+(https://www.twilio.com/docs/api/errors/21617 y el artículo *Maximum Message
+Length with Twilio Programmable Messaging*). WhatsApp por su cuenta aceptaría
+4.096, pero todo sale por Twilio, así que manda el más chico. Se aplica igual a
+las cuentas `provider='meta'`: un solo número para todos es lo que hace que el
+contador del navegador no pueda mentir.
+
+### Lo que ve ahora la asesora
+
+En vez del 502, un **400** con: «El mensaje es muy largo para WhatsApp: tiene
+1.742 caracteres y el máximo son 1.600. Pártelo en dos y vuelve a enviarlo.»
+Los dos números salen de la constante, nunca escritos a mano. Del lado del
+servidor queda el detalle completo (`largo`, `maximo`, `provider`, el código del
+proveedor) en `logger`; al navegador no viaja ni la palabra «Twilio» ni el
+21617 — hay un test que lo verifica rastro por rastro (regla #6).
+
+Y antes de eso, en el compositor: a partir de los 1.400 caracteres aparece el
+contador «1.500/1.600 caracteres» —el mismo lenguaje visual del contador del
+caption que ya existía—, en rojo al pasarse, con el botón Enviar bloqueado y
+Enter desactivado. El `textarea` **no** se corta con `maxLength`: pegar un texto
+largo y que desaparezca la mitad en silencio es peor que no dejarlo enviar.
+
+### Cómo quedan atados los dos lados
+
+El límite se declara dos veces a propósito (el navegador tiene que avisar sin
+preguntarle al servidor): `MAX_TEXTO_WHATSAPP` en
+`backend/app/services/messaging/base.py` y en `frontend/lib/mensajeTexto.ts`.
+Lo que impide que se separen es un test que **lee el `.ts` y compara el
+número**, más otro que compara el texto del mensaje palabra por palabra. Si
+alguien cambia uno solo, la suite lo para. Es justo lo que le faltaba al tope
+del video.
+
+### Archivos
+
+- `backend/app/services/messaging/base.py` — `MAX_TEXTO_WHATSAPP`,
+  `mensaje_texto_muy_largo()` y `TextoMuyLargoError` (la única `MessagingError`
+  que se traduce a 400 y no a 502: el texto ya está escrito, reintentarlo falla
+  igual).
+- `backend/app/services/messaging/twilio_adapter.py` — mide antes de salir a la
+  red, incluso en sandbox (lo que falla en producción debe fallar en demo), y
+  traduce el 21617 que igual llegue de la API.
+- `backend/app/routers/mensajes.py` — chequeo previo → 400 sin persistir un
+  mensaje fallido (no se intentó nada; una burbuja roja con el texto completo
+  solo ensucia el chat), y mapeo de `TextoMuyLargoError` en el `except`.
+- `frontend/lib/mensajeTexto.ts` + contador en `frontend/pages/mensajes.tsx`.
+- Pruebas: `backend/tests/test_mensaje_largo.py` (10) y
+  `frontend/lib/mensajeTexto.test.ts` (7). Cubren el borde exacto: 1.600 sale,
+  1.601 no.
+
+Local, sin desplegar. El commit lo hace el CEO.
+
+---
+
+## Sprint 31 — Fase 6: el wireframe del módulo «Productos» (2026-09-20)
+
+Diseño, no código. Antes de que Dev Plataforma escriba la primera línea de
+`pages/productos`, el módulo completo dibujado y navegable en
+`entregables/wireframe_productos/` — 12 pantallas HTML enlazadas entre sí más
+`tailwind.css` (compilado con el CLI del propio proyecto, sin CDN ni JavaScript)
+y `gloma.css` para lo que Tailwind no da: la regla de las 24 horas, los
+esqueletos de carga y el rayado de las filas retiradas.
+
+Nada de `backend/`, `frontend/` ni ningún `.py` fue tocado: había dos sesiones
+trabajando en paralelo sobre el mismo repositorio.
+
+### Qué quedó
+
+| Pantalla | Archivo | Lo que resuelve |
+|---|---|---|
+| Índice del wireframe | `index.html` | Mapa de pantallas y los hallazgos del modelo |
+| Lo que vendes | `lista.html` | La lista, con el **aviso de vencimiento** como protagonista |
+| Ficha · General | `ficha-general.html` | Nombre, nombre corto, la línea que ve el bot, vigencia, alias y bots |
+| Ficha · Instrucciones | `ficha-instrucciones.html` | Publicado contra borrador, historial y el simulador como requisito |
+| Ficha · Variantes | `ficha-variantes.html` | Las opciones y cuál cobra la tabla de otra |
+| Ficha · Fechas y precios | `ficha-fechas.html` | La grilla de 102 filas: filtros, edición en línea y paginación |
+| Ficha · Medios | `ficha-medios.html` | Fotos y videos con los meses en que aplican |
+| Cargar desde Excel | `cargar.html` | Subir, sin tocar la base |
+| Revisa antes de cargar | `cargar-diff.html` | El diff. La pantalla donde el dueño decide |
+| Recordatorios de abandono | `recordatorios.html` | Los reenganches, con el tope de las 24 h impedido |
+| Publicar y volver atrás | `publicar.html` | Confirmación, qué cambia, y la versión anterior a un clic |
+| Estados | `estados.html` | Vacío, cargando, error, éxito y el bot sin datos |
+
+### Decisiones de diseño que vale la pena registrar
+
+- **El diff se ordena al revés de como lo devuelve el backend**: primero lo que
+  se retira, después lo que cambia, al final lo que entra. Lo que entra es
+  agradable y nadie lo revisa; lo que se retira es lo que se lamenta. Aplicar
+  está bloqueado hasta marcar una casilla que nombra el número exacto de fechas
+  que dejan de ofrecerse.
+- **El tope de 24 h de WhatsApp se impide, no se explica**: la regla gráfica con
+  la franja roja, el máximo en el `input` y el error con la corrección a un clic
+  («Ponerlo en 23 h»). Es el espejo visual del `CHECK (minutos < 1440)`.
+- **Bajo cada recordatorio van las dos lecturas del tiempo**: «= 4 horas después
+  del último mensaje del cliente» y «3 h 45 min después de que salió el
+  primero». El error fácil —creer que los minutos se cuentan desde el
+  recordatorio anterior— deja de ser posible en silencio.
+- **El aviso de vencimiento se calcula y tiene tres umbrales**: sin filas
+  vigentes (rojo, «el bot no puede cotizarlo»), última fecha a menos de 21 días
+  (ámbar) y el resto (gris). Los productos tipo ficha nunca alertan. El orden por
+  defecto de la lista pone los que alertan primero.
+- **Retirar nunca borra, en las cuatro pantallas donde aparece** (fila, variante,
+  medio, producto): `activo=false` y el texto lo dice con esas palabras.
+- **Sin jerga**: «nombre corto» por slug, «la línea que ve el bot» por resumen,
+  «opciones» por variantes, «se ofrece» por activo. Los meses de `aplica` son
+  botones, no JSON.
+- Se reusa lo que ya existe: `Layout variant="fullscreen"`, el menú de
+  `Sidebar.tsx`, los chips y la tabla de `pedidos.tsx` y `Paginacion.tsx` tal
+  cual. Móvil primero: la tabla se vuelve tarjetas bajo `md:`.
+
+### Lo que se vio mal del modelo al dibujarlo
+
+Dos bloqueantes y cuatro anotados, todos detallados en `index.html`:
+
+1. **No existe el borrador.** `bot_productos.estado` es el ciclo de vida del
+   producto, no una pareja borrador/publicado del contenido. Editar el precio de
+   un producto publicado escribe sobre la fila viva: «Publicar» no tiene qué
+   publicar. Falta una capa de borrador, o el botón es mentira.
+2. **Las instrucciones del producto no se versionan.** `instrucciones_version`
+   quedó solo en `bots`; `bot_productos.instrucciones` no tiene versión ni
+   historia, y de eso dependen la pestaña de Instrucciones y toda la pantalla de
+   Publicar (autor, fecha, comentario, volver atrás).
+3. **Nadie declara qué claves tiene `valores`** (JSONB): la grilla no puede
+   dibujar sus encabezados ni validar lo que se escribe.
+4. El aviso de vencimiento no aplica a `ficha` ni a `catalogo_externo`.
+5. `precios_de_variante_id` admite ciclos: la UI solo ofrece variantes con
+   precios propios, pero eso no es una restricción de la base.
+6. Faltan campos menores: `orden` y `activo` en `bot_producto_medios`;
+   `updated_at`/`updated_by` en `bot_producto_filas`; la opción y el modo en
+   `bot_producto_cargas`; los alias de variante no tenían dónde vivir.
+
+Pendiente de definir con el CEO: si «Productos» entra al menú de siempre o como
+módulo interno con `/api/productos/access`, y si la carga por Excel aplica
+dejando los cambios sin publicar o sale al bot de inmediato.
+
+Local, sin desplegar. El commit lo hace el CEO.
