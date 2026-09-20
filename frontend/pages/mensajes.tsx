@@ -25,6 +25,12 @@ import {
   mismoDia,
 } from '../lib/fechas';
 import { formatearWhatsapp } from '../lib/formatoWhatsapp';
+import {
+  AVISO_TEXTO,
+  contadorTexto,
+  motivoTextoMuyLargo,
+  textoExcedido,
+} from '../lib/mensajeTexto';
 import { getToken } from '../lib/session';
 
 const MENSAJES_TUTORIAL = [
@@ -600,6 +606,13 @@ export default function Mensajes() {
     }
   };
 
+  /**
+   * Texto que no cabe en un mensaje de WhatsApp. Sólo aplica al texto suelto:
+   * con un adjunto en curso lo escrito es el pie, que tiene su propio tope
+   * (`MAX_CAPTION`) y ya lo corta el `maxLength` del textarea.
+   */
+  const textoMuyLargo = !adjunto && textoExcedido(draft.trim());
+
   /** El botón "Enviar" es uno solo: manda el archivo si hay, si no el texto. */
   const enviar = () => {
     if (adjunto) {
@@ -611,6 +624,13 @@ export default function Mensajes() {
 
   const sendMessage = async () => {
     if (!detail || !draft.trim() || !canReply) return;
+    // Mismo patrón que `validarAdjunto`: lo que el backend va a rechazar se
+    // rechaza acá primero, sin gastar el viaje ni dejar un fallido en el chat.
+    // El mensaje es el mismo que respondería el servidor.
+    if (textoExcedido(draft.trim())) {
+      setErrorMsg(motivoTextoMuyLargo(draft.trim().length));
+      return;
+    }
     setSending(true);
     setErrorMsg(null);
     try {
@@ -1159,7 +1179,9 @@ export default function Mensajes() {
                             onKeyDown={(e) => {
                               if (e.key === 'Enter' && !e.shiftKey) {
                                 e.preventDefault();
-                                enviar();
+                                // Con el texto pasado de largo, Enter no manda:
+                                // si el botón está bloqueado, el atajo también.
+                                if (!textoMuyLargo) enviar();
                               }
                             }}
                             placeholder={
@@ -1173,7 +1195,7 @@ export default function Mensajes() {
                           />
                           <button
                             onClick={enviar}
-                            disabled={sending || (!adjunto && !draft.trim())}
+                            disabled={sending || (!adjunto && !draft.trim()) || textoMuyLargo}
                             className="px-5 h-[42px] self-end bg-gloma-brown text-white font-medium rounded-lg hover:bg-gloma-brown-dark disabled:opacity-50 disabled:cursor-not-allowed"
                           >
                             {sending ? (adjunto ? 'Enviando…' : '...') : 'Enviar'}
@@ -1186,6 +1208,21 @@ export default function Mensajes() {
                     {adjunto && adjunto.clase !== 'audio' && draft.length > MAX_CAPTION - 100 && (
                       <div className="mt-1 text-right text-[11px] text-gray-500">
                         {draft.length}/{MAX_CAPTION} caracteres
+                      </div>
+                    )}
+                    {/* Texto suelto: el tope es de WhatsApp vía Twilio (1.600).
+                        El textarea NO se corta con `maxLength` a propósito —
+                        pegar un texto largo y que desaparezca la mitad en
+                        silencio es peor que no dejar enviarlo—, así que se
+                        avisa acá y se bloquea el botón. */}
+                    {!adjunto && draft.trim().length > AVISO_TEXTO && (
+                      <div
+                        className={`mt-1 text-right text-[11px] ${
+                          textoMuyLargo ? 'text-red-600 font-medium' : 'text-gray-500'
+                        }`}
+                      >
+                        {contadorTexto(draft.trim().length)}
+                        {textoMuyLargo && ' — pártelo en dos para poder enviarlo'}
                       </div>
                     )}
                   </>

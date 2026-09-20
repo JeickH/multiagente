@@ -14,10 +14,20 @@ from __future__ import annotations
 
 from typing import Any, Dict, Optional, Tuple
 
-from .base import MessagingError, NormalizedInbound, NormalizedStatus
+from .base import (
+    MAX_TEXTO_WHATSAPP,
+    MessagingError,
+    NormalizedInbound,
+    NormalizedStatus,
+    TextoMuyLargoError,
+    mensaje_texto_muy_largo,
+)
 
 __all__ = [
+    "MAX_TEXTO_WHATSAPP",
     "MessagingError",
+    "TextoMuyLargoError",
+    "mensaje_texto_muy_largo",
     "NormalizedInbound",
     "NormalizedStatus",
     "provider_of",
