@@ -1,0 +1,121 @@
+{
+  "slug": "preguntas_frecuentes",
+  "titulo": "Gloma — Las 15 preguntas frecuentes",
+  "nombre": "Preguntas frecuentes de Gloma",
+  "tipo": "ficha",
+  "estado": "publicado",
+  "resumen": "Las 15 preguntas que más hacen los prospectos, con la respuesta aprobada de cada una. Se adaptan al negocio de la persona; no se pegan completas.",
+  "instrucciones": "Cada pregunta frecuente tiene una respuesta aprobada, y son las únicas que puedes dar sobre estos temas. Tres reglas al usarlas:\n\n1. ADÁPTALAS al negocio de la persona. No las pegues completas de un solo golpe: responde primero lo esencial en 4-6 líneas, en formato WhatsApp, y ofrece profundizar.\n2. No las amplíes. Si la pregunta se sale de lo que dice la respuesta —una integración concreta, un plazo en días, un compromiso contractual—, dilo y escala a un especialista.\n3. Las preguntas 9 (cuánto cuesta) y 15 (cómo empiezo) terminan ofreciendo agendar la sesión de demostración, que es tu objetivo.\n\nLo que NO haces con esta ficha: dar porcentajes de descuento o plazos en días, prometer integraciones con un sistema que no conoces, hablar mal de competidores por nombre, ni compartir información privada de los clientes de los casos reales (los describes por industria).",
+  "atributos": {
+    "presentacion": {
+      "encabezado": [
+        "Preguntas frecuentes de Gloma — información vigente al {hoy}."
+      ],
+      "sin_datos": "No tengo las preguntas frecuentes cargadas. NO improvises la respuesta: dile que lo confirmas con un especialista y ofrece agendar la sesión."
+    }
+  },
+  "como_se_lleno": [
+    "Las 15 filas salen de `app/bot_contexts/gloma.md`, sección «LAS 15 PREGUNTAS FRECUENTES Y SU RESPUESTA IDEAL»: una fila por pregunta, con la pregunta en `etiqueta` y la respuesta aprobada en `valores.respuesta`.",
+    "Hoy esas respuestas viajan dentro del prefijo del prompt en CADA turno. Como ficha se cargan solo cuando la conversación llega a ellas — ese es el ahorro que justifica moverlas, y se mide cuando se encienda, no antes.",
+    "OJO al encenderla: el `.md` de Lía dice «no dar cifras de precio», y la ficha `plan_mensual` trae una. Si se encienden las dos sin corregir esa línea, el bot tiene dos reglas que se contradicen — y ya sabemos cómo termina eso (el modelo elige, y elige mal).",
+    "La AGENDA no entra acá. Las opciones de horario que ofrece Lía son un cálculo sobre `llm_config.agenda` (días hábiles, franja, zona), no un dato del catálogo."
+  ],
+  "filas": [
+    {
+      "externo_id": "faq|01",
+      "tipo": "faq",
+      "etiqueta": "¿Qué es Gloma y qué hace exactamente por mi empresa?",
+      "valores": {"respuesta": "Gloma pone un agente de IA en el WhatsApp de tu empresa que atiende a tus clientes 24/7: responde dudas, informa estados de pedido, recomienda producto, toma datos y cierra o prepara la venta. No es un menú de botones: conversa. Nosotros lo diseñamos con tu información (catálogo, políticas, procesos), lo conectamos a tu WhatsApp y lo operamos contigo, midiendo y ajustando mes a mes. Tu equipo entra solo cuando el caso lo amerita, con todo el contexto listo en la plataforma."}
+    },
+    {
+      "externo_id": "faq|02",
+      "tipo": "faq",
+      "etiqueta": "¿En qué se diferencia de un chatbot de botones tradicional?",
+      "valores": {"respuesta": "Un chatbot de menús obliga al cliente a caber en tus opciones: si escribe algo distinto, se pierde o repite el menú. Nuestro agente entiende lo que la persona quiere decir, en su forma de escribir (con errores, audios de texto, mensajes cortados) y responde con criterio. Puede resolver varios temas en una misma conversación, retomar el hilo y decidir cuándo conviene pasar a un humano. Resultado: menos conversaciones abandonadas y menos clientes molestos por «hablar con una máquina»."}
+    },
+    {
+      "externo_id": "faq|03",
+      "tipo": "faq",
+      "etiqueta": "¿El agente puede hablar con el tono y la personalidad de mi marca?",
+      "valores": {"respuesta": "Sí, y es el corazón de lo que hacemos. Cargamos un contexto a priori de tu empresa: cómo saluda tu marca, si tutea o trata de usted, qué palabras usa y cuáles no, tus emojis, tus políticas, tus productos y tus procesos. El agente responde igual que tu mejor asesor en su mejor día, y puede tener nombre propio. Antes de salir en vivo lo pruebas tú mismo en el simulador de la plataforma y ajustamos lo que no suene a tu marca."}
+    },
+    {
+      "externo_id": "faq|04",
+      "tipo": "faq",
+      "etiqueta": "¿Qué pasa cuando el bot no sabe algo o el cliente pide una persona?",
+      "valores": {"respuesta": "Escala, y lo hace bien. El agente tiene reglas explícitas de escalamiento: cuando el cliente pide un humano, cuando el caso es delicado (una garantía, un reclamo, un tema de pago) o cuando no está seguro de la respuesta, avisa al cliente y entrega la conversación a tu equipo en la bandeja de la plataforma, con todo el historial. Nunca inventa para salir del paso ni deja al cliente colgado: si algo falla técnicamente, también deriva a una persona. Tú defines qué temas siempre van a un humano."}
+    },
+    {
+      "externo_id": "faq|05",
+      "tipo": "faq",
+      "etiqueta": "¿Con qué sistemas se integra? ¿Puede consultar mis pedidos o mi inventario?",
+      "valores": {"respuesta": "Sí. El agente puede consultar tus sistemas en tiempo real durante la conversación. Hoy tenemos integración probada con Shopify (estado de pedido, pago, envío y link de rastreo, buscando por número de pedido, nombre, documento o fecha) y con el catálogo de productos de WhatsApp. Además nos conectamos a sistemas propios (ERP, CRM, tu plataforma de envíos) siempre que expongan una API o un servicio web. En la reunión revisamos qué tienes hoy y qué es viable conectar en la primera fase."}
+    },
+    {
+      "externo_id": "faq|06",
+      "tipo": "faq",
+      "etiqueta": "¿El agente solo responde o también vende?",
+      "valores": {"respuesta": "Vende. Además de resolver dudas, recomienda producto según lo que la persona busca, comparte el catálogo, envía imágenes, videos, tarifarios y métodos de pago, toma los datos que necesitas para cerrar (nombre, documento, dirección, cantidad) y deja la venta lista para tu asesor comercial. En nuestro caso de la agencia de viajes, el agente lleva al cliente desde «¿cuánto cuesta el plan?» hasta los datos de la reserva. Y con el módulo de Campañas también sale a buscar la venta, no solo a esperarla."}
+    },
+    {
+      "externo_id": "faq|07",
+      "tipo": "faq",
+      "etiqueta": "¿Cómo se conecta a mi WhatsApp? ¿Tengo que cambiar de número?",
+      "valores": {"respuesta": "Se conecta con la API oficial de WhatsApp Business de Meta. Normalmente conservas tu número de siempre: se migra a la API oficial (si hoy está en la app WhatsApp Business hay que liberarlo, y el histórico de chats no se migra, por eso se exporta antes). También puedes empezar con un número nuevo. Nosotros hacemos toda la gestión técnica: verificación del número, cuenta de WhatsApp Business en Meta, perfil de la empresa y plantillas. De ti necesitamos accesos de administrador de tu Meta Business y alguien que reciba el código de verificación."}
+    },
+    {
+      "externo_id": "faq|08",
+      "tipo": "faq",
+      "etiqueta": "¿Cuánto se demora la implementación y qué necesitan de mi parte?",
+      "valores": {"respuesta": "Depende del alcance, y por eso lo estimamos en la reunión con tu caso concreto. El trabajo tiene tres frentes en paralelo: (1) el contexto de tu marca —catálogo, políticas, preguntas frecuentes y los chats reales de tu equipo, que son la mejor materia prima—; (2) las integraciones, según qué sistemas conectemos; y (3) la conexión del número con Meta, que depende de tus accesos. Un piloto acotado (un canal, un caso de uso claro) avanza mucho más rápido que una implementación completa. Tú pruebas todo en el simulador antes de que hable con el primer cliente real."}
+    },
+    {
+      "externo_id": "faq|09",
+      "tipo": "faq",
+      "etiqueta": "¿Cuánto cuesta? ¿Cómo cobran?",
+      "valores": {"respuesta": "El modelo tiene dos partes: una implementación inicial (diseño del agente, contexto, integraciones y salida a producción) y un plan mensual que depende del volumen de conversaciones y de lo que el agente tenga que hacer. Se suma el costo que Meta cobra por conversación de WhatsApp, que se paga según el uso real. No damos una cifra al aire porque cambia mucho entre una tienda pequeña y una operación con miles de chats diarios: un especialista te arma la cotización con tu volumen real. Como referencia, nuestros clientes recuperan la inversión en promedio en 4 meses. ¿Te conecto con el equipo para cotizarlo con tus números? 🤍", "ojo": "Esta respuesta dice «no damos una cifra al aire» y la ficha `plan_mensual` sí trae una. Antes de encender las dos hay que decidir cuál manda."}
+    },
+    {
+      "externo_id": "faq|10",
+      "tipo": "faq",
+      "etiqueta": "¿Qué tan seguro es? ¿Qué pasa con los datos de mis clientes?",
+      "valores": {"respuesta": "La información de cada cliente vive en su propia cuenta, aislada de las demás, sobre infraestructura de AWS. Las credenciales y tokens que nos entregas se guardan cifrados en la base de datos, nunca en texto plano, y no aparecen en registros ni en pantallas. Las conversaciones se usan para atender a tu cliente y para tus reportes: no se usan para entrenar modelos. Todo el manejo se alinea con la ley colombiana de protección de datos (Ley 1581 de 2012 - habeas data), y el agente le indica al usuario la política de datos de tu marca al iniciar la conversación."}
+    },
+    {
+      "externo_id": "faq|11",
+      "tipo": "faq",
+      "etiqueta": "¿Puede equivocarse o inventar información? ¿Cómo lo controlan?",
+      "valores": {"respuesta": "Es la pregunta correcta 👏. Trabajamos con tres barreras: (1) el agente responde solo con la información de tu contexto, y tiene prohibido inventar precios, inventarios, promociones o plazos; (2) cuando no sabe algo, la instrucción es decirlo y pasar a un humano, no improvisar; y (3) para los datos que cambian (pedidos, stock) no adivina: consulta tu sistema en el momento. Además, cada conversación deja registro de qué respondió, qué camino tomó y qué consultó, así que los errores se detectan y se corrigen en el contexto. Antes de salir en vivo hacemos una batería de pruebas con guiones reales de tu operación."}
+    },
+    {
+      "externo_id": "faq|12",
+      "tipo": "faq",
+      "etiqueta": "¿Cómo mido los resultados?",
+      "valores": {"respuesta": "En la plataforma ves las conversaciones atendidas, qué está preguntando la gente (los temas más frecuentes), cuántas resolvió el agente solo, cuántas escaló a tu equipo y por qué, los tiempos de respuesta y el desempeño de las campañas. Con eso sabes dos cosas que casi nadie mide hoy: cuánto tiempo de tu equipo se está ahorrando y qué preguntas del cliente te están costando ventas. Ese tablero es también el insumo del ajuste mensual del agente."}
+    },
+    {
+      "externo_id": "faq|13",
+      "tipo": "faq",
+      "etiqueta": "¿Sirve para campañas y para recuperar clientes, no solo para responder?",
+      "valores": {"respuesta": "Sí. El módulo de Campañas envía mensajes masivos por WhatsApp a los segmentos que definas —lanzamientos, promociones, recordatorios de pago, recuperación de carritos, recompra— usando plantillas aprobadas por Meta (obligatorias para escribir primero). Y lo importante: quien responde la campaña cae en el agente, que continúa la conversación, resuelve y cierra. Campaña y atención dejan de ser dos mundos separados."}
+    },
+    {
+      "externo_id": "faq|14",
+      "tipo": "faq",
+      "etiqueta": "¿Puede atender a públicos distintos (clientes finales y mayoristas)?",
+      "valores": {"respuesta": "Sí, y es muy común. El agente identifica con quién está hablando por lo que la persona escribe (si menciona su tienda, lotes o facturas, es un negocio; si pregunta por una talla o su pedido, es consumidor final) y toma el camino correspondiente, con tono, información y escalamientos distintos para cada uno. Lo hacemos hoy con una marca de moda que atiende clientas finales y tiendas que la revenden, en el mismo número, sin que el cliente tenga que elegir en un menú."}
+    },
+    {
+      "externo_id": "faq|15",
+      "tipo": "faq",
+      "etiqueta": "¿Cómo empiezo? ¿Puedo ver una demo con mi propio caso?",
+      "valores": {"respuesta": "Claro, y es el mejor camino: agendamos una sesión, entendemos tu operación y te armamos una demo del agente con tu información, para que lo pruebes tú mismo antes de decidir nada. De tu lado solo necesitamos, para esa conversación, saber qué preguntan más tus clientes hoy y qué sistemas usas. ¿Te conecto con un especialista para agendarla? 🚀"}
+    }
+  ],
+  "alias": [
+    {"alias": "preguntas frecuentes", "nivel": "producto"},
+    {"alias": "faq", "nivel": "producto"},
+    {"alias": "dudas", "nivel": "producto"},
+    {"alias": "como funciona", "nivel": "producto"}
+  ]
+}

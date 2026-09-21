@@ -1,0 +1,71 @@
+{
+  "slug": "promo_manada",
+  "titulo": "Jerarquía — Promo Manada",
+  "nombre": "Promo Manada",
+  "tipo": "producto",
+  "estado": "publicado",
+  "resumen": "3 camisetas tipo polo Jerarquía por $160.000, envío a toda Colombia incluido. Es la única promoción activa y el único producto que vende el bot.",
+  "instrucciones": "La Promo Manada es TODO lo que vendes: 3 camisetas tipo polo por $160.000, envío a toda Colombia incluido en el precio.\n\nFicha de la prenda:\n- Polo para hombre, cuello y puños tejidos, algodón piqué.\n- Tallas: S, M, L y XL. Colores: negro, blanco, azul oscuro, gris jaspe y vinotinto.\n- Las 3 camisetas se eligen libres: pueden ser tallas y colores distintos, o las tres iguales. El precio no cambia.\n- Entrega estimada de 2 a 5 días hábiles según la ciudad.\n- Pago por link de pago en línea. Cuando la persona paga, manda el comprobante por el chat y con eso se despacha.\n\nEl precio es fijo: no hay descuentos, ni rebajas, ni precio por camiseta suelta. Si piden una sola, más de tres, otra prenda o precio al por mayor, eso no lo manejas: pásalo a un asesor.\n\nQué NO sabes y va derecho a un asesor: stock puntual (sabes qué tallas y colores existen, no cuántos quedan), cambios, devoluciones y garantías, medios de pago distintos al link, estado de un pedido ya hecho, guías y transportadoras, ventas al por mayor y personalización, tiendas físicas y horarios, y cualquier reclamo de un pedido anterior.",
+  "atributos": {
+    "tallas": ["S", "M", "L", "XL"],
+    "venta": {
+      "producto": "Promo Manada — 3 camisetas tipo polo",
+      "valor": "$160.000",
+      "prefijo": "JRQ",
+      "link_pago": "https://app.glomabeauty.com/pago-demo?ref={ref}&total=160000&marca=Jerarqu%C3%ADa"
+    },
+    "presentacion": {
+      "precio": "precio",
+      "encabezado": [
+        "Promo Manada — precio vigente al {hoy}. Es la única cifra que puedes decir."
+      ],
+      "desde_global": "{producto}: {precio} por las {unidades} camisetas tipo polo, con envío a toda Colombia incluido. El precio es FIJO: no hay descuentos, ni rebajas, ni precio por unidad. Colores disponibles: {grupo}.",
+      "nota_precios_compartidos": "",
+      "sin_datos": "La promoción no está vigente hoy. NO inventes un precio ni improvises otra oferta: dile al cliente que lo confirmas y pásalo a un asesor.",
+      "variante_desconocida": "No reconozco el color '{texto}'. Los colores son: {variantes}.",
+      "cierre": [
+        "El precio no se redondea ni se negocia. Si piden una sola camiseta, más de tres, otra prenda o precio al por mayor, eso va a un asesor."
+      ]
+    }
+  },
+  "como_se_lleno": [
+    "El precio, la promo y la ficha salen de `app/bot_contexts/jerarquia.md`; el prefijo del pedido y el link de pago, de `llm_config.venta` (seed_bot_jerarquia.py). Hoy están escritos en esos dos lugares y nada garantiza que coincidan: acá quedan una sola vez.",
+    "Los colores son variantes porque es lo que el cliente nombra («la quiero en vinotinto») y lo que tiene alias. Las tallas NO son variantes: no tienen precio propio y su alias sería una letra suelta —«L»— que resolvería cualquier frase. Van en `atributos.tallas` y en las instrucciones.",
+    "La fila de precio va SIN `inicio` y con `fin`. Con `inicio`, la capa genérica entiende que el producto tiene calendario y le exige al bot un mes antes de dar una cifra; la Promo Manada no tiene temporada, tiene vencimiento.",
+    "El precio lo pone una sola variante (negro) y las otras cuatro lo toman de ella con `precios_de`: así el «desde» se cotiza una vez y no cinco veces la misma cifra.",
+    "`atributos.venta` es el prefijo y el link de pago como dato del producto. Ninguna herramienta lo lee todavía: la fase 7 solo deja la receta lista."
+  ],
+  "variantes": [
+    {"slug": "negro", "nombre": "Negro", "orden": 1},
+    {"slug": "blanco", "nombre": "Blanco", "orden": 2, "precios_de": "negro"},
+    {"slug": "azul_oscuro", "nombre": "Azul oscuro", "orden": 3, "precios_de": "negro"},
+    {"slug": "gris_jaspe", "nombre": "Gris jaspe", "orden": 4, "precios_de": "negro"},
+    {"slug": "vinotinto", "nombre": "Vinotinto", "orden": 5, "precios_de": "negro"}
+  ],
+  "filas": [
+    {
+      "externo_id": "promo_manada|2026",
+      "tipo": "precio",
+      "etiqueta": "3 polos por $160.000",
+      "fin": "2026-12-31",
+      "valores": {"precio": 160000, "unidades": 3, "envio": "incluido"},
+      "nota": "Precio fijo de la promoción. Envío a toda Colombia incluido."
+    }
+  ],
+  "alias": [
+    {"alias": "promo manada", "nivel": "producto"},
+    {"alias": "promo", "nivel": "producto"},
+    {"alias": "polos", "nivel": "producto"},
+    {"alias": "camisetas", "nivel": "producto"},
+    {"alias": "negro", "nivel": "variante", "variante": "negro"},
+    {"alias": "negra", "nivel": "variante", "variante": "negro"},
+    {"alias": "blanco", "nivel": "variante", "variante": "blanco"},
+    {"alias": "blanca", "nivel": "variante", "variante": "blanco"},
+    {"alias": "azul oscuro", "nivel": "variante", "variante": "azul_oscuro"},
+    {"alias": "azul", "nivel": "variante", "variante": "azul_oscuro"},
+    {"alias": "gris jaspe", "nivel": "variante", "variante": "gris_jaspe"},
+    {"alias": "gris", "nivel": "variante", "variante": "gris_jaspe"},
+    {"alias": "vinotinto", "nivel": "variante", "variante": "vinotinto"},
+    {"alias": "vino tinto", "nivel": "variante", "variante": "vinotinto"}
+  ]
+}

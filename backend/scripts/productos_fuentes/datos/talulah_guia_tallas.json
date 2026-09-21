@@ -1,0 +1,48 @@
+{
+  "slug": "guia_de_tallas",
+  "titulo": "Talulah — Guía de tallas",
+  "nombre": "Guía de tallas Talulah",
+  "tipo": "ficha",
+  "estado": "publicado",
+  "resumen": "Las seis imágenes de la guía de tallas de la marca, con el acompañamiento que se ofrece después de enviarlas.",
+  "instrucciones": "Cuando la clienta tenga dudas de talla, envíale la guía completa con `enviar_media`, usando las seis claves `guia_tallas_1` … `guia_tallas_6` en UNA sola llamada (una lista de claves), no en seis turnos.\n\nDespués de enviarlas, ofrece acompañamiento: «Si tienes alguna duda adicional o necesitas ayuda con las medidas, con gusto te acompaño ✨».\n\nLo que NO haces con la guía: recomendar una talla concreta a partir de un peso o una estatura que la clienta te dé, ni afirmar que una prenda «talla grande» o «talla pequeña». Eso no está en la guía; si insiste, acompáñala con las medidas de la imagen o pásala a una asesora.",
+  "atributos": {
+    "presentacion": {
+      "encabezado": [
+        "Guía de tallas de Talulah — vigente al {hoy}."
+      ],
+      "sin_datos": "No tengo la guía de tallas cargada. NO recomiendes una talla de memoria: pasa la conversación a una asesora."
+    }
+  },
+  "como_se_lleno": [
+    "Las seis claves y sus URL salen del `llm_config.media` del bot de Talulah, que es donde están hoy.",
+    "Las URL siguen apuntando al dominio anterior (`app.glomabeauty.com`), que desde el Sprint 28 responde 301 al nuevo. Se copiaron TAL CUAL: cambiar un dominio en una imagen que el bot manda a clientas reales es una decisión de operación, no un efecto colateral de esta receta. Queda anotado para que se decida aparte.",
+    "La ficha lleva una fila aunque no tarife nada: sin filas vigentes, la capa genérica da el producto por vacío y manda escalar."
+  ],
+  "filas": [
+    {
+      "externo_id": "guia|envio_completo",
+      "tipo": "faq",
+      "etiqueta": "¿Cómo se envía la guía de tallas?",
+      "valores": {
+        "claves": ["guia_tallas_1", "guia_tallas_2", "guia_tallas_3", "guia_tallas_4", "guia_tallas_5", "guia_tallas_6"],
+        "como": "las seis en una sola llamada a `enviar_media`",
+        "acompanamiento": "Si tienes alguna duda adicional o necesitas ayuda con las medidas, con gusto te acompaño ✨"
+      }
+    }
+  ],
+  "medios": [
+    {"clave": "guia_tallas_1", "url": "https://app.glomabeauty.com/talulah/guia_tallas_1.jpeg", "tipo": "image", "descripcion": "guía de tallas Talulah (imagen 1 de 6)", "aplica": {"camino": "tallas", "caption": "Guía de tallas Talulah 🌿"}},
+    {"clave": "guia_tallas_2", "url": "https://app.glomabeauty.com/talulah/guia_tallas_2.jpeg", "tipo": "image", "descripcion": "guía de tallas Talulah (imagen 2 de 6)", "aplica": {"camino": "tallas"}},
+    {"clave": "guia_tallas_3", "url": "https://app.glomabeauty.com/talulah/guia_tallas_3.jpeg", "tipo": "image", "descripcion": "guía de tallas Talulah (imagen 3 de 6)", "aplica": {"camino": "tallas"}},
+    {"clave": "guia_tallas_4", "url": "https://app.glomabeauty.com/talulah/guia_tallas_4.jpeg", "tipo": "image", "descripcion": "guía de tallas Talulah (imagen 4 de 6)", "aplica": {"camino": "tallas"}},
+    {"clave": "guia_tallas_5", "url": "https://app.glomabeauty.com/talulah/guia_tallas_5.jpeg", "tipo": "image", "descripcion": "guía de tallas Talulah (imagen 5 de 6)", "aplica": {"camino": "tallas"}},
+    {"clave": "guia_tallas_6", "url": "https://app.glomabeauty.com/talulah/guia_tallas_6.jpeg", "tipo": "image", "descripcion": "guía de tallas Talulah (imagen 6 de 6)", "aplica": {"camino": "tallas"}}
+  ],
+  "alias": [
+    {"alias": "guia de tallas", "nivel": "producto"},
+    {"alias": "tallas", "nivel": "producto"},
+    {"alias": "talla", "nivel": "producto"},
+    {"alias": "medidas", "nivel": "producto"}
+  ]
+}
