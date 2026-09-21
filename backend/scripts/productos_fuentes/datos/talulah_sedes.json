@@ -1,0 +1,79 @@
+{
+  "slug": "sedes",
+  "titulo": "Talulah — Sedes y horarios",
+  "nombre": "Sedes Talulah",
+  "tipo": "ficha",
+  "estado": "publicado",
+  "resumen": "Las cuatro tiendas físicas de Talulah, con dirección, mapa y horario. No se venden: se informan.",
+  "instrucciones": "Las tiendas físicas de Talulah, con su dirección y su mapa:\n\n🏠 *Envigado* — 📍 Calle 36 Sur #42-24, Local 401\n🗺️ https://maps.google.com/?q=6.17112721,-75.58669778\n🏠 *Junín (Medellín)* — 📍 Carrera 49 #49-75\n🗺️ https://maps.google.com/?q=6.24893676,-75.56717414\n🏠 *Outlet Envigado* — 📍 Calle 45A #29 Sur-70\n🗺️ https://maps.google.com/?q=6.17983510,-75.59659210\n🏠 *Santafé Medellín* — 📍 CC Santafé, Local 3210 — Cra 43A, Cll 7 Sur-170\n🗺️ https://maps.google.com/?q=6.19646831,-75.57378612\n\n🕰️ Horarios de todas las sedes: lunes a sábado 10:00 a.m. – 8:00 p.m.; domingos y festivos 11:00 a.m. – 7:00 p.m.\n\nLos teléfonos de cada sede NO están en tu contexto. Si la clienta pide el número de una tienda, pásala a una asesora en vez de inventarlo.\n\nA cualquiera de estas tiendas puede acercarse para un cambio: ahí le ayudan con el proceso.",
+  "atributos": {
+    "presentacion": {
+      "encabezado": [
+        "Sedes de Talulah — información vigente al {hoy}."
+      ],
+      "sin_datos": "No tengo las sedes cargadas. NO inventes una dirección ni un horario: pasa la conversación a una asesora."
+    }
+  },
+  "como_se_lleno": [
+    "Las cuatro sedes, sus direcciones, sus mapas y el horario salen de `app/bot_contexts/talulah.md`, sección «Sedes físicas».",
+    "Los TELÉFONOS de las sedes quedaron deliberadamente FUERA. Este repositorio es público y la regla 8 de CLAUDE.md no distingue: un teléfono no se escribe en un archivo versionado. Entran cuando el dato se cargue desde el archivo del cliente, no desde el repo. Mientras tanto, las instrucciones le dicen al bot que no lo invente.",
+    "Una fila por sede, con `tipo = sede`. Hoy ninguna herramienta redacta las filas de una ficha —solo se lee `instrucciones`—, así que el contenido está en los dos sitios: la fila es el dato estructurado y las instrucciones son lo que el bot alcanza a leer."
+  ],
+  "filas": [
+    {
+      "externo_id": "sede|envigado",
+      "tipo": "sede",
+      "etiqueta": "Envigado",
+      "valores": {
+        "ciudad": "Envigado",
+        "direccion": "Calle 36 Sur #42-24, Local 401",
+        "mapa": "https://maps.google.com/?q=6.17112721,-75.58669778",
+        "horario_semana": "lunes a sábado 10:00 a.m. – 8:00 p.m.",
+        "horario_domingo": "domingos y festivos 11:00 a.m. – 7:00 p.m."
+      }
+    },
+    {
+      "externo_id": "sede|junin",
+      "tipo": "sede",
+      "etiqueta": "Junín (Medellín)",
+      "valores": {
+        "ciudad": "Medellín",
+        "direccion": "Carrera 49 #49-75",
+        "mapa": "https://maps.google.com/?q=6.24893676,-75.56717414",
+        "horario_semana": "lunes a sábado 10:00 a.m. – 8:00 p.m.",
+        "horario_domingo": "domingos y festivos 11:00 a.m. – 7:00 p.m."
+      }
+    },
+    {
+      "externo_id": "sede|outlet_envigado",
+      "tipo": "sede",
+      "etiqueta": "Outlet Envigado",
+      "valores": {
+        "ciudad": "Envigado",
+        "direccion": "Calle 45A #29 Sur-70",
+        "mapa": "https://maps.google.com/?q=6.17983510,-75.59659210",
+        "horario_semana": "lunes a sábado 10:00 a.m. – 8:00 p.m.",
+        "horario_domingo": "domingos y festivos 11:00 a.m. – 7:00 p.m."
+      }
+    },
+    {
+      "externo_id": "sede|santafe",
+      "tipo": "sede",
+      "etiqueta": "Santafé Medellín",
+      "valores": {
+        "ciudad": "Medellín",
+        "direccion": "CC Santafé, Local 3210 — Cra 43A, Cll 7 Sur-170",
+        "mapa": "https://maps.google.com/?q=6.19646831,-75.57378612",
+        "horario_semana": "lunes a sábado 10:00 a.m. – 8:00 p.m.",
+        "horario_domingo": "domingos y festivos 11:00 a.m. – 7:00 p.m."
+      }
+    }
+  ],
+  "alias": [
+    {"alias": "sedes", "nivel": "producto"},
+    {"alias": "tiendas", "nivel": "producto"},
+    {"alias": "tienda fisica", "nivel": "producto"},
+    {"alias": "puntos de venta", "nivel": "producto"},
+    {"alias": "horarios", "nivel": "producto"}
+  ]
+}

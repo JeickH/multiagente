@@ -10,7 +10,10 @@
         `bot_producto_cargas`. Se niega si no hubo revisión, si el archivo
         cambió desde entonces o si la base se movió por debajo.
 
-Catálogos disponibles: covenas_temporada
+Catálogos disponibles: `covenas_temporada` (módulo de Python, traduce el JSON de
+temporada) y uno por cada archivo de `productos_fuentes/datos/`. Para verlos:
+
+    python backend/scripts/importar_producto.py --help
 
 El flujo, tal como se opera:
 
@@ -53,9 +56,13 @@ for _ruta in (BACKEND, os.path.join(BACKEND, "scripts")):
     if _ruta not in sys.path:
         sys.path.insert(0, _ruta)
 
-from productos_fuentes import base, covenas  # noqa: E402
+from productos_fuentes import base, covenas, json_generico  # noqa: E402
 
-RECETAS = {covenas.SLUG: covenas}
+#: Las recetas disponibles, por slug. Coveñas es un módulo de Python porque
+#: traduce el archivo del cliente; las demás cuentas son un JSON con la forma
+#: del catálogo y las arma `json_generico` sin una línea de código propia
+#: (agregar una cuenta = dejar un archivo en `productos_fuentes/datos/`).
+RECETAS = {covenas.SLUG: covenas, **json_generico.recetas()}
 SALIDA = os.path.join(RAIZ, "testdata", "productos_import")
 
 

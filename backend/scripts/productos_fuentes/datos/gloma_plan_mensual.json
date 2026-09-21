@@ -1,0 +1,60 @@
+{
+  "slug": "plan_mensual",
+  "titulo": "Gloma — Plan mensual de la plataforma",
+  "nombre": "Plan mensual Gloma",
+  "tipo": "plan",
+  "estado": "publicado",
+  "resumen": "Acceso a la plataforma con cobro automático cada mes, $350.000 COP. La implementación inicial y el plan operado se cotizan aparte, con el volumen real del cliente.",
+  "instrucciones": "Lo único que tiene precio publicado es el *plan mensual de la plataforma*: $350.000 COP al mes, con cobro automático, y se puede desactivar cuando el cliente quiera. Incluye los cuatro módulos: Mensajes, Campañas, Bots (con simulador y bitácora) y Plan y usuarios.\n\nEl resto del modelo NO tiene cifra publicada y no te la puedes inventar:\n- La *implementación inicial* (diseño del agente, contexto, integraciones y salida a producción) se cotiza según el alcance.\n- El *plan operado* depende del volumen de conversaciones y de lo que el agente tenga que hacer.\n- El costo que *Meta* cobra por conversación de WhatsApp se paga según el uso real.\n\nSi preguntan «¿cuánto cuesta?», responde eso: hay un plan mensual de plataforma con precio, y una cotización que arma un especialista con su volumen real, porque cambia mucho entre una tienda pequeña y una operación de miles de chats diarios. Como referencia, los clientes recuperan la inversión en promedio en 4 meses. Y ofrece agendar la sesión.",
+  "atributos": {
+    "presentacion": {
+      "precio": "precio",
+      "encabezado": [
+        "Precios de Gloma vigentes al {hoy}. La única cifra publicada es la de abajo."
+      ],
+      "desde_global": "{producto}: {precio_pesos} {moneda} al {periodicidad}, con cobro automático y se puede desactivar cuando quiera. {incluye}",
+      "sin_datos": "No hay un precio publicado. NO des una cifra al aire: dile que un especialista arma la cotización con su volumen real y ofrécele agendar la sesión.",
+      "cierre": [
+        "La implementación inicial y el plan operado NO tienen precio publicado: se cotizan con el volumen real. El consumo de WhatsApp lo cobra Meta según el uso.",
+        "Cierra ofreciendo agendar la sesión de demostración: es tu objetivo."
+      ]
+    }
+  },
+  "como_se_lleno": [
+    "El precio y el nombre del plan salen de `app/services/suscripciones.py` (`PLAN_MENSUAL`, fijado por el CEO el 5-sep-2026); lo que incluye la plataforma y el modelo de cobro, de `app/bot_contexts/gloma.md` (datos de Gloma y pregunta 9).",
+    "Hoy ese precio vive en el código del cobro y NO en el contexto del bot: Lía no puede decirlo. Esta ficha es el único sitio donde el precio y lo que el bot dice del precio quedan juntos.",
+    "Lo que NO tiene cifra —implementación inicial, plan operado y el consumo de Meta— queda escrito como «se cotiza», no como una columna vacía: una columna vacía se lee como «no cuesta».",
+    "La fila va sin `inicio` y con `fin`: es hasta cuándo vale este precio, no una temporada. Con `inicio`, la capa genérica le exigiría un mes al bot antes de dar una cifra.",
+    "La AGENDA no entra acá: las opciones de horario son un cálculo sobre `llm_config.agenda`, no un dato del catálogo.",
+    "Hay UNA variante, «Plataforma», aunque el plan no tenga versiones. No es adorno: la capa genérica cotiza el «desde» recorriendo las variantes, así que un producto sin ninguna nunca llega a decir su precio — se cargó sin variante y `consultar_precios` devolvía el encabezado y el cierre, con la cifra adentro de la base y fuera del texto."
+  ],
+  "variantes": [
+    {"slug": "plataforma", "nombre": "Plataforma Gloma", "orden": 1}
+  ],
+  "filas": [
+    {
+      "externo_id": "plan_mensual|2026",
+      "tipo": "precio",
+      "etiqueta": "Plan mensual de la plataforma",
+      "fin": "2026-12-31",
+      "valores": {
+        "precio": 350000,
+        "moneda": "COP",
+        "periodicidad": "mes",
+        "incluye": "Incluye los cuatro módulos de la plataforma: Mensajes, Campañas, Bots (con simulador y bitácora) y Plan y usuarios.",
+        "implementacion_inicial": "se cotiza según el alcance",
+        "plan_operado": "se cotiza según el volumen de conversaciones",
+        "consumo_whatsapp": "lo cobra Meta por conversación, según el uso real",
+        "retorno_promedio": "4 meses"
+      },
+      "nota": "Cobro automático cada mes; se puede desactivar cuando el cliente quiera."
+    }
+  ],
+  "alias": [
+    {"alias": "plan", "nivel": "producto"},
+    {"alias": "plan mensual", "nivel": "producto"},
+    {"alias": "precio", "nivel": "producto"},
+    {"alias": "cuanto cuesta", "nivel": "producto"},
+    {"alias": "mensualidad", "nivel": "producto"}
+  ]
+}

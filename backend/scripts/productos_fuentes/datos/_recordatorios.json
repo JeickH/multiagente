@@ -1,0 +1,119 @@
+{
+  "_leeme": [
+    "Los reenganches de silencio de cada cuenta, uno por fila de `bot_recordatorios`.",
+    "Los `minutos` se cuentan DESDE QUE EMPEZÓ EL SILENCIO, no desde el recordatorio anterior: `bot_runner` calcula la diferencia. Por eso la lista es 15 · 240 · 1320 y no 15 · 225 · 1080.",
+    "Ninguno pasa de 1440 (el CHECK de la tabla no lo permitiría): WhatsApp solo deja escribir texto libre dentro de las 24 h siguientes al último mensaje del cliente. A las 24 en punto haría falta una plantilla aprobada por Meta y el mensaje saldría `failed` sin que nadie se entere.",
+    "El ÚLTIMO recordatorio de cada cadena va con la franja libre (0-23) a propósito. La franja no adelanta: atrasa. Un último reenganche de 22 h con franja comercial, en un silencio que empezó de madrugada, se correría a la mañana siguiente y caería FUERA de la ventana de 24 h — o sea, no llegaría. Entre mandarlo a una hora rara y no mandarlo, se manda.",
+    "`omitir_si` solo entiende `{\"tools\": [...]}`: se responde mirando `bot_llm_decisions`, que es donde queda qué herramientas llamó el bot. No entiende «camino», así que una regla escrita como camino se traduce a la herramienta de ese camino.",
+    "Dejar estas filas NO enciende nada: la política la sigue encendiendo `llm_config.seguimiento` del bot. Mientras ese bloque no exista, las filas quedan inertes.",
+    "El archivo empieza por `_` para que el importador de productos no lo tome por un catálogo."
+  ],
+  "cuentas": {
+    "jerarquia": {
+      "nombre": "Jerarquía",
+      "por_que": "Hoy no reengancha a nadie: quien deja la conversación a medias se pierde. El bot vende un solo producto y el cierre es rápido, así que el primer toque va corto.",
+      "omitir_si": {"tools": ["registrar_venta"]},
+      "recordatorios": [
+        {
+          "orden": 1,
+          "minutos": 15,
+          "hora_min": 7,
+          "hora_max": 21,
+          "texto": "¿Seguimos? 🐺 Si quieres te armo la *Promo Manada*: 3 camisetas tipo polo por $160.000 con envío incluido. Dime las tallas y los colores y la dejo lista."
+        },
+        {
+          "orden": 2,
+          "minutos": 240,
+          "hora_min": 7,
+          "hora_max": 21,
+          "texto": "Te dejo la promo a la mano por si la retomas: *3 polos por $160.000*, envío a toda Colombia incluido 🔱 Si tienes alguna duda de talla o color, aquí estoy."
+        },
+        {
+          "orden": 3,
+          "minutos": 1320,
+          "hora_min": 0,
+          "hora_max": 23,
+          "texto": "Última por hoy 🔥 Si quieres tus polos, escríbeme y en un mensaje dejamos el pedido listo. ¡Que te vaya muy bien!"
+        }
+      ]
+    },
+    "gloma": {
+      "nombre": "Gloma / Lía",
+      "por_que": "El objetivo de Lía es agendar la sesión de demostración: el reenganche existe para volver a ofrecerla, no para insistir con información. Por eso el primer toque es más largo que en una venta de producto — quien está evaluando un proveedor no contesta en 15 minutos.",
+      "omitir_si": {"tools": ["registrar_demo"]},
+      "recordatorios": [
+        {
+          "orden": 1,
+          "minutos": 30,
+          "hora_min": 8,
+          "hora_max": 20,
+          "texto": "¿Seguimos? 🤍 Si quieres, agendamos una sesión corta y te armamos una demo del agente con la información de tu negocio, para que lo pruebes tú mismo."
+        },
+        {
+          "orden": 2,
+          "minutos": 360,
+          "hora_min": 8,
+          "hora_max": 20,
+          "texto": "Te dejo la puerta abierta 🚀 Con saber qué te preguntan más tus clientes hoy y qué sistemas usas, te mostramos cómo quedaría tu agente. ¿Te agendo la sesión?"
+        },
+        {
+          "orden": 3,
+          "minutos": 1380,
+          "hora_min": 0,
+          "hora_max": 23,
+          "texto": "Última por hoy 🤍 Si más adelante quieres ver la demo con tu propio caso, escríbeme y la agendamos. ¡Que tengas un buen día!"
+        }
+      ]
+    },
+    "natulce": {
+      "nombre": "Natulcé",
+      "por_que": "Reemplaza la cadena que hoy vive en `llm_config.seguimiento` (3 h y 23 h) por la aprobada en el plan (15 min · 4 h · 22 h). El primer texto es el de la marca, que el CEO pidió con esas palabras.",
+      "omitir_si": {"tools": ["registrar_pedido"]},
+      "recordatorios": [
+        {
+          "orden": 1,
+          "minutos": 15,
+          "hora_min": 7,
+          "hora_max": 21,
+          "texto": "Hola 👀 me dejaste en visto 🙊…"
+        },
+        {
+          "orden": 2,
+          "minutos": 240,
+          "hora_min": 7,
+          "hora_max": 21,
+          "texto": "Aquí sigo 🍹 Si quieres te dejo el pedido listo: mándame tu *nombre*, tu *dirección con ciudad* y los *sabores* que quieres probar."
+        },
+        {
+          "orden": 3,
+          "minutos": 1320,
+          "hora_min": 0,
+          "hora_max": 23,
+          "texto": "Última razón por hoy 🍹 Si más adelante quieres probar los siropes, aquí estoy. ¡Que estés muy bien! 😊"
+        }
+      ]
+    },
+    "talulah": {
+      "nombre": "Talulah",
+      "por_que": "Talulah es servicio al cliente, no venta: insistir tres veces a quien preguntó por una talla es molestar. Dos toques, y el primero más espaciado.",
+      "omitir_si": {"tools": ["consultar_pedido_shopify"]},
+      "omitir_si_nota": "La regla aprobada dice «se omite si el camino fue estado_pedido», y `omitir_si` no entiende caminos: solo herramientas. Se traduce a la herramienta de ese camino. Si el bot clasifica el camino sin llegar a llamarla, el recordatorio sí sale.",
+      "recordatorios": [
+        {
+          "orden": 1,
+          "minutos": 20,
+          "hora_min": 8,
+          "hora_max": 20,
+          "texto": "¿Seguimos por aquí? 🌿 Si te quedó alguna duda con tu pedido, una talla o un cambio, con gusto te acompaño 🤍"
+        },
+        {
+          "orden": 2,
+          "minutos": 1320,
+          "hora_min": 0,
+          "hora_max": 23,
+          "texto": "Te dejo acompañada por aquí 🤎 Si más adelante necesitas algo, escríbeme y seguimos. ¡Que tengas un lindo día! ✨"
+        }
+      ]
+    }
+  }
+}

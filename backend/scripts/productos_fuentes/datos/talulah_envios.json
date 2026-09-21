@@ -1,0 +1,41 @@
+{
+  "slug": "envios",
+  "titulo": "Talulah — Envíos y tiempos de entrega",
+  "nombre": "Envíos Talulah",
+  "tipo": "ficha",
+  "estado": "publicado",
+  "resumen": "Política de envíos y tiempos de entrega. La tabla por zona todavía no existe: hoy solo hay el enlace a la política publicada.",
+  "instrucciones": "Los tiempos de envío, las condiciones y los costos están en la política publicada de la marca:\nhttps://www.talulah.com.co/policies/shipping-policy\n\nNO tienes una tabla de tiempos por ciudad ni por zona. No prometas «llega en 2 días» ni un costo de envío concreto: comparte la política y, si la clienta necesita una respuesta exacta para su ciudad, pásala a una asesora.\n\nSi lo que pregunta es por el estado de un pedido que ya hizo, eso NO es esta ficha: se consulta en vivo con `consultar_pedido_shopify`, que devuelve el estado de envío y la URL de rastreo.",
+  "atributos": {
+    "presentacion": {
+      "encabezado": [
+        "Envíos de Talulah — información vigente al {hoy}."
+      ],
+      "sin_datos": "No tengo la información de envíos. NO inventes tiempos ni costos: comparte la política de envíos o pasa la conversación a una asesora."
+    }
+  },
+  "como_se_lleno": [
+    "El plan pedía «una fila por zona» con sus tiempos de envío. Esa tabla NO existe en ninguna fuente del repositorio: `app/bot_contexts/talulah.md` solo enlaza la política publicada. Inventar tiempos de entrega para un cliente real es exactamente lo que el esquema viene a impedir, así que la ficha queda con una sola fila —el puntero a la política— y el dato por zona queda PENDIENTE de que la marca lo entregue.",
+    "Cuando llegue la tabla, entra como filas `tipo = envio` con `etiqueta` = la zona y `valores` = {dias_min, dias_max, costo}. No hace falta tocar código: este archivo crece y se vuelve a cargar."
+  ],
+  "filas": [
+    {
+      "externo_id": "politica|envios",
+      "tipo": "envio",
+      "etiqueta": "Política de envíos",
+      "valores": {
+        "politica": "https://www.talulah.com.co/policies/shipping-policy",
+        "cobertura": "nacional",
+        "tiempos_por_zona": "pendiente: la marca todavía no entregó la tabla"
+      },
+      "nota": "Mientras no haya tabla por zona, el bot no promete tiempos: comparte la política o escala."
+    }
+  ],
+  "alias": [
+    {"alias": "envios", "nivel": "producto"},
+    {"alias": "envio", "nivel": "producto"},
+    {"alias": "domicilio", "nivel": "producto"},
+    {"alias": "tiempos de entrega", "nivel": "producto"},
+    {"alias": "cuanto se demora el envio", "nivel": "producto"}
+  ]
+}

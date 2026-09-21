@@ -1,0 +1,95 @@
+{
+  "slug": "siropes_250ml",
+  "titulo": "Natulcé — Siropes y endulzantes 250 ml",
+  "nombre": "Siropes y endulzantes Natulcé 250 ml",
+  "tipo": "producto",
+  "estado": "publicado",
+  "resumen": "Sirope natural concentrado en frasco Hogar de 250 ml con dosificador: rinde más de 30 preparaciones. Cuatro siropes y dos endulzantes, todos al mismo precio.",
+  "instrucciones": "Presentación única: frasco Hogar de 250 ml con dosificador. Rinde más de 30 preparaciones (vasos de 22 oz). El precio es el mismo para todos los sabores y para los endulzantes. Envío nacional a toda Colombia.\n\nNo hay otras presentaciones: ni litro, ni galón, ni institucional. Si preguntan por presentación industrial, precio al por mayor o distribución, escala a un asesor.\n\nSabores, tal como los lista la marca:\n\nSiropes\nFrutos rojos 🍓\nFrutos amarillos 🍍\nFlor de Jamaica 👌🏻\nMaracuya 😁\n\nEndulzantes Saludables 🍃(para bebidas frías y calientes):\nNeutro 😊\nLimoncillo 🍋\n\nEsos son TODOS los sabores. Si piden uno que no está (mango, mora, vainilla, café…), dilo con calma: por ahora manejamos estos seis, y ofrece el más parecido de la lista.\n\nLa diferencia que sí puedes explicar: los siropes son con fruta y dan sabor y color a la bebida; los endulzantes (neutro y limoncillo) endulzan sin aportar sabor de fruta y sirven para bebidas frías y calientes — café, té, aromáticas.\n\nDe la etiqueta puedes decir: 100% fruta natural, endulzado con stevia, 90% menos calorías que una gaseosa tradicional. Nada más: no das consejos médicos ni nutricionales, y si preguntan por diabetes, embarazo o alguna condición, escalas a un asesor.",
+  "atributos": {
+    "presentacion": {
+      "precio": "precio",
+      "encabezado": [
+        "Precios de Natulcé vigentes al {hoy}. Son las únicas cifras que puedes decir, y no se redondean."
+      ],
+      "desde_global": "{presentacion}: precio de lista {precio_lista_pesos}, y con la promoción activa queda en {precio_pesos} (descuento del {descuento_pct}%). Rinde {rinde} y el envío nacional es {envio_pesos}. Mismo precio para todos los sabores y para los endulzantes.",
+      "nota_precios_compartidos": "",
+      "sin_datos": "No hay precios vigentes de Natulcé. NO inventes una cifra ni una promoción: dile al cliente que lo confirmas y pásalo a un asesor.",
+      "variante_desconocida": "No manejamos '{texto}'. Los sabores son: {variantes}. Ofrécele el más parecido de esa lista.",
+      "cierre": [
+        "OBLIGATORIO: en esta misma respuesta envía `precios` con `enviar_media`. No basta con escribir los valores.",
+        "El total de un pedido es: unidades × el precio con promoción, más el envío nacional una sola vez."
+      ]
+    }
+  },
+  "como_se_lleno": [
+    "Los precios, el rendimiento, la presentación y el listado de sabores salen de `app/bot_contexts/natulce.md`; las tres piezas de medios, de `app/data/bot_natulce.py`.",
+    "Los seis sabores son variantes: es lo que el cliente nombra y lo que tiene alias. El precio lo pone uno solo (frutos rojos) y los otros cinco lo toman con `precios_de`, porque en Natulcé todos valen lo mismo — así el precio se cotiza una vez y no seis.",
+    "Precio de lista y precio con promoción NO son dos filas, son dos columnas de la misma. La capa genérica solo redacta la fila más barata, así que como filas separadas el precio de lista desaparecería del resultado y el bot no podría decir «de $29.000 a $25.000».",
+    "La fila va sin `inicio` y con `fin`: es el vencimiento de la promoción, no una temporada. Con `inicio`, la capa genérica le exigiría un mes al bot antes de dar una cifra.",
+    "El envío es una columna de la fila y no un producto aparte: es una cifra del mismo renglón de precios y así entra en el mismo texto que lee el modelo."
+  ],
+  "variantes": [
+    {"slug": "frutos_rojos", "nombre": "Sirope de frutos rojos", "orden": 1},
+    {"slug": "frutos_amarillos", "nombre": "Sirope de frutos amarillos", "orden": 2, "precios_de": "frutos_rojos"},
+    {"slug": "flor_de_jamaica", "nombre": "Sirope de flor de Jamaica", "orden": 3, "precios_de": "frutos_rojos"},
+    {"slug": "maracuya", "nombre": "Sirope de maracuyá", "orden": 4, "precios_de": "frutos_rojos"},
+    {"slug": "neutro", "nombre": "Endulzante neutro", "orden": 5, "precios_de": "frutos_rojos", "instrucciones": "Endulzante, no sirope: endulza sin aportar sabor de fruta. Sirve para bebidas frías y calientes."},
+    {"slug": "limoncillo", "nombre": "Endulzante de limoncillo", "orden": 6, "precios_de": "frutos_rojos", "instrucciones": "Endulzante, no sirope: endulza sin aportar sabor de fruta. Sirve para bebidas frías y calientes."}
+  ],
+  "filas": [
+    {
+      "externo_id": "hogar_250ml|promo_15",
+      "tipo": "precio",
+      "etiqueta": "Frasco Hogar 250 ml",
+      "fin": "2026-12-31",
+      "valores": {
+        "precio": 25000,
+        "precio_lista": 29000,
+        "descuento_pct": 15,
+        "envio": 8000,
+        "rinde": "más de 30 preparaciones",
+        "presentacion": "Frasco Hogar de 250 ml con dosificador"
+      },
+      "nota": "Promoción activa: los siropes y endulzantes pasan de $29.000 a $25.000. Envío nacional $8.000 a toda Colombia."
+    }
+  ],
+  "medios": [
+    {
+      "clave": "promo",
+      "url": "https://glomacx.com/demo_natulce/info_general.jpeg",
+      "tipo": "image",
+      "descripcion": "imagen de la promo: comparativo gaseosa tradicional vs. sirope Natulcé (100% fruta, 90% menos calorías, stevia). Va con el mensaje de bienvenida",
+      "aplica": {"camino": "info_general"}
+    },
+    {
+      "clave": "video_promo",
+      "url": "https://glomacx.com/demo_natulce/info_general.mp4",
+      "tipo": "video",
+      "descripcion": "video de la marca con la preparación de la soda italiana. Va con el mensaje de bienvenida, junto a la imagen `promo`",
+      "aplica": {"camino": "info_general"}
+    },
+    {
+      "clave": "precios",
+      "url": "https://glomacx.com/demo_natulce/precios_porciones.jpeg",
+      "tipo": "image",
+      "descripcion": "imagen con el precio, el rendimiento, el envío nacional y el listado de sabores. Va cuando preguntan cuánto vale, qué presentación hay o cuánto rinde",
+      "aplica": {"camino": "precios_porciones"}
+    }
+  ],
+  "alias": [
+    {"alias": "sirope", "nivel": "producto"},
+    {"alias": "siropes", "nivel": "producto"},
+    {"alias": "endulzante", "nivel": "producto"},
+    {"alias": "endulzantes", "nivel": "producto"},
+    {"alias": "frutos rojos", "nivel": "variante", "variante": "frutos_rojos"},
+    {"alias": "rojos", "nivel": "variante", "variante": "frutos_rojos"},
+    {"alias": "frutos amarillos", "nivel": "variante", "variante": "frutos_amarillos"},
+    {"alias": "amarillos", "nivel": "variante", "variante": "frutos_amarillos"},
+    {"alias": "flor de jamaica", "nivel": "variante", "variante": "flor_de_jamaica"},
+    {"alias": "jamaica", "nivel": "variante", "variante": "flor_de_jamaica"},
+    {"alias": "maracuya", "nivel": "variante", "variante": "maracuya"},
+    {"alias": "neutro", "nivel": "variante", "variante": "neutro"},
+    {"alias": "limoncillo", "nivel": "variante", "variante": "limoncillo"}
+  ]
+}

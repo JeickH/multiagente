@@ -1,0 +1,70 @@
+{
+  "slug": "cambios_y_garantias",
+  "titulo": "Talulah — Cambios, devoluciones y garantías",
+  "nombre": "Cambios y garantías Talulah",
+  "tipo": "ficha",
+  "estado": "publicado",
+  "resumen": "Cómo se hace un cambio, qué necesita un caso de garantía y en cuánto responde el equipo. También los tips de pagos, promociones y fallas de la web.",
+  "instrucciones": "*Cambios y devoluciones*\nPolítica: https://www.talulah.com.co/policies/refund-policy\nPara un cambio, la clienta puede acercarse a cualquiera de nuestras tiendas a nivel nacional, donde con gusto le ayudan con el proceso.\n\n*Garantías*\nPara registrar un caso necesitas los TRES datos: (1) número de orden, (2) descripción del detalle, (3) fotos que evidencien la situación. Puede mandarlos en uno o en varios mensajes. Cuando tengas los tres, confirma: «¡Listo! 🌿🤎 Tu caso de garantía quedó registrado. Nuestro equipo lo revisa y te dará respuesta en un plazo aproximado de 5 días hábiles» y escala a una asesora para que le dé seguimiento.\n\n*Pagos y promociones*\nTip rápido: intentar el pago desde una ventana de incógnito o cambiar de dispositivo. Los cupones NO aplican para prendas en SALE y no son acumulables. Si el problema persiste, escala a una asesora.\n\n*Fallas de la web*\nTips: refrescar la página; entrar desde otro navegador o dispositivo; borrar la caché. Si persiste, escala a una asesora.",
+  "atributos": {
+    "presentacion": {
+      "encabezado": [
+        "Cambios, garantías, pagos y fallas de la web — información vigente al {hoy}."
+      ],
+      "sin_datos": "No tengo la política de cambios y garantías cargada. NO afirmes ni niegues nada: pasa la conversación a una asesora."
+    }
+  },
+  "como_se_lleno": [
+    "Las cuatro filas salen de `app/bot_contexts/talulah.md`: «Cambios y garantías», «Pagos y promociones» y «Fallas de la web».",
+    "Los tres datos que exige un caso de garantía van como una lista dentro de `valores`: es lo que el bot tiene que cobrar antes de confirmar, y como lista se puede revisar de un vistazo en el HTML.",
+    "«Negar también es inventar»: un plazo o una condición que no esté en estas filas no se afirma ni se niega — se escala."
+  ],
+  "filas": [
+    {
+      "externo_id": "faq|cambios",
+      "tipo": "faq",
+      "etiqueta": "¿Puedo cambiar una prenda?",
+      "valores": {
+        "respuesta": "Puede acercarse a cualquiera de nuestras tiendas a nivel nacional, donde con gusto le ayudan con el proceso.",
+        "politica": "https://www.talulah.com.co/policies/refund-policy"
+      }
+    },
+    {
+      "externo_id": "faq|garantias",
+      "tipo": "faq",
+      "etiqueta": "¿Cómo registro una garantía?",
+      "valores": {
+        "requisitos": ["número de orden", "descripción del detalle", "fotos que evidencien la situación"],
+        "plazo_respuesta": "5 días hábiles aproximadamente",
+        "cierre": "Se confirma el registro del caso y se escala a una asesora para el seguimiento."
+      }
+    },
+    {
+      "externo_id": "faq|pagos_promociones",
+      "tipo": "faq",
+      "etiqueta": "No me pasa el pago / ¿aplica el cupón?",
+      "valores": {
+        "tip": "Intentar el pago desde una ventana de incógnito o cambiar de dispositivo.",
+        "cupones": "No aplican para prendas en SALE y no son acumulables.",
+        "si_persiste": "escalar a una asesora"
+      }
+    },
+    {
+      "externo_id": "faq|fallas_web",
+      "tipo": "faq",
+      "etiqueta": "La página no me carga",
+      "valores": {
+        "tips": ["refrescar la página", "entrar desde otro navegador o dispositivo", "borrar la caché"],
+        "si_persiste": "escalar a una asesora"
+      }
+    }
+  ],
+  "alias": [
+    {"alias": "cambios", "nivel": "producto"},
+    {"alias": "devoluciones", "nivel": "producto"},
+    {"alias": "garantia", "nivel": "producto"},
+    {"alias": "garantias", "nivel": "producto"},
+    {"alias": "cupon", "nivel": "producto"},
+    {"alias": "no me pasa el pago", "nivel": "producto"}
+  ]
+}

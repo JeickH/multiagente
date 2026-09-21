@@ -1,0 +1,44 @@
+{
+  "slug": "catalogo_talulah",
+  "titulo": "Talulah — Catálogo (espejo de Shopify/Meta)",
+  "nombre": "Catálogo Talulah",
+  "tipo": "catalogo_externo",
+  "estado": "publicado",
+  "resumen": "Las prendas NO están en esta base: viven en Shopify y en el catálogo de WhatsApp de Meta, y se consultan en vivo con las herramientas del bot.",
+  "instrucciones": "El catálogo de prendas NO se copia a esta base y NO está en tu memoria. Vive en la tienda Shopify de la marca y en el catálogo nativo de WhatsApp, y se consulta en vivo:\n\n- Cuando la clienta quiera ver productos, la colección o el catálogo, usa `enviar_catalogo`: le llega el catálogo nativo de WhatsApp con los productos de la marca. Acompáñalo con un texto invitador.\n- Cuando pregunte por el estado de un pedido, usa `consultar_pedido_shopify`. Busca por número de pedido (lo ideal), o por nombre, cédula o fecha si no lo tiene a la mano.\n- También puedes mencionar la tienda online https://www.talulah.com.co como alternativa.\n\nCategorías que existen: Pantalón, Short, Capri, Batola, Satín, Plus Size, Niña, Ropa de Mujer (exterior, interior, vestidos de baño), SALE, Hombre y «Lo más nuevo».\n\nLo que NO puedes hacer con este catálogo: inventar precios, decir si hay inventario de una prenda o una talla, prometer descuentos o anunciar prendas que no viste en el resultado de una herramienta. Si el pedido no aparece o hay una novedad con el envío, escala a una asesora.",
+  "atributos": {
+    "presentacion": {
+      "encabezado": [
+        "El catálogo de Talulah no tiene precios en esta base: se consulta en vivo."
+      ],
+      "cierre": [
+        "Usa `enviar_catalogo` para mostrar productos y `consultar_pedido_shopify` para el estado de un pedido. NO cites un precio ni un inventario que no venga de una de esas dos."
+      ],
+      "sin_datos": "El catálogo se consulta en vivo con `enviar_catalogo` y `consultar_pedido_shopify`. NO improvises precios ni disponibilidad."
+    }
+  },
+  "como_se_lleno": [
+    "Este producto existe para NO copiar el catálogo. Las prendas siguen en Shopify y en el catálogo de Meta; acá solo queda el puntero y las instrucciones de cómo consultarlo.",
+    "Lleva una fila aunque no tenga nada que tarifar: la capa genérica trata un producto sin filas vigentes como un producto sin datos y manda escalar. La fila es la cáscara que lo mantiene vivo, y guarda el puntero a cada fuente.",
+    "Las credenciales de Shopify y el id del catálogo de Meta NO están acá: viven cifradas en `bots.llm_config` de la cuenta. Este repositorio es público."
+  ],
+  "filas": [
+    {
+      "externo_id": "puntero|shopify_meta",
+      "tipo": "faq",
+      "etiqueta": "Dónde vive el catálogo",
+      "valores": {
+        "tienda_online": "https://www.talulah.com.co",
+        "consulta_productos": "enviar_catalogo (catálogo nativo de WhatsApp)",
+        "consulta_pedidos": "consultar_pedido_shopify (estado de envío, estado de pago, fecha y URL de rastreo)"
+      },
+      "nota": "El catálogo se consulta en vivo. Las credenciales y el id del catálogo viven en `llm_config`, cifrados."
+    }
+  ],
+  "alias": [
+    {"alias": "catalogo", "nivel": "producto"},
+    {"alias": "coleccion", "nivel": "producto"},
+    {"alias": "prendas", "nivel": "producto"},
+    {"alias": "productos", "nivel": "producto"}
+  ]
+}

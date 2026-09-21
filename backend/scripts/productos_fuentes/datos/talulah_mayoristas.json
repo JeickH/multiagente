@@ -1,0 +1,71 @@
+{
+  "slug": "mayoristas",
+  "titulo": "Talulah — Atención a mayoristas (B2B)",
+  "nombre": "Mayoristas Talulah",
+  "tipo": "ficha",
+  "estado": "publicado",
+  "resumen": "Los cuatro temas B2B —despachos, faltantes y defectos, cartera y repedidos—, qué datos se piden en cada uno y con qué frase se escala.",
+  "instrucciones": "Ficha B2B: es para tiendas que revenden Talulah, no para clientas finales. NUNCA preguntes de entrada si es clienta o si tiene una tienda: dedúcelo de lo que escriba (si menciona «mi tienda», lotes, facturas, repedidos o compras al por mayor, es B2B).\n\nSaludo B2B: «¡Hola, qué lindo tenerte por aquí! 🤎 Soy el asistente B2B de Talulah 🌿».\n\n*1. Información de despachos*\nPide en un solo mensaje el número de pedido (sin puntos ni comas). Confirma: «¡Gracias! 🌿 Registramos tu número de pedido. Una asesora de logística se comunicará contigo en breve para darte el estado 🤎» y escala.\n\n*2. Faltantes y defectos*\nLamenta el inconveniente y pide: (1) número de lote o factura, (2) descripción de la novedad, (3) fotos o videos que evidencien el detalle. Cuando lo tengas: «¡Gracias! 🌿🤎 Tu caso quedó registrado. Nuestro equipo de soporte B2B te dará respuesta en un plazo aproximado de 5 días hábiles» y escala.\n\n*3. Cuenta y crédito (cartera)*\n«Perfecto 🌿. Una asesora de cartera se comunicará contigo muy pronto para revisar tu facturación, cupos o estado de cuenta.» Escala.\n\n*4. Ventas y repedidos*\n«¡Qué emoción que sigamos creciendo juntas! 🤎 Un asesor comercial se comunicará contigo en breve para tomar tu pedido y compartirte nuestro catálogo más reciente.» Escala.\n\nLos cuatro temas terminan SIEMPRE en una asesora humana, y siempre después de recolectar los datos. No prometas precios mayoristas, cupos ni plazos: eso no está acá.",
+  "atributos": {
+    "presentacion": {
+      "encabezado": [
+        "Atención a mayoristas (B2B) — información vigente al {hoy}."
+      ],
+      "sin_datos": "No tengo la ficha B2B cargada. Recolecta los datos del caso y pásalo a una asesora; no prometas nada."
+    }
+  },
+  "como_se_lleno": [
+    "Las cuatro filas salen de `app/bot_contexts/talulah.md`, sección «CONOCIMIENTO MAYORISTAS (B2B)»: un tema por fila, con los datos que pide y la frase con la que escala.",
+    "Es una ficha aparte y no un capítulo de otra porque es otro público: el bot la abre solo cuando deduce que está hablando con una tienda, y así la ficha de minoristas no se le mete en el turno.",
+    "Ninguna fila trae precios mayoristas ni cupos de crédito: no están en ninguna fuente del repositorio, y son justamente el dato que no se puede improvisar."
+  ],
+  "filas": [
+    {
+      "externo_id": "b2b|despachos",
+      "tipo": "faq",
+      "etiqueta": "Información de despachos",
+      "valores": {
+        "pide": ["número de pedido (sin puntos ni comas)"],
+        "confirma": "¡Gracias! 🌿 Registramos tu número de pedido. Una asesora de logística se comunicará contigo en breve para darte el estado 🤎",
+        "cierra": "escalar a asesora"
+      }
+    },
+    {
+      "externo_id": "b2b|faltantes_defectos",
+      "tipo": "faq",
+      "etiqueta": "Faltantes y defectos",
+      "valores": {
+        "pide": ["número de lote o factura", "descripción de la novedad", "fotos o videos que evidencien el detalle"],
+        "plazo_respuesta": "5 días hábiles aproximadamente",
+        "confirma": "¡Gracias! 🌿🤎 Tu caso quedó registrado. Nuestro equipo de soporte B2B te dará respuesta en un plazo aproximado de 5 días hábiles",
+        "cierra": "escalar a asesora"
+      }
+    },
+    {
+      "externo_id": "b2b|cartera",
+      "tipo": "faq",
+      "etiqueta": "Cuenta y crédito (cartera)",
+      "valores": {
+        "confirma": "Perfecto 🌿. Una asesora de cartera se comunicará contigo muy pronto para revisar tu facturación, cupos o estado de cuenta.",
+        "cierra": "escalar a asesora"
+      }
+    },
+    {
+      "externo_id": "b2b|ventas_repedidos",
+      "tipo": "faq",
+      "etiqueta": "Ventas y repedidos",
+      "valores": {
+        "confirma": "¡Qué emoción que sigamos creciendo juntas! 🤎 Un asesor comercial se comunicará contigo en breve para tomar tu pedido y compartirte nuestro catálogo más reciente.",
+        "cierra": "escalar a asesora"
+      }
+    }
+  ],
+  "alias": [
+    {"alias": "mayorista", "nivel": "producto"},
+    {"alias": "mayoristas", "nivel": "producto"},
+    {"alias": "al por mayor", "nivel": "producto"},
+    {"alias": "b2b", "nivel": "producto"},
+    {"alias": "repedido", "nivel": "producto"},
+    {"alias": "cartera", "nivel": "producto"}
+  ]
+}
