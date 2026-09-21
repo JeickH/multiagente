@@ -1370,6 +1370,136 @@ class SubscriptionCharge(Base):
     __str__ = __repr__
 
 
+# ===== Facturas =====
+#
+# Por qué una tabla nueva y no `subscription_charges`
+# ---------------------------------------------------
+# Se miró primero si servía la que ya existe, y no sirve por tres razones que
+# no son de gusto:
+#
+#   1. `subscription_charges.subscription_id` es NOT NULL, y la primera
+#      factura que hay que emitir —la implementación de $1.000.000— no
+#      pertenece a ninguna suscripción: se cobra una sola vez y no se repite.
+#   2. Una fila de `subscription_charges` es UN INTENTO de cobro, no un
+#      documento: los reintentos de un mismo mes son tres filas. Una factura
+#      es al revés — un documento que sobrevive a todos los intentos. Contar
+#      "cuántas facturas pendientes hay" sobre esa tabla daría el número de
+#      intentos fallidos.
+#   3. No tiene dónde decir QUÉ se cobra. El CEO pidió que la factura y su PDF
+#      especifiquen el concepto, y meterlo en `plan_key` sería usar una llave
+#      de catálogo como texto libre.
+#
+# Lo que SÍ se reusa: `subscriptions` responde "cuándo se genera la próxima
+# factura y por cuánto" (`next_charge_at` + `amount_cents`) sin columnas
+# nuevas, y `charge_id` enlaza la factura con el intento de cobro cuando el
+# pago entró por el cobro automático.
+
+INVOICE_PENDIENTE = "pendiente"
+INVOICE_PAGADA = "pagada"
+INVOICE_ANULADA = "anulada"
+AVAILABLE_INVOICE_STATUSES = (
+    INVOICE_PENDIENTE,
+    INVOICE_PAGADA,
+    INVOICE_ANULADA,
+)
+
+
+class Invoice(Base):
+    """Una factura de la cuenta: qué se cobra, cuánto, y para cuándo.
+
+    `due_date` es la fecha en que se vence y `paid_at` la fecha en que se
+    pagó. La pantalla muestra una o la otra según el estado, que es lo que
+    pidió el CEO: al cliente le sirve saber "se venció el 2 de septiembre" o
+    "la pagaste el 2 de septiembre", nunca las dos a la vez.
+
+    `reference` es la referencia con la que viaja a Wompi. Es UNIQUE por lo
+    mismo que en `credit_purchases`: es por donde el webhook encuentra la
+    factura, y sin la restricción dos filas podrían responder a un mismo
+    evento. Se regenera en cada intento de pago mientras la factura siga
+    pendiente (Wompi no acepta dos transacciones con la misma referencia), y
+    queda congelada al quedar pagada. Se pierde así el rastro de la referencia
+    de un intento rechazado; el rechazo queda en el log del servidor y en el
+    panel de Wompi, y a cambio el candado de idempotencia —`status == pagada`
+    leído con `FOR UPDATE`— sigue siendo de una sola pieza.
+
+    Sin campos sensibles: acá no hay ni tarjeta, ni token, ni correo. Lo que
+    sale en `InvoiceOut` es todo lo que la tabla tiene.
+    """
+
+    __tablename__ = "invoices"
+
+    id = Column(Integer, primary_key=True, index=True)
+    team_id = Column(
+        Integer, ForeignKey("teams.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    #: Consecutivo visible, el que sale impreso en el PDF ("FAC-2026-0001").
+    #: Es un dato de presentación: el id sigue siendo la llave.
+    numero = Column(String(40), nullable=False)
+    #: Qué se cobra, en una línea ("Implementación de la plataforma").
+    concepto = Column(String(160), nullable=False)
+    #: El detalle largo, si hace falta. Sale en el PDF debajo del concepto.
+    detalle = Column(Text, nullable=True)
+    amount_cents = Column(Integer, nullable=False)
+    currency = Column(String(8), nullable=False, default="COP", server_default="COP")
+    status = Column(
+        String(20), nullable=False,
+        default=INVOICE_PENDIENTE, server_default=INVOICE_PENDIENTE,
+    )
+    #: Fecha de emisión y fecha de vencimiento. `Date` y no `DateTime`: una
+    #: factura se vence un día, no a una hora, y guardar la hora obligaría a
+    #: decidir en qué zona horaria vence — que es de donde salen los "se venció
+    #: un día antes" cuando el servidor está en UTC y el cliente en Colombia.
+    issued_on = Column(Date, nullable=False)
+    due_date = Column(Date, nullable=False, index=True)
+    paid_at = Column(DateTime, nullable=True)
+
+    reference = Column(String(80), nullable=True)
+    provider_tx_id = Column(String(80), nullable=True, index=True)
+    #: Cuántas veces se mandó a pagar. Informativo: el intento que importa es
+    #: el que entra, y ese queda en `paid_at`.
+    intentos = Column(Integer, nullable=False, default=0, server_default="0")
+
+    #: De dónde salió. NULL cuando se emitió a mano (la implementación, un
+    #: ajuste); apuntan a la suscripción cuando la generó el ciclo mensual.
+    subscription_id = Column(
+        Integer, ForeignKey("subscriptions.id", ondelete="SET NULL"), nullable=True
+    )
+    charge_id = Column(
+        Integer, ForeignKey("subscription_charges.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+    )
+
+    __table_args__ = (
+        UniqueConstraint("reference", name="uq_invoices_reference"),
+        UniqueConstraint("team_id", "numero", name="uq_invoices_team_numero"),
+        CheckConstraint(
+            "status IN ('pendiente','pagada','anulada')",
+            name="ck_invoices_status",
+        ),
+        CheckConstraint("amount_cents > 0", name="ck_invoices_amount"),
+        # El índice que sostiene las dos consultas de la pantalla: el listado
+        # del administrador y el aviso de los 7 días, que preguntan ambas por
+        # las pendientes de un team ordenadas por vencimiento.
+        Index("ix_invoices_team_status_due", "team_id", "status", "due_date"),
+    )
+
+    team = relationship("Team")
+    subscription = relationship("Subscription")
+
+    def __repr__(self) -> str:
+        return (
+            f"<Invoice id={self.id} team_id={self.team_id} "
+            f"numero={self.numero!r} status={self.status!r}>"
+        )
+
+    __str__ = __repr__
+
+
 # ===== Sprint "Ayuda a Cali": mascotas perdidas =====
 # Dos naturalezas de registro en la MISMA tabla, distinguidas por
 # `tipo_registro`, porque el cruce que hace el bot es justamente entre ambas:

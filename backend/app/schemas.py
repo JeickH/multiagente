@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 from typing import Optional, List, Dict, Any
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
@@ -989,3 +989,74 @@ class SuscripcionActivarIn(BaseModel):
     """
     card_token: str = Field(..., min_length=8, max_length=140)
     acepta_terminos: bool = Field(default=False)
+
+
+# ===== Facturas =====
+
+class FacturaOut(BaseModel):
+    """Una factura en el listado del administrador.
+
+    Trae la tabla completa porque la tabla no tiene nada sensible: ni medio de
+    pago, ni correo, ni documento de nadie. `reference` sale porque es lo que
+    el cliente ve en el comprobante de Wompi y necesita para reclamar un pago
+    que no aparece; no sirve para cobrar nada por sí sola.
+
+    `due_date` y `paid_at` viajan las dos y la pantalla escoge cuál mostrar
+    según el estado — la regla de qué se le enseña al usuario es de la
+    pantalla, no del schema.
+    """
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    numero: str
+    concepto: str
+    detalle: Optional[str] = None
+    amount_cents: int
+    currency: str
+    #: `pendiente`, `pagada` o `anulada`.
+    status: str
+    issued_on: date
+    due_date: date
+    paid_at: Optional[datetime] = None
+    reference: Optional[str] = None
+    #: Días cumplidos desde el vencimiento. Negativo si todavía no se vence.
+    #: Lo calcula el servidor, en fechas de Colombia: el navegador no tiene por
+    #: qué saber en qué zona factura el negocio.
+    dias_de_mora: int = 0
+
+
+class ProximaFacturaOut(BaseModel):
+    """Cuándo se genera la próxima factura de la cuenta y por cuánto."""
+    fecha: date
+    amount_cents: int
+    amount_cop: int
+    currency: str = "COP"
+
+
+class FacturasOut(BaseModel):
+    """`GET /pagos/facturas` — el listado, más lo que viene."""
+    facturas: List[FacturaOut] = []
+    #: `null` cuando la cuenta no tiene ciclo programado (sin suscripción o
+    #: cancelada): la pantalla no anuncia una fecha que no existe.
+    proxima: Optional[ProximaFacturaOut] = None
+    total_pendiente_cents: int = 0
+    #: `false` si al backend le faltan llaves de Wompi. El botón de pagar se
+    #: deshabilita antes de llevar al cliente a una pasarela que no responde.
+    pagos_habilitados: bool = False
+
+
+class AvisoPagoOut(BaseModel):
+    """`GET /pagos/aviso` — el recuadro amarillo, para CUALQUIER miembro.
+
+    Este es el único endpoint de facturación que un asesor puede llamar, y por
+    eso el schema es deliberadamente pobre: un sí/no y una clave opaca. **No
+    lleva monto, ni cantidad de facturas, ni fechas.** Un asesor que atiende la
+    bandeja no tiene por qué conocer las finanzas de su empleador, y lo que no
+    está en el schema no se filtra por un descuido de la pantalla.
+
+    `clave` es un hash truncado de las facturas vencidas. Sirve para que la X
+    del aviso lo oculte mientras la deuda sea la misma y vuelva a mostrarlo
+    cuando cambie. No es reversible ni codifica cuántas son.
+    """
+    mostrar: bool
+    clave: Optional[str] = None
