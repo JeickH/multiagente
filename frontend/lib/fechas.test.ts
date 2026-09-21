@@ -23,6 +23,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import {
   aInstante,
   encabezadoDeDia,
+  fechaCalendario,
   fechaHoraLarga,
   horaCorta,
   marcaDeTiempoLista,
@@ -152,5 +153,30 @@ describe('fechaHoraLarga', () => {
     expect(texto).toContain('agosto');
     expect(texto).toContain('2026');
     expect(texto).toContain('04:26 p. m.');
+  });
+});
+
+describe('fechaCalendario', () => {
+  it('escribe en largo una fecha de vencimiento', () => {
+    expect(fechaCalendario('2026-09-02')).toBe('2 de septiembre de 2026');
+  });
+
+  it('NO corre el día hacia atrás por la zona horaria', () => {
+    // El defecto que esta función existe para evitar: `new Date('2026-09-02')`
+    // es medianoche UTC, y pintado en Bogotá (-05:00) da el 1 a las 7 p. m.
+    // Una factura que vence el 2 no puede mostrarse venciendo el 1.
+    expect(fechaCalendario('2026-09-02')).toContain('2 de septiembre');
+    expect(fechaCalendario('2026-01-01')).toBe('1 de enero de 2026');
+  });
+
+  it('aguanta que la fecha venga con hora pegada', () => {
+    expect(fechaCalendario('2026-10-02T00:00:00')).toBe('2 de octubre de 2026');
+  });
+
+  it('sin fecha devuelve el respaldo en vez de "Invalid Date"', () => {
+    expect(fechaCalendario(null)).toBe('—');
+    expect(fechaCalendario('')).toBe('—');
+    expect(fechaCalendario('cualquier cosa')).toBe('—');
+    expect(fechaCalendario('2026-13-02')).toBe('—');
   });
 });

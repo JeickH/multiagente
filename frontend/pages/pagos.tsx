@@ -22,6 +22,8 @@ import { useRouter } from 'next/router';
 import Layout from '../components/Layout';
 import SuscripcionPanel from '../components/SuscripcionPanel';
 import { ApiError, authedFetch } from '../lib/api';
+import { fechaCalendario, fechaHoraCorta } from '../lib/fechas';
+import { getToken } from '../lib/session';
 
 type Paquete = {
   key: string;
@@ -53,6 +55,41 @@ type Saldo = { message_credits: number; compras: Compra[] };
 
 type CheckoutForm = { url: string; method: string; fields: Record<string, string> };
 type Checkout = { reference: string; checkout: CheckoutForm };
+
+/**
+ * Una factura del listado. `due_date` e `issued_on` son fechas de calendario
+ * ("2026-09-02", sin hora) y se pintan con `fechaCalendario`; `paid_at` sí es
+ * un instante UTC y va por `fechaHoraCorta`. Mezclarlos corre el día: ver el
+ * comentario de `lib/fechas.ts`.
+ */
+type Factura = {
+  id: number;
+  numero: string;
+  concepto: string;
+  detalle: string | null;
+  amount_cents: number;
+  currency: string;
+  status: string;
+  issued_on: string;
+  due_date: string;
+  paid_at: string | null;
+  reference: string | null;
+  dias_de_mora: number;
+};
+
+type ProximaFactura = {
+  fecha: string;
+  amount_cents: number;
+  amount_cop: number;
+  currency: string;
+};
+
+type Facturas = {
+  facturas: Factura[];
+  proxima: ProximaFactura | null;
+  total_pendiente_cents: number;
+  pagos_habilitados: boolean;
+};
 
 const COP = new Intl.NumberFormat('es-CO', {
   style: 'currency',
@@ -90,6 +127,31 @@ function irAWompi(form: CheckoutForm) {
   el.submit();
 }
 
+/**
+ * Abre el PDF de una factura en otra pestaña.
+ *
+ * No puede ser un `<a href>`: el endpoint exige el `Authorization`, y un link
+ * normal viaja sin él (respondería 401). Por eso se baja con `fetch`, se
+ * envuelve en un blob y se abre eso. El token se pide a `lib/session`, que es
+ * quien manda sobre la sesión — acá no se toca `localStorage` directo.
+ *
+ * La URL del blob se revoca al rato: apunta a un PDF que quedó en memoria del
+ * navegador, y dejarla viva es dejar el documento colgando sin necesidad.
+ */
+async function abrirPdf(id: number): Promise<void> {
+  const token = getToken();
+  if (!token) throw new ApiError('Sesión expirada', 401);
+
+  const res = await fetch(`/api/pagos/facturas/${id}/pdf`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) throw new ApiError('No se pudo abrir la factura.', res.status);
+
+  const url = URL.createObjectURL(await res.blob());
+  window.open(url, '_blank', 'noopener,noreferrer');
+  window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+}
+
 export default function Pagos() {
   const router = useRouter();
   const [permitido, setPermitido] = useState<boolean | null>(null);
@@ -97,6 +159,8 @@ export default function Pagos() {
   const [saldo, setSaldo] = useState<Saldo | null>(null);
   const [comprando, setComprando] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [facturas, setFacturas] = useState<Facturas | null>(null);
+  const [pagando, setPagando] = useState<number | null>(null);
 
   // ¿Volvemos de Wompi? El id de la transacción llega por query string.
   const volviendoDePago = Boolean(router.query.id || router.query.ref);
@@ -110,12 +174,14 @@ export default function Pagos() {
         return;
       }
       setPermitido(true);
-      const [cat, sal] = await Promise.all([
+      const [cat, sal, fac] = await Promise.all([
         authedFetch<{ paquetes: Paquete[] }>('/pagos/paquetes'),
         authedFetch<Saldo>('/pagos/saldo'),
+        authedFetch<Facturas>('/pagos/facturas'),
       ]);
       setPaquetes(cat.paquetes);
       setSaldo(sal);
+      setFacturas(fac);
     } catch (err) {
       if (err instanceof ApiError && err.status === 403) {
         setPermitido(false);
@@ -173,6 +239,28 @@ export default function Pagos() {
         err instanceof ApiError ? err.message : 'No se pudo iniciar el pago.';
       setError(msg);
       setComprando(null);
+    }
+  };
+
+  /**
+   * Manda a pagar UNA factura. El cuerpo va vacío a propósito: el monto y el
+   * concepto salen de la fila guardada en el servidor. Lo único que viaja es
+   * el id, en la ruta.
+   */
+  const pagarFactura = async (id: number) => {
+    setPagando(id);
+    setError(null);
+    try {
+      const res = await authedFetch<Checkout>(`/pagos/facturas/${id}/checkout`, {
+        method: 'POST',
+        body: JSON.stringify({}),
+      });
+      irAWompi(res.checkout);
+    } catch (err) {
+      const msg =
+        err instanceof ApiError ? err.message : 'No se pudo iniciar el pago.';
+      setError(msg);
+      setPagando(null);
     }
   };
 
@@ -247,6 +335,162 @@ export default function Pagos() {
             )}
           </div>
         )}
+
+        {/* Facturas. Va de primero porque es lo que el administrador entra a
+            resolver; el saldo y los paquetes son de consulta. */}
+        <section className="mb-10">
+          <h2 className="font-heading text-sm uppercase tracking-widest text-gloma-brown-light mb-3">
+            Facturas
+          </h2>
+
+          {!facturas ? (
+            <p className="text-sm text-gloma-brown-light">Cargando facturas…</p>
+          ) : (
+            <>
+              {/* Lo que se debe y cuándo llega lo siguiente. Las dos cifras que
+                  el administrador necesita antes de mirar el detalle. */}
+              <div className="flex flex-wrap gap-4 mb-4">
+                {facturas.total_pendiente_cents > 0 && (
+                  <div className="rounded-2xl bg-white border border-amber-300 px-6 py-4 shadow-sm">
+                    <p className="text-[10px] uppercase tracking-widest text-gloma-brown-light">
+                      Pendiente por pagar
+                    </p>
+                    <p className="font-heading text-2xl font-extrabold text-amber-700 mt-1">
+                      {COP.format(Math.round(facturas.total_pendiente_cents / 100))}
+                    </p>
+                  </div>
+                )}
+                {facturas.proxima && (
+                  <div className="rounded-2xl bg-white border border-gloma-brown-light/20 px-6 py-4 shadow-sm">
+                    <p className="text-[10px] uppercase tracking-widest text-gloma-brown-light">
+                      Próxima factura
+                    </p>
+                    <p className="font-heading text-2xl font-extrabold text-gloma-brown-dark mt-1">
+                      {COP.format(facturas.proxima.amount_cop)}
+                    </p>
+                    <p className="text-[11px] text-gloma-brown-light mt-0.5">
+                      se genera el {fechaCalendario(facturas.proxima.fecha)}
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              {facturas.facturas.length === 0 ? (
+                <p className="text-sm text-gloma-brown-light">
+                  No tienes facturas todavía.
+                </p>
+              ) : (
+                <div className="bg-white rounded-2xl border border-gloma-brown-light/20 overflow-x-auto max-w-4xl">
+                  <table className="w-full text-sm min-w-[640px]">
+                    <thead className="bg-gloma-brown text-gloma-cream">
+                      <tr>
+                        <th className="text-left py-2.5 px-4 font-semibold text-xs">
+                          Concepto
+                        </th>
+                        <th className="text-right py-2.5 px-4 font-semibold text-xs">
+                          Valor
+                        </th>
+                        <th className="text-left py-2.5 px-4 font-semibold text-xs">
+                          Fecha
+                        </th>
+                        <th className="text-right py-2.5 px-4 font-semibold text-xs">
+                          Factura
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {facturas.facturas.map((f) => {
+                        const pagada = f.status === 'pagada';
+                        const anulada = f.status === 'anulada';
+                        return (
+                          <tr
+                            key={f.id}
+                            className="border-t border-gloma-brown-light/10 align-top"
+                          >
+                            <td className="py-3 px-4 text-gloma-brown-dark">
+                              <span className="font-semibold">{f.concepto}</span>
+                              <span className="block text-[11px] text-gloma-brown-light mt-0.5">
+                                {f.numero}
+                              </span>
+                            </td>
+                            <td className="py-3 px-4 text-right text-gloma-brown-dark whitespace-nowrap">
+                              {COP.format(Math.round(f.amount_cents / 100))}
+                            </td>
+                            {/* El vencimiento o la fecha de pago, nunca las dos:
+                                al cliente le sirve "se venció el 2" o "la
+                                pagaste el 2", según dónde esté la factura. */}
+                            <td className="py-3 px-4 text-gloma-brown-dark whitespace-nowrap">
+                              {pagada ? (
+                                <>
+                                  <span className="inline-block px-2 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-50 text-emerald-700">
+                                    Pagada
+                                  </span>
+                                  <span className="block text-[11px] text-gloma-brown-light mt-1">
+                                    el {fechaHoraCorta(f.paid_at, '—')}
+                                  </span>
+                                </>
+                              ) : anulada ? (
+                                <span className="inline-block px-2 py-0.5 rounded-full text-[11px] font-semibold bg-gray-100 text-gray-500">
+                                  Anulada
+                                </span>
+                              ) : (
+                                <>
+                                  <span
+                                    className={`inline-block px-2 py-0.5 rounded-full text-[11px] font-semibold ${
+                                      f.dias_de_mora > 0
+                                        ? 'bg-red-50 text-red-700'
+                                        : 'bg-amber-100 text-amber-700'
+                                    }`}
+                                  >
+                                    {f.dias_de_mora > 0 ? 'Vencida' : 'Pendiente'}
+                                  </span>
+                                  <span className="block text-[11px] text-gloma-brown-light mt-1">
+                                    {f.dias_de_mora > 0 ? 'se venció' : 'se vence'} el{' '}
+                                    {fechaCalendario(f.due_date)}
+                                  </span>
+                                </>
+                              )}
+                            </td>
+                            <td className="py-3 px-4 text-right whitespace-nowrap">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  abrirPdf(f.id).catch(() =>
+                                    setError('No se pudo abrir la factura.'),
+                                  )
+                                }
+                                className="text-xs font-semibold text-gloma-brown underline underline-offset-2 hover:text-gloma-brown-dark"
+                              >
+                                Ver PDF
+                              </button>
+                              {!pagada && !anulada && (
+                                <button
+                                  type="button"
+                                  onClick={() => pagarFactura(f.id)}
+                                  disabled={
+                                    pagando !== null || !facturas.pagos_habilitados
+                                  }
+                                  title={
+                                    facturas.pagos_habilitados
+                                      ? undefined
+                                      : 'El medio de pago no está disponible por ahora.'
+                                  }
+                                  className="ml-3 px-3 py-1.5 rounded-lg bg-gloma-brown text-gloma-cream font-semibold text-xs hover:bg-gloma-brown-dark disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                >
+                                  {pagando === f.id ? 'Abriendo…' : 'Pagar'}
+                                </button>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </>
+          )}
+        </section>
 
         {/* Saldo */}
         <section className="mb-8">

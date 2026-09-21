@@ -32,21 +32,26 @@ import os
 from datetime import datetime
 from typing import Any, Dict, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy.orm import Session
 
 from .. import crud, models
 from ..dependencies import get_current_user, get_db
 from ..schemas import (
+    AvisoPagoOut,
     CheckoutCreate,
     CheckoutFormOut,
     CheckoutOut,
     CobroOut,
     EstadoPagoOut,
     CompraOut,
+    FacturaCheckoutCreate,
+    FacturaOut,
+    FacturasOut,
     PagosAccesoOut,
     PaqueteOut,
     PaquetesOut,
+    ProximaFacturaOut,
     SaldoOut,
     SuscripcionActivarIn,
     SuscripcionConfigOut,
@@ -54,6 +59,7 @@ from ..schemas import (
     TarjetaOut,
 )
 from ..services import creditos as svc_creditos
+from ..services import facturas as svc_facturas
 from ..services import ratelimit
 from ..services import suscripciones as svc_suscripciones
 from ..services import wompi
@@ -70,7 +76,13 @@ PERMISO_BILLING = "can_manage_billing"
 #: `_redirect_absoluto`). Si el `redirect-url` se aceptara tal cual del
 #: request, el checkout de Wompi quedaría convertido en un redirector abierto
 #: hacia cualquier dominio, firmado por nosotros.
-FRONTEND_BASE_URL = os.getenv("FRONTEND_BASE_URL", "http://localhost:3000")
+#: Se lee en CADA llamada y no al importar el módulo, igual que las llaves en
+#: `wompi.py`. Congelarla al importar hacía que el valor dependiera de si el
+#: entorno ya estaba armado cuando alguien tocó el primer `import`, y en los
+#: tests el `monkeypatch.setenv` de la fixture llegaba siempre tarde: el
+#: redirect salía a `localhost:3000` sin que nada avisara.
+def _frontend_base_url() -> str:
+    return os.getenv("FRONTEND_BASE_URL", "http://localhost:3000")
 
 #: Ruta por defecto de regreso: la misma pantalla de pagos.
 REDIRECT_POR_DEFECTO = "/pagos"
@@ -223,7 +235,7 @@ def _redirect_absoluto(pedido: Optional[str]) -> str:
     if not ruta.startswith("/") or ruta.startswith("//"):
         logger.warning("redirect_url descartado por no ser una ruta propia")
         ruta = REDIRECT_POR_DEFECTO
-    return f"{FRONTEND_BASE_URL.rstrip('/')}{ruta}"
+    return f"{_frontend_base_url().rstrip('/')}{ruta}"
 
 
 @router.post("/checkout", response_model=CheckoutOut, status_code=status.HTTP_201_CREATED)
@@ -518,6 +530,197 @@ def cancelar_suscripcion(
 
 
 # ---------------------------------------------------------------------------
+# Facturas
+# ---------------------------------------------------------------------------
+#
+#   GET  /pagos/facturas                 el listado + la próxima  (admin)
+#   POST /pagos/facturas/{id}/checkout   manda a pagar una        (admin)
+#   GET  /pagos/facturas/{id}/pdf        el comprobante           (admin)
+#   GET  /pagos/aviso                    el recuadro amarillo     (cualquiera)
+#
+# Los tres primeros van por `require_billing_admin`, el mismo portero del resto
+# del módulo: ver cuánto debe la cuenta y pagarlo es de administrador. El
+# cuarto es la excepción **a propósito** y está explicado en su endpoint.
+
+
+def _factura_out(factura: models.Invoice, *, hoy) -> FacturaOut:
+    salida = FacturaOut.model_validate(factura)
+    salida.dias_de_mora = svc_facturas.dias_de_mora(factura, hoy=hoy)
+    return salida
+
+
+@router.get("/facturas", response_model=FacturasOut)
+def listar_facturas(
+    db: Session = Depends(get_db),
+    member: models.TeamMember = Depends(require_billing_admin),
+) -> FacturasOut:
+    """Las facturas de la cuenta y cuándo se genera la siguiente.
+
+    El total pendiente se suma **acá** y no en el navegador: es el número que
+    el administrador usa para cuadrar contra su banco, y calcularlo en el
+    cliente lo dejaría a merced de un listado truncado por la paginación.
+    """
+    team = _team(db, member)
+    hoy = svc_facturas.hoy_colombia()
+    todas = svc_facturas.listar(db, team.id)
+
+    proxima = None
+    siguiente = svc_facturas.proxima_factura(db, team.id)
+    if siguiente is not None:
+        fecha, centavos = siguiente
+        proxima = ProximaFacturaOut(
+            fecha=fecha, amount_cents=centavos, amount_cop=centavos // 100
+        )
+
+    return FacturasOut(
+        facturas=[_factura_out(f, hoy=hoy) for f in todas],
+        proxima=proxima,
+        total_pendiente_cents=sum(
+            f.amount_cents for f in todas if f.status == models.INVOICE_PENDIENTE
+        ),
+        pagos_habilitados=wompi.esta_configurado(),
+    )
+
+
+@router.get("/aviso", response_model=AvisoPagoOut)
+def aviso_de_pago(
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+) -> AvisoPagoOut:
+    """¿Va el recuadro amarillo de pagos pendientes? Lo puede llamar cualquiera.
+
+    Es el único endpoint de facturación abierto al asesor, y la razón es que el
+    aviso lo tiene que ver él también: si la cuenta se pausa por mora, el que
+    se queda sin bandeja es quien atiende. Lo que se cuida es que el aviso no
+    le diga **cuánto** ni **cuántas** — de eso se encarga `AvisoPagoOut`, que
+    solo tiene un booleano y un hash.
+
+    Responde 200 siempre, como `/access`. Un usuario sin equipo simplemente no
+    tiene facturas y recibe `mostrar: false`; darle un 403 sería contestarle
+    con un error a una pregunta que no tiene nada de indebido.
+    """
+    member = crud.get_membership_for_user(db, user)
+    if member is None:
+        return AvisoPagoOut(mostrar=False)
+
+    clave = svc_facturas.debe_avisar(db, member.team_id)
+    return AvisoPagoOut(mostrar=clave is not None, clave=clave)
+
+
+@router.get("/facturas/{factura_id}/pdf")
+def descargar_factura(
+    factura_id: int,
+    db: Session = Depends(get_db),
+    member: models.TeamMember = Depends(require_billing_admin),
+) -> Response:
+    """El comprobante en PDF, con el concepto de lo que se cobra.
+
+    `inline` y no `attachment`: el administrador casi siempre quiere revisarlo
+    antes de guardarlo, y el navegador igual ofrece descargarlo desde el visor.
+    """
+    team = _team(db, member)
+    factura = svc_facturas.obtener(db, team.id, factura_id)
+    if factura is None:
+        # Mismo 404 exista o no en otra cuenta: si respondiéramos 403 cuando la
+        # factura es de otro team, este endpoint se volvería un oráculo para
+        # averiguar qué ids existen en la plataforma.
+        raise HTTPException(status_code=404, detail="Factura no encontrada")
+
+    try:
+        contenido = svc_facturas.generar_pdf(factura, nombre_cuenta=team.nombre)
+    except Exception:
+        logger.exception("no se pudo generar el PDF de la factura %s", factura.id)
+        raise HTTPException(
+            status_code=500, detail="No se pudo generar la factura. Intenta de nuevo."
+        )
+
+    return Response(
+        content=contenido,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": (
+                f'inline; filename="{svc_facturas.nombre_archivo(factura)}"'
+            ),
+            # El PDF trae el estado de la factura impreso: si se cachea, el
+            # cliente vuelve a abrir "Pendiente" después de haberla pagado.
+            "Cache-Control": "no-store",
+        },
+    )
+
+
+@router.post(
+    "/facturas/{factura_id}/checkout",
+    response_model=CheckoutOut,
+    status_code=status.HTTP_201_CREATED,
+)
+def pagar_factura(
+    factura_id: int,
+    payload: Optional[FacturaCheckoutCreate] = None,
+    db: Session = Depends(get_db),
+    member: models.TeamMember = Depends(require_billing_admin),
+    user: models.User = Depends(get_current_user),
+) -> CheckoutOut:
+    """Arma el form firmado de Wompi para pagar UNA factura.
+
+    El monto sale de la factura guardada, nunca del request: el cliente manda
+    un id, no un valor. La factura **no** se marca pagada acá — la marca el
+    webhook cuando Wompi confirme, por lo mismo que los créditos no se suman al
+    volver del checkout: quien controla la URL de retorno se pagaría sus
+    propias facturas.
+    """
+    team = _team(db, member)
+    factura = svc_facturas.obtener(db, team.id, factura_id)
+    if factura is None:
+        raise HTTPException(status_code=404, detail="Factura no encontrada")
+    if factura.status != models.INVOICE_PENDIENTE:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Esta factura ya no está pendiente de pago",
+        )
+
+    # Referencia nueva en cada intento: Wompi no acepta dos transacciones con
+    # la misma, así que reusar la anterior dejaría al cliente sin poder
+    # reintentar tras un rechazo. Ver el docstring de `models.Invoice`.
+    referencia = svc_facturas.nueva_referencia(team.id, factura.id)
+
+    try:
+        checkout = wompi.datos_checkout(
+            referencia=referencia,
+            monto_centavos=factura.amount_cents,
+            moneda=factura.currency,
+            redirect_url=_redirect_absoluto(
+                (payload.redirect_url if payload else None) or REDIRECT_POR_DEFECTO
+            ),
+            email_cliente=user.correo,
+        )
+    except wompi.WompiNoConfigurado:
+        # El detalle (qué variable falta) ya quedó en el log del servicio.
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="El medio de pago no está disponible por ahora. Intenta más tarde.",
+        )
+
+    factura.reference = referencia
+    factura.intentos = (factura.intentos or 0) + 1
+    db.commit()
+
+    logger.info(
+        "checkout de factura creado factura_id=%s team_id=%s intento=%s",
+        factura.id,
+        team.id,
+        factura.intentos,
+    )
+    return CheckoutOut(
+        reference=referencia,
+        purchase_id=factura.id,
+        amount_cents=factura.amount_cents,
+        currency=factura.currency,
+        messages=0,  # una factura no acredita mensajes
+        checkout=CheckoutFormOut(**checkout),
+    )
+
+
+# ---------------------------------------------------------------------------
 # Webhook
 # ---------------------------------------------------------------------------
 
@@ -575,6 +778,10 @@ async def wompi_webhook(request: Request, db: Session = Depends(get_db)) -> Dict
     if compra is None:
         # Puede ser el cobro de una suscripción, que vive en otra tabla.
         resultado = _webhook_de_suscripcion(db, referencia, estado_wompi, tx_id, tx)
+        if resultado is not None:
+            return resultado
+        # O el pago de una factura, que vive en otra tabla más.
+        resultado = _webhook_de_factura(db, referencia, estado_wompi, tx_id, tx)
         if resultado is not None:
             return resultado
         # O una transacción de otro sistema sobre el mismo comercio.
@@ -739,6 +946,83 @@ def _webhook_de_suscripcion(
     svc_suscripciones.aplicar_estado(db, cobro, nuevo_estado, tx_id=tx_id)
     logger.info("wompi.webhook: cobro %s → %s", cobro.id, nuevo_estado)
     return {"ok": True, "status": nuevo_estado}
+
+
+def _webhook_de_factura(
+    db: Session,
+    referencia: str,
+    estado_wompi: str,
+    tx_id: Optional[str],
+    tx: Dict[str, Any],
+) -> Optional[Dict[str, Any]]:
+    """Da por pagada una factura si la referencia es la suya.
+
+    Devuelve `None` si la referencia no es de acá, para que el llamador siga
+    buscando.
+
+    Los mismos cuatro candados que la acreditación de mensajes, y por los
+    mismos motivos: `SELECT ... FOR UPDATE` para serializar dos webhooks
+    simultáneos, salida temprana si ya estaba pagada, verificación del monto
+    contra lo que dice la factura, y re-consulta a la API de Wompi en
+    producción antes de darla por buena.
+
+    Un rechazo **no** cambia el estado de la factura: sigue pendiente, que es
+    la verdad — lo que falló fue un intento de pago, no la deuda.
+    """
+    factura = (
+        db.query(models.Invoice)
+        .filter(models.Invoice.reference == referencia)
+        .with_for_update()
+        .first()
+    )
+    if factura is None:
+        return None
+
+    if factura.status == models.INVOICE_PAGADA:
+        logger.info("wompi.webhook: factura %s ya estaba pagada", factura.id)
+        return {"ok": True, "ya_acreditada": True}
+
+    nuevo_estado = wompi.estado_interno(estado_wompi)
+    if nuevo_estado is None:
+        logger.info("wompi.webhook: factura %s sigue en %s", factura.id, estado_wompi)
+        return {"ok": True, "pendiente": True}
+
+    if nuevo_estado != models.CREDIT_PURCHASE_APPROVED:
+        factura.provider_tx_id = tx_id or factura.provider_tx_id
+        db.commit()
+        logger.info(
+            "wompi.webhook: el pago de la factura %s quedó en %s; sigue pendiente",
+            factura.id,
+            nuevo_estado,
+        )
+        return {"ok": True, "status": nuevo_estado}
+
+    monto_evento = tx.get("amount_in_cents")
+    if monto_evento is not None and int(monto_evento) != int(factura.amount_cents):
+        logger.error(
+            "wompi.webhook: monto no coincide factura_id=%s esperado=%s recibido=%s",
+            factura.id,
+            factura.amount_cents,
+            monto_evento,
+        )
+        return {"ok": True, "status": "monto_no_coincide"}
+
+    if _verificar_contra_api() and tx_id:
+        real = wompi.consultar_transaccion(tx_id)
+        if real is None:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="No se pudo verificar el pago. Reintentar.",
+            )
+        if (real.get("status") or "").upper() != "APPROVED":
+            logger.error(
+                "wompi.webhook: el evento decía APPROVED pero la API no. factura_id=%s",
+                factura.id,
+            )
+            raise HTTPException(status_code=403, detail="Firma inválida")
+
+    svc_facturas.marcar_pagada(db, factura, tx_id=tx_id)
+    return {"ok": True, "status": models.INVOICE_PAGADA}
 
 
 def _verificar_contra_api() -> bool:

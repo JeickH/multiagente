@@ -76,6 +76,37 @@ export function fechaHoraLarga(iso: string | null | undefined, fallback = ''): s
   });
 }
 
+const MESES = [
+  'enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio',
+  'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre',
+];
+
+/**
+ * Una fecha **de calendario** ("2026-09-02") escrita en largo:
+ * "2 de septiembre de 2026".
+ *
+ * Existe aparte de `aInstante` porque un vencimiento no es un instante. Las
+ * columnas `issued_on` y `due_date` de las facturas son `DATE` en Postgres y
+ * llegan como "2026-09-02", sin hora: no hay nada que convertir de zona, y
+ * convertirlas **daña el dato**. `new Date("2026-09-02")` se interpreta como
+ * medianoche UTC, y al pintarla en `America/Bogota` (-05:00) retrocede cinco
+ * horas: el 1 de septiembre a las 7 p. m. La factura que vence el 2 se vería
+ * venciendo el 1.
+ *
+ * Por eso el texto se parte a mano en vez de pasar por `Date`. Es el mismo
+ * problema de #361 visto al revés: allá se leía como local algo que era UTC,
+ * acá se leería como UTC algo que no tiene zona en absoluto.
+ */
+export function fechaCalendario(iso: string | null | undefined, fallback = '—'): string {
+  if (!iso) return fallback;
+  const partes = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso);
+  if (!partes) return fallback;
+  const [, año, mes, dia] = partes;
+  const nombreMes = MESES[Number(mes) - 1];
+  if (!nombreMes) return fallback;
+  return `${Number(dia)} de ${nombreMes} de ${año}`;
+}
+
 /**
  * El día del calendario **en Colombia**, como "2026-08-31".
  *
