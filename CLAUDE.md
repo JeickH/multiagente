@@ -166,15 +166,34 @@ Reglas permanentes que debe respetar todo el equipo. Violaciones de estas reglas
 
 ---
 
-## Recupera Tu Mascota (cuenta `recuperatumascota@gmail.com`)
+## Recupera Tu Mascota — RETIRADO (cuenta `recuperatumascota@gmail.com`)
 
-Iniciativa solidaria por el terremoto en Colombia, con su propio sitio público
-(`mascotasperdidascolombia.com`), su bot y su panel privado.
+> ## ⛔ Módulo retirado por decisión del CEO (2026-09-20)
+>
+> `mascotasperdidascolombia.com` **deja de mantenerse**. El bot queda **desactivado** y
+> el sitio queda como una página única de agradecimiento, sin soporte y sin uso.
+>
+> **Regla permanente, hasta nuevo aviso del CEO:**
+> 1. **Ninguna funcionalidad nueva tiene en cuenta este bot ni este sitio.** No se
+>    incluyen en planes, migraciones, refactors ni estimaciones. Si un plan los
+>    menciona, es porque está desactualizado.
+> 2. **No se les dedica trabajo**: ni mejoras, ni ajustes de prompt, ni importadores,
+>    ni pruebas nuevas. Lo que ya existe se deja quieto.
+> 3. **No se borra nada.** Las mascotas, sus fotos, las coincidencias y el historial
+>    de conversaciones se conservan tal como están, en la base y en el bucket. Ahí hay
+>    datos de terceros que alguien confió, y ya se perdieron fotos irrecuperables una
+>    vez por un borrado hecho sobre una interpretación.
+> 4. Si algo del código compartido (el motor de bots, el guardarraíl de teléfonos)
+>    hay que tocar por otra razón, se toca — pero sin romper lo que quedó en pie.
+>
+> Lo único que sigue vigente de este módulo es la lección que dejó, y está en el
+> guardarraíl anti-teléfonos inventados de `llm_engine.py`: ese se queda.
 
-> **Antes de tocar cualquier cosa de este módulo, lee
-> [`MANUAL_RECUPERA_TU_MASCOTA.md`](MANUAL_RECUPERA_TU_MASCOTA.md).** Está al inicio de
-> cada sesión por una razón: concentra las reglas del módulo, cómo funciona el matching,
-> los importadores y el procedimiento de recuperación ante desastre.
+Iniciativa solidaria por el terremoto en Colombia. Tuvo su propio sitio público, su bot
+y su panel privado. El contexto histórico sigue en
+[`MANUAL_RECUPERA_TU_MASCOTA.md`](MANUAL_RECUPERA_TU_MASCOTA.md) y en
+[`documentacion_bd/`](documentacion_bd/) — **como referencia, no como instrucciones de
+trabajo**.
 
 Las tres que más duelen si se olvidan:
 1. **Nunca borrar datos sin confirmación explícita del CEO** — ya se perdieron fotos

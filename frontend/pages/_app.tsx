@@ -30,9 +30,10 @@ const TITULOS: Record<string, string> = {
 };
 
 // Rutas públicas de la plataforma que no requieren token.
-// `/mascotas` es el chat ciudadano de "Recupera Tu Mascota": quien llega ahí
-// no tiene cuenta ni debe tenerla. (`/mascotas-panel` NO va aquí: ese es el
-// panel privado de la cuenta y sí exige sesión.)
+// `/mascotas` es la página de cierre de "Recupera Tu Mascota": estática,
+// pública y sin llamadas al backend. Quien llega ahí no tiene cuenta ni debe
+// tenerla. (`/mascotas-panel` NO va aquí: ese es el panel privado de la cuenta
+// y sí exige sesión.)
 const PUBLIC_PAGES = [
   '/login', '/register', '/gloma', '/automatas', '/elecol', '/404', '/mascotas',
   // Destino del link de pago que entrega el bot de ventas: lo abre un cliente

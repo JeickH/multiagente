@@ -7789,3 +7789,77 @@ módulo interno con `/api/productos/access`, y si la carga por Excel aplica
 dejando los cambios sin publicar o sale al bot de inmediato.
 
 Local, sin desplegar. El commit lo hace el CEO.
+
+---
+
+## Recupera Tu Mascota — RETIRADO (2026-09-20)
+
+**Decisión del CEO.** `mascotasperdidascolombia.com` deja de mantenerse.
+
+### Regla permanente, hasta nuevo aviso
+
+**Ninguna funcionalidad nueva tiene en cuenta este bot ni este sitio.** No entran
+en planes, migraciones, refactors ni estimaciones; no se les dedica trabajo de
+ningún tipo. Si un plan los menciona, está desactualizado. Queda escrito también
+en `CLAUDE.md`, que es lo que se lee al empezar cada sesión.
+
+### Qué se hizo
+
+| | |
+|---|---|
+| Bot «Huella» (id 17) | `status = paused` |
+| Sitio público | Página única de agradecimiento, **sin opción de chat** |
+| `/api/mascotas/*` en ese dominio | Bloqueado en `frontend/middleware.ts` |
+| Fotos en S3 (`mascotas/` + `pendientes/`) | **Borradas**: 455 objetos, 64 MB |
+| Filas en RDS | **Se conservan** — no cuestan nada y permiten responderle a quien reclame |
+| Dominio | En pie por ahora |
+
+El middleware es lo que permite apagar los endpoints del backend más adelante sin
+que el sitio muestre un 500.
+
+### El respaldo, antes de borrar
+
+`respaldos_fotos_mascotas/respaldo_recupera_tu_mascota_20260920_1859.zip` —
+134 MB, git-ignorado. Fotos, `datos_mascotas.xlsx`, las conversaciones legibles,
+el JSON crudo para reimportar y el inventario del bucket.
+
+Verificado antes de borrar nada: 587 de 587 objetos, ETag de S3 contra MD5 de
+cada archivo extraído sin una diferencia, `unzip -t` sin errores de CRC, y los
+455 objetos a borrar confirmados uno por uno dentro del zip. Huérfanos en ambas
+direcciones: cero.
+
+Se regenera con `python backend/scripts/respaldo_mascotas.py`.
+
+### Dos hallazgos del respaldo
+
+1. **El bucket no era solo de mascotas.** De 587 objetos, 132 están bajo
+   `adjuntos/` y son de **Arranquemos Pues, un cliente activo**. Borrar el bucket
+   completo se los habría llevado, y no tiene versionado. El borrado fue por
+   prefijo; `adjuntos/` quedó intacto con sus 132.
+2. **Las conversaciones no estaban donde se esperaba.** `conversations`,
+   `messages` y `bot_sessions` del equipo 8 tienen cero filas: el bot atendía por
+   chat web anónimo y su historial vive en `bot_llm_decisions` (937 turnos, 398
+   chats). Dos límites de lo que la base guardó, anotados dentro del zip: del lado
+   del bot solo existe `reply_preview` de 300 caracteres, y 160 turnos de
+   mediados de agosto no se pueden atribuir a una persona.
+
+### Pendiente
+
+- Soltar la zona de Route 53 cuando el tráfico sea cero (US$0,50/mes, el único
+  costo real del sitio).
+- El panel privado no revienta con las filas vivas; si algún día se retira, el
+  camino barato es que `/mascotas/access` deje de responder `allowed: true`.
+
+---
+
+## Pendiente de la fase 5 — leer las conversaciones
+
+El plan del esquema de productos exige que el CEO lea las conversaciones de los
+guiones antes de cerrar la fase 5. **Queda pendiente a propósito**: se hará
+dentro de la ronda de evaluación comercial («cómo vender más»), que es un
+ejercicio aparte y más amplio que un chequeo de despliegue.
+
+Mientras tanto la fase 5 puede encenderse con su red —fallback por turno,
+telemetría en `fuente_datos` y vuelta atrás con un UPDATE—, pero **no se da por
+cerrada**: ese criterio sigue abierto y es uno de los cuatro que habilitan la
+fase 8.
