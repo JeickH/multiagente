@@ -7968,3 +7968,58 @@ causa está identificada —`abrir_producto` y `fechas_disponibles` se declaran 
 llamada y se usaron cero veces— y el arreglo es no declararlas cuando no hay nada que
 abrir. Eso va **antes** del encendido, o la ventana arranca midiendo un defecto
 conocido.
+
+---
+
+## Cierre de sesión — 21 de septiembre de 2026
+
+### En producción (task-def 94)
+
+| | |
+|---|---|
+| Esquema de productos, fases 1 a 5 | Desplegado, y **el piloto encendido** |
+| Arranquemos Pues (bot 12) | `fuente_datos=productos`, 102 filas, ventana hasta el 5-oct |
+| Fase 7 | Recetas mergeadas, **sin cargar** en producción |
+| Módulo de facturas y pagos | Desplegado, con las 2 facturas de Arranquemos Pues |
+| Recupera Tu Mascota | Retirado |
+
+### Bots activos — solo dos
+
+Por decisión del CEO quedan **pausados**: Talulah (13), Jerarquía (18),
+Natulcé (20) y Huella (17). Ninguno tenía un turno en 7 días.
+
+Siguen vivos **Arranquemos Pues (12)** y **Lía (16)**, que sigue agendando
+reuniones. A Lía **no se le cargan productos por ahora**; se actualizan más
+adelante.
+
+**No reactivar ninguno sin decirlo el CEO.**
+
+### La ventana de observación está corriendo
+
+Arrancó hoy y cierra el **5 de octubre**. Chequeo del día 1 hecho: 0 fail-safes,
+0 fallbacks, 0 errores. Los chequeos del día 3 y del día 5 están arriba, con sus
+consultas y umbrales.
+
+Recordatorios de Arranquemos Pues **verificados intactos** tras el encendido:
+15 min · 5 h · 23 h, leídos de `llm_config` porque `bot_recordatorios` sigue
+vacía en toda la plataforma. El respaldo funciona como se diseñó.
+
+### Lo que queda pendiente
+
+- **El criterio de tokens de la fase 8**: se midió y salió peor, se arregló el
+  prefijo (queda 27 caracteres por debajo del viejo), pero **no se volvió a
+  medir con los 69 guiones**. Hay que rehacer la doble corrida antes de cerrar.
+- **Leer las conversaciones**, en la ronda comercial.
+- **Nada convierte una ficha en texto.** Las filas `sede`, `envio` y `faq` no
+  las redacta ninguna herramienta: es la mitad de lo modelado para Talulah y
+  para Lía, y hasta que exista, esas cuentas no ganan nada con el esquema.
+- **Un producto sin variantes no dice su precio** — falla callada, tapada hoy
+  con una variante de adorno.
+- La documentación unificada en `arquitectura/` no alcanzó a escribirse.
+
+### Prueba del aviso de cobro
+
+Se envió por SES (us-east-1, dominio verificado, DKIM OK) desde
+`contacto@glomacx.com` al correo del CEO: dos facturas vencidas, $1.350.000 y
+la pausa del servicio el 2 de octubre. **El rol de las tareas de ECS no tiene
+permisos de SES**: si esto se automatiza desde el backend, hay que dárselos.
