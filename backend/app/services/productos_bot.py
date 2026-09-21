@@ -65,7 +65,8 @@ MIN_TOKENS_CACHEABLE = 4096
 #: caro es el contrario — creer que cachea cuando no.
 CARACTERES_POR_TOKEN = 4.0
 
-#: Las tres herramientas que se derivan del producto.
+#: Las tres herramientas que se derivan del producto. Cuáles se **declaran** en
+#: un turno lo decide `tools()`, y no siempre son las tres: ver `_a_declarar`.
 ABRIR = "abrir_producto"
 PRECIOS = "consultar_precios"
 FECHAS = "fechas_disponibles"
@@ -212,9 +213,28 @@ def ficha_en_el_prefijo(ctx: Contexto, prefijo_sin_ficha: str) -> bool:
 
 
 def bloque_indice(ctx: Contexto, *, con_ficha: bool = False) -> str:
-    """El índice de productos tal como entra al bloque `system`."""
-    partes = [_CABECERA + "\n".join(_renglones(ctx))]
+    """El índice de productos tal como entra al bloque `system`.
+
+    **Con un solo producto no se lista nada**, y queda sólo el pie. Un índice de
+    un elemento no indexa: no hay entre qué elegir y ya no hay clave que
+    escribir (con un producto, ninguna herramienta declara `producto`). Lo que
+    el bot vende es nivel 2 —`bots.instrucciones` o el `.md`, cuyo trabajo es
+    justamente decir de qué es este negocio— y repetirlo aquí es pagar dos veces
+    la misma frase en cada ronda de cada turno.
+
+    Lo que sí es del motor y no del negocio es el pie, y por eso se queda: el
+    `.md` del piloto nombra `consultar_tarifario` catorce veces y esa
+    herramienta no existe en la capa nueva. Sin el pie, el bot pide una
+    herramienta que nadie le declaró.
+
+    Si el producto único tiene ficha y ésta cabe en el prefijo, entra con su
+    título, así que el nombre no se pierde: el único caso en que el nombre no
+    aparece es el del producto sin ficha.
+    """
+    partes: List[str] = []
     unico = ctx.unico
+    if unico is None:
+        partes.append(_CABECERA + "\n".join(_renglones(ctx)))
     if con_ficha and unico is not None and (unico.instrucciones or "").strip():
         partes.append(f"### {unico.nombre}\n{unico.instrucciones.strip()}")
     partes.append(_PIE_UNICO if unico is not None else _PIE_VARIOS)
@@ -248,25 +268,91 @@ def medios_declarados(ctx: Contexto) -> Dict[str, Dict[str, Any]]:
 
 
 # ---------------------------------------------------------------------------
-# Las tres herramientas
+# Las herramientas — cuáles existen, y cuáles se declaran en este turno
 # ---------------------------------------------------------------------------
 
 def _claves(ctx: Contexto) -> str:
     return ", ".join(f"'{c.slug}'" for c in ctx.catalogos)
 
 
-def tools(ctx: Contexto) -> List[Dict[str, Any]]:
-    """Las tres herramientas derivadas del producto, con sus claves reales.
+def ficha_pendiente(ctx: Contexto, prefijo: str = "") -> bool:
+    """¿Queda alguna ficha de producto que el modelo tenga que ir a buscar?
+
+    Es la otra cara de `ficha_en_el_prefijo()`, y a propósito se responde
+    mirando el prefijo ya armado en vez de volver a calcular el umbral: son la
+    misma decisión tomada una sola vez. Con varios productos siempre queda
+    ficha pendiente (la que haga falta depende de la conversación y por eso
+    ninguna entra al prefijo). Con uno solo hay ficha pendiente únicamente si
+    tiene ficha **y** no viajó ya dentro del bloque `system`.
+
+    `prefijo` vacío significa "no sé qué lleva el prefijo", y entonces se
+    responde que sí: declarar una herramienta de más es caro, no tenerla
+    cuando hace falta es un bot que no sabe explicar lo que vende.
+    """
+    unico = ctx.unico
+    if unico is None:
+        return True
+    ficha = (unico.instrucciones or "").strip()
+    return bool(ficha) and ficha not in (prefijo or "")
+
+
+def _a_declarar(ctx: Contexto, prefijo: str) -> List[str]:
+    """Cuáles de las tres se le declaran al modelo en este turno.
+
+    El esquema de una herramienta se paga en **cada** llamada de **cada** turno,
+    esté o no cacheado el prefijo: declarar una que no tiene nada que hacer es
+    pagar ~290 tokens por ronda a cambio de nada. La medición de la fase 5 lo
+    cobró — el prefijo creció 3,7 % y `abrir_producto` y `fechas_disponibles`
+    se usaron CERO veces en 69 guiones.
+
+    `consultar_precios` va siempre: es la única fuente de cifras y el prompt
+    entero se apoya en ella.
+
+    `abrir_producto` sólo cuando hay ficha que abrir (`ficha_pendiente`). Con un
+    único producto cuya ficha ya viaja en el prefijo —o que no tiene ficha— no
+    queda nada que devolver que el modelo no esté leyendo ya.
+
+    `fechas_disponibles` sólo cuando hay varios productos, y por la misma razón
+    que el pie del índice: con uno solo, `_PIE_UNICO` ya le dice al modelo que
+    «los precios y las fechas salen de `consultar_precios`». Declarar además un
+    calendario aparte era contradecir el prompt con el catálogo de
+    herramientas, y el modelo le hizo caso al prompt. El calendario sigue
+    existiendo para cuando el bot maneje varios productos, donde recorrer
+    `consultar_precios` producto por producto sí sale caro.
+    """
+    nombres = [PRECIOS]
+    if ficha_pendiente(ctx, prefijo):
+        nombres.insert(0, ABRIR)
+    if ctx.unico is None:
+        nombres.append(FECHAS)
+    return nombres
+
+
+def tools(ctx: Contexto, *, prefijo: str = "") -> List[Dict[str, Any]]:
+    """Las herramientas derivadas del producto, con sus claves reales.
 
     Las claves van dentro de la descripción a propósito: el modelo las tiene en
     el índice del prompt, pero la descripción de la herramienta es lo que lee
     justo antes de llamarla y es donde menos se equivoca.
+
+    `prefijo` es el bloque `system` de este turno, ya armado: de ahí sale si la
+    ficha del producto único ya está adentro. Ver `_a_declarar`.
     """
+    declaradas = _a_declarar(ctx, prefijo)
     claves = _claves(ctx)
-    producto_prop = {
-        "type": "string",
-        "description": f"Clave del producto. Una de: {claves}.",
-    }
+    # Con un solo producto no hay nada que elegir: `resolver_producto` devuelve
+    # ese mismo catálogo cuando el campo llega vacío. Declararlo no sólo cuesta
+    # esquema en cada ronda — es una forma de fallar, porque el modelo tiene que
+    # acertarle a la clave y un nombre que no resuelva contesta
+    # "producto_desconocido" sobre el único producto que el bot vende.
+    producto_prop = (
+        None
+        if ctx.unico is not None
+        else {
+            "type": "string",
+            "description": f"Clave del producto. Una de: {claves}.",
+        }
+    )
     variante_prop = {
         "type": "string",
         "description": (
@@ -274,7 +360,12 @@ def tools(ctx: Contexto) -> List[Dict[str, Any]]:
             "todavía no eligió: sin ella se comparan todas."
         ),
     }
-    return [
+
+    def _props(*pares) -> Dict[str, Any]:
+        """Las propiedades declaradas, sin las que no aplican a este bot."""
+        return {clave: valor for clave, valor in pares if valor is not None}
+
+    catalogo: List[Dict[str, Any]] = [
         {
             "name": ABRIR,
             "description": (
@@ -285,8 +376,8 @@ def tools(ctx: Contexto) -> List[Dict[str, Any]]:
             ),
             "input_schema": {
                 "type": "object",
-                "properties": {"producto": producto_prop},
-                "required": ["producto"],
+                "properties": _props(("producto", producto_prop)),
+                "required": ["producto"] if producto_prop else [],
             },
         },
         {
@@ -300,24 +391,24 @@ def tools(ctx: Contexto) -> List[Dict[str, Any]]:
             ),
             "input_schema": {
                 "type": "object",
-                "properties": {
-                    "producto": producto_prop,
-                    "variante": variante_prop,
-                    "mes": {
+                "properties": _props(
+                    ("producto", producto_prop),
+                    ("variante", variante_prop),
+                    ("mes", {
                         "type": "string",
                         "description": (
                             "Período que pidió el cliente, como lo dijo. Ej: "
                             "'septiembre', 'diciembre'."
                         ),
-                    },
-                    "fecha": {
+                    }),
+                    ("fecha", {
                         "type": "string",
                         "description": (
                             "Fecha exacta en formato AAAA-MM-DD, sólo si pidió "
                             "un día concreto."
                         ),
-                    },
-                    "presupuesto": {
+                    }),
+                    ("presupuesto", {
                         "type": "string",
                         "description": (
                             "Cuánto quiere gastar, si lo dijo: '450 mil', "
@@ -325,8 +416,8 @@ def tools(ctx: Contexto) -> List[Dict[str, Any]]:
                             "en ese presupuesto y, si no cabe nada, lo más "
                             "económico que sí existe."
                         ),
-                    },
-                },
+                    }),
+                ),
                 # Nada obligatorio salvo el producto cuando hay varios: un
                 # cliente puede abrir con "¿qué tienes por $400.000?" sin decir
                 # período, y forzar el campo obligaría al modelo a inventarlo.
@@ -344,21 +435,23 @@ def tools(ctx: Contexto) -> List[Dict[str, Any]]:
             ),
             "input_schema": {
                 "type": "object",
-                "properties": {
-                    "producto": producto_prop,
-                    "variante": variante_prop,
-                    "desde_mes": {
+                "properties": _props(
+                    ("producto", producto_prop),
+                    ("variante", variante_prop),
+                    ("desde_mes", {
                         "type": "string",
                         "description": (
                             "Período desde el cual mirar, si el cliente lo "
                             "acotó. Ej: 'noviembre'."
                         ),
-                    },
-                },
+                    }),
+                ),
                 "required": [],
             },
         },
     ]
+    por_nombre = {t["name"]: t for t in catalogo}
+    return [por_nombre[nombre] for nombre in declaradas]
 
 
 # ---------------------------------------------------------------------------

@@ -286,8 +286,11 @@ class TestIndiceEnElPrompt:
         llm_engine.advance(bot, None, "hola")
 
         assert productos_bot.tokens_aprox(modelo.system) < 4096
-        assert "`taller_ceramica`" in modelo.system, "el índice sí va"
-        assert "FICHA DEL TALLER" not in modelo.system, "la ficha no"
+        assert "FICHA DEL TALLER" not in modelo.system, "la ficha no va adentro"
+        assert "`consultar_precios`" in modelo.system, "el pie sí va"
+        # Y como la ficha se quedó afuera, ésta es la única forma de llegar a
+        # ella: aquí `abrir_producto` sí tiene algo que abrir.
+        assert productos_bot.ABRIR in modelo.herramientas
 
     def test_el_producto_en_borrador_no_se_le_nombra_al_modelo(
         self, db_session, cuenta_a, motor_conectado, modelo
@@ -369,7 +372,10 @@ class TestInterruptor:
         modelo.guion = [_respuesta(_texto("¡Hola!"))]
         resultado = llm_engine.advance(bot, None, "hola")
 
-        assert productos_bot.TOOLS <= set(modelo.herramientas)
+        # Un solo producto y sin ficha: la única herramienta del catálogo que
+        # tiene algo que hacer es la de precios. Cuáles se declaran lo fija
+        # `TestQueSeDeclara`.
+        assert productos_bot.PRECIOS in modelo.herramientas
         assert "consultar_tarifario" not in modelo.herramientas
         assert resultado["telemetry"]["fuente_datos"] == "productos"
 
@@ -388,6 +394,177 @@ class TestInterruptor:
         resultado = llm_engine.advance(bot, None, "hola")
 
         assert resultado["telemetry"]["fuente_datos"] is None
+
+
+# ---------------------------------------------------------------------------
+# Cuáles de las tres se declaran
+# ---------------------------------------------------------------------------
+
+class TestQueSeDeclara:
+    """El esquema de una herramienta se paga en CADA llamada de CADA turno.
+
+    La medición de la fase 5 lo cobró: el prefijo creció 3,7 % contra el motor
+    viejo y las dos herramientas culpables —`abrir_producto` y
+    `fechas_disponibles`— se llamaron **cero** veces en 69 guiones. Eran ~290
+    tokens de esquema por ronda a cambio de nada.
+
+    Esta clase fija la regla: **no se declara una herramienta que no tiene nada
+    que hacer**. Si alguien vuelve a declarar una de más, falla acá.
+    """
+
+    def _declaradas(self, bot, modelo) -> set:
+        modelo.guion = [_respuesta(_texto("¡Hola!"))]
+        llm_engine.advance(bot, None, "hola")
+        return productos_bot.TOOLS & set(modelo.herramientas)
+
+    def test_un_producto_sin_ficha_solo_declara_precios(
+        self, db_session, cuenta_a, motor_conectado, modelo
+    ):
+        """Nada que abrir (no hay ficha) y las fechas ya las da `consultar_precios`."""
+        team_id, bot_id = cuenta_a
+        crear_juguete(
+            db_session, team_id=team_id, bot_id=bot_id, fechas=_futuras(10, 40)
+        )
+        bot = _bot(
+            db_session, bot_id,
+            instrucciones=INSTRUCCIONES_CORTAS, fuente_datos="productos",
+        )
+
+        assert self._declaradas(bot, modelo) == {productos_bot.PRECIOS}
+
+    def test_un_producto_con_la_ficha_ya_en_el_prefijo_tampoco_declara_abrir(
+        self, db_session, cuenta_a, motor_conectado, modelo
+    ):
+        """Es el mismo criterio de `ficha_en_el_prefijo`, no uno paralelo: si la
+        ficha viaja adentro del bloque `system`, `abrir_producto` devolvería lo
+        que el modelo ya está leyendo."""
+        team_id, bot_id = cuenta_a
+        producto = crear_juguete(
+            db_session, team_id=team_id, bot_id=bot_id, fechas=_futuras(10, 40)
+        )
+        producto.instrucciones = "FICHA DEL TALLER. " + "detalle del taller. " * 40
+        db_session.commit()
+        bot = _bot(
+            db_session, bot_id,
+            instrucciones="".join(f"Instrucción de negocio número {i}. " for i in range(600)),
+            fuente_datos="productos",
+        )
+
+        declaradas = self._declaradas(bot, modelo)
+
+        assert "FICHA DEL TALLER." in modelo.system, "la ficha sí entró"
+        assert declaradas == {productos_bot.PRECIOS}
+
+    def test_un_producto_con_la_ficha_afuera_si_declara_abrir(
+        self, db_session, cuenta_a, motor_conectado, modelo
+    ):
+        """La otra cara: si la ficha no cupo en el prefijo, ésta es la única
+        forma de llegar a ella y la herramienta se gana su esquema."""
+        team_id, bot_id = cuenta_a
+        producto = crear_juguete(
+            db_session, team_id=team_id, bot_id=bot_id, fechas=_futuras(10, 40)
+        )
+        producto.instrucciones = "FICHA: se paga la mitad al reservar."
+        db_session.commit()
+        bot = _bot(
+            db_session, bot_id,
+            instrucciones=INSTRUCCIONES_CORTAS, fuente_datos="productos",
+        )
+
+        assert self._declaradas(bot, modelo) == {
+            productos_bot.ABRIR, productos_bot.PRECIOS
+        }
+
+    def test_con_varios_productos_se_declaran_las_tres(
+        self, db_session, cuenta_a, motor_conectado, modelo
+    ):
+        """Con varios sí hay entre qué elegir: hay fichas que abrir y el
+        calendario cruza productos, que es lo que `consultar_precios` no hace
+        de una sola pasada."""
+        team_id, bot_id = cuenta_a
+        for i, slug in enumerate(("taller_uno", "taller_dos")):
+            producto = crear_juguete(
+                db_session, team_id=team_id, bot_id=bot_id, slug=slug,
+                fechas=_futuras(10 + i, 40 + i),
+            )
+            producto.instrucciones = f"FICHA DE {slug.upper()}"
+        db_session.commit()
+        bot = _bot(
+            db_session, bot_id,
+            instrucciones=INSTRUCCIONES_CORTAS, fuente_datos="productos",
+        )
+
+        assert self._declaradas(bot, modelo) == productos_bot.TOOLS
+
+    def test_con_un_solo_producto_no_se_pide_la_clave_del_producto(
+        self, db_session, cuenta_a, motor_conectado
+    ):
+        """No hay entre qué elegir: `resolver_producto` devuelve el único cuando
+        el campo llega vacío. Declararlo cuesta esquema en cada ronda y además
+        es una forma de fallar — si el modelo escribe una clave que no resuelve,
+        el bot contesta «no reconozco ese producto» sobre lo único que vende."""
+        team_id, bot_id = cuenta_a
+        crear_juguete(
+            db_session, team_id=team_id, bot_id=bot_id, fechas=_futuras(10, 40)
+        )
+        db_session.commit()
+        ctx = productos_bot.abrir(db_session, team_id=team_id, bot_id=bot_id)
+
+        esquemas = productos_bot.tools(ctx)
+
+        assert esquemas, "algo tiene que quedar declarado"
+        for tool in esquemas:
+            assert "producto" not in tool["input_schema"]["properties"], tool["name"]
+            assert tool["input_schema"]["required"] == []
+
+    def test_con_varios_productos_si_se_pide_la_clave(
+        self, db_session, cuenta_a, motor_conectado
+    ):
+        """Y ahí sí es obligatoria para abrir: adivinar cuál es exactamente el
+        error que este esquema viene a cerrar."""
+        team_id, bot_id = cuenta_a
+        for slug in ("taller_uno", "taller_dos"):
+            crear_juguete(
+                db_session, team_id=team_id, bot_id=bot_id, slug=slug,
+                fechas=_futuras(10, 40),
+            )
+        db_session.commit()
+        ctx = productos_bot.abrir(db_session, team_id=team_id, bot_id=bot_id)
+
+        por_nombre = {t["name"]: t for t in productos_bot.tools(ctx)}
+
+        for nombre, tool in por_nombre.items():
+            assert "producto" in tool["input_schema"]["properties"], nombre
+        assert por_nombre[productos_bot.ABRIR]["input_schema"]["required"] == [
+            "producto"
+        ]
+
+    def test_el_producto_unico_se_resuelve_sin_que_el_modelo_lo_nombre(
+        self, db_session, cuenta_a, motor_conectado, modelo
+    ):
+        """La contrapartida de no declarar la clave: la herramienta tiene que
+        funcionar con la entrada vacía, o se habría ahorrado esquema a cambio de
+        romper el turno."""
+        team_id, bot_id = cuenta_a
+        crear_juguete(
+            db_session, team_id=team_id, bot_id=bot_id, fechas=_futuras(10, 40)
+        )
+        bot = _bot(
+            db_session, bot_id,
+            instrucciones=INSTRUCCIONES_CORTAS, fuente_datos="productos",
+        )
+        mes = (productos.hoy_colombia() + timedelta(days=10)).month
+        modelo.guion = [
+            _respuesta(
+                _tool(productos_bot.PRECIOS, {"mes": productos.nombre_mes(mes)}),
+                stop="tool_use",
+            ),
+            _respuesta(_texto("Estos son los valores.")),
+        ]
+
+        resultado = llm_engine.advance(bot, None, "¿cuánto vale?")
+
+        assert "$120.000" in resultado["telemetry"]["tools"][0]["resultado"]
 
 
 # ---------------------------------------------------------------------------

@@ -1268,8 +1268,17 @@ def _bloque_continuidad(cfg: Dict[str, Any]) -> str:
 # ---------------------------------------------------------------------------
 
 def _tools_for(
-    cfg: Dict[str, Any], ctx_productos: Optional[Any] = None
+    cfg: Dict[str, Any],
+    ctx_productos: Optional[Any] = None,
+    system: str = "",
 ) -> List[Dict[str, Any]]:
+    """Las herramientas del turno.
+
+    `system` es el bloque `system` ya armado, y se pasa por una sola razón: las
+    herramientas del catálogo dependen de qué acabó adentro del prefijo (si la
+    ficha del producto ya viaja ahí, `abrir_producto` no tiene nada que abrir).
+    Ver `productos_bot._a_declarar`.
+    """
     tools: List[Dict[str, Any]] = [
         {
             "name": "escalar_a_asesor",
@@ -1525,12 +1534,12 @@ def _tools_for(
             }
         )
     if ctx_productos is not None:
-        # Las tres herramientas derivadas del producto **reemplazan** a
+        # Las herramientas derivadas del producto **reemplazan** a
         # `consultar_tarifario`: declarar las dos sería darle al modelo dos
         # fuentes de precios para el mismo turno, y elegiría por su cuenta.
         # Sin productos asignados, `ctx_productos` es None y el bot mantiene
         # exactamente las herramientas de hoy.
-        tools.extend(productos_bot.tools(ctx_productos))
+        tools.extend(productos_bot.tools(ctx_productos, prefijo=system))
     elif cfg.get("tarifario"):
         tools.append(
             {
@@ -3734,7 +3743,7 @@ def _turno(
     history = _load_history(state)
     user_text = (user_input or "").strip() or _FIRST_TURN_PROMPT
     system = _system_prompt(bot, cfg, history, user_text, ctx_productos)
-    tools = _tools_for(cfg, ctx_productos)
+    tools = _tools_for(cfg, ctx_productos, system)
     model_id = cfg.get("model_id") or _env_model_id()
 
     # Mensajes de trabajo del turno (el historial persistido queda aplanado).
