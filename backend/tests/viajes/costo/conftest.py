@@ -12,7 +12,9 @@ suite de mascotas, que está estable, sin ganar nada todavía.
 """
 from __future__ import annotations
 
+import json
 import os
+import re
 import time
 from pathlib import Path
 from typing import Any, Dict, List
@@ -145,3 +147,123 @@ def modelo_real(monkeypatch, medidor, bedrock_disponible):
 
     monkeypatch.setattr(llm_engine, "_invoke_model", _medido)
     return etiqueta
+
+
+# ---------------------------------------------------------------------------
+# Transcripciones: la corrida entera, guardada en disco (fase 5)
+# ---------------------------------------------------------------------------
+#
+# La doble corrida de la fase 5 no se juzga con "pasaron las dos": se comparan
+# las cifras, las herramientas, los medios y el consumo de cada guion contra sí
+# mismo. Para eso hay que guardar lo que pasó, no sólo si pasó. Sin
+# `TRANSCRIPCIONES_DIR` en el ambiente, este bloque no hace absolutamente nada
+# y la suite corre como siempre.
+
+CARPETA_TRANSCRIPCIONES = os.getenv("TRANSCRIPCIONES_DIR", "").strip()
+
+
+def _nombre_de_archivo(nodeid: str) -> str:
+    limpio = re.sub(r"[^0-9A-Za-zÁÉÍÓÚÜÑáéíóúüñ._-]+", "_", nodeid)
+    return limpio.strip("_")[:180]
+
+
+@pytest.hookimpl(hookwrapper=True, tryfirst=True)
+def pytest_runtest_makereport(item, call):
+    """Deja a mano cómo terminó el guion: la transcripción lo anota."""
+    salida = yield
+    reporte = salida.get_result()
+    if reporte.when == "call":
+        item._resultado_llamada = reporte.outcome
+
+
+@pytest.fixture(autouse=True)
+def transcripcion(request, monkeypatch):
+    """Graba turno a turno lo que el bot dijo, llamó, envió y consumió."""
+    if not CARPETA_TRANSCRIPCIONES:
+        yield None
+        return
+
+    from app.services import llm_engine
+
+    turnos: List[Dict[str, Any]] = []
+    original = llm_engine.advance
+
+    def _grabando(bot, state, user_input=None, **kwargs):
+        salida = original(bot, state, user_input, **kwargs)
+        tel = salida.get("telemetry") or {}
+        dicho = [
+            a["payload"].get("text", "")
+            for a in salida.get("actions", []) if a["type"] == "say"
+        ]
+        medios: List[str] = []
+        for t in tel.get("tools") or []:
+            if t.get("tool") == "enviar_media":
+                medios += re.findall(
+                    r"\w+", str((t.get("input") or {}).get("claves", "") or "")
+                )
+        turnos.append({
+            "cliente": user_input,
+            "bot": dicho,
+            "medios": medios,
+            "tools": [
+                {"tool": t.get("tool"), "input": t.get("input")}
+                for t in (tel.get("tools") or [])
+            ],
+            "camino": tel.get("camino"),
+            "fuente_datos": tel.get("fuente_datos"),
+            "rounds": tel.get("rounds"),
+            "tokens_in": tel.get("tokens_in"),
+            "tokens_out": tel.get("tokens_out"),
+            "cache_read": tel.get("cache_read"),
+            "cache_write": tel.get("cache_write"),
+            "finished": salida.get("finished"),
+        })
+        return salida
+
+    monkeypatch.setattr(llm_engine, "advance", _grabando)
+    yield turnos
+
+    carpeta = Path(CARPETA_TRANSCRIPCIONES)
+    carpeta.mkdir(parents=True, exist_ok=True)
+    base = _nombre_de_archivo(request.node.nodeid)
+    registro = {
+        "nodeid": request.node.nodeid,
+        "resultado": getattr(request.node, "_resultado_llamada", "?"),
+        "fuente_configurada": os.getenv("BOT_VIAJES_FUENTE") or "tarifario",
+        "turnos": turnos,
+        "totales": {
+            "turnos": len(turnos),
+            "rounds": sum(t["rounds"] or 0 for t in turnos),
+            "tokens_in": sum(t["tokens_in"] or 0 for t in turnos),
+            "tokens_out": sum(t["tokens_out"] or 0 for t in turnos),
+            "cache_read": sum(t["cache_read"] or 0 for t in turnos),
+            "cache_write": sum(t["cache_write"] or 0 for t in turnos),
+        },
+    }
+    (carpeta / f"{base}.json").write_text(
+        json.dumps(registro, ensure_ascii=False, indent=1), encoding="utf-8"
+    )
+
+    lineas = [
+        f"{request.node.nodeid}  [{registro['resultado']}]",
+        f"fuente configurada: {registro['fuente_configurada']}",
+        "=" * 70,
+    ]
+    for t in turnos:
+        if t["cliente"] is not None:
+            lineas.append(f"CLIENTE | {t['cliente']}")
+        for texto in t["bot"]:
+            for i, linea in enumerate(texto.split("\n")):
+                lineas.append(f"{'BOT     |' if i == 0 else '        |'} {linea}")
+        if t["medios"]:
+            lineas.append(f"        | [envía: {', '.join(t['medios'])}]")
+        herramientas = ", ".join(h["tool"] or "?" for h in t["tools"])
+        lineas.append(
+            f"        · tools: {herramientas or '(ninguna)'} · "
+            f"fuente={t['fuente_datos']} · rounds={t['rounds']} · "
+            f"tokens_in={t['tokens_in']} · cache_read={t['cache_read']} · "
+            f"cache_write={t['cache_write']}"
+        )
+        lineas.append("-" * 70)
+    lineas.append(f"TOTALES: {registro['totales']}")
+    (carpeta / f"{base}.txt").write_text("\n".join(lineas) + "\n", encoding="utf-8")

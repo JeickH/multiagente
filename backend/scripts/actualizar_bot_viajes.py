@@ -12,6 +12,11 @@ Este script solo pisa `llm_config` y los pasos visuales del bot que ya existe:
      puesto gana sobre el reparto por turnos y TODOS los chats caen en la misma
      persona — que es justo lo que estaba pasando.
 
+**Lo que NO toca**: cualquier llave de `llm_config` que el archivo de datos no
+declare se conserva tal cual (`fusionar`). El archivo manda sobre cómo habla el
+bot; cómo está operando —`fuente_datos`, un `model_id` fijado a mano— vive solo
+en la fila y correr esto no puede apagarlo.
+
 Idempotente: se puede correr las veces que haga falta.
 
 Uso:
@@ -47,6 +52,38 @@ CORREO_OWNER = os.environ.get(
     "BOT_OWNER_EMAIL", "arranquemospues.marketing@gmail.com"
 )
 
+#: Lo único que este script **borra** a propósito de la config que ya estaba.
+#: Todo lo demás que no venga del archivo de datos se conserva (ver `fusionar`).
+#: `assignee` fijo gana sobre el reparto por turnos y manda todos los chats a la
+#: misma persona, que es la razón por la que este script existe.
+A_BORRAR = ("assignee",)
+
+
+def fusionar(anterior: dict) -> dict:
+    """La config nueva: el archivo de datos manda, pero **solo sobre lo suyo**.
+
+    `app/data/bot_viajes.py` es la fuente de verdad de cómo habla el bot —sus
+    caminos, su catálogo de medios, sus textos—. No es la fuente de verdad de
+    cómo está **operando** ese bot en esa base: `fuente_datos` (el interruptor
+    de la capa de productos), un `model_id` fijado a mano y cualquier bandera
+    que se encienda desde la app viven solo en la fila, y el archivo no los
+    conoce.
+
+    Antes se conservaba una lista blanca de una sola llave (`model_id`), así
+    que correr esto contra producción durante la ventana de observación del
+    piloto **apagaba `fuente_datos` sin decir nada**: el bot volvía al motor
+    viejo, el script imprimía su resumen de siempre y nadie se enteraba. Ahora
+    la regla es al revés y no hay que acordarse de nada: se conserva todo lo
+    que el archivo de datos no declara, salvo lo que este script borra a
+    propósito.
+    """
+    nueva = dict(LLM_CONFIG)
+    for clave, valor in (anterior or {}).items():
+        if clave in LLM_CONFIG or clave in A_BORRAR:
+            continue
+        nueva[clave] = valor
+    return nueva
+
 
 def main() -> int:
     db = SessionLocal()
@@ -79,12 +116,15 @@ def main() -> int:
                 except (ValueError, TypeError):
                     anterior = {}
 
-            nueva = dict(LLM_CONFIG)
-            # Se conservan las llaves propias del tenant que este script no
-            # administra (ej. `model_id` si alguien fijó un override).
-            for clave in ("model_id",):
-                if anterior.get(clave) is not None:
-                    nueva[clave] = anterior[clave]
+            nueva = fusionar(anterior)
+            conservadas = sorted(k for k in nueva if k not in LLM_CONFIG)
+            if conservadas:
+                # Se imprime siempre: si la corrida apagara el piloto, esta
+                # línea es lo único que lo habría delatado a tiempo.
+                print(
+                    "  · llaves operativas conservadas: "
+                    + ", ".join(f"{k}={nueva[k]!r}" for k in conservadas)
+                )
 
             if anterior.get("assignee"):
                 print(
@@ -148,6 +188,7 @@ def main() -> int:
             cfg = json.loads(bot.llm_config or "{}")
             print(f"  · bot {bot.id}: {len(cfg.get('media') or {})} medios, "
                   f"tarifario={cfg.get('tarifario') or '—'}, "
+                  f"fuente_datos={cfg.get('fuente_datos') or '(tarifario)'}, "
                   f"assignee={cfg.get('assignee') or '(por turno)'}")
         return 0
     finally:

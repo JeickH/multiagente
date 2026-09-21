@@ -171,7 +171,10 @@ class TestAperturaGenerica:
         salidas, turnos = _conversar(bot_viajes, ["Hola"])
         _transcribir("Sin material en la apertura", turnos)
 
-        assert "consultar_tarifario" not in _tools(salidas[0]), (
+        # Los dos motores: `consultar_tarifario` (el JSON de la imagen) y
+        # `consultar_precios` (el catálogo de la base). El guion vigila que no
+        # haya ido a buscar precios, venga el dato de donde venga.
+        assert not _tools(salidas[0]) & {"consultar_tarifario", "consultar_precios"}, (
             "consultó precios sin que nadie le dijera un mes"
         )
         assert not [a for a in salidas[0]["actions"] if a["type"] == "say_media"], (

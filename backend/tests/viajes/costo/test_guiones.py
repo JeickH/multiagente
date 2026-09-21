@@ -81,6 +81,14 @@ def _nombre_de_la_asesora() -> str:
 
 NOMBRE_ASESORA = _nombre_de_la_asesora()
 
+#: La herramienta con la que el bot busca un precio, se llame como se llame.
+#: Son dos nombres porque hay dos motores vivos: `consultar_tarifario` lee el
+#: JSON que va en la imagen y `consultar_precios` lee el catálogo de la base
+#: (`llm_config.fuente_datos`). Lo que el guion vigila es que haya ido a
+#: buscarlo, no de qué archivo salió — y así el mismo guion sirve para medir
+#: los dos motores uno contra el otro sin tocar ni una línea.
+CONSULTA_DE_PRECIOS = {"consultar_tarifario", "consultar_precios"}
+
 _MESES_ES = [
     "enero", "febrero", "marzo", "abril", "mayo", "junio",
     "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre",
@@ -275,7 +283,7 @@ class TestNoInventa:
             "¿Cuánto cuesta el plan por persona?",
             "para septiembre",
         ])
-        assert "consultar_tarifario" in tools(*s), "citó precios sin consultar"
+        assert tools(*s) & CONSULTA_DE_PRECIOS, "citó precios sin consultar"
         enviados = set(medios(*s))
         assert enviados & CLAVES_TARIFARIO, (
             f"no mandó el flyer del mes; mandó {enviados or 'nada'}"
