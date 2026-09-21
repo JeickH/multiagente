@@ -1,3 +1,4 @@
+import AvisoPagosPendientes from './AvisoPagosPendientes';
 import Sidebar from './Sidebar';
 
 /**
@@ -33,21 +34,35 @@ export default function Layout({ children, variant = 'centered' }: LayoutProps) 
       }`}
     >
       <Sidebar />
-      {variant === 'centered' ? (
-        <main className="flex-1 flex items-center justify-center p-8">
-          <div className="w-full max-w-2xl bg-white rounded-xl shadow-xl border border-gloma-rose p-8 min-h-[60vh] flex flex-col justify-center items-center font-body">
+      {/* Columna de contenido. Existe para que el aviso de pagos se apile
+          ENCIMA del contenido en las tres variantes sin que cada una tenga que
+          saber de él. En `app` la altura del viewport se clava acá (antes
+          estaba en el `<main>`): con el aviso presente, un `main` de
+          `h-screen` sumaría su alto al del aviso y se saldría de la pantalla.
+          El `main` pasa a `flex-1 min-h-0`, que es lo que le deja al chat el
+          espacio que sobra y mantiene vivo su scroll interno. */}
+      <div
+        className={`flex-1 flex flex-col min-w-0 ${
+          esApp ? 'h-screen overflow-hidden' : ''
+        }`}
+      >
+        <AvisoPagosPendientes />
+        {variant === 'centered' ? (
+          <main className="flex-1 flex items-center justify-center p-8">
+            <div className="w-full max-w-2xl bg-white rounded-xl shadow-xl border border-gloma-rose p-8 min-h-[60vh] flex flex-col justify-center items-center font-body">
+              {children}
+            </div>
+          </main>
+        ) : (
+          <main
+            className={`flex-1 flex flex-col font-sans min-w-0 ${
+              esApp ? 'min-h-0 overflow-hidden' : ''
+            }`}
+          >
             {children}
-          </div>
-        </main>
-      ) : (
-        <main
-          className={`flex-1 flex flex-col font-sans min-w-0 ${
-            esApp ? 'h-screen overflow-hidden' : ''
-          }`}
-        >
-          {children}
-        </main>
-      )}
+          </main>
+        )}
+      </div>
     </div>
   );
 }

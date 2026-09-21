@@ -45,6 +45,7 @@ from ..schemas import (
     CobroOut,
     EstadoPagoOut,
     CompraOut,
+    FacturaCheckoutCreate,
     FacturaOut,
     FacturasOut,
     PagosAccesoOut,
@@ -75,7 +76,13 @@ PERMISO_BILLING = "can_manage_billing"
 #: `_redirect_absoluto`). Si el `redirect-url` se aceptara tal cual del
 #: request, el checkout de Wompi quedaría convertido en un redirector abierto
 #: hacia cualquier dominio, firmado por nosotros.
-FRONTEND_BASE_URL = os.getenv("FRONTEND_BASE_URL", "http://localhost:3000")
+#: Se lee en CADA llamada y no al importar el módulo, igual que las llaves en
+#: `wompi.py`. Congelarla al importar hacía que el valor dependiera de si el
+#: entorno ya estaba armado cuando alguien tocó el primer `import`, y en los
+#: tests el `monkeypatch.setenv` de la fixture llegaba siempre tarde: el
+#: redirect salía a `localhost:3000` sin que nada avisara.
+def _frontend_base_url() -> str:
+    return os.getenv("FRONTEND_BASE_URL", "http://localhost:3000")
 
 #: Ruta por defecto de regreso: la misma pantalla de pagos.
 REDIRECT_POR_DEFECTO = "/pagos"
@@ -228,7 +235,7 @@ def _redirect_absoluto(pedido: Optional[str]) -> str:
     if not ruta.startswith("/") or ruta.startswith("//"):
         logger.warning("redirect_url descartado por no ser una ruta propia")
         ruta = REDIRECT_POR_DEFECTO
-    return f"{FRONTEND_BASE_URL.rstrip('/')}{ruta}"
+    return f"{_frontend_base_url().rstrip('/')}{ruta}"
 
 
 @router.post("/checkout", response_model=CheckoutOut, status_code=status.HTTP_201_CREATED)
@@ -648,7 +655,7 @@ def descargar_factura(
 )
 def pagar_factura(
     factura_id: int,
-    payload: Optional[CheckoutCreate] = None,
+    payload: Optional[FacturaCheckoutCreate] = None,
     db: Session = Depends(get_db),
     member: models.TeamMember = Depends(require_billing_admin),
     user: models.User = Depends(get_current_user),

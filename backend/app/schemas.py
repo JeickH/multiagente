@@ -1045,6 +1045,22 @@ class FacturasOut(BaseModel):
     pagos_habilitados: bool = False
 
 
+class FacturaCheckoutCreate(BaseModel):
+    """Input de `POST /pagos/facturas/{id}/checkout`.
+
+    No reutiliza `CheckoutCreate` porque no comparte el input: comprar un
+    paquete necesita saber **cuál** (`package_key`), mientras que pagar una
+    factura ya sabe qué se cobra — el id va en la ruta y el monto sale de la
+    fila guardada. Exigir un `package_key` acá obligaba a mandar un valor de
+    relleno que el endpoint ignora, y un campo obligatorio que no se usa
+    termina leyéndose como que el cliente elige algo del precio.
+
+    El cuerpo entero es opcional: `POST` sin body paga la factura con el
+    destino de regreso por defecto.
+    """
+    redirect_url: Optional[str] = Field(default=None, max_length=300)
+
+
 class AvisoPagoOut(BaseModel):
     """`GET /pagos/aviso` — el recuadro amarillo, para CUALQUIER miembro.
 
