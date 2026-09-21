@@ -28,11 +28,13 @@ import type { NextRequest } from 'next/server';
  * (comprado en Hostinger, con el DNS delegado a Route 53), más el subdominio
  * `mascotasperdidascali.glomabeauty.com` que se mantiene como respaldo:
  *
- *   /                → chat de Recupera Tu Mascota (rewrite a /mascotas)
- *   /api/mascotas/*  → passthrough (chat, fotos y listado del bot)
+ *   /                → página de cierre de Recupera Tu Mascota (rewrite a /mascotas)
  *   cualquier otra   → 404 brandeado (la plataforma NO vive en estos dominios,
  *                      y el panel privado tampoco: ese se usa desde
- *                      app.glomabeauty.com con sesión iniciada)
+ *                      app.glomacx.com con sesión iniciada)
+ *
+ * Cierre del sitio (2026-09-20): la página quedó estática y el passthrough de
+ * `/api/mascotas/*` se retiró de estos hosts. Ver `isMascotasAllowed`.
  */
 
 /**
@@ -80,11 +82,12 @@ function isMascotasAllowed(pathname: string): boolean {
   if (pathname === '/') return true;
   if (pathname === '/favicon.ico') return true;
   if (pathname.startsWith('/_next')) return true;
-  // Solo los endpoints públicos del bot. `/api/mascotas/panel*` queda fuera a
-  // propósito: el panel exige JWT y se usa desde la app, no desde este dominio.
-  if (pathname.startsWith('/api/mascotas/') && !pathname.startsWith('/api/mascotas/panel')) {
-    return true;
-  }
+  // Desde el cierre del sitio (2026-09-20) este dominio NO deja pasar nada de
+  // `/api/mascotas/*`. La página de agradecimiento es estática y no llama al
+  // backend, así que el passthrough del chat, las fotos y el listado quedó sin
+  // uso; cerrarlo es lo que permite apagar esos endpoints después sin que aquí
+  // aparezca un error. El panel privado nunca vivió en este dominio: se usa
+  // desde `app.glomacx.com` con sesión.
   return false;
 }
 
