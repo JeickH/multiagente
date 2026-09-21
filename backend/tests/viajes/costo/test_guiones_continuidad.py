@@ -186,7 +186,9 @@ class TestRetomaAlDiaSiguiente:
         assert not _SE_PRESENTA.search(texto), (
             f"se presentó de nuevo como si fuera la primera vez: {texto!r}"
         )
-        assert "consultar_tarifario" in _tools(segundas[0]), (
+        # Cualquiera de los dos motores sirve: `consultar_tarifario` lee el
+        # JSON de la imagen y `consultar_precios` el catálogo de la base.
+        assert _tools(segundas[0]) & {"consultar_tarifario", "consultar_precios"}, (
             f"no fue a buscar la fecha que le preguntaron: {texto!r}"
         )
 
