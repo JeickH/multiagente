@@ -7863,3 +7863,108 @@ Mientras tanto la fase 5 puede encenderse con su red —fallback por turno,
 telemetría en `fuente_datos` y vuelta atrás con un UPDATE—, pero **no se da por
 cerrada**: ese criterio sigue abierto y es uno de los cuatro que habilitan la
 fase 8.
+
+---
+
+## Fase 8 — ventana de observación hasta el 5 de octubre de 2026
+
+**Decisión del CEO (2026-09-21).** La fase 8 queda **abierta**: el motor viejo no se
+retira hasta que la ventana cierre y los criterios se cumplan.
+
+El reloj **arranca el día que se encienda el interruptor** (`llm_config.fuente_datos
+= 'productos'` en el bot 12), no antes. Con cierre el **5 de octubre**, el encendido
+tiene que ocurrir a más tardar el **21 de septiembre** para que den los 14 días.
+
+### Los tres chequeos: día 1, día 3, día 5
+
+No son tres veces lo mismo. Cada uno busca una clase distinta de anomalía, del fallo
+ruidoso al silencioso.
+
+#### Día 1 — ¿se rompió algo de una?
+
+Lo que revienta, revienta en las primeras horas.
+
+```sql
+-- ¿algún turno cayó al motor viejo?
+SELECT fuente_datos, count(*) FROM bot_llm_decisions
+ WHERE bot_id = 12 AND created_at > now() - interval '1 day' GROUP BY 1;
+```
+
+| Señal | Umbral | Qué hacer |
+|---|---|---|
+| `fuente_datos = 'fallback'` | **Cualquiera > 0** | Leer el `logger.warning` del motivo. Si se repite, apagar el interruptor |
+| `failsafe = true` | > 0 | Es el fail-safe del motor, más grave que un fallback |
+| Turnos con `tools = '-'` donde debería haber consultado | Subida notoria | El bot está contestando de memoria |
+| `twilio.send http_error` | Cualquiera nuevo | Revisar largo del mensaje y formato |
+
+#### Día 3 — ¿está costando más o contestando distinto?
+
+Lo que no revienta pero se nota en la factura y en el tono.
+
+```sql
+SELECT date_trunc('day', created_at) dia, count(*) turnos,
+       round(avg(tokens_in))  tokens_in_prom,
+       round(avg(rounds), 2)  rounds_prom,
+       round(avg(cache_read)) cache_read_prom,
+       sum(CASE WHEN cache_write > 0 THEN 1 ELSE 0 END) con_cache_write
+  FROM bot_llm_decisions
+ WHERE bot_id = 12 AND created_at > now() - interval '7 days'
+ GROUP BY 1 ORDER BY 1;
+```
+
+Se compara contra los días **anteriores** al encendido, que están en la misma tabla.
+
+| Señal | Umbral | Qué hacer |
+|---|---|---|
+| `tokens_in` promedio | **> +5 %** sostenido | Es el defecto ya medido en la fase 5 (tools declaradas y no usadas). Si sigue, apagar |
+| `rounds` promedio | > +10 % | El bot está dando más vueltas para lo mismo |
+| `cache_write` frecuente | Más de lo normal | El prefijo se está invalidando: algo lo cambia entre turnos |
+| Reparto de `camino` | Desplazamiento grande | El bot está clasificando distinto las mismas preguntas |
+
+#### Día 5 — ¿está vendiendo peor?
+
+La que de verdad importa y la única que no se ve en una métrica.
+
+| Señal | Cómo se mira |
+|---|---|
+| Escalados a asesor | `escalated_to` no nulo, contra la semana previa. Subida = el bot resuelve menos |
+| Conversaciones abandonadas | Etiqueta «conversación abandonada» y filas nuevas en `agendamientos` |
+| Pedidos cerrados | Tabla `pedidos`, contra la semana previa |
+| **Leer diez conversaciones completas** | Es el chequeo del día 5. En agosto doce guiones pasaron 63 asertos mientras el bot perdía ventas |
+
+### Cómo se apaga, si hace falta
+
+Un UPDATE. Medido en la fase 5: **6,2 segundos** del comando a la respuesta del bot
+por el motor viejo, sin build y sin reiniciar nada.
+
+```sql
+UPDATE bots SET llm_config = jsonb_set(llm_config::jsonb,
+       '{fuente_datos}', '"tarifario"') WHERE id = 12;
+```
+
+### Dos trampas conocidas de la ventana
+
+1. **`actualizar_bot_viajes.py` borra `fuente_datos`.** Reconstruye `llm_config`
+   desde `app/data/bot_viajes.py` y sólo preserva `model_id`. Si alguien lo corre
+   durante la ventana, **apaga el piloto en silencio**. Arreglo pendiente: sumar
+   `fuente_datos` a las llaves que conserva.
+2. **Los datos se congelan.** Si se carga un tarifario nuevo y un turno cae al motor
+   viejo, ese cliente recibe los precios del JSON — peor que fallar, porque nadie se
+   entera hasta que reclama. El importador ya detecta la ventana abierta y exige
+   confirmación explícita.
+
+### Los criterios de salida, al 5 de octubre
+
+| Criterio | Estado |
+|---|---|
+| 14 días corridos con conversaciones reales | Arranca en el encendido |
+| Cero fallbacks automáticos en los últimos 7 | Se mide en el chequeo del día 5 y al cierre |
+| Una carga real de tarifario de punta a punta | Importador listo; falta correrla contra RDS |
+| `tokens_in` y `rounds` medidos y escritos | **Medidos en la fase 5, y salieron peor** (+3,2 % y 0 %) |
+| Leer las conversaciones | Pendiente, en la ronda comercial |
+
+**El cuarto criterio hoy no se cumple**: la medición dio peor que el motor viejo. La
+causa está identificada —`abrir_producto` y `fechas_disponibles` se declaran en cada
+llamada y se usaron cero veces— y el arreglo es no declararlas cuando no hay nada que
+abrir. Eso va **antes** del encendido, o la ventana arranca midiendo un defecto
+conocido.
