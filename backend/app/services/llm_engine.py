@@ -1176,6 +1176,10 @@ def _falta_pedir_el_nombre(
     nombre ya se conoce. Las dos se deciden con `_ya_se_sabe_el_nombre`, en
     ramas contrarias: por construcción no pueden dispararse en el mismo turno.
     """
+    if cfg.get("nombre_al_reservar"):
+        # El bot pide el nombre al reservar, no al saludar: aquí no se inyecta
+        # nada nunca. Ver `_sin_pregunta_por_el_nombre`, que es la otra mitad.
+        return False
     if not cfg.get("recordar_nombre") or not cfg.get("pregunta_nombre"):
         return False
     if _ya_se_sabe_el_nombre(cfg):
@@ -3963,10 +3967,16 @@ def _turno(
                 "antes (bot=%s)", getattr(bot, "id", "?"),
             )
 
-    if _ya_se_sabe_el_nombre(cfg):
+    # `nombre_al_reservar`: el nombre se pide al reservar, no al saludar. La
+    # pregunta se quita del saludo aunque el modelo la escriba — el contexto ya
+    # no la trae, pero el modelo *elige* entre reglas y repetírselo empata con
+    # el baseline (lección de #377). El formulario de reserva no se toca: lo
+    # protege la excepción `_NOMBRE_DE_LA_RESERVA`, que reconoce "nombre
+    # completo" y "cédula".
+    if _ya_se_sabe_el_nombre(cfg) or cfg.get("nombre_al_reservar"):
         if _recortar_lo_dicho(actions, say_texts, _sin_pregunta_por_el_nombre):
             logger.info(
-                "llm_engine: pregunta del nombre quitada, ya se sabía (bot=%s)",
+                "llm_engine: pregunta del nombre quitada del saludo (bot=%s)",
                 getattr(bot, "id", "?"),
             )
             if not any(t.strip() for t in say_texts):

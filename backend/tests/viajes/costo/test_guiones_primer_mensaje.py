@@ -114,7 +114,7 @@ class TestAperturaGenerica:
         "buenas, me interesa el plan",
         "info por favor",
     ])
-    def test_manda_info_itinerario_y_pregunta_el_nombre_de_una(
+    def test_manda_info_itinerario_y_pregunta_el_mes_de_una(
         self, bot_viajes, modelo_real, apertura
     ):
         modelo_real["actual"] = "F3-1 apertura genérica"
@@ -134,8 +134,13 @@ class TestAperturaGenerica:
         assert all(h in bajo for h in _HITOS_ITINERARIO), (
             f"el itinerario no menciona los tours del sábado y el domingo: {texto!r}"
         )
-        assert _PIDE_EL_NOMBRE.search(texto), (
-            f"no preguntó el nombre, así que no lo va a poder registrar: {texto!r}"
+        # 25-sep-2026: la pregunta de cierre pasó a ser la del mes. El nombre
+        # se pide al reservar — ver `LLM_CONFIG["nombre_al_reservar"]`.
+        assert not _PIDE_EL_NOMBRE.search(texto), (
+            f"le pidió el nombre en la apertura: {texto!r}"
+        )
+        assert re.search(r"para qu[eé] mes", texto, re.I), (
+            f"no preguntó el mes, que es lo que mueve la venta: {texto!r}"
         )
 
     def test_es_un_solo_mensaje_no_tres(self, bot_viajes, modelo_real):
@@ -152,16 +157,16 @@ class TestAperturaGenerica:
         )
 
     def test_no_hace_dos_preguntas(self, bot_viajes, modelo_real):
-        """La regla de "una pregunta por mensaje" sigue viva: el primer mensaje
-        lleva información + UNA pregunta, la del nombre. Preguntarle además el
-        mes es exactamente lo que la regla prohíbe."""
+        """La regla de "una pregunta por mensaje" sigue viva. Lo que cambió es
+        cuál es esa pregunta: ahora el mes, no el nombre. Pedir los dos en el
+        mismo mensaje es exactamente lo que la regla prohíbe."""
         modelo_real["actual"] = "F3-3 una sola pregunta"
         salidas, turnos = _conversar(bot_viajes, ["Hola, quiero mas informacion"])
         _transcribir("Una sola pregunta", turnos)
 
         texto = _dicho(salidas[0])
-        assert not re.search(r"para qu[eé] mes|qu[eé] mes (?:te|lo|est)", texto, re.I), (
-            f"preguntó el nombre y el mes en el mismo mensaje: {texto!r}"
+        assert not _PIDE_EL_NOMBRE.search(texto), (
+            f"preguntó el mes y además el nombre: {texto!r}"
         )
 
     def test_no_manda_material_ni_precios_en_la_apertura(self, bot_viajes, modelo_real):
@@ -192,7 +197,7 @@ class TestSiPreguntoAlgoConcretoNoLeSueltaLaInfoGeneral:
         ("¿qué tours incluye el plan?", ["caimanera"]),
         ("¿cómo puedo pagar?", ["bancolombia", "bre-b", "efectivo"]),
     ])
-    def test_contesta_la_pregunta_y_pide_el_nombre_al_final(
+    def test_contesta_la_pregunta_y_no_pide_el_nombre(
         self, bot_viajes, modelo_real, pregunta, esperado
     ):
         modelo_real["actual"] = "F3-5 pregunta concreta de entrada"
@@ -205,7 +210,7 @@ class TestSiPreguntoAlgoConcretoNoLeSueltaLaInfoGeneral:
             f"no contestó lo que le preguntaron ({esperado}): {texto!r}"
         )
         # Punto 3 del pedido: el primer mensaje, sea cual sea, pide el nombre.
-        assert _PIDE_EL_NOMBRE.search(texto), (
+        assert not _PIDE_EL_NOMBRE.search(texto), (
             f"contestó pero no pidió el nombre: {texto!r}"
         )
 

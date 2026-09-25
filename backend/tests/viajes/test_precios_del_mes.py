@@ -220,11 +220,14 @@ class TestElPrimerMensajeSigueSinPrecios:
             f"la apertura trae cifras de dinero: {sorted(_cifras(seccion))}"
         )
 
-    def test_y_sigue_llevando_el_itinerario_y_la_pregunta_del_nombre(self, bot):
-        """El chequeo cruzado: que F7 no haya recortado lo de F3."""
+    def test_y_sigue_llevando_el_itinerario_y_la_pregunta_del_mes(self, bot):
+        """El chequeo cruzado: que F7 no haya recortado lo de F3.
+
+        La pregunta de cierre pasó a ser la del mes: desde el 25-sep-2026 el
+        nombre se pide al reservar, no al saludar."""
         seccion = _seccion(_prompt(bot), "El primer mensaje")
         assert "Así es el plan día a día" in seccion
-        assert "¿Con quién tengo el gusto? 😊" in seccion
+        assert "¿Para qué mes lo estás pensando? 😊" in seccion
 
 
 # ---------------------------------------------------------------------------

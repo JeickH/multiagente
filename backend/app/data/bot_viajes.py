@@ -220,10 +220,21 @@ LLM_CONFIG = {
     # línea (la que pide el nombre) y cierra con esto en su lugar. Sin esta
     # frase el modelo copiaba la apertura entera y repreguntaba el nombre.
     "cierre_sin_nombre": "para qué mes lo está pensando",
-    # #379: si el primer mensaje sale sin pedir el nombre —pasa 1 de cada 5
-    # veces, cuando la persona abre con una pregunta concreta y el bot gasta su
-    # única pregunta contestándola—, se manda esto como mensaje aparte. La
-    # frase la fija el tenant porque es su voz, no la del motor.
+    # El nombre se pide **al reservar**, no al saludar (pedido del CEO,
+    # 25-sep-2026). Con esto puesto, `llm_engine` no inyecta la pregunta en el
+    # primer mensaje y la quita si el modelo la escribe igual; el formulario de
+    # reserva queda a salvo porque el recorte exceptúa "nombre completo" y
+    # "cédula".
+    #
+    # El motivo es medido, no estético: entre el 11 y el 25 de septiembre, 178
+    # de 366 conversaciones (49%) murieron sin que la persona contestara nada,
+    # y 117 de los abandonos se quedaron con el bot preguntando el nombre. La
+    # persona llegó de un anuncio pidiendo información y lo primero que recibió
+    # fue un trámite.
+    #
+    # `pregunta_nombre` se deja definida a propósito: es la frase del tenant y
+    # vuelve a usarse sola si algún día se quita `nombre_al_reservar`.
+    "nombre_al_reservar": True,
     "pregunta_nombre": "¿Con quién tengo el gusto? 😊",
     # Si vuelve a escribir dentro de estas horas, se retoma la MISMA sesión
     # (con su historial) en vez de arrancar una nueva y saludar de cero.
