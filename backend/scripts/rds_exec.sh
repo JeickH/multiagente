@@ -54,7 +54,11 @@ TASK=$(aws ecs run-task --region "$REGION" --cluster "$CLUSTER" \
 
 echo "task=$TASK (esperando...)" >&2
 aws ecs wait tasks-stopped --region "$REGION" --cluster "$CLUSTER" --tasks "$TASK"
-aws logs get-log-events --region "$REGION" \
+# `--start-from-head` NO es opcional: sin él, `get-log-events` devuelve la
+# ÚLTIMA página del stream, así que una salida de más de ~1 MB llega **sin el
+# principio** y sin avisar. Mordió una vez: el volcado empezaba en el segundo
+# trozo y la cabecera con el checksum simplemente no estaba.
+aws logs get-log-events --region "$REGION" --start-from-head \
   --log-group-name /ecs/multiagente-backend \
   --log-stream-name "ecs/multiagente-backend/$TASK" \
   --query 'events[].message' --output text | tr '\t' '\n'

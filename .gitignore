@@ -89,3 +89,26 @@ PLAN_*.html
 # a texto plano para leerlo, el .txt resultante quedó fuera del ignore y a un
 # `git add -A` de publicar 7 correos de clientes reales en un repo público.
 PLAN_*
+
+# Artefacto incremental de TypeScript. Se regenera en cada build y cambia en
+# cada máquina: estaba versionado y ensuciaba el árbol en todas las ramas.
+frontend/tsconfig.tsbuildinfo
+
+# Material crudo del demo de Natulcé (fotos y video del cliente), igual que
+# `talulah bots/`. Son 4 MB de piezas que no son código y que el cliente puede
+# volver a mandar.
+demo natulce/
+
+# Prompts y guiones de trabajo de una sesión. Apuntan a los `PLAN_*.html`, que
+# ya están fuera del repo por llevar correos de clientes reales.
+PROMPT_SESION_*.md
+
+# Respaldo del módulo de mascotas (RETIRADO). Son las dos mitades de un mismo
+# script: `respaldo_mascotas_dump.py` corre dentro de la VPC y `respaldo_mascotas.py`
+# arma el zip local. Se dejan fuera del repo por decisión del CEO (25-sep-2026).
+#
+# OJO: ignorar no es respaldar. Estos scripts son la red de seguridad del dato
+# de terceros que CLAUDE.md manda conservar ("no se borra nada"); fuera de git
+# viven en un solo disco. Si se quieren proteger, el sitio es un commit.
+backend/scripts/respaldo_mascotas.py
+backend/scripts/respaldo_mascotas_dump.py

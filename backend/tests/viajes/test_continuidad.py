@@ -453,7 +453,9 @@ class TestElNombreSeGuardaUnaSolaVez:
 class TestRetomarDondeQuedaron:
     def _cerrar_una_conversacion(self, db, team, modelo):
         modelo.guion = [
-            _respuesta(_texto("¡Hola! ¿Con quién tengo el gusto?")),
+            # Sin la pregunta del nombre: desde `nombre_al_reservar` el motor la
+            # recorta, y un saludo que era sólo eso se quedaría en nada.
+            _respuesta(_texto("¡Hola! Te cuento del plan 🌴")),
             _respuesta(_texto("En septiembre tenemos varias salidas 🌴")),
             _respuesta(_texto("¡Que tengas un lindo día!"),
                        _tool("finalizar_conversacion"), stop="tool_use"),
@@ -476,7 +478,7 @@ class TestRetomarDondeQuedaron:
         assert sesion_de(db_session, conv).id == sesion_vieja.id, "arrancó sesión nueva"
         contenidos = " ".join(str(m["content"]) for m in modelo.historial())
         assert "septiembre" in contenidos, "el historial no llegó al modelo"
-        assert "¿Con quién tengo el gusto?" in contenidos
+        assert "Te cuento del plan" in contenidos, "faltó el primer turno"
 
     def test_el_prompt_le_pide_que_no_salude_de_nuevo(self, db_session, agencia, modelo):
         team, _ = agencia
@@ -1113,11 +1115,12 @@ class TestElTurnoRetomadoNoSePresenta:
     def test_en_el_primer_mensaje_la_presentacion_se_respeta(self):
         """Conversación nueva: presentarse es lo correcto y obligatorio.
 
-        El segundo mensaje que sale es la pregunta del nombre (#379), que en un
-        primer turno sin nombre el motor agrega: la otra mitad sigue viva."""
+        Desde `nombre_al_reservar` (25-sep-2026) el turno sale **solo**: el
+        motor ya no le agrega la pregunta del nombre detrás. Lo que se cuida
+        aquí es que el recorte del nombre no se haya llevado por delante la
+        presentación, que son cosas distintas."""
         texto = ("¡Hola! 😊 Soy *Luisa*, asesora de la *Agencia de Viajes "
                  "Arranquemos Pues*. Te cuento del plan 🌴")
         dichos = self._turno(texto, estado=None)
 
-        assert dichos[0] == texto
-        assert dichos[1:] == [LLM_CONFIG["pregunta_nombre"]]
+        assert dichos == [texto]

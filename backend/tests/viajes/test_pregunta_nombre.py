@@ -42,8 +42,16 @@ from app.data.bot_viajes import LLM_CONFIG
 from app.services import llm_engine
 
 
-def _cfg(**runtime):
-    return {**LLM_CONFIG, "_runtime": dict(runtime)}
+def _cfg(nombre_al_reservar=False, **runtime):
+    """La config del bot con el flag de `nombre_al_reservar` controlable.
+
+    Por defecto va **apagado**: los tests de esta mitad ejercitan el mecanismo
+    de inyección, que sigue vivo para los demás bots que comparten el motor. El
+    bot de viajes lo tiene encendido desde el 25-sep-2026 y eso se cubre aparte,
+    en `TestConElNombreAlReservar`.
+    """
+    return {**LLM_CONFIG, "nombre_al_reservar": nombre_al_reservar,
+            "_runtime": dict(runtime)}
 
 
 def falta(say_texts, *, history=None, tools=(), finished=False, **runtime):
@@ -379,23 +387,56 @@ class TestElTurnoConElNombreSabido:
         ]
 
 
-class TestElTurnoSinSaberElNombre:
-    def test_la_pregunta_del_modelo_se_respeta(self):
-        salida = turno(APERTURA)
+class TestConElNombreAlReservar:
+    """El contrato nuevo (25-sep-2026): el nombre se pide al reservar, no al
+    saludar.
 
-        assert dichos(salida) == [APERTURA]
+    Sale de una medición, no de un gusto: entre el 11 y el 25 de septiembre 178
+    de 366 conversaciones (49%) murieron sin que la persona contestara nada, y
+    117 de los abandonos se quedaron con el bot preguntando el nombre. Quien
+    llega de un anuncio pidiendo información y recibe un trámite, se va.
 
-    def test_y_si_no_la_hizo_se_le_agrega(self):
-        """La primera mitad (#379) sigue viva: es la que no puede romperse al
-        agregar la segunda."""
+    El recorte es determinista por la misma razón de siempre: el documento ya no
+    trae la pregunta, pero el modelo *elige* entre reglas y repetírselo empata
+    con el baseline (ver el encabezado de este archivo)."""
+
+    def test_no_se_agrega_aunque_el_turno_no_la_traiga(self):
         salida = turno("El plan incluye dos tours 🌴 ¿Te ayudo en algo más? 😊")
 
-        assert dichos(salida)[-1] == LLM_CONFIG["pregunta_nombre"]
+        assert dichos(salida) == ["El plan incluye dos tours 🌴 ¿Te ayudo en algo más? 😊"]
+        assert LLM_CONFIG["pregunta_nombre"] not in dichos(salida)
 
-    def test_un_nombre_que_no_sirve_es_no_saber_el_nombre(self):
-        """`nombre_saneado` rechaza un teléfono en el campo del nombre; ahí el
-        bot sigue sin saber cómo se llama."""
+    def test_y_si_el_modelo_la_escribe_igual_se_le_quita(self):
+        """La apertura enlatada ya no la trae, pero el modelo la tiene vista de
+        miles de turnos anteriores."""
+        salida = turno(APERTURA)
+
+        assert dichos(salida) == [APERTURA_SIN_LA_PREGUNTA]
+
+    def test_tampoco_cuando_el_nombre_del_canal_no_sirve(self):
+        """`nombre_saneado` rechaza un teléfono en el campo del nombre. Antes,
+        no saber el nombre disparaba la pregunta; ahora no la dispara nada."""
         salida = turno("El plan incluye dos tours 🌴", contact_name="3001112233")
+
+        assert dichos(salida) == ["El plan incluye dos tours 🌴"]
+
+    def test_el_formulario_de_reserva_se_respeta_entero(self):
+        """**La** excepción, y la razón de que el recorte mire "nombre
+        completo" y "cédula": al reservar el nombre sí se pide, y ese mensaje no
+        se puede tocar o la reserva se queda sin datos."""
+        formulario = ("¡Qué emoción! 🎉 Para apartar tu cupo necesito en un solo "
+                      "mensaje:\n📝 *Nombre completo*\n📝 *Cédula*\n"
+                      "📝 *Número de personas*\n📝 *Fecha de viaje*")
+        salida = turno(formulario)
+
+        assert dichos(salida) == [formulario]
+
+    def test_con_el_flag_apagado_el_mecanismo_viejo_sigue_vivo(self):
+        """El motor lo comparten cinco bots. Apagar el flag tiene que devolver
+        el comportamiento anterior tal cual, o esto sería un cambio global
+        disfrazado de cambio de un tenant."""
+        cfg = {**LLM_CONFIG, "nombre_al_reservar": False}
+        salida = turno("El plan incluye dos tours 🌴", cfg=cfg)
 
         assert dichos(salida)[-1] == LLM_CONFIG["pregunta_nombre"]
 

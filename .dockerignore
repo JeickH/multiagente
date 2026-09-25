@@ -1,0 +1,45 @@
+# Contexto de build. Sin esto, `docker build .` mandaba el repo entero al
+# daemon y `COPY backend/ .` horneaba dentro de la imagen de producción el
+# `backend/.venv` del Mac: 196 MB de paquetes compilados para arm64/macOS,
+# inservibles dentro de un contenedor linux/amd64. Era el 21% de la imagen.
+#
+# Ojo con lo que NO se excluye: `backend/app/` (incluye los `bot_contexts/*.md`
+# y `data/*.json`, que el motor lee en caliente), `backend/scripts/` (los corre
+# `rds_exec.sh` dentro de la task) y `backend/tests/`, que se dejan porque hay
+# flujos que corren pytest contra la imagen.
+
+# Entornos y cachés de Python
+**/.venv/
+**/venv/
+**/__pycache__/
+**/*.py[cod]
+**/.pytest_cache/
+**/.mypy_cache/
+**/.ruff_cache/
+
+# El frontend tiene su propio Dockerfile
+frontend/
+**/node_modules/
+
+# Historia de git: no hace falta dentro de la imagen
+.git/
+.github/
+
+# Credenciales y material que nunca debe salir del equipo. El Dockerfile sólo
+# copia `backend/`, así que hoy no llegaban a la imagen — pero sí viajaban al
+# daemon en el contexto, y eso no tiene por qué pasar.
+CREDENCIALES*.txt
+.env
+.env.*
+gemini_secrets/
+entregables/
+respaldos_fotos_mascotas/
+media_local/
+testdata/
+identidad_*/
+referencia/
+marketing/
+
+# Artefactos del análisis y documentos sueltos
+*.html
+*.pdf
