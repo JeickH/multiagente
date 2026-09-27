@@ -283,6 +283,61 @@ class TestEnvioManualBloqueado:
         assert r.status_code == 200
 
 
+class TestSimuladorBloqueado:
+    def test_no_gasta_bedrock(self, Sesion, db, team):
+        """Cada turno de un bot LLM en el simulador es una llamada que paga Gloma."""
+        from fastapi.testclient import TestClient
+
+        from app import models
+        from app.routers import bots
+
+        bot = models.Bot(user_id=team["dueño"].id, team_id=team["team"].id, name="Bot")
+        db.add(bot)
+        db.commit()
+        poner_pausa(db, team["team"], models.PAUSA_PAUSADA)
+
+        with TestClient(_app(Sesion, team["dueño"], bots.router)) as c:
+            r = c.post(f"/bots/{bot.id}/simulate", json={"state": None, "user_input": None})
+        assert r.status_code == 402
+
+
+class TestConfirmarNoDejaHuerfanos:
+    def test_el_temporal_se_borra_aunque_este_pausada(
+        self, cliente_asesor, db, team, conversacion, cuenta_twilio, monkeypatch
+    ):
+        from app import models
+        from app.routers import mensajes
+
+        borrados = []
+        monkeypatch.setattr(
+            mensajes.adjuntos, "borrar_subida", lambda t, ref: borrados.append(ref)
+        )
+        poner_pausa(db, team["team"], models.PAUSA_PAUSADA)
+
+        r = cliente_asesor.post(
+            f"/mensajes/conversaciones/{conversacion.id}/adjunto/confirmar",
+            json={"referencia": "a" * 32, "content_type": "image/jpeg", "filename": "a.jpg"},
+        )
+        assert r.status_code == 402
+        assert borrados == ["a" * 32]
+
+
+class TestLoteNoRevienta:
+    def test_un_error_evaluando_se_trata_como_pausada(self, db, team, monkeypatch):
+        from app.services import pausa
+
+        def _falla(*a, **k):
+            raise RuntimeError("base caída")
+
+        monkeypatch.setattr(pausa, "servicio_pausado", _falla)
+        assert pausa.pausado_en_lote(db, team["team"].id) is True
+
+    def test_vencimiento_absurdo_no_revienta(self):
+        from app.services.pausa import sumar_un_mes
+
+        assert sumar_un_mes(date(9999, 12, 15)) == date.max
+
+
 class TestCampanasBloqueadas:
     def test_no_se_crea(self, cliente_dueño, db, team, cuenta_twilio):
         from app import models

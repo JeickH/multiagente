@@ -565,23 +565,24 @@ def confirm_attachment_upload(
     que la subida en un paso— y recién después el archivo se mueve al prefijo
     que sirve el endpoint público.
     """
-    conv, account = _conversacion_lista_para_adjunto(db, member, conversation_id)
-
-    data = adjuntos.leer_subida(member.team_id, datos.referencia)
-    if not data:
-        raise HTTPException(
-            status_code=409,
-            detail="No encontramos el archivo que subiste. Vuelve a adjuntarlo, por favor.",
-        )
-
     try:
+        conv, account = _conversacion_lista_para_adjunto(db, member, conversation_id)
+
+        data = adjuntos.leer_subida(member.team_id, datos.referencia)
+        if not data:
+            raise HTTPException(
+                status_code=409,
+                detail="No encontramos el archivo que subiste. Vuelve a adjuntarlo, por favor.",
+            )
+
         return _validar_guardar_y_enviar(
             db, member, conv, account,
             data, datos.content_type, datos.filename, datos.caption,
         )
     finally:
         # Salga bien o mal, el temporal no se queda: si el archivo no pasó la
-        # validación, menos todavía.
+        # validación, menos todavía. Y tampoco si la cuenta se pausó entre
+        # `preparar` y `confirmar`: por eso el `try` arranca antes del portero.
         adjuntos.borrar_subida(member.team_id, datos.referencia)
 
 

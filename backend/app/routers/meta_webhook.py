@@ -501,7 +501,7 @@ async def receive_webhook(request: Request, db: Session = Depends(get_db)):
 
                     # Servicio pausado por falta de pago: el mensaje queda en
                     # la bandeja pero el bot no responde (igual que en Twilio).
-                    if pausa.servicio_pausado(db, team.id):
+                    if pausa.pausado_en_lote(db, team.id):
                         logger.info(
                             "webhook.meta servicio pausado team_id=%s — el bot no responde",
                             team.id,

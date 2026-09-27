@@ -65,6 +65,8 @@ def sumar_un_mes(d: date) -> date:
     31 de enero → 28 (o 29) de febrero. Sin `dateutil`, que no está en las
     dependencias y no vale la pena sumarla por esto.
     """
+    if d.year >= date.max.year and d.month == 12:
+        return date.max  # un vencimiento absurdo no puede reventar el cálculo
     anio, mes = (d.year + 1, 1) if d.month == 12 else (d.year, d.month + 1)
     ultimo = calendar.monthrange(anio, mes)[1]
     return date(anio, mes, min(d.day, ultimo))
@@ -106,6 +108,26 @@ def servicio_pausado(
     if modo == models.PAUSA_POR_MORA:
         return pausa_por_mora(db, team_id, hoy=hoy)
     return False
+
+
+def pausado_en_lote(db: Session, team_id: Optional[int]) -> bool:
+    """`servicio_pausado` para los ciclos que recorren varias cuentas.
+
+    El tick de bots, el de campañas y el webhook de Meta evalúan la pausa
+    elemento por elemento. Si la consulta falla, la excepción no puede subir:
+    tumbaría el lote entero, para todas las cuentas, y en el tick de bots la
+    acción volvería a quedar primera en la cola en cada vuelta. Así que acá se
+    traga, se deja en el log y ese elemento **se trata como pausado**: en la
+    duda no se envía, pero solo se detiene ése.
+    """
+    try:
+        return servicio_pausado(db, team_id)
+    except Exception:
+        logger.exception(
+            "no se pudo evaluar la pausa team_id=%s; se trata como pausada", team_id
+        )
+        db.rollback()
+        return True
 
 
 def exigir_servicio_activo(db: Session, team_id: int) -> None:

@@ -421,7 +421,7 @@ def send_campaign_tick(db: Session) -> dict:
         # toca. Se queda `scheduled` o `running` con sus destinatarios en
         # `queued`, y sale sola en el primer tick después de que se reanude.
         # Marcarla `failed` obligaría al cliente a rearmarla después de pagar.
-        if pausa.servicio_pausado(db, campaign.team_id):
+        if pausa.pausado_en_lote(db, campaign.team_id):
             result["campaigns_paused"] += 1
             continue
 

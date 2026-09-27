@@ -835,7 +835,7 @@ def process_pending_action(
     # sentido guardarla para después: un "¿sigues interesado?" que sale tres
     # semanas tarde, cuando la cuenta pague, confunde más de lo que vende.
     conv_pausa = pa.session.conversation if pa.session is not None else None
-    if conv_pausa is not None and pausa.servicio_pausado(db, conv_pausa.team_id):
+    if conv_pausa is not None and pausa.pausado_en_lote(db, conv_pausa.team_id):
         pa.status = models.BOT_PENDING_STATUS_FAILED
         pa.last_error = "servicio pausado"
         pa.processed_at = datetime.utcnow()
