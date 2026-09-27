@@ -41,6 +41,7 @@ from .. import models, crud
 from ..dependencies import get_db
 from ..services import bot_router as bot_router_svc
 from ..services import bot_runner
+from ..services import pausa
 from ..services.messaging.base import marcador_inbound
 
 load_dotenv()
@@ -496,6 +497,15 @@ async def receive_webhook(request: Request, db: Session = Depends(get_db)):
                     # Sprint 10: resolver bot y ejecutar un turno.
                     team = account.team
                     if team is None:
+                        continue
+
+                    # Servicio pausado por falta de pago: el mensaje queda en
+                    # la bandeja pero el bot no responde (igual que en Twilio).
+                    if pausa.pausado_en_lote(db, team.id):
+                        logger.info(
+                            "webhook.meta servicio pausado team_id=%s — el bot no responde",
+                            team.id,
+                        )
                         continue
 
                     bot, session = bot_router_svc.resolve_bot_for_incoming_message(

@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from .. import crud, models, schemas
 from ..dependencies import get_current_membership, get_db
-from ..services import bot_engine, llm_engine, pedidos_sheet
+from ..services import bot_engine, llm_engine, pausa, pedidos_sheet
 
 router = APIRouter(prefix="/bots", tags=["bots"])
 
@@ -78,10 +78,15 @@ def simulate_bot(
 
     La misma función `bot_engine.advance` se usará al recibir mensajes reales
     desde el webhook de Meta en un sprint futuro.
+
+    Con el servicio pausado por falta de pago no se simula: cada turno de un
+    bot LLM es una llamada a Bedrock que paga Gloma.
     """
     bot = crud.get_bot_visible_to_member(db, member, bot_id)
     if not bot:
         raise HTTPException(status_code=404, detail="Bot no encontrado")
+
+    pausa.exigir_servicio_activo(db, member.team_id)
 
     # Sprint 19: los bots 'llm' conversan con Claude (Bedrock); los 'flow'
     # siguen el motor de pasos. El contrato del endpoint no cambia.

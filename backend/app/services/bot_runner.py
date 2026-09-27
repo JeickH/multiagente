@@ -24,6 +24,7 @@ from . import (
     llm_engine,
     messaging,
     meta_whatsapp,
+    pausa,
     pedidos_sheet,
 )
 
@@ -826,6 +827,25 @@ def process_pending_action(
     antes, en `_procesar_silencio`.
     """
     pa.attempts += 1
+
+    # Cuenta con el servicio pausado por falta de pago: el bot no manda nada,
+    # tampoco lo que dejó agendado. La acción se da por atendida y NO se deja
+    # en `pending`: el tick toma las vencidas más viejas primero, y un montón
+    # de acciones de una cuenta pausada taparía las del resto. Tampoco tendría
+    # sentido guardarla para después: un "¿sigues interesado?" que sale tres
+    # semanas tarde, cuando la cuenta pague, confunde más de lo que vende.
+    conv_pausa = pa.session.conversation if pa.session is not None else None
+    if conv_pausa is not None and pausa.pausado_en_lote(db, conv_pausa.team_id):
+        pa.status = models.BOT_PENDING_STATUS_FAILED
+        pa.last_error = "servicio pausado"
+        pa.processed_at = datetime.utcnow()
+        db.commit()
+        logger.info(
+            "bot_runner: acción %s descartada, servicio pausado team_id=%s",
+            pa.action_type, conv_pausa.team_id,
+        )
+        return
+
     if (pa.action_type or models.BOT_PENDING_ACTION_RESUME) in _ACCIONES_DE_SILENCIO:
         _procesar_silencio(db, pa)
         return

@@ -38,8 +38,9 @@ from sqlalchemy.orm import Session
 from .. import crud, models
 from ..dependencies import get_db
 from ..services import adjuntos, bot_router as bot_router_svc
-from ..services import bot_runner, messaging
+from ..services import bot_runner, messaging, pausa
 from ..services.messaging import twilio_adapter
+from ..services.llm_engine import nombre_saneado
 from ..services.messaging.base import marcador_inbound
 
 logger = logging.getLogger("twilio_webhook")
@@ -277,11 +278,23 @@ def process_twilio_inbound(db: Session, form: Dict[str, str]) -> None:
         # `[nota de voz]`), nunca la URL: el bot tiene reglas escritas sobre
         # esos marcadores y una URL suelta en su turno lo despistaría.
         content = norm.text or marcador_inbound(norm.message_type)
+        # El nombre del perfil de WhatsApp. Twilio lo manda en cada entrante
+        # como `ProfileName` y hasta ahora se descartaba: por eso el 80% de las
+        # conversaciones llegaba sin nombre y el bot tenía que preguntarlo. El
+        # webhook de Meta ya lo guardaba (`profile.name`); esta es la mitad que
+        # faltaba.
+        #
+        # Se sanea con la misma función que usa el motor antes de escribir en la
+        # base: un perfil de WhatsApp es texto libre y llegan cosas como "sin",
+        # un teléfono o un arroba. `get_or_create_conversation` sólo lo escribe
+        # si la conversación todavía no tenía nombre, así que lo que la persona
+        # diga después por `registrar_nombre` manda sobre esto.
+        nombre_perfil = nombre_saneado(form.get("ProfileName")) or None
         conv = crud.get_or_create_conversation(
             db,
             team_id=account.team_id,
             contact_wa_id=norm.from_wa_id,
-            contact_name=None,
+            contact_name=nombre_perfil,
         )
 
         # Dedupe por message_id (Twilio puede reintentar).
@@ -312,6 +325,15 @@ def process_twilio_inbound(db: Session, form: Dict[str, str]) -> None:
             meta_message_id=norm.message_id,
             status="received",
         )
+
+        # Servicio pausado por falta de pago: el mensaje ya quedó en la bandeja
+        # —es del cliente y no se pierde— pero el bot no le responde.
+        if pausa.servicio_pausado(db, account.team_id):
+            logger.info(
+                "webhook.twilio servicio pausado team_id=%s — el bot no responde",
+                account.team_id,
+            )
+            return
 
         bot, session = bot_router_svc.resolve_bot_for_incoming_message(
             db,

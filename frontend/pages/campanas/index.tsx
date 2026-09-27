@@ -15,6 +15,7 @@ import { useEffect, useMemo, useState } from 'react';
 import Layout from '../../components/Layout';
 import TutorialOverlay from '../../components/TutorialOverlay';
 import { ApiError, authedFetch } from '../../lib/api';
+import { useServicioPausado } from '../../lib/avisoPago';
 import type { CampaignSummary, GlobalKPIs } from '../../types/campaigns';
 
 const CAMPANAS_TUTORIAL = [
@@ -187,6 +188,7 @@ function OverviewCard({
 }
 
 export default function CampanasDashboard() {
+  const pausado = useServicioPausado();
   const [kpis, setKpis] = useState<GlobalKPIs | null>(null);
   const [campaigns, setCampaigns] = useState<CampaignSummary[] | null>(null);
   const [loading, setLoading] = useState(true);
@@ -345,14 +347,28 @@ export default function CampanasDashboard() {
                 Contactos
               </a>
             </Link>
-            <Link href="/campanas/nueva" legacyBehavior>
-              <a
+            {pausado ? (
+              // Servicio pausado por pagos pendientes: el aviso rojo de arriba
+              // dice por qué. El backend igual responde 402 al crear.
+              <button
+                type="button"
                 data-tour="new-campaign-btn"
-                className="inline-flex items-center justify-center px-4 py-2 rounded-lg bg-gloma-brown text-gloma-cream font-semibold text-sm hover:bg-gloma-brown-dark transition-colors"
+                disabled
+                title="Servicio pausado por pagos pendientes"
+                className="inline-flex items-center justify-center px-4 py-2 rounded-lg bg-gloma-brown text-gloma-cream font-semibold text-sm opacity-40 cursor-not-allowed"
               >
                 + Nueva campaña
-              </a>
-            </Link>
+              </button>
+            ) : (
+              <Link href="/campanas/nueva" legacyBehavior>
+                <a
+                  data-tour="new-campaign-btn"
+                  className="inline-flex items-center justify-center px-4 py-2 rounded-lg bg-gloma-brown text-gloma-cream font-semibold text-sm hover:bg-gloma-brown-dark transition-colors"
+                >
+                  + Nueva campaña
+                </a>
+              </Link>
+            )}
           </div>
         </div>
 
@@ -546,11 +562,13 @@ export default function CampanasDashboard() {
                   Crea la primera para empezar a enviar mensajes masivos por
                   WhatsApp a tus contactos.
                 </p>
-                <Link href="/campanas/nueva" legacyBehavior>
-                  <a className="inline-flex items-center justify-center px-5 py-2 rounded-lg bg-gloma-brown text-gloma-cream font-semibold text-sm hover:bg-gloma-brown-dark">
-                    + Crear primera campaña
-                  </a>
-                </Link>
+                {!pausado && (
+                  <Link href="/campanas/nueva" legacyBehavior>
+                    <a className="inline-flex items-center justify-center px-5 py-2 rounded-lg bg-gloma-brown text-gloma-cream font-semibold text-sm hover:bg-gloma-brown-dark">
+                      + Crear primera campaña
+                    </a>
+                  </Link>
+                )}
               </div>
             ) : (
               <div className="overflow-x-auto">

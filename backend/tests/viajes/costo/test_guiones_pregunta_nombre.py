@@ -57,37 +57,43 @@ def bot_viajes():
     return BotViajes()
 
 
-class TestElNombreEntraSiempre:
+class TestElNombreNoEntraNunca:
+    """Invertido el 25-sep-2026: el nombre se pide al reservar, no al saludar.
+
+    Antes esta clase probaba que el guardarraíl **metiera** la pregunta en el
+    primer mensaje (#379). Ahora prueba lo contrario, con el mismo material: las
+    cuatro aperturas concretas con las que se midió el comportamiento del modelo
+    solo. El guardarraíl sigue siendo determinista; lo que cambió es el sentido."""
     @pytest.mark.parametrize("apertura", [
         "¿qué tours incluye el plan?",
         "Hola, ¿cuánto vale el plan?",
         "¿qué hoteles manejan?",
         "Hola, ¿dónde están ubicados?",
     ])
-    def test_el_primer_mensaje_pide_el_nombre(self, bot_viajes, modelo_real, apertura):
-        """Las cuatro aperturas concretas con las que se midió el 80% de acierto
-        del modelo solo. Con el guardarraíl tienen que ser 4 de 4."""
+    def test_el_primer_mensaje_NO_pide_el_nombre(self, bot_viajes, modelo_real, apertura):
+        """El modelo trae la pregunta vista de miles de turnos anteriores; el
+        recorte tiene que dejarla fuera en las 4 de 4."""
         modelo_real["actual"] = "#379 primer mensaje"
         salida = llm_engine.advance(bot_viajes, None, apertura, runtime={})
         _transcribir(f"#379 — {apertura}", salida)
 
-        assert _PIDE_EL_NOMBRE.search(_dicho(salida)), (
-            f"el primer mensaje salió sin pedir el nombre: {_dicho(salida)!r}"
+        assert not _PIDE_EL_NOMBRE.search(_dicho(salida)), (
+            f"el primer mensaje le pidió el nombre: {_dicho(salida)!r}"
         )
 
-    def test_no_lo_pide_dos_veces(self, bot_viajes, modelo_real):
-        """Si el modelo ya preguntó, el guardarraíl no puede agregar otra: dos
-        veces seguidas suena a formulario, no a asesora."""
-        modelo_real["actual"] = "#379 sin duplicar"
+    def test_en_la_apertura_generica_tampoco(self, bot_viajes, modelo_real):
+        """El "hola" pelado, que es como llega casi todo el mundo desde el
+        anuncio."""
+        modelo_real["actual"] = "apertura genérica sin nombre"
         salida = llm_engine.advance(bot_viajes, None, "hola", runtime={})
-        _transcribir("#379 — apertura genérica, sin duplicar", salida)
+        _transcribir("apertura genérica — sin pedir el nombre", salida)
 
         veces = len(_PIDE_EL_NOMBRE.findall(_dicho(salida)))
-        assert veces == 1, f"la pregunta del nombre aparece {veces} veces"
+        assert veces == 0, f"la pregunta del nombre aparece {veces} veces"
 
     def test_el_material_adjunto_no_se_pierde(self, bot_viajes, modelo_real):
-        """La razón de agregar un mensaje en vez de descartar el turno y pedirle
-        al modelo que lo rehaga: rehacerlo se lleva por delante el flyer."""
+        """La razón de recortar la frase en vez de descartar el turno: descartarlo
+        se lleva por delante el flyer, que es lo que vende."""
         modelo_real["actual"] = "#379 conserva el material"
         salida = llm_engine.advance(
             bot_viajes, None, "¿qué tours incluye el plan?", runtime={}
@@ -95,7 +101,8 @@ class TestElNombreEntraSiempre:
         _transcribir("#379 — el material sigue saliendo", salida)
 
         assert _medios(salida), "el turno se quedó sin el material de los tours"
-        assert _PIDE_EL_NOMBRE.search(_dicho(salida))
+        assert not _PIDE_EL_NOMBRE.search(_dicho(salida))
+        assert _dicho(salida).strip(), "el recorte dejó el turno sin texto"
 
 
 class TestNoSeMeteDondeNoDebe:

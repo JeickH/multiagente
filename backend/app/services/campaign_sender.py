@@ -54,7 +54,7 @@ from tenacity import (
 )
 
 from .. import models
-from . import messaging, meta_whatsapp
+from . import messaging, meta_whatsapp, pausa
 
 
 logger = logging.getLogger(__name__)
@@ -384,6 +384,7 @@ def send_campaign_tick(db: Session) -> dict:
           "recipients_sent": int,
           "recipients_failed": int,
           "recipients_skipped": int,
+          "campaigns_paused": int,
           "errors": [{"campaign_id": int, "error_code": str}, ...],
         }
     """
@@ -393,6 +394,7 @@ def send_campaign_tick(db: Session) -> dict:
         "recipients_sent": 0,
         "recipients_failed": 0,
         "recipients_skipped": 0,
+        "campaigns_paused": 0,
         "errors": [],
     }
 
@@ -415,6 +417,14 @@ def send_campaign_tick(db: Session) -> dict:
     )
 
     for campaign in campaigns:
+        # Cuenta con el servicio pausado por falta de pago: la campaña no se
+        # toca. Se queda `scheduled` o `running` con sus destinatarios en
+        # `queued`, y sale sola en el primer tick después de que se reanude.
+        # Marcarla `failed` obligaría al cliente a rearmarla después de pagar.
+        if pausa.pausado_en_lote(db, campaign.team_id):
+            result["campaigns_paused"] += 1
+            continue
+
         result["campaigns_processed"] += 1
 
         # Transicionar a 'running' la primera vez.

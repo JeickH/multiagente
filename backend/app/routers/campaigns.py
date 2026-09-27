@@ -29,6 +29,7 @@ from sqlalchemy.orm import Session
 
 from .. import crud, models, schemas
 from ..dependencies import get_current_membership, get_db
+from ..services import pausa
 
 
 logger = logging.getLogger(__name__)
@@ -87,7 +88,12 @@ def create_campaign_endpoint(
       - S13-002: enforce `MAX_RECIPIENTS_PER_CAMPAIGN`, 422 si excede.
       - S13-003: contactos `opt_in=False` se insertan como `skipped` con
         `error_code='opt_out_at_enqueue'`.
+
+    Con el servicio pausado por falta de pago no se crea: 402, antes de
+    descontar créditos o encolar a nadie.
     """
+    pausa.exigir_servicio_activo(db, member.team_id)
+
     try:
         return crud.create_campaign(
             db,

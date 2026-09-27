@@ -8023,3 +8023,59 @@ Se envió por SES (us-east-1, dominio verificado, DKIM OK) desde
 `contacto@glomacx.com` al correo del CEO: dos facturas vencidas, $1.350.000 y
 la pausa del servicio el 2 de octubre. **El rol de las tareas de ECS no tiene
 permisos de SES**: si esto se automatiza desde el backend, hay que dárselos.
+
+---
+
+## Pausa del servicio por falta de pago — 27 de septiembre de 2026
+
+**Pedido del CEO**: poder pausar cuentas por orden manual o cuando una factura
+cumpla un mes de vencida. Desplegado **sin pausar a nadie**: queda listo para
+cuando el CEO dé la orden.
+
+### La variable: `teams.pausa_servicio`
+
+| Valor | Qué hace |
+|---|---|
+| `nunca` | No se pausa, deba lo que deba. **Default, y así quedaron las 10 cuentas de RDS.** |
+| `por_mora` | Se pausa sola cuando la factura pendiente más vieja cumple un mes de vencida (mes de calendario, fecha de Colombia): vence el 2-sep → se pausa el **3-oct**. Se reanuda sola al pagarla o anularla. |
+| `pausada` | Pausada ya, por orden manual. Pagar **no** la reanuda: se levanta volviendo el valor a `nunca` o `por_mora`. |
+
+Hay un CHECK en la tabla: un valor mal escrito (`pausado`, `si`) falla en la
+base en vez de dejar la cuenta en un estado raro. Se cambia con
+`rds_query.sh "UPDATE teams SET pausa_servicio='pausada' WHERE id=<id>"`.
+
+### Qué se bloquea con la cuenta pausada
+
+- **Aviso rojo** arriba de todas las pantallas, que no se cierra.
+- **Envío manual** (texto, adjuntos, plantilla de conversación nueva) → 402 y
+  el compositor se cambia por un aviso.
+- **Campañas**: no se crean (402) y las programadas no salen del tick; quedan
+  como estaban y salen solas al reanudar.
+- **Bot**: por Twilio y por Meta el mensaje entrante **se guarda** en la bandeja
+  pero el bot no responde. Los recordatorios agendados se descartan (`failed`,
+  `last_error='servicio pausado'`) para no salir semanas tarde. El simulador de
+  bots también responde 402 (gasta Bedrock).
+- **Sigue abierto**: entrar, ver la bandeja y `/pagos` para pagar.
+
+### Despliegue
+
+- Migración `migrate_pausa_servicio.py`: local ✓ (dos corridas, idempotente),
+  RDS ✓ (`nunca=10`, default y CHECK presentes). Se migró **antes** del
+  rollout para que la imagen nueva nunca arrancara contra `teams` sin la columna.
+- Imagen `pausa-servicio-6bdc9c0`, construida desde worktree limpio →
+  **task-def 97**. Sin errores en CloudWatch, ticks en 200.
+- Auditoría de `seguridad`: 0 Críticos, 0 Altos. Se corrigieron el Medio
+  (simulador) y dos Bajos (un error evaluando la pausa tumbaba el lote entero;
+  `/adjunto/confirmar` dejaba el temporal en S3).
+
+### Pendientes
+
+- **Arranquemos Pues** tiene facturas vencidas el 2-sep. El correo de prueba del
+  aviso de cobro le anunciaba la pausa el **2 de octubre**; con `por_mora` se
+  pausaría el **3**. Si se quiere el 2, ese día se pone `pausada` a mano.
+- Seguimiento de la auditoría: la pausa se aplica en 9 puntos y no en el puerto
+  de envío (`services/messaging`) — un envío nuevo se la saltaría; y una campaña
+  `running` no se puede cancelar mientras la cuenta está pausada.
+- El `docker compose build` del **frontend local** está roto desde el
+  `.dockerignore` del commit 995a801 (excluye `frontend/` y el compose usa `.`
+  como contexto). No afecta a Amplify.

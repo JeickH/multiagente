@@ -120,16 +120,21 @@ class TestElPromptPideElMensajeUnificado:
         ) in seccion
         assert "todo incluido" not in seccion.lower()
 
-    def test_y_termina_preguntando_el_nombre(self, bot):
-        seccion = _seccion(_prompt(bot), "El primer mensaje")
-        assert "¿Con quién tengo el gusto? 😊" in seccion
-        assert "termina con la pregunta del nombre" in seccion
+    def test_y_termina_preguntando_el_mes_no_el_nombre(self, bot):
+        """Cambio del 25-sep-2026: el primer mensaje ya no pide el nombre, pide
+        el mes — que es el dato que mueve la venta (sin mes no hay precio).
 
-    def test_la_regla_vale_para_cualquier_primer_mensaje_no_solo_para_hola(self, bot):
-        """Punto 3 del pedido: sea cual sea el primer mensaje que el bot elija
-        mandar, cierra pidiendo el nombre — también el de la excepción."""
+        El nombre se pide al reservar. Ver `LLM_CONFIG["nombre_al_reservar"]` y
+        `tests/viajes/test_pregunta_nombre.py::TestConElNombreAlReservar`."""
         seccion = _seccion(_prompt(bot), "El primer mensaje")
-        assert "Sea cual sea el primer mensaje que mandes" in seccion
+        assert "¿Para qué mes lo estás pensando? 😊" in seccion
+        assert "¿Con quién tengo el gusto?" not in seccion
+
+    def test_ningun_mensaje_de_apertura_pide_el_nombre(self, bot):
+        """Punto 3 del pedido, invertido: sea cual sea el primer mensaje que el
+        bot elija mandar —también el de la excepción— no pide el nombre."""
+        seccion = _seccion(_prompt(bot), "El primer mensaje")
+        assert "Ningún mensaje de apertura termina pidiendo el nombre" in seccion
 
     def test_la_excepcion_esta_escrita_y_es_reconocible(self, bot):
         """Punto 2: si en el primer mensaje preguntó algo concreto, eso manda

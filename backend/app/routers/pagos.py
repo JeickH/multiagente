@@ -60,6 +60,7 @@ from ..schemas import (
 )
 from ..services import creditos as svc_creditos
 from ..services import facturas as svc_facturas
+from ..services import pausa as svc_pausa
 from ..services import ratelimit
 from ..services import suscripciones as svc_suscripciones
 from ..services import wompi
@@ -536,7 +537,7 @@ def cancelar_suscripcion(
 #   GET  /pagos/facturas                 el listado + la próxima  (admin)
 #   POST /pagos/facturas/{id}/checkout   manda a pagar una        (admin)
 #   GET  /pagos/facturas/{id}/pdf        el comprobante           (admin)
-#   GET  /pagos/aviso                    el recuadro amarillo     (cualquiera)
+#   GET  /pagos/aviso                    el recuadro amarillo/rojo (cualquiera)
 #
 # Los tres primeros van por `require_billing_admin`, el mismo portero del resto
 # del módulo: ver cuánto debe la cuenta y pagarlo es de administrador. El
@@ -604,7 +605,11 @@ def aviso_de_pago(
         return AvisoPagoOut(mostrar=False)
 
     clave = svc_facturas.debe_avisar(db, member.team_id)
-    return AvisoPagoOut(mostrar=clave is not None, clave=clave)
+    return AvisoPagoOut(
+        mostrar=clave is not None,
+        clave=clave,
+        pausado=svc_pausa.servicio_pausado(db, member.team_id),
+    )
 
 
 @router.get("/facturas/{factura_id}/pdf")
