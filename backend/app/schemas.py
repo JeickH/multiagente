@@ -1073,6 +1073,11 @@ class AvisoPagoOut(BaseModel):
     `clave` es un hash truncado de las facturas vencidas. Sirve para que la X
     del aviso lo oculte mientras la deuda sea la misma y vuelva a mostrarlo
     cuando cambie. No es reversible ni codifica cuántas son.
+
+    `pausado` enciende el aviso ROJO, que no se cierra, y le bloquea al
+    frontend los botones de envío. El asesor también lo necesita: es a él a
+    quien se le deshabilita el botón. Tampoco dice cuánto se debe.
     """
     mostrar: bool
     clave: Optional[str] = None
+    pausado: bool = False

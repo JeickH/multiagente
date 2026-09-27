@@ -61,6 +61,22 @@ TEAM_MODO_DEMO = "demo"
 TEAM_MODO_PRODUCCION = "produccion"
 AVAILABLE_TEAM_MODOS = (TEAM_MODO_DEMO, TEAM_MODO_PRODUCCION)
 
+# Pausa del servicio por falta de pago. Una sola variable por cuenta, con tres
+# valores, para que "pausar" sea un UPDATE que el CEO ordena y nada más:
+#
+#   nunca    → la cuenta no se pausa, deba lo que deba. Es el default: la regla
+#              automática no se le enciende a nadie sin una orden explícita.
+#   por_mora → se pausa SOLA el día que una factura pendiente cumple un mes de
+#              vencida, y se reanuda sola cuando se paga.
+#   pausada  → pausada ya, por orden manual. Pagar no la reanuda: la levanta
+#              quien la puso, volviendo el valor a `nunca` o `por_mora`.
+#
+# Qué bloquea y qué no está en `services/pausa.py`.
+PAUSA_NUNCA = "nunca"
+PAUSA_POR_MORA = "por_mora"
+PAUSA_PAUSADA = "pausada"
+AVAILABLE_PAUSAS = (PAUSA_NUNCA, PAUSA_POR_MORA, PAUSA_PAUSADA)
+
 
 class Team(Base):
     __tablename__ = "teams"
@@ -91,7 +107,20 @@ class Team(Base):
     asesores_rotacion = Column(
         JSONB, nullable=False, default=list, server_default="[]"
     )
+    # Ver `PAUSA_*` arriba. El CHECK existe para que un typo en el UPDATE
+    # ("pausado", "si") falle en la base en vez de dejar la cuenta en un estado
+    # que el código no reconoce.
+    pausa_servicio = Column(
+        String(16), nullable=False, default=PAUSA_NUNCA, server_default=PAUSA_NUNCA
+    )
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        CheckConstraint(
+            "pausa_servicio IN ('nunca', 'por_mora', 'pausada')",
+            name="ck_teams_pausa_servicio",
+        ),
+    )
 
     owner = relationship("User", back_populates="owned_teams", foreign_keys=[owner_user_id])
     members = relationship(

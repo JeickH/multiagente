@@ -31,6 +31,7 @@ import {
   motivoTextoMuyLargo,
   textoExcedido,
 } from '../lib/mensajeTexto';
+import { useServicioPausado } from '../lib/avisoPago';
 import { getToken } from '../lib/session';
 
 const MENSAJES_TUTORIAL = [
@@ -473,6 +474,9 @@ export default function Mensajes() {
   }, [detail?.messages?.length]);
 
   const canReply = me?.member.permissions?.can_reply_messages === true;
+  /** Servicio pausado por falta de pago: el compositor se cambia por un aviso
+      y no se ofrece "Nueva conversación". El backend igual responde 402. */
+  const pausado = useServicioPausado();
   /** Reasignar es del dueño de la cuenta: mover un chat se lo quita a quien lo
       atendía, y esa no es decisión de un asesor sobre la cola de otro. El
       backend lo vuelve a exigir con `get_current_owner_membership`; esto solo
@@ -586,7 +590,7 @@ export default function Mensajes() {
    * (regla #7: el token sale de `lib/session.ts`, nunca de `localStorage`).
    */
   const enviarAdjunto = async () => {
-    if (!detail || !adjunto || !canReply || sending) return;
+    if (!detail || !adjunto || !canReply || sending || pausado) return;
     // El caption no aplica a las notas de voz (contrato de API): se manda solo
     // el audio y el texto se queda escrito para el mensaje siguiente.
     const caption = adjunto.clase === 'audio' ? '' : draft.trim().slice(0, MAX_CAPTION);
@@ -623,7 +627,7 @@ export default function Mensajes() {
   };
 
   const sendMessage = async () => {
-    if (!detail || !draft.trim() || !canReply) return;
+    if (!detail || !draft.trim() || !canReply || pausado) return;
     // Mismo patrón que `validarAdjunto`: lo que el backend va a rechazar se
     // rechaza acá primero, sin gastar el viaje ni dejar un fallido en el chat.
     // El mensaje es el mismo que respondería el servidor.
@@ -726,7 +730,7 @@ export default function Mensajes() {
   };
 
   const startNewConversation = async () => {
-    if (!newPhone || !newTemplate) return;
+    if (!newPhone || !newTemplate || pausado) return;
     setSending(true);
     setErrorMsg(null);
     try {
@@ -802,8 +806,9 @@ export default function Mensajes() {
               <h2 className="font-semibold text-gray-800">Chats activos</h2>
               <button
                 onClick={() => setShowNew(true)}
-                className="w-8 h-8 rounded-full bg-gloma-brown text-white flex items-center justify-center hover:bg-gloma-brown-dark transition-colors"
-                title="Nueva conversación"
+                disabled={pausado}
+                className="w-8 h-8 rounded-full bg-gloma-brown text-white flex items-center justify-center hover:bg-gloma-brown-dark transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                title={pausado ? 'Servicio pausado por pagos pendientes' : 'Nueva conversación'}
               >
                 +
               </button>
@@ -1123,7 +1128,16 @@ export default function Mensajes() {
                     {errorMsg}
                   </div>
                 )}
-                {canReply ? (
+                {canReply && pausado ? (
+                  <div
+                    role="status"
+                    className="text-center text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-3"
+                  >
+                    <strong className="font-semibold">El envío de mensajes está bloqueado.</strong>{' '}
+                    Tus servicios están pausados: realiza el pago de las facturas
+                    pendientes para reanudarlos.
+                  </div>
+                ) : canReply ? (
                   <>
                     {adjunto && (
                       <VistaPreviaAdjunto
@@ -1309,7 +1323,7 @@ export default function Mensajes() {
               </button>
               <button
                 onClick={startNewConversation}
-                disabled={sending || !newPhone || !newTemplate}
+                disabled={sending || !newPhone || !newTemplate || pausado}
                 className="flex-1 px-4 py-2 bg-gloma-brown text-white rounded-lg hover:bg-gloma-brown-dark disabled:opacity-50"
               >
                 {sending ? 'Enviando...' : 'Enviar template'}

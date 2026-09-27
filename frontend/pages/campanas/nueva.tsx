@@ -26,6 +26,7 @@ import { useEffect, useMemo, useState } from 'react';
 
 import Layout from '../../components/Layout';
 import { ApiError, authedFetch } from '../../lib/api';
+import { useServicioPausado } from '../../lib/avisoPago';
 import { maskPhone } from '../../lib/format';
 import {
   aValorGuardado,
@@ -389,6 +390,9 @@ function VistaPreviaMensaje({
 // ─── Página ────────────────────────────────────────────────────────────────
 
 export default function NuevaCampanaWizard() {
+  // Servicio pausado por pagos pendientes: se puede armar el borrador, pero
+  // no confirmarlo. El backend igual responde 402 al crear.
+  const pausado = useServicioPausado();
   const router = useRouter();
 
   // Loading + datos remotos
@@ -1447,9 +1451,20 @@ export default function NuevaCampanaWizard() {
                   </div>
                 </div>
 
+                {pausado && (
+                  <div
+                    role="status"
+                    className="mt-4 text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2"
+                  >
+                    <strong className="font-semibold">No se pueden enviar campañas.</strong>{' '}
+                    Tus servicios están pausados: realiza el pago de las facturas
+                    pendientes para reanudarlos.
+                  </div>
+                )}
+
                 <NavBar
                   step={step}
-                  canAdvance={canAdvance && !submitting}
+                  canAdvance={canAdvance && !submitting && !pausado}
                   onBack={() => setStep(3)}
                   onNext={handleSubmit}
                   nextLabel={

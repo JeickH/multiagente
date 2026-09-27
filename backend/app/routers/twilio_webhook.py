@@ -38,7 +38,7 @@ from sqlalchemy.orm import Session
 from .. import crud, models
 from ..dependencies import get_db
 from ..services import adjuntos, bot_router as bot_router_svc
-from ..services import bot_runner, messaging
+from ..services import bot_runner, messaging, pausa
 from ..services.messaging import twilio_adapter
 from ..services.llm_engine import nombre_saneado
 from ..services.messaging.base import marcador_inbound
@@ -325,6 +325,15 @@ def process_twilio_inbound(db: Session, form: Dict[str, str]) -> None:
             meta_message_id=norm.message_id,
             status="received",
         )
+
+        # Servicio pausado por falta de pago: el mensaje ya quedó en la bandeja
+        # —es del cliente y no se pierde— pero el bot no le responde.
+        if pausa.servicio_pausado(db, account.team_id):
+            logger.info(
+                "webhook.twilio servicio pausado team_id=%s — el bot no responde",
+                account.team_id,
+            )
+            return
 
         bot, session = bot_router_svc.resolve_bot_for_incoming_message(
             db,

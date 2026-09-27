@@ -27,13 +27,19 @@
  * queda oculto; cuando cambia (se paga una, se vence otra), la clave cambia y
  * el aviso vuelve a salir. Un aviso que se apaga para siempre con un clic
  * sirve una sola vez.
+ *
+ * El aviso ROJO: servicio pausado
+ * -------------------------------
+ * Si el backend dice `pausado`, en vez del amarillo sale uno rojo que **no se
+ * cierra**: con la cuenta pausada no se puede enviar nada, y un aviso
+ * descartado dejaría al usuario frente a botones bloqueados sin saber por qué.
+ * Se va solo cuando la cuenta se reanuda. Cuándo se pausa lo decide el
+ * servidor (`services/pausa.py`); acá solo se pinta.
  */
 import { useEffect, useState } from 'react';
 
-import { authedFetch } from '../lib/api';
+import { AvisoPago as Aviso, consultarAvisoPago } from '../lib/avisoPago';
 import { haySesion } from '../lib/session';
-
-type Aviso = { mostrar: boolean; clave: string | null };
 
 /** Dónde se recuerda cuál aviso cerró el usuario. No es la sesión: es UX. */
 const CLAVE_DESCARTADA = 'gloma_aviso_pagos_descartado';
@@ -59,7 +65,7 @@ export default function AvisoPagosPendientes() {
     let cancelado = false;
     setDescartada(descartadaGuardada());
 
-    authedFetch<Aviso>('/pagos/aviso')
+    consultarAvisoPago()
       .then((r) => {
         if (!cancelado) setAviso(r);
       })
@@ -73,6 +79,26 @@ export default function AvisoPagosPendientes() {
       cancelado = true;
     };
   }, []);
+
+  if (aviso?.pausado) {
+    return (
+      <div
+        role="alert"
+        className="shrink-0 bg-red-600 border-b border-red-700 px-4 py-3 md:px-6 font-body"
+      >
+        <div className="flex items-start gap-3">
+          <span aria-hidden="true" className="text-lg leading-tight">
+            ⛔
+          </span>
+          <p className="flex-1 text-sm text-white leading-snug">
+            <strong className="font-semibold">Tus servicios están pausados.</strong>{' '}
+            Por favor realiza el pago de las facturas pendientes para reanudar el
+            servicio.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   if (!aviso?.mostrar) return null;
   if (aviso.clave && aviso.clave === descartada) return null;

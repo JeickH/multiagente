@@ -13,7 +13,7 @@ from ..dependencies import (
     get_current_owner_membership,
     require_permission,
 )
-from ..services import adjuntos, messaging
+from ..services import adjuntos, messaging, pausa
 
 logger = logging.getLogger(__name__)
 
@@ -276,6 +276,8 @@ def send_message_in_conversation(
     if not conv:
         raise HTTPException(status_code=404, detail="Conversación no encontrada")
 
+    pausa.exigir_servicio_activo(db, member.team_id)
+
     account = crud.get_meta_account_for_team(db, member.team_id)
     if not crud.is_meta_account_usable(account):
         raise HTTPException(
@@ -353,11 +355,14 @@ def _conversacion_lista_para_adjunto(
 
     Lo comparten los tres endpoints de adjunto. Va primero, y en particular va
     **antes** de firmar una subida: no tiene sentido dejar subir 16 MB a una
-    conversación que no existe o a una cuenta de WhatsApp desconectada.
+    conversación que no existe o a una cuenta de WhatsApp desconectada. Ni,
+    tampoco, a una cuenta con el servicio pausado por falta de pago.
     """
     conv = crud.get_conversation(db, member.team_id, conversation_id)
     if not conv:
         raise HTTPException(status_code=404, detail="Conversación no encontrada")
+
+    pausa.exigir_servicio_activo(db, member.team_id)
 
     account = crud.get_meta_account_for_team(db, member.team_id)
     if not crud.is_meta_account_usable(account):
@@ -622,6 +627,8 @@ def start_new_conversation(
     Inicia una conversación nueva enviando un template aprobado.
     Necesario cuando no hay ventana de 24h abierta con el contacto.
     """
+    pausa.exigir_servicio_activo(db, member.team_id)
+
     account = crud.get_meta_account_for_team(db, member.team_id)
     if not crud.is_meta_account_usable(account):
         raise HTTPException(

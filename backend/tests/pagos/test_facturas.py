@@ -156,10 +156,10 @@ class TestElAvisoNoFiltraFinanzas:
         assert respuesta.json()["mostrar"] is True
 
     def test_la_respuesta_solo_trae_un_si_y_una_clave(self, asesor, db, team, hoy):
-        """El contrato completo: `mostrar` y `clave`. Nada más entra acá."""
+        """El contrato completo: `mostrar`, `clave` y `pausado`. Nada más entra acá."""
         emitir(db, team["team"].id, centavos=1_000_000 * 100, vence=date(2026, 9, 2))
         cuerpo = asesor.get("/pagos/aviso").json()
-        assert set(cuerpo.keys()) == {"mostrar", "clave"}
+        assert set(cuerpo.keys()) == {"mostrar", "clave", "pausado"}
 
     def test_ni_el_monto_ni_el_conteo_aparecen_en_el_cuerpo(
         self, asesor, db, team, hoy
@@ -185,7 +185,9 @@ class TestElAvisoNoFiltraFinanzas:
         assert str(factura.amount_cents) not in clave
 
     def test_sin_facturas_no_hay_aviso_ni_clave(self, asesor, hoy):
-        assert asesor.get("/pagos/aviso").json() == {"mostrar": False, "clave": None}
+        assert asesor.get("/pagos/aviso").json() == {
+            "mostrar": False, "clave": None, "pausado": False,
+        }
 
 
 class TestLaClaveDelAvisoCambiaConLaDeuda:
