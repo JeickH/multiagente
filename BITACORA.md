@@ -8159,3 +8159,13 @@ los dos lados.
   novedades, sin nombrar razón social ni NIT. La casilla del formulario dice lo
   mismo. Se retiró el pendiente de revisión legal de la versión anterior.
 - La imagen para compartir (`og_gloma.png`) sigue con el titular anterior.
+
+### Fondo del hero y paquete recomendado — 28 de septiembre (PR #19)
+
+- **Fondo del hero**: opción 05 "Ventanilla" de 10 (artifact privado), sin el
+  destello dorado: degradé de Technical Black a Deep Forest con la ventanilla
+  del logo en contorno, que se mueve apenas con el cursor. El gris apagado de
+  antes no era opacidad: `banner.png` es una imagen **blanca pura** y el velo
+  oscuro encima la volvía gris. El archivo quedó en `public/` sin uso.
+- **Precios**: el recomendado pasa al paquete de **6.000**, en Golden Hour
+  (marco, etiqueta "★ Recomendado" más grande y "1.000 COP por conversación").
