@@ -8143,3 +8143,19 @@ los dos lados.
 - LinkedIn en el footer: falta la URL de la página.
 - Las piezas de redes no mencionan "IVA y Meta incluidos" ni la definición de
   conversación (se hicieron antes de que el CEO las definiera).
+
+### Ajustes del mismo día (PR #18)
+
+- **Hero**: titular "Un asesor más en tu equipo. Uno que no duerme." (opción 01
+  de la segunda ronda de 15, elegida por el CEO) y sin la línea pequeña de
+  arriba. Las dos rondas de opciones quedaron en un artifact privado.
+- **Precios**: el paquete de 2.000 conversaciones va marcado como
+  "Recomendado"; las cifras van sin el signo `$` (la moneda va al lado); el
+  texto habla de "inversión" en vez de "pago". Lía sigue diciendo "pago único"
+  (cambiarlo es backend y no se pidió).
+- **Datos personales**: por decisión del CEO, `/privacidad` es una autorización
+  corta — el usuario autoriza, conforme a la Ley Estatutaria 1581 de 2012 y el
+  Decreto 1377 de 2013, el uso para contacto, marketing, promociones y
+  novedades, sin nombrar razón social ni NIT. La casilla del formulario dice lo
+  mismo. Se retiró el pendiente de revisión legal de la versión anterior.
+- La imagen para compartir (`og_gloma.png`) sigue con el titular anterior.

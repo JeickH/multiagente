@@ -251,7 +251,7 @@ const PRECIOS = {
   instalacion: { COP: 2_000_000, USD: 625 },
   paquetes: [
     { conversaciones: 600, COP: 640_000, USD: 205, recomendado: false },
-    // El CEO lo marca como el recomendado (2026-09-28).
+    // El CEO lo marca como el recomendado (2026-09-27).
     { conversaciones: 2_000, COP: 2_090_000, USD: 670, recomendado: true },
     { conversaciones: 6_000, COP: 6_000_000, USD: 1_920, recomendado: false },
   ],
@@ -606,8 +606,9 @@ function InteractiveHeader() {
             transition: 'opacity 900ms ease, transform 900ms cubic-bezier(.22,.61,.36,1)',
           }}
         >
-          Tu agencia vende viajes por WhatsApp,{' '}
-          <span className="whitespace-nowrap" style={{ color: BRAND.mint }}>las 24 horas</span>
+          {/* Opción 01 de la segunda ronda de titulares, elegida por el CEO (2026-09-27). */}
+          Un asesor más en tu equipo.{' '}
+          <span className="block" style={{ color: BRAND.mint }}>Uno que no duerme.</span>
         </h1>
         <p
           className="text-white/90 mt-6 text-base md:text-xl max-w-xl font-light"
@@ -618,8 +619,8 @@ function InteractiveHeader() {
             transition: 'opacity 900ms ease 150ms, transform 900ms cubic-bezier(.22,.61,.36,1) 150ms',
           }}
         >
-          Un asesor con IA que cotiza con tus tarifas, responde a cualquier hora y le pasa a
-          tu equipo los clientes listos para cerrar.
+          Atiende tu WhatsApp de día y de noche con tus tarifas, y le pasa a tu equipo los
+          clientes listos para cerrar.
         </p>
         <div
           className="mt-10 flex flex-col sm:flex-row gap-3"
@@ -862,7 +863,9 @@ function ContactForm({
               style={{ accentColor: BRAND.mint }}
             />
             <span>
-              Autorizo a Gloma a tratar mis datos para contactarme, según la{' '}
+              Autorizo el tratamiento de mis datos personales, conforme a la Ley 1581 de 2012,
+              para ser contactado y recibir información comercial, promociones y novedades. Ver
+              la{' '}
               <a
                 href="/privacidad"
                 target="_blank"
