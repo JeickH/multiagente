@@ -2,7 +2,10 @@ import Head from 'next/head';
 import Image from 'next/image';
 
 /**
- * Política de tratamiento de datos personales de Gloma (Ley 1581 de 2012).
+ * Autorización de tratamiento de datos personales (Ley 1581 de 2012 y
+ * Decreto 1377 de 2013). Por decisión del CEO (2026-09-27) es corta: el
+ * usuario autoriza, para contacto, marketing, promociones y novedades, sin
+ * nombrar razón social ni NIT.
  *
  * La enlaza el formulario "Quiero que me contacten" de la landing, que exige
  * aceptarla antes de enviar (el backend guarda cuándo se aceptó en
@@ -22,48 +25,22 @@ const VIGENCIA = '27 de septiembre de 2026';
 
 const SECCIONES: { titulo: string; parrafos: string[] }[] = [
   {
-    titulo: '1. Quién es el responsable',
+    titulo: 'Autorización',
     parrafos: [
-      'Gloma, empresa colombiana de tecnología con domicilio en la Calle 36, Vía Jamundí #128-321, Cali, Valle del Cauca. Correo de contacto para asuntos de datos personales: contacto@glomacx.com.',
+      'Al marcar la casilla del formulario de glomacx.com, o al escribirnos por el chat de la página, autorizas de manera previa, expresa e informada el tratamiento de tus datos personales, conforme a la Ley Estatutaria 1581 de 2012 y a su reglamentación, el Decreto 1377 de 2013.',
+      'Los datos que entregas son tu nombre, correo electrónico, teléfono, el nombre de tu agencia y el rango de chats que reciben al mes.',
     ],
   },
   {
-    titulo: '2. Qué datos recogemos',
+    titulo: 'Para qué autorizas el uso de tus datos',
     parrafos: [
-      'En el formulario de contacto de glomacx.com: nombre, correo electrónico, teléfono, nombre de la agencia y el rango de chats que reciben al mes.',
-      'En el chat de la página: los mensajes que escribes y, si decides agendar una demostración, el correo y el horario que elijas.',
-      'Además, por seguridad, la dirección IP y el navegador desde el que se envía el formulario.',
+      'Para contactarte y responder tu solicitud, agendar una demostración y enviarte información comercial: campañas de marketing, promociones y novedades del servicio, por correo electrónico, WhatsApp u otros medios de contacto que nos hayas dado.',
     ],
   },
   {
-    titulo: '3. Para qué los usamos',
+    titulo: 'Tus derechos',
     parrafos: [
-      'Para contactarte y responder a tu solicitud, agendar y realizar la demostración, enviarte la información comercial de Gloma que pediste y preparar una propuesta con el volumen de tu operación.',
-      'No vendemos ni cedemos tus datos a terceros para fines comerciales.',
-    ],
-  },
-  {
-    titulo: '4. Dónde se guardan',
-    parrafos: [
-      'Los datos se almacenan en la infraestructura de Amazon Web Services, en servidores ubicados en Brasil, con acceso restringido al equipo de Gloma. Al aceptar esta política autorizas esa transferencia internacional de datos.',
-    ],
-  },
-  {
-    titulo: '5. Tus derechos',
-    parrafos: [
-      'Como titular puedes conocer, actualizar y rectificar tus datos; pedir prueba de la autorización que nos diste; saber qué uso les hemos dado; revocar la autorización o pedir que los eliminemos cuando no exista un deber legal de conservarlos; y presentar quejas ante la Superintendencia de Industria y Comercio.',
-    ],
-  },
-  {
-    titulo: '6. Cómo ejercerlos',
-    parrafos: [
-      'Escríbenos a contacto@glomacx.com indicando tu nombre, el correo o teléfono con que te registraste y lo que solicitas. Las consultas se responden en un máximo de diez (10) días hábiles y los reclamos en un máximo de quince (15) días hábiles, en los términos de la Ley 1581 de 2012.',
-    ],
-  },
-  {
-    titulo: '7. Vigencia',
-    parrafos: [
-      `Esta política rige desde el ${VIGENCIA}. Los datos se conservan mientras sean necesarios para las finalidades descritas o mientras no pidas su eliminación. Si la cambiamos, publicaremos la nueva versión en esta misma página.`,
+      'Puedes conocer, actualizar o rectificar tus datos, y revocar esta autorización o pedir que dejemos de enviarte comunicaciones en cualquier momento, escribiendo a contacto@glomacx.com.',
     ],
   },
 ];
@@ -100,10 +77,10 @@ export default function Privacidad() {
             className="text-3xl md:text-4xl leading-tight mb-3"
             style={{ fontFamily: 'Syne, system-ui, sans-serif', fontWeight: 700 }}
           >
-            Política de tratamiento de datos personales
+            Autorización de tratamiento de datos personales
           </h1>
           <p className="text-sm mb-10" style={{ color: BRAND.textMuted }}>
-            Ley 1581 de 2012 · Vigente desde el {VIGENCIA}
+            Ley Estatutaria 1581 de 2012 · Decreto 1377 de 2013 · Vigente desde el {VIGENCIA}
           </p>
           <div className="space-y-8">
             {SECCIONES.map((s) => (
