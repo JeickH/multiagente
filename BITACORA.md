@@ -8079,3 +8079,67 @@ base en vez de dejar la cuenta en un estado raro. Se cambia con
 - El `docker compose build` del **frontend local** está roto desde el
   `.dockerignore` del commit 995a801 (excluye `frontend/` y el compose usa `.`
   como contexto). No afecta a Amplify.
+
+---
+
+## Landing: precios, cómo empezar y formulario calificado — 27 de septiembre de 2026
+
+Pedido del CEO: mostrar los precios en la landing de forma gráfica, piezas de
+redes que los expliquen, cambiar el WhatsApp de contacto, revisión de ventas y
+UX de la landing, e implementar lo aprobado de esa revisión. PR #17.
+
+### Precios (definidos por el CEO)
+
+- **Instalación**, pago único: COP 2.000.000 / US$625.
+- **Paquetes de conversaciones** (recarga, no mensualidad; lo que sobra pasa al
+  mes siguiente): 600 → COP 640.000 / US$205 · 2.000 → COP 2.090.000 / US$670 ·
+  6.000 → COP 6.000.000 / US$1.920.
+- **Campañas**: COP 75 / US$0,025 por mensaje enviado; si el cliente responde,
+  esa conversación sale del paquete.
+- **Una conversación** = un chat con un cliente en una ventana de 24 h.
+- **IVA y costo de Meta incluidos.**
+
+Las cifras viven en `PRECIOS` de `frontend/pages/gloma.tsx` y se repiten en el
+contexto de Lía (`bot_contexts/gloma.md`, pregunta 9): si cambian, cambian en
+los dos lados.
+
+### Qué salió
+
+- Landing: sección de precios (COP/USD, gráfico del acumulado y del cobro de
+  una campaña), ruta "¿Cómo empiezas a usar Gloma?" (Soft Mint), bloque del
+  dashboard con **datos de ejemplo** (la captura real era de un cliente y no se
+  publica), preguntas frecuentes, hero para agencias de viajes, CTAs
+  unificados ("Agenda una demo" / "Habla con Lía ahora"), barra fija de demo en
+  móvil, íconos de línea, Open Graph (`og_gloma.png`), Instagram en el footer.
+- Formulario: agencia, chats al mes y **autorización de datos obligatoria**
+  (Ley 1581) + página `/privacidad` (en el allowlist del middleware y en
+  `PUBLIC_PAGES`). El servidor exige la autorización solo para
+  `source=gloma_landing`; la landing de Gorvek no cambia.
+- `leads`: `agencia`, `chats_mes`, `acepto_privacidad_at`. /citas los muestra.
+- Lía: da la lista pública de precios **sin pedir el nombre**; contacto en
+  glomacx.com (seguía dando el buzón desactivado de glomabeauty.com).
+- WhatsApp de contacto de Gloma: +57 315 076 4000 (landing, chat, 404 y
+  mensajes de respaldo del backend). Gorvek (`automatas.tsx`) no se tocó.
+- Redes (Sprint 15 del plan de contenido): carrusel `41_como_cobramos`, pieza
+  `42_campanas_75` e historia `43_precios`. **Sin publicar.**
+
+### Despliegue
+
+- Migración `migrate_leads_calificacion.py`: local ✓ (dos corridas), RDS ✓,
+  antes del rollout.
+- Imagen `landing-precios-284ee34` desde worktree limpio (incluye la pausa del
+  PR #16) → **task-def 98**. Sin errores en CloudWatch, ticks en 200.
+- Humo en producción: `/landing/leads` sin autorización → 422; Lía responde el
+  precio sin pedir el nombre y cierra con la demo. El bot de Gloma en RDS
+  (id 16) no tiene `instrucciones` en la base, así que lee el `.md` nuevo.
+- Frontend: Amplify con el merge del PR #17.
+
+### Pendientes
+
+- **Casos de éxito** (cliente de turismo + Recupera Tu Mascota contado para
+  agencias): queda para después por decisión del CEO. Falta confirmar el
+  cliente, su permiso y verificar las cifras de mascotas contra la base.
+- **Política de privacidad**: borrador sin razón social ni NIT; revisión legal.
+- LinkedIn en el footer: falta la URL de la página.
+- Las piezas de redes no mencionan "IVA y Meta incluidos" ni la definición de
+  conversación (se hicieron antes de que el CEO las definiera).
