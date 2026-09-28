@@ -8159,3 +8159,16 @@ los dos lados.
   novedades, sin nombrar razón social ni NIT. La casilla del formulario dice lo
   mismo. Se retiró el pendiente de revisión legal de la versión anterior.
 - La imagen para compartir (`og_gloma.png`) sigue con el titular anterior.
+
+### 28-sep-2026 — Arranquemos Pues queda PAUSADA por orden del CEO
+
+`teams.id = 5` (Agencia de Viajes Arranquemos Pues) pasó de `nunca` a
+`pausada` (pausa manual). Deuda al momento: FAC-2026-0001 ($1.000.000) y
+FAC-2026-0002 ($350.000), las dos vencidas el 2-sep y pendientes. El aviso
+amarillo le venía saliendo desde el 21-sep a las 13:45.
+
+Efecto: aviso rojo, envío manual y campañas bloqueados, el bot deja de
+responder (los entrantes se siguen guardando) y sus recordatorios agendados se
+descartan. Pagar **no** la reanuda: es pausa manual. Para levantarla, por orden
+del CEO, `pausa_servicio = 'nunca'` (o `'por_mora'`) con un script por
+`rds_exec.sh` — `rds_query.sh` no hace commit.
