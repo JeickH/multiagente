@@ -22,8 +22,6 @@ const BRAND = {
   forest: '#004D40',
   mint: '#4DB6AC',
   softMint: '#E0F2F1',
-  // Micro-acento del destello del logo: menos del 5 % de la página.
-  golden: '#F5C24B',
   mintSoft: 'rgba(77,182,172,0.12)',
   cardBg: 'rgba(255,255,255,0.03)',
   cardBorder: 'rgba(77,182,172,0.15)',
@@ -252,9 +250,10 @@ type Moneda = 'COP' | 'USD';
 const PRECIOS = {
   instalacion: { COP: 2_000_000, USD: 625 },
   paquetes: [
-    { conversaciones: 600, COP: 640_000, USD: 205 },
-    { conversaciones: 2_000, COP: 2_090_000, USD: 670 },
-    { conversaciones: 6_000, COP: 6_000_000, USD: 1_920 },
+    { conversaciones: 600, COP: 640_000, USD: 205, recomendado: false },
+    // El CEO lo marca como el recomendado (2026-09-28).
+    { conversaciones: 2_000, COP: 2_090_000, USD: 670, recomendado: true },
+    { conversaciones: 6_000, COP: 6_000_000, USD: 1_920, recomendado: false },
   ],
   mensajeCampana: { COP: 75, USD: 0.025 },
 };
@@ -597,22 +596,6 @@ function InteractiveHeader() {
         ref={heroRef}
         className="relative z-10 max-w-6xl mx-auto px-6 md:px-10 py-24 md:py-36"
       >
-        <p
-          className="flex items-center gap-2 text-sm md:text-base font-medium mb-5"
-          style={{
-            color: BRAND.softMint,
-            fontFamily: 'Inter, system-ui, sans-serif',
-            opacity: inView ? 1 : 0,
-            transition: 'opacity 900ms ease',
-          }}
-        >
-          <span
-            aria-hidden="true"
-            className="inline-block w-2 h-2 rounded-full"
-            style={{ backgroundColor: BRAND.golden }}
-          />
-          Cada viaje empieza con una conversación
-        </p>
         <h1
           className="text-white text-4xl md:text-6xl leading-tight max-w-3xl"
           style={{
@@ -1215,15 +1198,15 @@ function FaqSection() {
 
 // --- Precios ---------------------------------------------------------------
 
-/** `$2.000.000` / `$0,025`: separadores de Colombia en las dos monedas. */
+/**
+ * `2.000.000` / `0,025`: separadores de Colombia en las dos monedas y sin el
+ * signo `$` (decisión del CEO): la moneda va escrita al lado (COP / USD).
+ */
 function formatMonto(valor: number, decimales = 0): string {
-  return (
-    '$' +
-    new Intl.NumberFormat('es-CO', {
-      minimumFractionDigits: decimales,
-      maximumFractionDigits: decimales,
-    }).format(valor)
-  );
+  return new Intl.NumberFormat('es-CO', {
+    minimumFractionDigits: decimales,
+    maximumFractionDigits: decimales,
+  }).format(valor);
 }
 
 /** Precio grande en Syne con la moneda en pequeño al lado. */
@@ -1430,9 +1413,26 @@ function PreciosSection() {
                   return (
                     <div
                       key={p.conversaciones}
-                      className="gloma-card rounded-2xl p-6 transition-all"
-                      style={nodo}
+                      className="gloma-card relative rounded-2xl p-6 transition-all"
+                      style={
+                        p.recomendado
+                          ? {
+                              ...nodo,
+                              backgroundColor: BRAND.mintSoft,
+                              border: `2px solid ${BRAND.mint}`,
+                              boxShadow: '0 0 40px -12px rgba(77,182,172,0.55)',
+                            }
+                          : nodo
+                      }
                     >
+                      {p.recomendado && (
+                        <span
+                          className="absolute -top-3 right-5 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wide"
+                          style={{ backgroundColor: BRAND.mint, color: BRAND.bgBase }}
+                        >
+                          Recomendado
+                        </span>
+                      )}
                       <p
                         className="text-3xl md:text-4xl tabular-nums"
                         style={{ fontFamily: 'Syne, system-ui, sans-serif', fontWeight: 800, color: BRAND.mint }}
@@ -1528,7 +1528,7 @@ function PreciosSection() {
                     Envías {formatNumber(enviados)} mensajes
                   </p>
                   <p className="text-sm tabular-nums" style={{ color: BRAND.textDim }}>
-                    {formatNumber(enviados)} × {formatMonto(PRECIOS.mensajeCampana[moneda], usd ? 3 : 0)}
+                    {formatNumber(enviados)} × {formatMonto(PRECIOS.mensajeCampana[moneda], usd ? 3 : 0)} {moneda}
                   </p>
                   <Precio valor={costoEnvio} moneda={moneda} size="text-2xl md:text-3xl" />
                   <p className="text-xs mt-1" style={{ color: BRAND.mint }}>
@@ -1546,7 +1546,7 @@ function PreciosSection() {
                     </p>
                     <p className="text-sm mt-1" style={{ color: BRAND.textMuted }}>
                       Son {formatNumber(responden)} conversaciones y se descuentan de tu paquete.
-                      No se cobran otra vez a {formatMonto(PRECIOS.mensajeCampana[moneda], usd ? 3 : 0)}.
+                      No se cobran otra vez a {formatMonto(PRECIOS.mensajeCampana[moneda], usd ? 3 : 0)} {moneda}.
                     </p>
                   </div>
                   <div className="rounded-2xl p-5" style={nodo}>
