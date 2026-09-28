@@ -431,8 +431,7 @@ function AnimatedNumber({
 }
 
 /**
- * Header con parallax sutil: un par de orbes pasteles que siguen el cursor
- * (1-2% del movimiento) y evocan las "conexiones" del logo Gloma.
+ * Header con parallax sutil: la ventanilla del fondo sigue un poco el cursor.
  */
 function InteractiveHeader() {
   const { ref: heroRef, inView } = useInView<HTMLDivElement>('0px');
@@ -458,89 +457,34 @@ function InteractiveHeader() {
     };
   }, []);
 
-  // Círculos decorativos — sus posiciones se modifican con el cursor (parallax distinto para cada uno)
-  const orbs = [
-    { size: 260, top: '10%', left: '8%', bg: BRAND.mint, factor: 40, opacity: 0.35 },
-    { size: 160, top: '60%', left: '18%', bg: BRAND.forest, factor: 30, opacity: 0.55 },
-    { size: 320, top: '20%', right: '6%', bg: BRAND.mint, factor: 55, opacity: 0.22 },
-    { size: 120, top: '70%', right: '24%', bg: BRAND.forest, factor: 22, opacity: 0.6 },
-  ];
-
   return (
     <header
       ref={headerRef}
       className="relative w-full overflow-hidden"
       style={{ minHeight: '92vh' }}
     >
-      {/* Imagen de fondo */}
-      <div className="absolute inset-0 z-0">
-        <Image
-          src="/gloma/banner.png"
-          alt="Gloma banner"
-          fill
-          priority
-          className="object-cover"
-        />
-        <div
-          className="absolute inset-0"
-          style={{
-            background:
-              'linear-gradient(to right, rgba(16,24,23,0.88), rgba(16,24,23,0.45))',
-          }}
-        />
-      </div>
+      {/* Fondo (opción 05 "Ventanilla", elegida por el CEO el 2026-09-28).
+          Antes era `banner.png` —una imagen blanca pura— bajo un velo oscuro,
+          y de ahí salía el gris apagado. */}
+      <div
+        className="absolute inset-0 z-0"
+        style={{ background: 'linear-gradient(120deg, #101817 40%, #00362E 100%)' }}
+      />
 
-      {/* Orbes parallax */}
-      <div className="absolute inset-0 z-0 pointer-events-none" aria-hidden="true">
-        {orbs.map((orb, i) => {
-          const base: React.CSSProperties = {
-            position: 'absolute',
-            width: orb.size,
-            height: orb.size,
-            top: orb.top,
-            ...(orb.left ? { left: orb.left } : {}),
-            ...(orb.right ? { right: orb.right } : {}),
-            backgroundColor: orb.bg,
-            opacity: orb.opacity,
-            borderRadius: '9999px',
-            filter: 'blur(60px)',
-            transform: `translate3d(${offset.x * orb.factor}px, ${offset.y * orb.factor}px, 0)`,
-            transition: 'transform 400ms cubic-bezier(.22,.61,.36,1)',
-          };
-          return <div key={i} style={base} />;
-        })}
-      </div>
-
-      {/* SVG con líneas + nodos que evocan el logo, también parallaxea */}
+      {/* La ventanilla del logo, gigante y en contorno ("Window Seat" del
+          brand book). Se mueve apenas con el cursor. */}
       <svg
         className="absolute inset-0 z-0 pointer-events-none w-full h-full"
         aria-hidden="true"
-        viewBox="0 0 1200 800"
-        preserveAspectRatio="xMidYMid slice"
+        viewBox="0 0 100 60"
+        preserveAspectRatio="xMaxYMid slice"
         style={{
-          transform: `translate3d(${offset.x * -15}px, ${offset.y * -15}px, 0)`,
+          transform: `translate3d(${offset.x * -18}px, ${offset.y * -12}px, 0)`,
           transition: 'transform 500ms cubic-bezier(.22,.61,.36,1)',
         }}
       >
-        <defs>
-          <linearGradient id="lineGrad" x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0%" stopColor={BRAND.mint} stopOpacity="0.7" />
-            <stop offset="100%" stopColor={BRAND.mint} stopOpacity="0" />
-          </linearGradient>
-        </defs>
-        <g fill="none" stroke="url(#lineGrad)" strokeWidth="1.3">
-          <path d="M 80,160 C 240,120 380,280 520,220" />
-          <path d="M 160,620 C 360,520 520,680 760,560" />
-          <path d="M 900,140 C 1020,220 1120,380 1040,540" />
-        </g>
-        <g fill={BRAND.mint}>
-          <circle cx="80" cy="160" r="5" opacity="0.9" />
-          <circle cx="240" cy="120" r="3.5" opacity="0.75" />
-          <circle cx="520" cy="220" r="4.5" opacity="0.8" />
-          <circle cx="760" cy="560" r="4" opacity="0.7" />
-          <circle cx="1040" cy="540" r="4.5" opacity="0.85" />
-          <circle cx="900" cy="140" r="4" opacity="0.8" />
-        </g>
+        <rect x="66" y="-4" width="40" height="68" rx="20" fill="none" stroke={BRAND.mint} strokeOpacity="0.28" strokeWidth="0.45" />
+        <rect x="70" y="2" width="32" height="56" rx="16" fill="none" stroke={BRAND.mint} strokeOpacity="0.16" strokeWidth="0.38" />
       </svg>
 
       {/* Nav */}
