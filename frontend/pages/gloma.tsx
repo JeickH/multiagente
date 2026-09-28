@@ -22,6 +22,8 @@ const BRAND = {
   forest: '#004D40',
   mint: '#4DB6AC',
   softMint: '#E0F2F1',
+  // Destello del logo. En la landing solo marca el paquete recomendado.
+  golden: '#F5C24B',
   mintSoft: 'rgba(77,182,172,0.12)',
   cardBg: 'rgba(255,255,255,0.03)',
   cardBorder: 'rgba(77,182,172,0.15)',
@@ -251,9 +253,9 @@ const PRECIOS = {
   instalacion: { COP: 2_000_000, USD: 625 },
   paquetes: [
     { conversaciones: 600, COP: 640_000, USD: 205, recomendado: false },
-    // El CEO lo marca como el recomendado (2026-09-27).
-    { conversaciones: 2_000, COP: 2_090_000, USD: 670, recomendado: true },
-    { conversaciones: 6_000, COP: 6_000_000, USD: 1_920, recomendado: false },
+    { conversaciones: 2_000, COP: 2_090_000, USD: 670, recomendado: false },
+    // El recomendado, por decisión del CEO (2026-09-28): el menor costo por conversación.
+    { conversaciones: 6_000, COP: 6_000_000, USD: 1_920, recomendado: true },
   ],
   mensajeCampana: { COP: 75, USD: 0.025 },
 };
@@ -1416,24 +1418,26 @@ function PreciosSection() {
                   return (
                     <div
                       key={p.conversaciones}
-                      className="gloma-card relative rounded-2xl p-6 transition-all"
+                      className={`gloma-card relative rounded-2xl p-6 transition-all ${
+                        p.recomendado ? 'pt-9 mt-4 md:mt-0 md:scale-[1.04] z-10' : ''
+                      }`}
                       style={
                         p.recomendado
                           ? {
                               ...nodo,
-                              backgroundColor: BRAND.mintSoft,
-                              border: `2px solid ${BRAND.mint}`,
-                              boxShadow: '0 0 40px -12px rgba(77,182,172,0.55)',
+                              backgroundColor: 'rgba(245,194,75,0.07)',
+                              border: `2px solid ${BRAND.golden}`,
+                              boxShadow: '0 0 50px -10px rgba(245,194,75,0.45)',
                             }
                           : nodo
                       }
                     >
                       {p.recomendado && (
                         <span
-                          className="absolute -top-3 right-5 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wide"
-                          style={{ backgroundColor: BRAND.mint, color: BRAND.bgBase }}
+                          className="absolute -top-4 left-1/2 -translate-x-1/2 whitespace-nowrap px-4 py-1.5 rounded-full text-sm font-bold uppercase tracking-wide shadow-lg"
+                          style={{ backgroundColor: BRAND.golden, color: BRAND.bgBase }}
                         >
-                          Recomendado
+                          ★ Recomendado
                         </span>
                       )}
                       <p
@@ -1446,7 +1450,10 @@ function PreciosSection() {
                         conversaciones
                       </p>
                       <Precio valor={p[moneda]} moneda={moneda} size="text-2xl lg:text-[1.7rem]" apilado />
-                      <p className="text-xs mt-3" style={{ color: BRAND.textDim }}>
+                      <p
+                        className={p.recomendado ? 'text-base font-bold mt-3' : 'text-xs mt-3'}
+                        style={{ color: p.recomendado ? BRAND.golden : BRAND.textDim }}
+                      >
                         {formatMonto(porConversacion, usd ? 3 : 0)} {moneda} por conversación
                       </p>
                     </div>
