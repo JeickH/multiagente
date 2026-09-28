@@ -28,6 +28,7 @@ class TestLeadIn(unittest.TestCase):
             nombre="  Ana   María  ",
             email="Ana@Example.com",
             telefono="+57 300 111 2233",
+            acepta_privacidad=True,
         )
         self.assertEqual(lead.nombre, "Ana María")   # espacios colapsados
         self.assertEqual(lead.source, "gloma_landing")
@@ -49,6 +50,7 @@ class TestLeadIn(unittest.TestCase):
             nombre="Ana\tMaría\nQA",
             email="ana@example.com",
             telefono="+573001112233",
+            acepta_privacidad=True,
         )
         self.assertEqual(lead.nombre, "Ana María QA")
 
@@ -97,3 +99,34 @@ class TestSolicitudSchemas(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestLeadCalificacion(unittest.TestCase):
+    """2026-09-27: agencia, chats al mes y autorización de datos (Ley 1581)."""
+
+    base = dict(nombre="Ana María", email="ana@example.com", telefono="+573001112233")
+
+    def test_gloma_sin_autorizacion_se_rechaza(self):
+        with self.assertRaises(ValidationError):
+            LeadIn(**self.base)
+
+    def test_gloma_con_autorizacion_y_calificacion(self):
+        lead = LeadIn(**self.base, acepta_privacidad=True,
+                      agencia="  Viajes\tDel Sur ", chats_mes="600_2000")
+        self.assertEqual(lead.agencia, "Viajes Del Sur")
+        self.assertEqual(lead.chats_mes, "600_2000")
+
+    def test_otra_landing_no_exige_autorizacion(self):
+        # Gorvek usa el mismo endpoint y no tiene el checkbox.
+        lead = LeadIn(**self.base, source="gorvek_landing")
+        self.assertFalse(lead.acepta_privacidad)
+        self.assertIsNone(lead.agencia)
+
+    def test_chats_mes_fuera_de_la_lista(self):
+        with self.assertRaises(ValidationError):
+            LeadIn(**self.base, acepta_privacidad=True, chats_mes="un_millon")
+
+    def test_campos_opcionales_vacios_quedan_en_none(self):
+        lead = LeadIn(**self.base, acepta_privacidad=True, agencia="   ", chats_mes="")
+        self.assertIsNone(lead.agencia)
+        self.assertIsNone(lead.chats_mes)

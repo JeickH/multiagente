@@ -32,7 +32,7 @@ const BRAND = {
 
 const WHATSAPP_URL =
   // Mismo mensaje precargado que el enlace del footer de la landing.
-  'https://wa.me/573003187871?text=Hola%20Gloma%2C%20tengo%20una%20agencia%20de%20viajes%20y%20quiero%20ver%20una%20demo';
+  'https://wa.me/573150764000?text=Hola%20Gloma%2C%20tengo%20una%20agencia%20de%20viajes%20y%20quiero%20ver%20una%20demo';
 
 /**
  * Evento global para abrir el chat desde cualquier parte de la landing
@@ -164,7 +164,7 @@ export default function GlomaChatWidget() {
           {
             from: 'bot',
             text:
-              'Tuvimos un inconveniente para responderte por aquí 🙏 Escríbenos por WhatsApp al *+57 300 318 7871* y te atendemos de una vez.',
+              'Tuvimos un inconveniente para responderte por aquí 🙏 Escríbenos por WhatsApp al *+57 315 076 4000* y te atendemos de una vez.',
           },
         ]);
         setShowWhatsappCta(true);

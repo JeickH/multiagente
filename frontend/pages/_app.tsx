@@ -39,6 +39,8 @@ const PUBLIC_PAGES = [
   // Destino del link de pago que entrega el bot de ventas: lo abre un cliente
   // desde WhatsApp, sin sesión. No lee ni escribe nada de la plataforma.
   '/pago-demo',
+  // Política de tratamiento de datos que enlaza el formulario de la landing.
+  '/privacidad',
 ];
 
 // Hosts donde vive SOLO contenido público — no hay plataforma que proteger.

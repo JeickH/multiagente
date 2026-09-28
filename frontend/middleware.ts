@@ -73,6 +73,8 @@ function isGlomaAllowed(pathname: string): boolean {
   if (pathname === '/') return true;
   if (pathname === '/favicon.ico') return true;
   if (pathname.startsWith('/gloma')) return true;
+  // Política de datos que enlaza el formulario de la landing (Ley 1581).
+  if (pathname === '/privacidad') return true;
   if (pathname.startsWith('/api/landing')) return true;
   if (pathname.startsWith('/_next')) return true;
   return false;

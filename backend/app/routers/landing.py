@@ -23,7 +23,7 @@ from threading import Lock
 from typing import Any, Deque, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel, EmailStr, Field, field_validator
+from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
 from sqlalchemy.orm import Session
 
 from .. import models
@@ -38,6 +38,16 @@ router = APIRouter(prefix="/landing", tags=["landing"])
 
 PHONE_RE = re.compile(r"^[+\d][\d\s\-()]{5,30}$")
 
+# Rangos de "¿cuántos chats reciben al mes?" alineados con los paquetes de
+# conversaciones publicados en la landing (600 / 2.000 / 6.000).
+CHATS_MES_OPCIONES = ("menos_600", "600_2000", "2000_6000", "mas_6000", "no_se")
+
+
+def _limpiar_texto(v: str) -> str:
+    """Sin caracteres de control ni espacios de sobra."""
+    v = re.sub(r"[\x00-\x1f\x7f]", " ", v or "")
+    return re.sub(r"\s+", " ", v).strip()
+
 
 class LeadIn(BaseModel):
     """Solicitud de contacto del form de la landing ("Quiero que me contacten").
@@ -50,15 +60,35 @@ class LeadIn(BaseModel):
     email: EmailStr
     telefono: str = Field(..., min_length=6, max_length=32)
     source: str = Field(default="gloma_landing", max_length=64)
+    # 2026-09-27: calificación del prospecto y autorización de datos. Todos
+    # opcionales en el esquema porque la landing de Gorvek usa el mismo
+    # endpoint sin ellos; la autorización sí se exige a la de Gloma (abajo).
+    agencia: Optional[str] = Field(default=None, max_length=120)
+    chats_mes: Optional[str] = Field(default=None, max_length=16)
+    acepta_privacidad: bool = False
 
     @field_validator("nombre")
     @classmethod
     def _clean_nombre(cls, v: str) -> str:
-        # Sin caracteres de control ni espacios de sobra; el largo lo acota Field.
-        v = re.sub(r"[\x00-\x1f\x7f]", " ", v or "")
-        v = re.sub(r"\s+", " ", v).strip()
+        # El largo lo acota Field.
+        v = _limpiar_texto(v)
         if len(v) < 2:
             raise ValueError("Nombre inválido")
+        return v
+
+    @field_validator("agencia")
+    @classmethod
+    def _clean_agencia(cls, v: Optional[str]) -> Optional[str]:
+        v = _limpiar_texto(v or "")
+        return v or None
+
+    @field_validator("chats_mes")
+    @classmethod
+    def _check_chats_mes(cls, v: Optional[str]) -> Optional[str]:
+        if v in (None, ""):
+            return None
+        if v not in CHATS_MES_OPCIONES:
+            raise ValueError("Opción de chats al mes inválida")
         return v
 
     @field_validator("telefono")
@@ -73,6 +103,15 @@ class LeadIn(BaseModel):
     @classmethod
     def _strip_source(cls, v: str) -> str:
         return (v or "").strip() or "gloma_landing"
+
+    @model_validator(mode="after")
+    def _exige_autorizacion_en_gloma(self) -> "LeadIn":
+        # Ley 1581: sin autorización expresa no se guardan los datos. El
+        # checkbox del form es obligatorio, pero la regla vive aquí para que
+        # no dependa del navegador.
+        if self.source == "gloma_landing" and not self.acepta_privacidad:
+            raise ValueError("Debes aceptar la política de tratamiento de datos")
+        return self
 
 
 class LeadOut(BaseModel):
@@ -111,6 +150,9 @@ def create_lead(
         user_agent=ua,
         ip_address=ip,
         estado="pendiente",
+        agencia=payload.agencia,
+        chats_mes=payload.chats_mes,
+        acepto_privacidad_at=datetime.utcnow() if payload.acepta_privacidad else None,
     )
     db.add(lead)
     db.commit()
@@ -137,16 +179,16 @@ _RATE_GLOBAL_HOUR = 400      # techo global (protege el gasto de Bedrock)
 # resuelve invitando al canal humano real de Gloma (regla #3 del sprint).
 _HANDOFF_TEXT = (
     "Te dejo con nuestro equipo 🤍 Escríbenos por WhatsApp al "
-    "*+57 300 318 7871* o déjanos tus datos en el formulario de esta página y "
+    "*+57 315 076 4000* o déjanos tus datos en el formulario de esta página y "
     "un especialista te contacta hoy mismo ✨"
 )
 _LIMIT_TEXT = (
     "¡Qué buena conversación! 🤍 Para seguir con calma, sigamos por WhatsApp al "
-    "*+57 300 318 7871* o déjanos tus datos en el formulario de esta página."
+    "*+57 315 076 4000* o déjanos tus datos en el formulario de esta página."
 )
 _BUSY_TEXT = (
     "Estamos atendiendo muchas conversaciones en este momento 🙏 Escríbenos "
-    "por WhatsApp al *+57 300 318 7871* y te atendemos de una vez."
+    "por WhatsApp al *+57 315 076 4000* y te atendemos de una vez."
 )
 
 # Rate-limit en memoria del proceso. El backend corre como una sola task ECS;

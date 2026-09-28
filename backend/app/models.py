@@ -643,6 +643,13 @@ class Lead(Base):
     ip_address = Column(String(64), nullable=True)
     estado = Column(String(16), nullable=False, default="pendiente", index=True)
     notas = Column(String(500), nullable=True)
+    # 2026-09-27: el form de la landing califica al prospecto (agencia y
+    # volumen de chats, para llegar a la demo con el paquete calculado) y
+    # guarda cuándo aceptó la política de datos — la prueba de autorización
+    # que pide la Ley 1581. Nullable: la landing de Gorvek no los manda.
+    agencia = Column(String(120), nullable=True)
+    chats_mes = Column(String(16), nullable=True)
+    acepto_privacidad_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
     updated_at = Column(
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=True
