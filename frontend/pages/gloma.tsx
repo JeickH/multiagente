@@ -1329,8 +1329,8 @@ function PreciosSection() {
             Cuánto cuesta Gloma
           </h2>
           <p className="text-base md:text-lg" style={{ color: BRAND.textMuted }}>
-            Pagas la instalación una sola vez. Después, el agente funciona con un paquete de
-            conversaciones que recargas cuando se acaba, y las campañas se pagan por mensaje
+            La instalación es una inversión única. Después, el agente funciona con un paquete
+            de conversaciones que recargas cuando se acaba, y las campañas se cobran por mensaje
             enviado.
           </p>
 
@@ -1377,7 +1377,7 @@ function PreciosSection() {
           <Reveal>
             <div className="rounded-3xl p-6 md:p-10 grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-10 items-center" style={card}>
               <div>
-                <CobroHeader numero="01" titulo="Instalación" cuando="Pago único, al empezar" />
+                <CobroHeader numero="01" titulo="Instalación" cuando="Inversión única, al empezar" />
                 <p className="text-base leading-relaxed" style={{ color: BRAND.textMuted }}>
                   Configuramos el agente con tus destinos, tarifas y el tono de tu marca,
                   conectamos tu número de WhatsApp y lo probamos contigo antes de que hable con
@@ -1387,7 +1387,7 @@ function PreciosSection() {
               <div className="md:text-right">
                 <Precio valor={PRECIOS.instalacion[moneda]} moneda={moneda} />
                 <p className="text-sm mt-2" style={{ color: BRAND.textDim }}>
-                  Se paga una vez
+                  Una sola vez
                 </p>
               </div>
             </div>
@@ -1479,7 +1479,7 @@ function PreciosSection() {
                   <p className="text-base" style={{ color: BRAND.text }}>
                     Arrancas con{' '}
                     <strong style={{ color: BRAND.mint }}>{formatNumber(sobran)} conversaciones</strong>{' '}
-                    que no pagas de nuevo. Cuando se acaben, recargas.
+                    sin volver a invertir. Cuando se acaben, recargas.
                   </p>
                 </div>
               </div>
