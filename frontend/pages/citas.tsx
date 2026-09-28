@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Layout from '../components/Layout';
 import { authedFetch } from '../lib/api';
+import { etiquetaChatsMes } from '../lib/leads';
 
 /**
  * Citas — panel privado de la cuenta oficial de Gloma (Sprint 21 #283/#284).
@@ -48,6 +49,9 @@ type Solicitud = {
   telefono: string | null;
   notas: string | null;
   estado: string;
+  // Opcionales: solo los trae una solicitud del formulario de la landing.
+  agencia?: string | null;
+  chats_mes?: string | null;
 };
 
 type SolicitudesResponse = {
@@ -833,6 +837,13 @@ function SolicitudesPanel() {
                     </td>
                     <td className="px-4 py-3">
                       <div className="font-medium text-gloma-brown">{s.nombre || '—'}</div>
+                      {(s.agencia || s.chats_mes) && (
+                        <div className="text-xs text-gloma-brown">
+                          {[s.agencia, s.chats_mes && `${etiquetaChatsMes(s.chats_mes)} chats/mes`]
+                            .filter(Boolean)
+                            .join(' · ')}
+                        </div>
+                      )}
                       {s.notas && (
                         <div className="text-xs text-gloma-brown-light">{s.notas}</div>
                       )}

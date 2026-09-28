@@ -181,6 +181,9 @@ class SolicitudOut(BaseModel):
     telefono: Optional[str] = None
     notas: Optional[str] = None
     estado: str
+    agencia: Optional[str] = None
+    chats_mes: Optional[str] = None
+    acepto_privacidad_at: Optional[datetime] = None
 
     class Config:
         from_attributes = True

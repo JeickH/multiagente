@@ -3,6 +3,7 @@ import Image from 'next/image';
 import { useEffect, useRef, useState } from 'react';
 
 import GlomaChatWidget, { OPEN_CHAT_EVENT } from '../components/GlomaChatWidget';
+import { CHATS_MES_OPCIONES } from '../lib/leads';
 
 /**
  * Landing page de Gloma.
@@ -21,6 +22,8 @@ const BRAND = {
   forest: '#004D40',
   mint: '#4DB6AC',
   softMint: '#E0F2F1',
+  // Micro-acento del destello del logo: menos del 5 % de la página.
+  golden: '#F5C24B',
   mintSoft: 'rgba(77,182,172,0.12)',
   cardBg: 'rgba(255,255,255,0.03)',
   cardBorder: 'rgba(77,182,172,0.15)',
@@ -29,6 +32,61 @@ const BRAND = {
   textMuted: 'rgba(230,239,238,0.65)',
   textDim: 'rgba(230,239,238,0.45)',
 };
+
+// --- Íconos ---------------------------------------------------------------
+
+/**
+ * Íconos de línea (trazo mint) — el mismo lenguaje de las piezas de Instagram.
+ * Reemplazan los PNG `ld_*.png`, que eran ilustraciones con otro estilo.
+ */
+type IconoNombre =
+  | 'personaliza' | 'integraciones' | 'contexto' | 'escalamiento' | 'medicion'
+  | 'soporte' | 'mensajes' | 'retorno' | 'horas';
+
+const ICONOS: Record<IconoNombre, React.ReactNode> = {
+  personaliza: <path d="M12 3l1.9 4.6L18.5 9.5l-4.6 1.9L12 16l-1.9-4.6L5.5 9.5l4.6-1.9L12 3zM19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8L19 15z" />,
+  integraciones: <path d="M9 2v5M15 2v5M6 7h12v4a6 6 0 0 1-12 0V7zM12 17v5" />,
+  contexto: (
+    <>
+      <path d="M12 21s-7-6.2-7-11a7 7 0 0 1 14 0c0 4.8-7 11-7 11z" />
+      <circle cx="12" cy="10" r="2.5" />
+    </>
+  ),
+  escalamiento: (
+    <>
+      <circle cx="9" cy="8" r="3.5" />
+      <path d="M3 20v-1a5 5 0 0 1 5-5h2a5 5 0 0 1 5 5v1M16 4.5a3.5 3.5 0 0 1 0 7M21 20v-1a5 5 0 0 0-3-4.6" />
+    </>
+  ),
+  medicion: <path d="M3 3v18h18M8 17v-5M13 17V8M18 17v-8" />,
+  soporte: <path d="M4 15v-3a8 8 0 0 1 16 0v3M4 15h3v5H5a1 1 0 0 1-1-1v-4zM20 15h-3v5h2a1 1 0 0 0 1-1v-4z" />,
+  mensajes: <path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1.1-4.6A8 8 0 1 1 21 12zM8 11h8M8 14h5" />,
+  retorno: <path d="M3 17l6-6 4 4 8-8M15 7h6v6" />,
+  horas: (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 7v5l3.5 2" />
+    </>
+  ),
+};
+
+function Icono({ nombre, size = 26 }: { nombre: IconoNombre; size?: number }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke={BRAND.mint}
+      strokeWidth="1.6"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      {ICONOS[nombre]}
+    </svg>
+  );
+}
 
 // --- Datos -----------------------------------------------------------------
 const PREVIEW_SECTIONS = [
@@ -50,36 +108,109 @@ const PREVIEW_SECTIONS = [
     image: '/gloma/preview6.png',
     reverse: false,
   },
+  {
+    title: 'Un tablero que te muestra dónde se pierde cada venta',
+    text: 'Cada cliente recibe un dashboard analítico con el resultado de sus conversaciones: cuántas terminan en venta o en manos de tu equipo, cuántas se abandonan y en qué paso del embudo se va la gente. Con esos datos decidimos qué ajustar.',
+    image: '/gloma/preview_dashboard_demo.png',
+    reverse: true,
+    // Captura del reporte, más ancha que 4:3: se muestra completa para que
+    // no se corten las cifras de la derecha.
+    contain: true,
+  },
+];
+
+/**
+ * Preguntas frecuentes. Las respuestas salen de lo que el CEO definió el
+ * 2026-09-27 y del contexto del bot (`bot_contexts/gloma.md`): si cambia
+ * algo aquí, se cambia allá, o Lía y la página se contradicen.
+ */
+const FAQ = [
+  {
+    q: '¿Qué cuenta como una conversación?',
+    a: 'Un chat con un cliente dentro de una ventana de 24 horas. Si ese mismo cliente vuelve a escribir después de las 24 horas, cuenta como una conversación nueva.',
+  },
+  {
+    q: '¿Los precios incluyen el IVA y lo que cobra Meta?',
+    a: 'Sí. Los precios ya incluyen el IVA y el costo de WhatsApp que cobra Meta. No hay cobros adicionales por ninguno de los dos.',
+  },
+  {
+    q: '¿Tengo que pagar una mensualidad?',
+    a: 'No. Compras un paquete de conversaciones y lo recargas cuando se acaba. Si un mes no las usas todas, las que sobran pasan al mes siguiente.',
+  },
+  {
+    q: '¿El agente puede inventar precios o disponibilidad?',
+    a: 'No. Responde solo con la información que nos das (tarifarios, itinerarios, políticas) y tiene prohibido inventar precios, cupos o promociones. Si le falta un dato, pasa la conversación a tu equipo.',
+  },
+  {
+    q: '¿Qué pasa si el agente no sabe responder algo?',
+    a: 'Lo dice y pasa la conversación a una persona de tu equipo, con todo lo que el cliente ya preguntó, para que no tenga que repetirlo.',
+  },
+  {
+    q: '¿Cuánto tarda en estar listo?',
+    a: 'Depende de cuánta información tengamos de tu operación y de la conexión de tu número con Meta, que depende de tus accesos. Lo estimamos en la demo con tu caso. Una vez en marcha, los primeros 10 días son de ajuste.',
+  },
+  {
+    q: '¿Qué pasa con los datos de mis clientes?',
+    a: 'Viven en tu propia cuenta, aislada de las demás, en infraestructura de AWS. Las credenciales se guardan cifradas y las conversaciones no se usan para entrenar modelos de IA. El manejo se alinea con la Ley 1581 de protección de datos.',
+  },
+  {
+    q: '¿Puedo probarlo antes de contratar?',
+    a: 'Sí. Lía, la asistente de esta página, funciona con el mismo motor que tendría tu agente: escríbele como lo haría uno de tus clientes. Y antes de salir en vivo, pruebas tu propio agente en el simulador de la plataforma.',
+  },
+];
+
+/** Ruta de arranque de un cliente nuevo (definida por el CEO el 2026-09-27). */
+const PASOS_INICIO = [
+  {
+    titulo: 'Entrenamos a tu nuevo asesor',
+    texto: 'Recogemos cómo opera tu agencia: guiones, mensajes predefinidos y el proceso de venta que ya usan. Con eso entrenamos al agente para que sea un asesor más de tu equipo, con las mismas reglas y el tono de tu marca.',
+    etiqueta: null,
+  },
+  {
+    titulo: 'Activamos tu cuenta y tu WhatsApp',
+    texto: 'Activamos la cuenta y nuestro equipo instala tu WhatsApp, conectado al canal de comunicación que elija tu empresa.',
+    etiqueta: null,
+  },
+  {
+    titulo: 'Arranca la operación',
+    texto: 'El agente empieza a atender a tus clientes y durante los primeros 10 días ajustamos los detalles con las conversaciones que van llegando.',
+    etiqueta: '10 días de ajuste',
+  },
+  {
+    titulo: 'Soporte y mejora continua',
+    texto: 'Después de la instalación tienes soporte 24/7 y rondas constantes de mejora, a partir de los reportes de desempeño del agente.',
+    etiqueta: 'Soporte 24/7',
+  },
 ];
 
 const FEATURES = [
   {
-    icon: '/gloma/ld_personaliza.png',
+    icon: 'personaliza' as IconoNombre,
     title: 'Personalizado al ADN de tu marca',
     text: 'Configuramos el tono, las respuestas y los flujos para que cada mensaje sea indistinguible del de tu equipo.',
   },
   {
-    icon: '/gloma/ld_inegraciones.png',
+    icon: 'integraciones' as IconoNombre,
     title: 'Integraciones fluidas',
     text: 'Se alimenta de tus tarifarios, itinerarios y políticas para cotizar con datos correctos, nunca inventados.',
   },
   {
-    icon: '/gloma/ld_contexto.png',
+    icon: 'contexto' as IconoNombre,
     title: 'Conoce tus destinos antes del primer mensaje',
     text: 'Sabe qué destinos vendes, a qué precio y con qué condiciones desde el primer día.',
   },
   {
-    icon: '/gloma/ld_escalamiento.png',
+    icon: 'escalamiento' as IconoNombre,
     title: 'Escalamiento a agentes humanos',
     text: 'Cuando la conversación lo requiere, la derivamos a tu equipo con todo el contexto listo.',
   },
   {
-    icon: '/gloma/ld_medicion.png',
+    icon: 'medicion' as IconoNombre,
     title: 'Medición y mejora continua',
     text: 'Tableros claros de conversiones, tiempos y satisfacción para seguir afinando la operación.',
   },
   {
-    icon: '/gloma/ld_soporte.png',
+    icon: 'soporte' as IconoNombre,
     title: 'Equipo de soporte dedicado',
     text: 'Un equipo disponible para atender requerimientos, ajustes de flujos y nuevos casos de uso.',
   },
@@ -87,21 +218,21 @@ const FEATURES = [
 
 const STATS = [
   {
-    icon: '/gloma/ld_mensajes_enviados.png',
+    icon: 'mensajes' as IconoNombre,
     value: 150000,
     prefix: '+',
     suffix: '',
     label: 'mensajes de viajeros gestionados',
   },
   {
-    icon: '/gloma/ld_4meses.png',
+    icon: 'retorno' as IconoNombre,
     value: 4,
     prefix: '',
     suffix: ' meses',
     label: 'de retorno de inversión promedio',
   },
   {
-    icon: '/gloma/ld_horasai.png',
+    icon: 'horas' as IconoNombre,
     value: 10000,
     prefix: '+',
     suffix: '',
@@ -109,8 +240,40 @@ const STATS = [
   },
 ];
 
+/**
+ * Precios públicos (definidos por el CEO el 2026-09-27). Son tres cobros:
+ * instalación única, paquetes de conversaciones prepagados que se acumulan
+ * mes a mes, y campañas masivas por mensaje enviado. El contexto del bot
+ * (`backend/app/bot_contexts/gloma.md`) repite estas cifras: si cambian aquí,
+ * cambian allá.
+ */
+type Moneda = 'COP' | 'USD';
+
+const PRECIOS = {
+  instalacion: { COP: 2_000_000, USD: 625 },
+  paquetes: [
+    { conversaciones: 600, COP: 640_000, USD: 205 },
+    { conversaciones: 2_000, COP: 2_090_000, USD: 670 },
+    { conversaciones: 6_000, COP: 6_000_000, USD: 1_920 },
+  ],
+  mensajeCampana: { COP: 75, USD: 0.025 },
+};
+
+/** Ejemplos de los gráficos. Son ilustrativos y así se rotulan en la página. */
+const EJEMPLO_CAMPANA = { enviados: 1_000, responden: 120 };
+const EJEMPLO_ACUMULADO = { paquete: 600, usadas: 450 };
+
 const WHATSAPP_URL =
-  'https://wa.me/573003187871?text=Hola%20Gloma%2C%20tengo%20una%20agencia%20de%20viajes%20y%20quiero%20ver%20una%20demo';
+  'https://wa.me/573150764000?text=Hola%20Gloma%2C%20tengo%20una%20agencia%20de%20viajes%20y%20quiero%20ver%20una%20demo';
+
+const INSTAGRAM_URL = 'https://www.instagram.com/gloma_app/';
+
+/** Imagen y URL canónica para la vista previa al compartir el enlace. */
+const SITE_URL = 'https://glomacx.com';
+const OG_IMAGE = `${SITE_URL}/gloma/og_gloma.png`;
+const SITE_TITLE = 'Gloma — IA que vende viajes por WhatsApp';
+const SITE_DESCRIPTION =
+  'Un asesor con IA que cotiza con tus tarifas, responde por WhatsApp a cualquier hora y le pasa a tu equipo los clientes listos para cerrar.';
 
 /** La plataforma vive en su propio subdominio (#303). */
 const APP_URL = 'https://app.glomacx.com';
@@ -139,14 +302,18 @@ function abrirChatDelBot(mensaje?: string) {
   );
 }
 
+/** Textos de los dos llamados a la acción, iguales en toda la página. */
+const CTA_DEMO = 'Agenda una demo';
+const CTA_LIA = 'Habla con Lía ahora';
+
 /** Lo que "escribe" el visitante al pulsar "Agenda una demo" (#302). */
 const MENSAJE_AGENDAR_DEMO =
   'Quiero agendar una demostración. ¿Qué horarios tienen disponibles?';
 
-function smoothScrollToContacto(e: React.MouseEvent<HTMLAnchorElement>) {
+function smoothScrollTo(e: React.MouseEvent<HTMLAnchorElement>, id: string) {
   e.preventDefault();
   if (typeof window === 'undefined') return;
-  const el = document.getElementById('contacto');
+  const el = document.getElementById(id);
   if (!el) return;
   const startY = window.scrollY;
   const targetY = el.getBoundingClientRect().top + startY - 40;
@@ -388,6 +555,13 @@ function InteractiveHeader() {
           />
         </div>
         <div className="hidden md:flex items-center gap-3">
+          <a
+            href="#precios"
+            onClick={(e) => smoothScrollTo(e, 'precios')}
+            className="px-4 py-2 text-sm font-medium text-white/85 hover:text-white transition-colors"
+          >
+            Precios
+          </a>
           {/* #302: en vez de bajar al formulario, le pide la demo al agente —
               que responde con las franjas disponibles y la registra. */}
           <button
@@ -396,7 +570,7 @@ function InteractiveHeader() {
             className="px-5 py-2 rounded-full text-sm font-medium transition-opacity hover:opacity-90"
             style={{ backgroundColor: BRAND.mint, color: BRAND.bgBase }}
           >
-            Agenda una demo
+            {CTA_DEMO}
           </button>
           {/* #303: acceso de clientes actuales. La plataforma vive en otro
               subdominio — bajo el apex, `/login` cae en el 404 brandeado del
@@ -408,6 +582,14 @@ function InteractiveHeader() {
             Entrar a la app
           </a>
         </div>
+        {/* En móvil el CTA de demo va en la barra fija de abajo; aquí solo
+            queda el acceso de clientes. */}
+        <a
+          href={`${APP_URL}/login`}
+          className="md:hidden px-4 py-2 rounded-full text-xs font-medium border border-white/70 text-white"
+        >
+          Entrar a la app
+        </a>
       </nav>
 
       {/* Contenido principal (título + subtítulo + CTAs) */}
@@ -415,8 +597,24 @@ function InteractiveHeader() {
         ref={heroRef}
         className="relative z-10 max-w-6xl mx-auto px-6 md:px-10 py-24 md:py-36"
       >
+        <p
+          className="flex items-center gap-2 text-sm md:text-base font-medium mb-5"
+          style={{
+            color: BRAND.softMint,
+            fontFamily: 'Inter, system-ui, sans-serif',
+            opacity: inView ? 1 : 0,
+            transition: 'opacity 900ms ease',
+          }}
+        >
+          <span
+            aria-hidden="true"
+            className="inline-block w-2 h-2 rounded-full"
+            style={{ backgroundColor: BRAND.golden }}
+          />
+          Cada viaje empieza con una conversación
+        </p>
         <h1
-          className="text-white text-4xl md:text-6xl lg:text-7xl leading-tight max-w-3xl"
+          className="text-white text-4xl md:text-6xl leading-tight max-w-3xl"
           style={{
             fontFamily: 'Syne, system-ui, sans-serif',
             fontWeight: 800,
@@ -425,7 +623,8 @@ function InteractiveHeader() {
             transition: 'opacity 900ms ease, transform 900ms cubic-bezier(.22,.61,.36,1)',
           }}
         >
-          Tecnología que resalta tu catálogo
+          Tu agencia vende viajes por WhatsApp,{' '}
+          <span className="whitespace-nowrap" style={{ color: BRAND.mint }}>las 24 horas</span>
         </h1>
         <p
           className="text-white/90 mt-6 text-base md:text-xl max-w-xl font-light"
@@ -436,7 +635,8 @@ function InteractiveHeader() {
             transition: 'opacity 900ms ease 150ms, transform 900ms cubic-bezier(.22,.61,.36,1) 150ms',
           }}
         >
-          La forma elegante de automatizar ventas sin perder el trato humano.
+          Un asesor con IA que cotiza con tus tarifas, responde a cualquier hora y le pasa a
+          tu equipo los clientes listos para cerrar.
         </p>
         <div
           className="mt-10 flex flex-col sm:flex-row gap-3"
@@ -446,23 +646,24 @@ function InteractiveHeader() {
             transition: 'opacity 900ms ease 300ms, transform 900ms cubic-bezier(.22,.61,.36,1) 300ms',
           }}
         >
-          {/* #302: el CTA principal del hero conversa con el agente en la
-              misma página en vez de mandar a wa.me. */}
+          {/* CTAs unificados en toda la página: el principal siempre es
+              "Agenda una demo" (#302: se lo pide al agente, que ofrece las
+              franjas) y el secundario, conversar con Lía aquí mismo. */}
           <button
             type="button"
-            onClick={() => abrirChatDelBot()}
+            onClick={() => abrirChatDelBot(MENSAJE_AGENDAR_DEMO)}
             className="inline-block px-6 py-3 rounded-full text-sm font-semibold text-center transition-opacity hover:opacity-90"
             style={{ backgroundColor: BRAND.mint, color: BRAND.bgBase }}
           >
-            Pruébalo ahora
+            {CTA_DEMO}
           </button>
-          <a
-            href="#contacto"
-            onClick={smoothScrollToContacto}
+          <button
+            type="button"
+            onClick={() => abrirChatDelBot()}
             className="inline-block px-6 py-3 rounded-full text-sm font-semibold text-center border-2 border-white/80 text-white hover:bg-white/10 transition-colors"
           >
-            Que te contactemos
-          </a>
+            {CTA_LIA}
+          </button>
         </div>
       </div>
     </header>
@@ -472,7 +673,23 @@ function InteractiveHeader() {
 type FormStatus = 'idle' | 'sending' | 'ok' | 'error';
 
 /** Datos del form "Quiero que me contacten" (#299). */
-type ContactFormValues = { nombre: string; email: string; telefono: string };
+type ContactFormValues = {
+  nombre: string;
+  email: string;
+  telefono: string;
+  agencia: string;
+  chats_mes: string;
+  acepta_privacidad: boolean;
+};
+
+const FORM_VACIO: ContactFormValues = {
+  nombre: '',
+  email: '',
+  telefono: '',
+  agencia: '',
+  chats_mes: '',
+  acepta_privacidad: false,
+};
 
 function ContactForm({
   form,
@@ -595,7 +812,7 @@ function ContactForm({
             onChange={(e) => setForm({ ...form, telefono: e.target.value })}
             placeholder="+57 300 000 0000"
             disabled={isSending}
-            className="gloma-input w-full px-4 py-3 border rounded-xl text-sm mb-6 focus:outline-none transition-colors disabled:opacity-60"
+            className="gloma-input w-full px-4 py-3 border rounded-xl text-sm mb-5 focus:outline-none transition-colors disabled:opacity-60"
             style={{
               backgroundColor: 'rgba(255,255,255,0.02)',
               borderColor: BRAND.cardBorder,
@@ -603,6 +820,78 @@ function ContactForm({
               fontFamily: 'Inter, system-ui, sans-serif',
             }}
           />
+          {/* Calificación: con la agencia y el volumen de chats se llega a la
+              demo con el paquete ya calculado. */}
+          <label className="block text-sm font-medium mb-2" style={{ color: BRAND.textMuted }}>
+            Agencia
+          </label>
+          <input
+            type="text"
+            required
+            maxLength={120}
+            value={form.agencia}
+            onChange={(e) => setForm({ ...form, agencia: e.target.value })}
+            placeholder="Nombre de tu agencia"
+            disabled={isSending}
+            className="gloma-input w-full px-4 py-3 border rounded-xl text-sm mb-5 focus:outline-none transition-colors disabled:opacity-60"
+            style={{
+              backgroundColor: 'rgba(255,255,255,0.02)',
+              borderColor: BRAND.cardBorder,
+              color: BRAND.text,
+              fontFamily: 'Inter, system-ui, sans-serif',
+            }}
+          />
+          <label className="block text-sm font-medium mb-2" style={{ color: BRAND.textMuted }}>
+            ¿Cuántos chats reciben al mes?
+          </label>
+          <select
+            required
+            value={form.chats_mes}
+            onChange={(e) => setForm({ ...form, chats_mes: e.target.value })}
+            disabled={isSending}
+            className="gloma-input w-full px-4 py-3 border rounded-xl text-sm mb-6 focus:outline-none transition-colors disabled:opacity-60"
+            style={{
+              backgroundColor: BRAND.bgAlt,
+              borderColor: BRAND.cardBorder,
+              color: form.chats_mes ? BRAND.text : 'rgba(230,239,238,0.35)',
+              fontFamily: 'Inter, system-ui, sans-serif',
+            }}
+          >
+            <option value="" disabled>
+              Elige un rango
+            </option>
+            {CHATS_MES_OPCIONES.map((o) => (
+              <option key={o.value} value={o.value} style={{ color: BRAND.text }}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+          {/* Autorización de tratamiento de datos (Ley 1581): obligatoria. El
+              backend la vuelve a exigir y guarda cuándo se dio. */}
+          <label className="flex items-start gap-3 text-xs leading-relaxed mb-6 cursor-pointer" style={{ color: BRAND.textMuted }}>
+            <input
+              type="checkbox"
+              required
+              checked={form.acepta_privacidad}
+              onChange={(e) => setForm({ ...form, acepta_privacidad: e.target.checked })}
+              disabled={isSending}
+              className="mt-0.5 w-4 h-4 shrink-0"
+              style={{ accentColor: BRAND.mint }}
+            />
+            <span>
+              Autorizo a Gloma a tratar mis datos para contactarme, según la{' '}
+              <a
+                href="/privacidad"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline"
+                style={{ color: BRAND.mint }}
+              >
+                política de tratamiento de datos
+              </a>
+              .
+            </span>
+          </label>
           <button
             type="submit"
             disabled={isSending}
@@ -730,16 +1019,10 @@ function StatsSection() {
                   border: `1px solid ${BRAND.cardBorderHover}`,
                 }}
               >
-                <Image
-                  src={s.icon}
-                  alt=""
-                  width={80}
-                  height={80}
-                  className="object-contain"
-                />
+                <Icono nombre={s.icon} size={34} />
               </div>
               <div
-                className="text-4xl md:text-5xl mb-2 tabular-nums"
+                className="text-4xl lg:text-[2.6rem] mb-2 tabular-nums whitespace-nowrap"
                 style={{
                   fontFamily: 'Syne, system-ui, sans-serif',
                   fontWeight: 800,
@@ -768,14 +1051,551 @@ function StatsSection() {
   );
 }
 
+// --- Cómo empezar ---------------------------------------------------------
+
+/** Texto secundario sobre Soft Mint: Technical Black al 72 % (contraste AA). */
+const TEXTO_CLARO_MUTED = 'rgba(16,24,23,0.72)';
+
+/**
+ * Ruta de 4 pasos: horizontal en escritorio (una línea une los nodos) y
+ * vertical en móvil (la línea baja por la izquierda).
+ */
+function ComoEmpezarSection() {
+  return (
+    <section
+      id="como-empezar"
+      aria-labelledby="como-empezar-titulo"
+      className="py-20 md:py-28"
+      style={{ backgroundColor: BRAND.softMint, fontFamily: 'Inter, system-ui, sans-serif' }}
+    >
+      <div className="max-w-6xl mx-auto px-6 md:px-10">
+        <Reveal className="text-center max-w-2xl mx-auto mb-14 md:mb-20">
+          <p
+            className="text-sm font-semibold tracking-wide uppercase mb-4"
+            style={{ color: BRAND.forest }}
+          >
+            Cómo empezar
+          </p>
+          <h2
+            id="como-empezar-titulo"
+            className="text-3xl md:text-5xl leading-tight mb-5"
+            style={{ fontFamily: 'Syne, system-ui, sans-serif', fontWeight: 700, color: BRAND.bgBase }}
+          >
+            ¿Cómo empiezas a usar Gloma?
+          </h2>
+          <p className="text-base md:text-lg" style={{ color: TEXTO_CLARO_MUTED }}>
+            Tu equipo nos cuenta cómo vende. Del resto nos encargamos nosotros.
+          </p>
+        </Reveal>
+
+        <ol className="relative grid grid-cols-1 md:grid-cols-4 gap-10 md:gap-6">
+          {/* Línea de la ruta: vertical en móvil, horizontal en escritorio */}
+          <div
+            aria-hidden="true"
+            className="absolute left-6 top-6 bottom-6 w-px md:hidden"
+            style={{ background: `linear-gradient(${BRAND.forest}, rgba(0,77,64,0.2))` }}
+          />
+          <div
+            aria-hidden="true"
+            className="hidden md:block absolute top-6 left-[12.5%] right-[12.5%] h-px"
+            style={{ background: `linear-gradient(90deg, ${BRAND.forest}, rgba(0,77,64,0.2))` }}
+          />
+          {PASOS_INICIO.map((paso, i) => (
+            <li key={paso.titulo} className="relative">
+              <Reveal delay={i * 120} className="flex md:flex-col md:items-center gap-5 md:gap-0 md:text-center">
+                <span
+                  className="relative z-10 w-12 h-12 shrink-0 rounded-full flex items-center justify-center text-base tabular-nums md:mb-6"
+                  style={{
+                    fontFamily: 'Inter, system-ui, sans-serif',
+                    fontWeight: 700,
+                    color: '#FFFFFF',
+                    backgroundColor: BRAND.forest,
+                    boxShadow: `0 0 0 6px ${BRAND.softMint}`,
+                  }}
+                >
+                  {String(i + 1).padStart(2, '0')}
+                </span>
+                <div>
+                  <h3
+                    className="text-lg md:text-xl mb-2 leading-snug"
+                    style={{ fontFamily: 'Syne, system-ui, sans-serif', fontWeight: 700, color: BRAND.bgBase }}
+                  >
+                    {paso.titulo}
+                  </h3>
+                  <p className="text-sm leading-relaxed" style={{ color: TEXTO_CLARO_MUTED }}>
+                    {paso.texto}
+                  </p>
+                  {paso.etiqueta && (
+                    <span
+                      className="inline-block mt-4 px-3 py-1 rounded-full text-xs font-semibold"
+                      style={{ backgroundColor: 'rgba(0,77,64,0.08)', color: BRAND.forest, border: '1px solid rgba(0,77,64,0.2)' }}
+                    >
+                      {paso.etiqueta}
+                    </span>
+                  )}
+                </div>
+              </Reveal>
+            </li>
+          ))}
+        </ol>
+      </div>
+    </section>
+  );
+}
+
+// --- Preguntas frecuentes ---------------------------------------------------
+
+function FaqSection() {
+  return (
+    <section
+      id="preguntas"
+      aria-labelledby="preguntas-titulo"
+      className="py-20 md:py-28"
+      style={{ backgroundColor: BRAND.bgBase, fontFamily: 'Inter, system-ui, sans-serif' }}
+    >
+      <style jsx global>{`
+        .gloma-faq summary::-webkit-details-marker {
+          display: none;
+        }
+        .gloma-faq[open] .gloma-faq-signo {
+          transform: rotate(45deg);
+        }
+      `}</style>
+      <div className="max-w-3xl mx-auto px-6 md:px-10">
+        <Reveal className="text-center mb-10 md:mb-14">
+          <h2
+            id="preguntas-titulo"
+            className="text-3xl md:text-5xl leading-tight"
+            style={{ fontFamily: 'Syne, system-ui, sans-serif', fontWeight: 700, color: BRAND.text }}
+          >
+            Preguntas frecuentes
+          </h2>
+        </Reveal>
+        <div className="space-y-3">
+          {FAQ.map((f) => (
+            <details
+              key={f.q}
+              className="gloma-faq rounded-2xl px-5 md:px-6"
+              style={{ backgroundColor: BRAND.cardBg, border: `1px solid ${BRAND.cardBorder}` }}
+            >
+              <summary className="flex items-center justify-between gap-4 py-5 cursor-pointer list-none">
+                <span className="text-base md:text-lg font-medium" style={{ color: BRAND.text }}>
+                  {f.q}
+                </span>
+                <span
+                  aria-hidden="true"
+                  className="gloma-faq-signo text-2xl leading-none transition-transform"
+                  style={{ color: BRAND.mint }}
+                >
+                  +
+                </span>
+              </summary>
+              <p className="pb-5 -mt-1 text-sm md:text-base leading-relaxed" style={{ color: BRAND.textMuted }}>
+                {f.a}
+              </p>
+            </details>
+          ))}
+        </div>
+        <Reveal className="text-center mt-10">
+          <p className="text-base mb-4" style={{ color: BRAND.textMuted }}>
+            ¿Tienes otra pregunta? Lía te responde ahora mismo.
+          </p>
+          <button
+            type="button"
+            onClick={() => abrirChatDelBot()}
+            className="px-6 py-3 rounded-full text-sm font-semibold border-2 border-white/80 text-white hover:bg-white/10 transition-colors"
+          >
+            {CTA_LIA}
+          </button>
+        </Reveal>
+      </div>
+    </section>
+  );
+}
+
+// --- Precios ---------------------------------------------------------------
+
+/** `$2.000.000` / `$0,025`: separadores de Colombia en las dos monedas. */
+function formatMonto(valor: number, decimales = 0): string {
+  return (
+    '$' +
+    new Intl.NumberFormat('es-CO', {
+      minimumFractionDigits: decimales,
+      maximumFractionDigits: decimales,
+    }).format(valor)
+  );
+}
+
+/** Precio grande en Syne con la moneda en pequeño al lado. */
+function Precio({
+  valor,
+  moneda,
+  decimales = 0,
+  size = 'text-[2rem] sm:text-4xl md:text-5xl',
+  apilado = false,
+}: {
+  valor: number;
+  moneda: Moneda;
+  decimales?: number;
+  size?: string;
+  /** Moneda siempre debajo: para que tarjetas vecinas queden parejas. */
+  apilado?: boolean;
+}) {
+  return (
+    <span
+      className={`${apilado ? 'flex flex-col' : 'inline-flex flex-wrap items-baseline gap-x-2'} tabular-nums`}
+    >
+      <span
+        className={size}
+        style={{ fontFamily: 'Syne, system-ui, sans-serif', fontWeight: 800, color: BRAND.text }}
+      >
+        {formatMonto(valor, decimales)}
+      </span>
+      <span className="text-sm font-semibold" style={{ color: BRAND.mint }}>
+        {moneda}
+      </span>
+    </span>
+  );
+}
+
+/** Encabezado de cada uno de los tres cobros: número, nombre y cuándo se paga. */
+function CobroHeader({ numero, titulo, cuando }: { numero: string; titulo: string; cuando: string }) {
+  return (
+    <div className="flex items-center gap-4 mb-6">
+      <span
+        className="w-12 h-12 shrink-0 rounded-full flex items-center justify-center text-base tabular-nums"
+        style={{
+          fontFamily: 'Inter, system-ui, sans-serif',
+          fontWeight: 700,
+          color: BRAND.bgBase,
+          backgroundColor: BRAND.mint,
+        }}
+      >
+        {numero}
+      </span>
+      <div>
+        <h3
+          className="text-xl md:text-2xl leading-tight"
+          style={{ fontFamily: 'Syne, system-ui, sans-serif', fontWeight: 700, color: BRAND.text }}
+        >
+          {titulo}
+        </h3>
+        <p className="text-sm" style={{ color: BRAND.textMuted }}>
+          {cuando}
+        </p>
+      </div>
+    </div>
+  );
+}
+
+/** Flecha entre nodos de los diagramas: hacia abajo en móvil, a la derecha en escritorio. */
+function Flecha() {
+  return (
+    <div className="flex items-center justify-center py-1 md:py-0 md:px-1" aria-hidden="true">
+      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" className="rotate-90 md:rotate-0">
+        <path
+          d="M4 12h15m-5-5 5 5-5 5"
+          stroke={BRAND.mint}
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </svg>
+    </div>
+  );
+}
+
+function PreciosSection() {
+  const [moneda, setMoneda] = useState<Moneda>('COP');
+  const usd = moneda === 'USD';
+
+  const { enviados, responden } = EJEMPLO_CAMPANA;
+  const costoEnvio = enviados * PRECIOS.mensajeCampana[moneda];
+  const sobran = EJEMPLO_ACUMULADO.paquete - EJEMPLO_ACUMULADO.usadas;
+  const pctUsadas = (EJEMPLO_ACUMULADO.usadas / EJEMPLO_ACUMULADO.paquete) * 100;
+
+  const card: React.CSSProperties = {
+    backgroundColor: BRAND.cardBg,
+    border: `1px solid ${BRAND.cardBorder}`,
+  };
+  const nodo: React.CSSProperties = {
+    backgroundColor: 'rgba(255,255,255,0.03)',
+    border: `1px solid ${BRAND.cardBorder}`,
+  };
+
+  return (
+    <section
+      id="precios"
+      aria-labelledby="precios-titulo"
+      className="py-20 md:py-28 relative overflow-hidden"
+      style={{ backgroundColor: BRAND.bgAlt, fontFamily: 'Inter, system-ui, sans-serif' }}
+    >
+      <div className="relative max-w-6xl mx-auto px-6 md:px-10">
+        <Reveal className="text-center max-w-3xl mx-auto mb-10 md:mb-14">
+          <p
+            className="text-sm font-semibold tracking-wide uppercase mb-4"
+            style={{ color: BRAND.mint }}
+          >
+            Precios
+          </p>
+          <h2
+            id="precios-titulo"
+            className="text-3xl md:text-5xl leading-tight mb-5"
+            style={{ fontFamily: 'Syne, system-ui, sans-serif', fontWeight: 700, color: BRAND.text }}
+          >
+            Cuánto cuesta Gloma
+          </h2>
+          <p className="text-base md:text-lg" style={{ color: BRAND.textMuted }}>
+            Pagas la instalación una sola vez. Después, el agente funciona con un paquete de
+            conversaciones que recargas cuando se acaba, y las campañas se pagan por mensaje
+            enviado.
+          </p>
+
+          <ul className="flex flex-wrap justify-center gap-2 mt-6" aria-label="Lo que incluyen los precios">
+            {['IVA incluido', 'Costo de Meta incluido', 'Sin mensualidad'].map((t) => (
+              <li
+                key={t}
+                className="px-3 py-1 rounded-full text-xs font-semibold"
+                style={{ backgroundColor: BRAND.mintSoft, color: BRAND.mint, border: `1px solid ${BRAND.cardBorder}` }}
+              >
+                ✓ {t}
+              </li>
+            ))}
+          </ul>
+
+          {/* Selector de moneda */}
+          <div
+            role="group"
+            aria-label="Moneda de los precios"
+            className="inline-flex mt-8 p-1 rounded-full"
+            style={{ border: `1px solid ${BRAND.cardBorder}`, backgroundColor: BRAND.cardBg }}
+          >
+            {(['COP', 'USD'] as Moneda[]).map((m) => (
+              <button
+                key={m}
+                type="button"
+                aria-pressed={moneda === m}
+                onClick={() => setMoneda(m)}
+                className="px-5 py-2 rounded-full text-sm font-semibold transition-colors"
+                style={
+                  moneda === m
+                    ? { backgroundColor: BRAND.mint, color: BRAND.bgBase }
+                    : { color: BRAND.textMuted }
+                }
+              >
+                {m === 'COP' ? 'Pesos (COP)' : 'Dólares (USD)'}
+              </button>
+            ))}
+          </div>
+        </Reveal>
+
+        <div className="space-y-8">
+          {/* ===== 01 · Instalación ===== */}
+          <Reveal>
+            <div className="rounded-3xl p-6 md:p-10 grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-10 items-center" style={card}>
+              <div>
+                <CobroHeader numero="01" titulo="Instalación" cuando="Pago único, al empezar" />
+                <p className="text-base leading-relaxed" style={{ color: BRAND.textMuted }}>
+                  Configuramos el agente con tus destinos, tarifas y el tono de tu marca,
+                  conectamos tu número de WhatsApp y lo probamos contigo antes de que hable con
+                  el primer cliente.
+                </p>
+              </div>
+              <div className="md:text-right">
+                <Precio valor={PRECIOS.instalacion[moneda]} moneda={moneda} />
+                <p className="text-sm mt-2" style={{ color: BRAND.textDim }}>
+                  Se paga una vez
+                </p>
+              </div>
+            </div>
+          </Reveal>
+
+          {/* ===== 02 · Paquetes de conversaciones ===== */}
+          <Reveal>
+            <div className="rounded-3xl p-6 md:p-10" style={card}>
+              <CobroHeader
+                numero="02"
+                titulo="Agente de servicio al cliente y ventas"
+                cuando="Funciona con paquetes de conversaciones que recargas"
+              />
+              <p className="text-sm mb-6 -mt-2" style={{ color: BRAND.textMuted }}>
+                <strong style={{ color: BRAND.text }}>Una conversación</strong> es un chat con un
+                cliente dentro de una ventana de 24 horas. Compras un paquete y lo recargas cuando
+                se acaba: no es una mensualidad.
+              </p>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6">
+                {PRECIOS.paquetes.map((p) => {
+                  const porConversacion = p[moneda] / p.conversaciones;
+                  return (
+                    <div
+                      key={p.conversaciones}
+                      className="gloma-card rounded-2xl p-6 transition-all"
+                      style={nodo}
+                    >
+                      <p
+                        className="text-3xl md:text-4xl tabular-nums"
+                        style={{ fontFamily: 'Syne, system-ui, sans-serif', fontWeight: 800, color: BRAND.mint }}
+                      >
+                        {formatNumber(p.conversaciones)}
+                      </p>
+                      <p className="text-sm mb-5" style={{ color: BRAND.textMuted }}>
+                        conversaciones
+                      </p>
+                      <Precio valor={p[moneda]} moneda={moneda} size="text-2xl lg:text-[1.7rem]" apilado />
+                      <p className="text-xs mt-3" style={{ color: BRAND.textDim }}>
+                        {formatMonto(porConversacion, usd ? 3 : 0)} {moneda} por conversación
+                      </p>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Gráfico: lo que no se usa pasa al mes siguiente */}
+              <div className="mt-8 grid grid-cols-1 md:grid-cols-[1fr_auto_1fr] gap-2 md:gap-4 items-stretch">
+                <div className="rounded-2xl p-5" style={nodo}>
+                  <p className="text-xs font-semibold uppercase tracking-wide mb-3" style={{ color: BRAND.textDim }}>
+                    Mes 1 · paquete de {formatNumber(EJEMPLO_ACUMULADO.paquete)}
+                  </p>
+                  <div
+                    className="h-4 rounded-full overflow-hidden flex"
+                    style={{ backgroundColor: BRAND.mintSoft }}
+                    role="img"
+                    aria-label={`Se usan ${EJEMPLO_ACUMULADO.usadas} de ${EJEMPLO_ACUMULADO.paquete} conversaciones y sobran ${sobran}`}
+                  >
+                    <div style={{ width: `${pctUsadas}%`, backgroundColor: 'rgba(230,239,238,0.25)' }} />
+                    <div style={{ width: `${100 - pctUsadas}%`, backgroundColor: BRAND.mint }} />
+                  </div>
+                  <div className="flex justify-between text-xs mt-2" style={{ color: BRAND.textMuted }}>
+                    <span>{formatNumber(EJEMPLO_ACUMULADO.usadas)} usadas</span>
+                    <span style={{ color: BRAND.mint }}>{formatNumber(sobran)} sin usar</span>
+                  </div>
+                </div>
+                <Flecha />
+                <div className="rounded-2xl p-5" style={{ ...nodo, borderColor: BRAND.cardBorderHover }}>
+                  <p className="text-xs font-semibold uppercase tracking-wide mb-3" style={{ color: BRAND.textDim }}>
+                    Mes 2
+                  </p>
+                  <p className="text-base" style={{ color: BRAND.text }}>
+                    Arrancas con{' '}
+                    <strong style={{ color: BRAND.mint }}>{formatNumber(sobran)} conversaciones</strong>{' '}
+                    que no pagas de nuevo. Cuando se acaben, recargas.
+                  </p>
+                </div>
+              </div>
+              <p className="text-xs mt-3" style={{ color: BRAND.textDim }}>
+                Ejemplo ilustrativo. Las conversaciones que no usas no se pierden: se acumulan
+                para el mes siguiente.
+              </p>
+            </div>
+          </Reveal>
+
+          {/* ===== 03 · Campañas masivas ===== */}
+          <Reveal>
+            <div className="rounded-3xl p-6 md:p-10" style={card}>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-10 items-center mb-8">
+                <div>
+                  <CobroHeader
+                    numero="03"
+                    titulo="Campañas masivas por WhatsApp"
+                    cuando="Solo cuando envías una campaña"
+                  />
+                  <p className="text-base leading-relaxed" style={{ color: BRAND.textMuted }}>
+                    El cobro es por el primer mensaje, el del envío masivo. Si el cliente te
+                    responde, desde ahí es una conversación del agente y se descuenta de tu
+                    paquete.
+                  </p>
+                </div>
+                <div className="md:text-right">
+                  <Precio
+                    valor={PRECIOS.mensajeCampana[moneda]}
+                    moneda={moneda}
+                    decimales={usd ? 3 : 0}
+                  />
+                  <p className="text-sm mt-2" style={{ color: BRAND.textDim }}>
+                    por mensaje enviado
+                  </p>
+                </div>
+              </div>
+
+              {/* Diagrama: envío → responde / no responde */}
+              <p className="text-xs font-semibold uppercase tracking-wide mb-3" style={{ color: BRAND.textDim }}>
+                Ejemplo: una campaña a {formatNumber(enviados)} contactos
+              </p>
+              <div className="grid grid-cols-1 md:grid-cols-[1fr_auto_1.15fr] gap-2 md:gap-4 items-center">
+                <div className="rounded-2xl p-5 h-full flex flex-col justify-center" style={nodo}>
+                  <p className="text-sm mb-2" style={{ color: BRAND.textMuted }}>
+                    Envías {formatNumber(enviados)} mensajes
+                  </p>
+                  <p className="text-sm tabular-nums" style={{ color: BRAND.textDim }}>
+                    {formatNumber(enviados)} × {formatMonto(PRECIOS.mensajeCampana[moneda], usd ? 3 : 0)}
+                  </p>
+                  <Precio valor={costoEnvio} moneda={moneda} size="text-2xl md:text-3xl" />
+                  <p className="text-xs mt-1" style={{ color: BRAND.mint }}>
+                    Cobro de la campaña
+                  </p>
+                </div>
+                <Flecha />
+                <div className="space-y-3">
+                  <div
+                    className="rounded-2xl p-5"
+                    style={{ ...nodo, borderColor: BRAND.cardBorderHover, backgroundColor: BRAND.mintSoft }}
+                  >
+                    <p className="text-base" style={{ color: BRAND.text }}>
+                      <strong style={{ color: BRAND.mint }}>{formatNumber(responden)} responden</strong>
+                    </p>
+                    <p className="text-sm mt-1" style={{ color: BRAND.textMuted }}>
+                      Son {formatNumber(responden)} conversaciones y se descuentan de tu paquete.
+                      No se cobran otra vez a {formatMonto(PRECIOS.mensajeCampana[moneda], usd ? 3 : 0)}.
+                    </p>
+                  </div>
+                  <div className="rounded-2xl p-5" style={nodo}>
+                    <p className="text-base" style={{ color: BRAND.text }}>
+                      <strong>{formatNumber(enviados - responden)} no responden</strong>
+                    </p>
+                    <p className="text-sm mt-1" style={{ color: BRAND.textMuted }}>
+                      No generan ningún cobro adicional.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </Reveal>
+        </div>
+
+        {/* CTA */}
+        <Reveal className="mt-12 md:mt-16 text-center">
+          <p className="text-lg md:text-xl mb-6" style={{ color: BRAND.text }}>
+            ¿No sabes qué paquete te conviene? Lo calculamos con el volumen de chats de tu agencia.
+          </p>
+          <div className="flex flex-col sm:flex-row gap-3 justify-center">
+            <button
+              type="button"
+              onClick={() => abrirChatDelBot(MENSAJE_AGENDAR_DEMO)}
+              className="px-6 py-3 rounded-full text-sm font-semibold transition-opacity hover:opacity-90"
+              style={{ backgroundColor: BRAND.mint, color: BRAND.bgBase }}
+            >
+              {CTA_DEMO}
+            </button>
+            <a
+              href={WHATSAPP_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="px-6 py-3 rounded-full text-sm font-semibold border-2 border-white/80 text-white hover:bg-white/10 transition-colors"
+            >
+              Escríbenos por WhatsApp
+            </a>
+          </div>
+        </Reveal>
+      </div>
+    </section>
+  );
+}
+
 // --- Página ----------------------------------------------------------------
 
 export default function GlomaLanding() {
-  const [form, setForm] = useState<ContactFormValues>({
-    nombre: '',
-    email: '',
-    telefono: '',
-  });
+  const [form, setForm] = useState<ContactFormValues>(FORM_VACIO);
   const [status, setStatus] = useState<'idle' | 'sending' | 'ok' | 'error'>('idle');
   const [message, setMessage] = useState('');
 
@@ -801,7 +1621,7 @@ export default function GlomaLanding() {
       }
       setStatus('ok');
       setMessage('¡Gracias! Te contactaremos muy pronto.');
-      setForm({ nombre: '', email: '', telefono: '' });
+      setForm(FORM_VACIO);
     } catch (err: any) {
       setStatus('error');
       setMessage(err.message || 'No pudimos enviar tu mensaje. Intenta de nuevo.');
@@ -811,11 +1631,24 @@ export default function GlomaLanding() {
   return (
     <>
       <Head>
-        <title>Gloma — IA que vende viajes por WhatsApp</title>
-        <meta
-          name="description"
-          content="Gloma: la forma elegante de automatizar ventas por WhatsApp sin perder el trato humano."
-        />
+        <title>{SITE_TITLE}</title>
+        <meta name="description" content={SITE_DESCRIPTION} />
+        {/* Vista previa al compartir el enlace (WhatsApp, LinkedIn, Facebook, X). */}
+        <link rel="canonical" href={SITE_URL} />
+        <meta property="og:type" content="website" />
+        <meta property="og:locale" content="es_CO" />
+        <meta property="og:site_name" content="Gloma" />
+        <meta property="og:url" content={SITE_URL} />
+        <meta property="og:title" content={SITE_TITLE} />
+        <meta property="og:description" content={SITE_DESCRIPTION} />
+        <meta property="og:image" content={OG_IMAGE} />
+        <meta property="og:image:width" content="1200" />
+        <meta property="og:image:height" content="630" />
+        <meta property="og:image:alt" content="Tu agencia vende viajes por WhatsApp, las 24 horas" />
+        <meta name="twitter:card" content="summary_large_image" />
+        <meta name="twitter:title" content={SITE_TITLE} />
+        <meta name="twitter:description" content={SITE_DESCRIPTION} />
+        <meta name="twitter:image" content={OG_IMAGE} />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
@@ -842,7 +1675,7 @@ export default function GlomaLanding() {
       `}</style>
 
       <div
-        className="gloma-root min-h-screen"
+        className="gloma-root min-h-screen pb-20 md:pb-0"
         style={{ backgroundColor: BRAND.bgBase, color: BRAND.text }}
       >
         <InteractiveHeader />
@@ -882,7 +1715,13 @@ export default function GlomaLanding() {
                     className="relative aspect-[4/3] rounded-3xl overflow-hidden shadow-lg"
                     style={{ border: `1px solid ${BRAND.cardBorder}` }}
                   >
-                    <Image src={s.image} alt={s.title} fill className="object-cover" />
+                    <Image
+                      src={s.image}
+                      alt={s.title}
+                      fill
+                      className={s.contain ? 'object-contain' : 'object-cover'}
+                      style={s.contain ? { backgroundColor: '#0F0F0F' } : undefined}
+                    />
                   </div>
                 </div>
               </div>
@@ -922,13 +1761,7 @@ export default function GlomaLanding() {
                         border: `1px solid ${BRAND.cardBorder}`,
                       }}
                     >
-                      <Image
-                        src={f.icon}
-                        alt=""
-                        width={56}
-                        height={56}
-                        className="object-contain"
-                      />
+                      <Icono nombre={f.icon} />
                     </div>
                     <h3
                       className="text-lg md:text-xl mb-2"
@@ -956,8 +1789,17 @@ export default function GlomaLanding() {
           </div>
         </section>
 
+        {/* ===== CÓMO EMPEZAR ===== */}
+        <ComoEmpezarSection />
+
         {/* ===== STATS con contador animado ===== */}
         <StatsSection />
+
+        {/* ===== PRECIOS ===== */}
+        <PreciosSection />
+
+        {/* ===== PREGUNTAS FRECUENTES ===== */}
+        <FaqSection />
 
         {/* ===== CONTACTO ===== */}
         <section
@@ -983,7 +1825,7 @@ export default function GlomaLanding() {
                   color: BRAND.text,
                 }}
               >
-                ¿Listo para escalar tus ventas sin ampliar tu equipo?
+                ¿Listo para vender más sin ampliar tu equipo?
               </h2>
               <p
                 className="text-base md:text-lg mb-8"
@@ -1002,7 +1844,7 @@ export default function GlomaLanding() {
                 className="inline-flex items-center px-5 py-3 rounded-full text-sm font-semibold transition-transform hover:-translate-y-0.5"
                 style={{ backgroundColor: BRAND.mint, color: BRAND.bgBase }}
               >
-                Prueba el agente aquí mismo
+                {CTA_LIA}
               </button>
             </Reveal>
 
@@ -1050,7 +1892,11 @@ export default function GlomaLanding() {
                 style={{ fontFamily: 'Inter, system-ui, sans-serif' }}
               >
                 <li>contacto@glomacx.com</li>
-                <li>+57 300 318 7871</li>
+                <li>
+                  <a href={WHATSAPP_URL} target="_blank" rel="noopener noreferrer" className="hover:opacity-100">
+                    +57 315 076 4000
+                  </a>
+                </li>
                 <li>Calle 36, Vía Jamundí #128-321, Cali, Valle del Cauca</li>
               </ul>
             </div>
@@ -1061,15 +1907,26 @@ export default function GlomaLanding() {
               >
                 Conecta
               </h4>
-              <a
-                href={WHATSAPP_URL}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-sm opacity-80 hover:opacity-100"
+              <ul
+                className="space-y-2 text-sm"
                 style={{ fontFamily: 'Inter, system-ui, sans-serif' }}
               >
-                WhatsApp →
-              </a>
+                <li>
+                  <a href={WHATSAPP_URL} target="_blank" rel="noopener noreferrer" className="opacity-80 hover:opacity-100">
+                    WhatsApp →
+                  </a>
+                </li>
+                <li>
+                  <a href={INSTAGRAM_URL} target="_blank" rel="noopener noreferrer" className="opacity-80 hover:opacity-100">
+                    Instagram · @gloma_app →
+                  </a>
+                </li>
+                <li>
+                  <a href="/privacidad" className="opacity-80 hover:opacity-100">
+                    Política de tratamiento de datos
+                  </a>
+                </li>
+              </ul>
             </div>
           </div>
           <div
@@ -1083,6 +1940,28 @@ export default function GlomaLanding() {
         {/* Botón flotante de WhatsApp → conversa con el bot institucional
             (Sprint 20 #270): el visitante prueba el agente sin salir de la
             landing y sin necesidad de tener WhatsApp. */}
+        {/* Barra fija de móvil: en pantallas chicas el menú no muestra el CTA,
+            y el tráfico de Instagram llega por aquí. Deja libre la esquina
+            derecha, donde flota el botón del chat. */}
+        <div
+          className="md:hidden fixed inset-x-0 bottom-0 z-50 pl-4 pr-[5.5rem] pt-3"
+          style={{
+            paddingBottom: 'calc(0.75rem + env(safe-area-inset-bottom))',
+            backgroundColor: 'rgba(16,24,23,0.94)',
+            borderTop: `1px solid ${BRAND.cardBorder}`,
+            backdropFilter: 'blur(8px)',
+          }}
+        >
+          <button
+            type="button"
+            onClick={() => abrirChatDelBot(MENSAJE_AGENDAR_DEMO)}
+            className="w-full py-3 rounded-full text-sm font-semibold"
+            style={{ backgroundColor: BRAND.mint, color: BRAND.bgBase }}
+          >
+            {CTA_DEMO}
+          </button>
+        </div>
+
         <GlomaChatWidget />
       </div>
     </>

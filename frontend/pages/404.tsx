@@ -83,7 +83,7 @@ export default function NotFound() {
               Volver al inicio
             </Link>
             <a
-              href="https://wa.me/573003187871?text=Hola%20Gloma"
+              href="https://wa.me/573150764000?text=Hola%20Gloma"
               target="_blank"
               rel="noopener noreferrer"
               className="px-6 py-3 rounded-full text-sm font-semibold transition-opacity hover:opacity-90"
