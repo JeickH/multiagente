@@ -241,7 +241,7 @@ const STATS = [
 ];
 
 /**
- * Precios públicos (definidos por el CEO el 2026-09-27). Son tres cobros:
+ * Precios públicos (definidos por el CEO el 2026-09-27; alza del ~20% el 2026-09-29). Son tres cobros:
  * instalación única, paquetes de conversaciones prepagados que se acumulan
  * mes a mes, y campañas masivas por mensaje enviado. El contexto del bot
  * (`backend/app/bot_contexts/gloma.md`) repite estas cifras: si cambian aquí,
@@ -250,14 +250,14 @@ const STATS = [
 type Moneda = 'COP' | 'USD';
 
 const PRECIOS = {
-  instalacion: { COP: 2_000_000, USD: 625 },
+  instalacion: { COP: 2_400_000, USD: 750 },
   paquetes: [
-    { conversaciones: 600, COP: 640_000, USD: 205, recomendado: false },
-    { conversaciones: 2_000, COP: 2_090_000, USD: 670, recomendado: false },
+    { conversaciones: 600, COP: 770_000, USD: 250, recomendado: false },
+    { conversaciones: 2_000, COP: 2_500_000, USD: 810, recomendado: false },
     // El recomendado, por decisión del CEO (2026-09-28): el menor costo por conversación.
-    { conversaciones: 6_000, COP: 6_000_000, USD: 1_920, recomendado: true },
+    { conversaciones: 6_000, COP: 7_200_000, USD: 2_310, recomendado: true },
   ],
-  mensajeCampana: { COP: 75, USD: 0.025 },
+  mensajeCampana: { COP: 90, USD: 0.03 },
 };
 
 /** Ejemplos de los gráficos. Son ilustrativos y así se rotulan en la página. */

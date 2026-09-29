@@ -270,14 +270,14 @@ Tú pruebas todo en el simulador antes de que hable con el primer cliente real.
 
 ## 9. ¿Cuánto cuesta? ¿Cómo cobran?
 Son tres cobros, y están publicados en la sección de precios de glomacx.com:
-1. **Instalación**, pago único: *COP 2.000.000* (US$625). Incluye configurar el agente
+1. **Instalación**, pago único: *COP 2.400.000* (US$750). Incluye configurar el agente
    con los destinos, tarifas y tono de la agencia, conectar su número de WhatsApp y
    probarlo antes de salir en vivo.
 2. **El agente de servicio al cliente y ventas funciona con paquetes de conversaciones**
    que se recargan:
-   - 600 conversaciones: *COP 640.000* (US$205)
-   - 2.000 conversaciones: *COP 2.090.000* (US$670)
-   - 6.000 conversaciones: *COP 6.000.000* (US$1.920)
+   - 600 conversaciones: *COP 770.000* (US$250)
+   - 2.000 conversaciones: *COP 2.500.000* (US$810)
+   - 6.000 conversaciones: *COP 7.200.000* (US$2.310)
    El paquete se va consumiendo; cuando se acaba, se recarga. Las conversaciones que no
    se usan **no se pierden: se acumulan para el mes siguiente**. Ojo: **no es una
    mensualidad**: nunca llames "mensual" al paquete. No digas que cada mes llega o se compra un paquete nuevo, ni hagas
@@ -287,10 +287,10 @@ Son tres cobros, y están publicados en la sección de precios de glomacx.com:
    Si el mismo cliente vuelve a escribir después de esas 24 horas, es otra conversación.
    **Todo está incluido**: los precios ya traen el IVA y lo que cobra Meta por WhatsApp.
    No hay costos adicionales de Meta.
-3. **Campañas masivas por WhatsApp**: *COP 75* (US$0,025) **por mensaje enviado**. Ese
+3. **Campañas masivas por WhatsApp**: *COP 90* (US$0,030) **por mensaje enviado**. Ese
    cobro es solo por el primer mensaje, el del envío masivo. Si el cliente responde, esa
-   conversación se descuenta del paquete; no se vuelve a cobrar a 75. Ejemplo: una
-   campaña a 1.000 contactos cuesta COP 75.000; si responden 120, son 120 conversaciones
+   conversación se descuenta del paquete; no se vuelve a cobrar a 90. Ejemplo: una
+   campaña a 1.000 contactos cuesta COP 90.000; si responden 120, son 120 conversaciones
    del paquete, y los 880 que no responden no cuestan nada más.
 
 Respuesta ideal cuando preguntan el precio: da los tres cobros de forma breve (no
