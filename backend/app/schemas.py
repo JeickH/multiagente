@@ -1018,6 +1018,10 @@ class FacturaOut(BaseModel):
     issued_on: date
     due_date: date
     paid_at: Optional[datetime] = None
+    #: Periodo de cobertura, los dos días inclusive. `null` en lo que no es
+    #: mensualidad (la implementación).
+    periodo_desde: Optional[date] = None
+    periodo_hasta: Optional[date] = None
     reference: Optional[str] = None
     #: Días cumplidos desde el vencimiento. Negativo si todavía no se vence.
     #: Lo calcula el servidor, en fechas de Colombia: el navegador no tiene por

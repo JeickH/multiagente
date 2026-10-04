@@ -73,6 +73,9 @@ type Factura = {
   issued_on: string;
   due_date: string;
   paid_at: string | null;
+  /** Periodo de cobertura, los dos días inclusive. `null` fuera de las mensualidades. */
+  periodo_desde?: string | null;
+  periodo_hasta?: string | null;
   reference: string | null;
   dias_de_mora: number;
 };
@@ -409,6 +412,12 @@ export default function Pagos() {
                           >
                             <td className="py-3 px-4 text-gloma-brown-dark">
                               <span className="font-semibold">{f.concepto}</span>
+                              {f.periodo_desde && f.periodo_hasta && (
+                                <span className="block text-xs text-gloma-brown-dark/80 mt-0.5">
+                                  Periodo de cobertura: {fechaCalendario(f.periodo_desde)} al{' '}
+                                  {fechaCalendario(f.periodo_hasta)}
+                                </span>
+                              )}
                               <span className="block text-[11px] text-gloma-brown-light mt-0.5">
                                 {f.numero}
                               </span>

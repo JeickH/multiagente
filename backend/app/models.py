@@ -1488,6 +1488,13 @@ class Invoice(Base):
     issued_on = Column(Date, nullable=False)
     due_date = Column(Date, nullable=False, index=True)
     paid_at = Column(DateTime, nullable=True)
+    #: Periodo de cobertura: qué días del servicio paga esta factura, los dos
+    #: inclusive (2-sep → 1-oct). Solo lo llevan las mensualidades; la
+    #: implementación es de una sola vez y no cubre un periodo, así que va NULL.
+    #: Sin esto, dos facturas de $350.000 con el mismo concepto no se
+    #: distinguen y el cliente no sabe qué mes pagó con cuál.
+    periodo_desde = Column(Date, nullable=True)
+    periodo_hasta = Column(Date, nullable=True)
 
     reference = Column(String(80), nullable=True)
     provider_tx_id = Column(String(80), nullable=True, index=True)
@@ -1518,6 +1525,11 @@ class Invoice(Base):
             name="ck_invoices_status",
         ),
         CheckConstraint("amount_cents > 0", name="ck_invoices_amount"),
+        CheckConstraint(
+            "periodo_desde IS NULL OR periodo_hasta IS NULL "
+            "OR periodo_desde <= periodo_hasta",
+            name="ck_invoices_periodo",
+        ),
         # El índice que sostiene las dos consultas de la pantalla: el listado
         # del administrador y el aviso de los 7 días, que preguntan ambas por
         # las pendientes de un team ordenadas por vencimiento.
