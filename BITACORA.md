@@ -8197,19 +8197,17 @@ pagada ese mismo día y la cuenta ya no estaba en pausa.)
 emitida el 2-oct, **pagada** el 2-oct (11:37 a. m. Colombia), enlazada al
 cobro 2 y a su tx. No se llamó a Wompi; los cobros de la cuenta siguen en 1.
 
-**Periodo de cobertura** (rama `feature/factura-periodo-cobertura`, sin
-desplegar): columnas `invoices.periodo_desde/periodo_hasta` (DATE, nulables,
-CHECK desde ≤ hasta), en `FacturaOut`, en la tabla de Pagos y en el PDF.
-Migración `migrate_facturas_periodo.py` aplicada en **local**; en RDS falta.
-Imagen ya en ECR: `multiagente-backend:facturas-periodo-ccc1315`.
+**Periodo de cobertura**: columnas `invoices.periodo_desde/periodo_hasta`
+(DATE, nulables, CHECK desde ≤ hasta), en `FacturaOut`, en la tabla de Pagos y
+en el PDF. La implementación no lleva periodo.
 
-Pendiente, en este orden:
-1. Migrar RDS (`run-task` con la imagen nueva y
-   `command=["python","scripts/migrate_facturas_periodo.py"]`).
-2. Registrar task-def con esa imagen y `update-service`.
-3. Volver a correr `facturas_arranquemos_octubre.py APLICAR=1`: llena el
-   periodo de FAC-0002 (2-sep → 1-oct) y FAC-0003 (2-oct → 1-nov).
-4. Mergear el PR (Amplify publica la tabla con el periodo).
+Despliegue (4-oct): migración `migrate_facturas_periodo.py` en local y en RDS
+(con la imagen nueva, antes del rollout) → task-def **:100**, imagen
+`multiagente-backend:facturas-periodo-ccc1315` → `update-service` estable, sin
+errores en CloudWatch y el tick en 200 → segunda corrida del script:
+FAC-2026-0002 queda 2-sep → 1-oct y FAC-2026-0003 2-oct → 1-nov.
 
-Pendiente aparte: el cobro automático de noviembre (2-nov) tampoco va a
-emitir factura. Hay que hacer que el ciclo la emita con su periodo.
+**Decisión del CEO sobre los meses siguientes**: el cobro automático sigue
+cobrando y **no** emite factura, a propósito. El CEO genera la factura de cada
+mes a mano cuando corresponda (la de noviembre incluida). Que el ciclo la emita
+solo queda para otra sesión: no tocarlo sin que lo pida.
