@@ -237,6 +237,8 @@ def emitir(
     detalle: Optional[str] = None,
     issued_on: Optional[date] = None,
     subscription_id: Optional[int] = None,
+    periodo_desde: Optional[date] = None,
+    periodo_hasta: Optional[date] = None,
 ) -> models.Invoice:
     """Crea una factura pendiente. No la cobra ni la manda a ningún lado."""
     issued_on = issued_on or due_date
@@ -251,6 +253,8 @@ def emitir(
         issued_on=issued_on,
         due_date=due_date,
         subscription_id=subscription_id,
+        periodo_desde=periodo_desde,
+        periodo_hasta=periodo_hasta,
     )
     db.add(factura)
     db.flush()
@@ -306,6 +310,13 @@ def pesos(centavos: int) -> str:
 
 def fecha_larga(dia: date) -> str:
     return f"{dia.day} de {_MESES[dia.month - 1]} de {dia.year}"
+
+
+def periodo_cobertura(factura: models.Invoice) -> Optional[str]:
+    """`2 de septiembre de 2026 al 1 de octubre de 2026`, o `None` si no tiene."""
+    if factura.periodo_desde is None or factura.periodo_hasta is None:
+        return None
+    return f"{fecha_larga(factura.periodo_desde)} al {fecha_larga(factura.periodo_hasta)}"
 
 
 def nombre_archivo(factura: models.Invoice) -> str:
@@ -371,6 +382,15 @@ def generar_pdf(
         {"pagada": "Pagada", "anulada": "Anulada"}.get(factura.status, "Pendiente"),
         izq, y - 16, tamaño=10.5, fuente=motor.NEGRILLA,
     )
+
+    # Solo las mensualidades: la implementación no cubre un periodo.
+    periodo = periodo_cobertura(factura)
+    if periodo:
+        y -= 44
+        pagina.texto(
+            "PERIODO DE COBERTURA", izq, y, tamaño=8, fuente=motor.NEGRILLA, gris=0.45
+        )
+        pagina.texto(periodo, izq, y - 16, tamaño=10.5)
 
     # --- Qué se cobra -------------------------------------------------------
     y -= 60

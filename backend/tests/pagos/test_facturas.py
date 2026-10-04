@@ -617,6 +617,32 @@ class TestElPdf:
         assert "FECHA DE PAGO".encode("latin-1") in crudo
         assert "SE VENCE EL".encode("latin-1") not in crudo
 
+    def test_la_mensualidad_dice_su_periodo_de_cobertura(self, admin, db, team):
+        """Dos mensualidades de $350.000 solo se distinguen por el periodo."""
+        factura = emitir(db, team["team"].id, vence=date(2026, 10, 2))
+        factura.periodo_desde = date(2026, 10, 2)
+        factura.periodo_hasta = date(2026, 11, 1)
+        db.commit()
+
+        crudo = admin.get(f"/pagos/facturas/{factura.id}/pdf").content
+        assert "PERIODO DE COBERTURA".encode("latin-1") in crudo
+        assert "2 de octubre de 2026 al 1 de noviembre de 2026".encode("latin-1") in crudo
+
+        fila = admin.get("/pagos/facturas").json()["facturas"][0]
+        assert fila["periodo_desde"] == "2026-10-02"
+        assert fila["periodo_hasta"] == "2026-11-01"
+
+    def test_la_implementacion_no_lleva_periodo(self, admin, db, team):
+        factura = emitir(
+            db, team["team"].id,
+            concepto="Implementación de la plataforma",
+            centavos=1_000_000 * 100, vence=date(2026, 9, 2),
+        )
+        crudo = admin.get(f"/pagos/facturas/{factura.id}/pdf").content
+        assert "PERIODO DE COBERTURA".encode("latin-1") not in crudo
+        fila = admin.get("/pagos/facturas").json()["facturas"][0]
+        assert fila["periodo_desde"] is None and fila["periodo_hasta"] is None
+
     def test_un_parentesis_en_el_concepto_no_rompe_el_archivo(self, admin, db, team):
         """Sin escapar, un `)` cierra la cadena y el PDF queda ilegible."""
         factura = emitir(

@@ -8169,3 +8169,45 @@ los dos lados.
   oscuro encima la volvía gris. El archivo quedó en `public/` sin uso.
 - **Precios**: el recomendado pasa al paquete de **6.000**, en Golden Hour
   (marco, etiqueta "★ Recomendado" más grande y "1.000 COP por conversación").
+
+### 28-sep-2026 — Arranquemos Pues queda PAUSADA por orden del CEO
+
+`teams.id = 5` (Agencia de Viajes Arranquemos Pues) pasó de `nunca` a
+`pausada` (pausa manual). Deuda al momento: FAC-2026-0001 ($1.000.000) y
+FAC-2026-0002 ($350.000), las dos vencidas el 2-sep y pendientes. El aviso
+amarillo le venía saliendo desde el 21-sep a las 13:45.
+
+Efecto: aviso rojo, envío manual y campañas bloqueados, el bot deja de
+responder (los entrantes se siguen guardando) y sus recordatorios agendados se
+descartan. Pagar **no** la reanuda: es pausa manual. Para levantarla, por orden
+del CEO, `pausa_servicio = 'nunca'` (o `'por_mora'`) con un script por
+`rds_exec.sh` — `rds_query.sh` no hace commit.
+
+### 4-oct-2026 — Factura de octubre de Arranquemos Pues y periodo de cobertura
+
+**Qué pasó el 2-oct**: entraron dos cobros de $350.000 por Wompi. Uno pagó
+FAC-2026-0002 (septiembre, tx `…959117-97314`). El otro fue el primer cobro
+automático de la suscripción al registrar la tarjeta (`subscription_charges.id
+= 2`, tx `…958408-73070`), o sea octubre. **El ciclo de cobro no emite
+factura**, así que en Pagos no aparecía. (FAC-2026-0001, el millón, ya estaba
+pagada ese mismo día y la cuenta ya no estaba en pausa.)
+
+**Hecho en RDS** con `scripts/facturas_arranquemos_octubre.py APLICAR=1`
+(simulación antes): FAC-2026-0003, «Suscripción mensual Gloma», $350.000,
+emitida el 2-oct, **pagada** el 2-oct (11:37 a. m. Colombia), enlazada al
+cobro 2 y a su tx. No se llamó a Wompi; los cobros de la cuenta siguen en 1.
+
+**Periodo de cobertura**: columnas `invoices.periodo_desde/periodo_hasta`
+(DATE, nulables, CHECK desde ≤ hasta), en `FacturaOut`, en la tabla de Pagos y
+en el PDF. La implementación no lleva periodo.
+
+Despliegue (4-oct): migración `migrate_facturas_periodo.py` en local y en RDS
+(con la imagen nueva, antes del rollout) → task-def **:100**, imagen
+`multiagente-backend:facturas-periodo-ccc1315` → `update-service` estable, sin
+errores en CloudWatch y el tick en 200 → segunda corrida del script:
+FAC-2026-0002 queda 2-sep → 1-oct y FAC-2026-0003 2-oct → 1-nov.
+
+**Decisión del CEO sobre los meses siguientes**: el cobro automático sigue
+cobrando y **no** emite factura, a propósito. El CEO genera la factura de cada
+mes a mano cuando corresponda (la de noviembre incluida). Que el ciclo la emita
+solo queda para otra sesión: no tocarlo sin que lo pida.
