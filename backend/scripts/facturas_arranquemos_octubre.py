@@ -59,6 +59,26 @@ SEPTIEMBRE = ("FAC-2026-0002", date(2026, 9, 2), date(2026, 10, 1))
 OCTUBRE_DESDE, OCTUBRE_HASTA = date(2026, 10, 2), date(2026, 11, 1)
 MENSUALIDAD = 350_000 * 100
 
+#: La imagen desplegada puede llevar todavía el `models.py` sin el periodo. En
+#: ese caso se emite la factura de octubre igual y el periodo queda para la
+#: siguiente corrida, ya con el modelo nuevo: el script es idempotente y
+#: completa el periodo de las dos facturas si lo encuentra vacío.
+CON_PERIODO = hasattr(models.Invoice, "periodo_desde")
+
+
+def _poner_periodo(factura, desde: date, hasta: date) -> None:
+    if not CON_PERIODO:
+        print(f"  · {factura.numero}: el modelo desplegado no tiene periodo; queda pendiente")
+        return
+    if factura.periodo_desde is None and factura.periodo_hasta is None:
+        factura.periodo_desde, factura.periodo_hasta = desde, hasta
+        print(f"  ✓ {factura.numero}: periodo {desde} → {hasta}")
+    else:
+        print(
+            f"  · {factura.numero} ya tenía periodo "
+            f"{factura.periodo_desde} → {factura.periodo_hasta}"
+        )
+
 
 def main() -> int:
     print("Modo:", "APLICAR" if APLICAR else "simulación (APLICAR=1 para escribir)")
@@ -88,11 +108,7 @@ def main() -> int:
         if sep.amount_cents != MENSUALIDAD:
             print(f"ERROR: {numero} no es una mensualidad de $350.000. No se tocó nada.")
             return 1
-        if sep.periodo_desde is None and sep.periodo_hasta is None:
-            sep.periodo_desde, sep.periodo_hasta = desde, hasta
-            print(f"  ✓ {numero}: periodo {desde} → {hasta}")
-        else:
-            print(f"  · {numero} ya tenía periodo {sep.periodo_desde} → {sep.periodo_hasta}")
+        _poner_periodo(sep, desde, hasta)
 
         # --- Octubre: el cobro aprobado que no tiene factura ---------------
         sub = (
@@ -127,6 +143,7 @@ def main() -> int:
         )
         if ya is not None:
             print(f"  · ya existe {ya.numero} para ese cobro ({ya.status})")
+            _poner_periodo(ya, OCTUBRE_DESDE, OCTUBRE_HASTA)
         else:
             octubre = svc_facturas.emitir(
                 db,
@@ -137,8 +154,6 @@ def main() -> int:
                 issued_on=OCTUBRE_DESDE,
                 due_date=OCTUBRE_DESDE,
                 subscription_id=sub.id,
-                periodo_desde=OCTUBRE_DESDE,
-                periodo_hasta=OCTUBRE_HASTA,
             )
             # Pagada con el cobro que ya entró: mismo instante y misma
             # transacción de Wompi. No se cobra nada de nuevo.
@@ -147,10 +162,8 @@ def main() -> int:
             octubre.provider_tx_id = cobro.provider_tx_id
             octubre.charge_id = cobro.id
             db.flush()
-            print(
-                f"  ✓ {octubre.numero} pagada el {octubre.paid_at} — periodo "
-                f"{OCTUBRE_DESDE} → {OCTUBRE_HASTA}"
-            )
+            print(f"  ✓ {octubre.numero} pagada el {octubre.paid_at}")
+            _poner_periodo(octubre, OCTUBRE_DESDE, OCTUBRE_HASTA)
 
         if APLICAR:
             db.commit()
@@ -160,10 +173,12 @@ def main() -> int:
             print("Simulación: no se guardó nada.")
 
         for f in svc_facturas.listar(db, team_id):
+            periodo = (
+                f"{f.periodo_desde} → {f.periodo_hasta}" if CON_PERIODO else "(sin modelo)"
+            )
             print(
                 f"  {f.numero} | {f.concepto} | {svc_facturas.pesos(f.amount_cents)} | "
-                f"{f.status} | pagada {f.paid_at} | periodo "
-                f"{f.periodo_desde} → {f.periodo_hasta}"
+                f"{f.status} | pagada {f.paid_at} | periodo {periodo}"
             )
         return 0
     finally:

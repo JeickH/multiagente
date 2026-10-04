@@ -8182,3 +8182,34 @@ responder (los entrantes se siguen guardando) y sus recordatorios agendados se
 descartan. Pagar **no** la reanuda: es pausa manual. Para levantarla, por orden
 del CEO, `pausa_servicio = 'nunca'` (o `'por_mora'`) con un script por
 `rds_exec.sh` — `rds_query.sh` no hace commit.
+
+### 4-oct-2026 — Factura de octubre de Arranquemos Pues y periodo de cobertura
+
+**Qué pasó el 2-oct**: entraron dos cobros de $350.000 por Wompi. Uno pagó
+FAC-2026-0002 (septiembre, tx `…959117-97314`). El otro fue el primer cobro
+automático de la suscripción al registrar la tarjeta (`subscription_charges.id
+= 2`, tx `…958408-73070`), o sea octubre. **El ciclo de cobro no emite
+factura**, así que en Pagos no aparecía. (FAC-2026-0001, el millón, ya estaba
+pagada ese mismo día y la cuenta ya no estaba en pausa.)
+
+**Hecho en RDS** con `scripts/facturas_arranquemos_octubre.py APLICAR=1`
+(simulación antes): FAC-2026-0003, «Suscripción mensual Gloma», $350.000,
+emitida el 2-oct, **pagada** el 2-oct (11:37 a. m. Colombia), enlazada al
+cobro 2 y a su tx. No se llamó a Wompi; los cobros de la cuenta siguen en 1.
+
+**Periodo de cobertura** (rama `feature/factura-periodo-cobertura`, sin
+desplegar): columnas `invoices.periodo_desde/periodo_hasta` (DATE, nulables,
+CHECK desde ≤ hasta), en `FacturaOut`, en la tabla de Pagos y en el PDF.
+Migración `migrate_facturas_periodo.py` aplicada en **local**; en RDS falta.
+Imagen ya en ECR: `multiagente-backend:facturas-periodo-ccc1315`.
+
+Pendiente, en este orden:
+1. Migrar RDS (`run-task` con la imagen nueva y
+   `command=["python","scripts/migrate_facturas_periodo.py"]`).
+2. Registrar task-def con esa imagen y `update-service`.
+3. Volver a correr `facturas_arranquemos_octubre.py APLICAR=1`: llena el
+   periodo de FAC-0002 (2-sep → 1-oct) y FAC-0003 (2-oct → 1-nov).
+4. Mergear el PR (Amplify publica la tabla con el periodo).
+
+Pendiente aparte: el cobro automático de noviembre (2-nov) tampoco va a
+emitir factura. Hay que hacer que el ciclo la emita con su periodo.
