@@ -1,0 +1,49 @@
+ Si Andrés estábamos revisando a detalle la solución porque si nos interesa
+ Pero la verdad los números no nos da
+ No el de la implementación, nos parece bien que se cobre por el trabajo y más si es personalizado
+ Pero la mensualidad si se nos sale totalmente de lo que el negocio genera y podría pagar
+ Te voy a mostrar un ejemplo con números
+
+ Métrica
+
+Valor
+
+chats pauta agosto
+
+2654
+
+ventas pauta
+
+302
+
+ventas totales mes
+
+540
+
+ticket promedio
+
+76000
+
+ventas mes
+
+41040000
+
+
+
+
+
+chats promedio mensuales
+
+3600
+
+tasa de cierre 12%
+
+432
+
+expectativa cierre 20%
+
+720
+
+ventas expectactiva
+
+54720000

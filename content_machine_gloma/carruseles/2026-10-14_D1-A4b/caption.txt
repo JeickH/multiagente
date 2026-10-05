@@ -1,0 +1,9 @@
+Un viajero escribió en una reseña: “el IA Bot no entiende Cargo Doble”. Poner un bot no es el problema. El problema es qué hace cuando no entiende.
+
+El de menú te deja sin salida si lo que necesitas no está en las opciones. Un agente que entiende lee el mensaje como llega y, cuando no sabe, le pasa la conversación a una persona con todo el historial.
+
+Antes de poner cualquier bot, pregúntale qué hace cuando no entiende.
+
+Envíaselo a quien esté pensando en poner uno.
+
+#AgenciasDeViajes #AsesorDeViajes #TurismoColombia #TurismoLatam #VentasDeViajes #WhatsAppBusiness #Gloma

@@ -112,3 +112,5 @@ PROMPT_SESION_*.md
 # viven en un solo disco. Si se quieren proteger, el sitio es un commit.
 backend/scripts/respaldo_mascotas.py
 backend/scripts/respaldo_mascotas_dump.py
+
+#content_machine_gloma
