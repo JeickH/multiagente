@@ -557,6 +557,26 @@ queda incompleta, en la producción toca inventar; si las dos están bien, solo 
 | 7 | ¿Toda cifra tiene su fuente visible? | Sí |
 | 8 | ¿El cierre le deja algo al lector y el CTA es para él? | Sí, y distinto del carrusel del mismo ángulo cuando se pueda |
 
+### Voz del guion para ElevenLabs (provisional)
+
+Cuando el CEO apruebe un guion, se agrega en el mismo archivo de guiones una sección **"Voz para
+ElevenLabs"**: la columna VOZ de corrido, sin comillas (las palabras de las citas no cambian),
+con **etiquetas de tono entre corchetes** antes de cada frase para el modelo **Eleven v3** (el
+único que las interpreta). Reglas de las etiquetas:
+- El tono es el de alguien que entiende el problema y ayuda: tranquilo, seguro, cálido,
+  pensativo, conversacional. **Nunca** amenazante, alarmado ni urgente ("explicar, no asustar").
+- Las citas del cliente van con la etiqueta del tono con que el cliente las dijo, según la voz
+  del cliente (p. ej. cansado). Un ejemplo ilustrativo (un mensaje automático) puede ir con un
+  tono distinto que lo separe de la narración.
+- Pausas cortas solo donde la frase lo pide; si el audio pasa de la duración, se quitan
+  primero las pausas, no palabras.
+- Se entregan las etiquetas en español y en inglés hasta que el CEO confirme cuál respeta mejor
+  v3; también queda pendiente la voz elegida. Cuando se confirme, esta sección se actualiza.
+- Las skills de ElevenLabs (`text-to-speech`, `music`, `sound-effects`, `speech-to-text`) se
+  instalan con `npx skills add elevenlabs/skills -g --agent claude-code`. La clave va en la
+  variable de entorno `ELEVENLABS_API_KEY` (en `~/.zshrc` o en la configuración del entorno),
+  **nunca** en un archivo del repo ni pegada en el chat.
+
 ## Brand Kits en Canva (tarea recurrente)
 
 Canva permite **máximo 3 colores** en el brand kit (free/limitación del producto), pero tenerlos configurados **mejora el rendimiento** de Canva AI: las piezas salen con paleta correcta de entrada y se reducen iteraciones.
