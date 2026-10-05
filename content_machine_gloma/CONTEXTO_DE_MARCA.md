@@ -34,6 +34,9 @@ orden leerlo. Crece por temas: cada tema nuevo es una carpeta aquí y una fila e
 | Carruseles en HTML | `carruseles/AAAA-MM-DD_<ficha>/` | Las 6 slides de cada guion en HTML de 1080 × 1350, un `index.html` para revisarlas y los PNG (portada transparente) | 2026-09-28 |
 | Imágenes | `imagenes/registro.md` | Portadas pendientes (con tipo cara/forma y prompt listo), las que guardó el CEO y las generadas con API | 2026-09-28 |
 | Posts producidos | `posts/AAAA-MM-DD_postNN_tema.md` | Versiones de cada post, la cita que usan y cuál publicó el CEO | 2026-09-28 |
+| Calendario de videos | `calendarios/videos-AAAA-MM.md` | Calendario de reels, aparte del de carruseles: los ángulos de los carruseles corridos en semanas completas, con hook y decisiones pendientes | 2026-10-05 |
+| Guiones de video | `guiones-video/AAAA-MM.md` | Guion de cada reel en tabla SEGUNDO / VOZ / PLANO (40 s, máx. 100 palabras, plano cada 4–6 s) | 2026-10-05 |
+| Hooks de video | `estructuras-de-afuera/hooks-video-AAAA-MM.md` | Investigación de ganchos de los primeros segundos en turismo, con URL y tipos de hook (A–F) que citan los guiones | 2026-10-05 |
 | Estructuras de afuera | `estructuras-de-afuera/estructuras-2026-09.md` | Diagnóstico del problema de marketing principal (la culpa puesta en el lugar equivocado), estructuras verificadas de categorías ajenas al nicho y su aplicación a los dolores del banco, con qué se puede usar ya Incluye un catálogo verificado de memes (formatos) con sus reglas de uso y 4 fichas de memes. | 2026-09-28 |
 
 Temas que el CEO piensa agregar: van como carpeta nueva (`competencia/`, `casos/`, `objeciones/`…)
