@@ -319,6 +319,10 @@ class BotListItem(BaseModel):
     finished_count: int
     created_at: datetime
     updated_at: datetime
+    # Reparto A/B entre bots default: % de conversaciones nuevas que recibe
+    # (None = no entra) y cuántas lleva desde que se guardó el reparto vigente.
+    reparto_pct: Optional[int] = None
+    conversaciones_reparto: int = 0
 
     class Config:
         from_attributes = True
@@ -357,9 +361,45 @@ class BotDetail(BaseModel):
     created_at: datetime
     updated_at: datetime
     steps: List[BotStepOut] = []
+    # Guion efectivo del bot: la columna `instrucciones` si tiene texto, si no
+    # el `.md` de `bot_contexts/`. Solo se llena para el owner (None para los
+    # demás miembros). `llm_config` sigue SIN exponerse (regla #2).
+    instrucciones: Optional[str] = None
+    reparto_pct: Optional[int] = None
 
     class Config:
         from_attributes = True
+
+
+#: Tope de items del reparto y de bots por cuenta para duplicar.
+MAX_BOTS_REPARTO = 20
+
+
+class BotRepartoItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    bot_id: int = Field(strict=True)
+    # Entero estricto: 50.5 o "50" no se redondean en silencio.
+    pct: int = Field(ge=0, le=100, strict=True)
+
+
+class BotRepartoIn(BaseModel):
+    """`PUT /bots/reparto`. `[]` quita el reparto (vuelve al default de menor id)."""
+    model_config = ConfigDict(extra="forbid")
+    reparto: List[BotRepartoItem] = Field(max_length=MAX_BOTS_REPARTO)
+
+
+class BotDuplicarIn(BaseModel):
+    """`POST /bots/{id}/duplicar`. Solo el nombre: nada de llm_config,
+    context_key, user_id ni team_id — eso lo pone el servidor."""
+    model_config = ConfigDict(extra="forbid")
+    name: Optional[str] = Field(default=None, max_length=120)
+
+
+class BotInstruccionesIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    # Techo de parseo (con holgura para el strip); el tope real
+    # (`crud.MAX_INSTRUCCIONES`) y el resto de chequeos van en crud.
+    instrucciones: str = Field(max_length=41000)
 
 
 class BotSimulateIn(BaseModel):

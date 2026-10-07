@@ -596,7 +596,7 @@ def get_bot_visible_to_member(
     )
 
 
-def bot_to_list_item(bot: models.Bot) -> dict:
+def bot_to_list_item(bot: models.Bot, conversaciones_reparto: int = 0) -> dict:
     return {
         "id": bot.id,
         "name": bot.name,
@@ -610,10 +610,20 @@ def bot_to_list_item(bot: models.Bot) -> dict:
         "finished_count": bot.finished_count,
         "created_at": bot.created_at,
         "updated_at": bot.updated_at,
+        "reparto_pct": _pct_vigente(bot),
+        "conversaciones_reparto": int(conversaciones_reparto or 0),
     }
 
 
-def bot_to_detail(bot: models.Bot) -> dict:
+def _pct_vigente(bot: models.Bot) -> Optional[int]:
+    """El % del reparto tal como lo ve la UI: None si no entra (NULL o 0)."""
+    pct = getattr(bot, "reparto_pct", None)
+    return int(pct) if pct else None
+
+
+def bot_to_detail(bot: models.Bot, instrucciones: Optional[str] = None) -> dict:
+    """`instrucciones` las resuelve el router (columna o `.md`, y solo para el
+    owner): crud no importa `llm_engine` para no cerrar un ciclo de imports."""
     return {
         "id": bot.id,
         "name": bot.name,
@@ -639,6 +649,8 @@ def bot_to_detail(bot: models.Bot) -> dict:
             }
             for s in bot.steps
         ],
+        "instrucciones": instrucciones,
+        "reparto_pct": _pct_vigente(bot),
     }
 
 
@@ -661,6 +673,333 @@ def bot_to_export_dict(bot: models.Bot) -> dict:
             for s in bot.steps
         ],
     }
+
+
+# ----- Reparto A/B entre bots default -----
+
+class RepartoInvalido(ValueError):
+    """Regla de negocio del reparto/duplicado incumplida → 400 en el router.
+
+    El mensaje es genérico y en español: es lo que ve el cliente.
+    """
+
+
+class BotNoEncontrado(LookupError):
+    """→ 404 "Bot no encontrado", igual si no existe o si es de otra cuenta."""
+
+
+class BotDeOtroTeam(LookupError):
+    """→ 409: el bot es del owner pero cuelga de otro team."""
+
+
+#: Tope de bots por cuenta al duplicar (cada variante es un guion más que
+#: mantener, y cada bot LLM cuesta Bedrock).
+MAX_BOTS_POR_CUENTA = 20
+
+
+def conteos_reparto_por_bot(
+    db: Session, *, owner_id: int, team_id: int
+) -> Dict[int, int]:
+    """{bot_id: conversaciones asignadas desde su `reparto_desde`}. UNA consulta
+    para todos los bots del owner (sin N+1). Solo bots con pct > 0: los demás
+    no están en el reparto y la UI los muestra en 0."""
+    filas = (
+        db.query(models.Conversation.bot_asignado_id, func.count(models.Conversation.id))
+        .join(models.Bot, models.Bot.id == models.Conversation.bot_asignado_id)
+        .filter(
+            models.Bot.user_id == owner_id,
+            models.Bot.reparto_pct > 0,
+            models.Bot.reparto_desde.isnot(None),
+            models.Conversation.team_id == team_id,
+            models.Conversation.bot_asignado_at >= models.Bot.reparto_desde,
+        )
+        .group_by(models.Conversation.bot_asignado_id)
+        .all()
+    )
+    return {int(bot_id): int(n) for bot_id, n in filas}
+
+
+def list_bot_items_for_member(db: Session, member: models.TeamMember) -> List[dict]:
+    bots = list_bots_visible_to_member(db, member)
+    conteos = conteos_reparto_por_bot(
+        db, owner_id=_resolve_owner_user_id(db, member), team_id=member.team_id
+    )
+    return [bot_to_list_item(b, conteos.get(b.id, 0)) for b in bots]
+
+
+def guardar_reparto(
+    db: Session, member: models.TeamMember, reparto: List[Tuple[int, int]]
+) -> None:
+    """Guarda el reparto de conversaciones nuevas entre bots default.
+
+    `reparto` = [(bot_id, pct)]. Los listados quedan con su pct (0 → NULL) y
+    el MISMO `reparto_desde` (el conteo arranca de cero para todos); cualquier
+    otro bot del owner queda con `reparto_pct = NULL`. `[]` quita el reparto.
+
+    Lanza `BotNoEncontrado` (404) o `RepartoInvalido` (400). Commit al final,
+    todo o nada.
+    """
+    ids = [bid for bid, _ in reparto]
+    if len(ids) != len(set(ids)):
+        raise RepartoInvalido("Hay bots repetidos en el reparto")
+    if any(not (0 <= int(pct) <= 100) for _, pct in reparto):
+        raise RepartoInvalido("Cada porcentaje debe ser un entero entre 0 y 100")
+
+    owner_id = _resolve_owner_user_id(db, member)
+    # Bloqueo de las filas del owner: dos pestañas guardando a la vez no deben
+    # dejar un reparto mezclado que no sume 100.
+    bots = (
+        db.query(models.Bot)
+        .filter(models.Bot.user_id == owner_id)
+        .order_by(models.Bot.id)
+        .with_for_update()
+        .all()
+    )
+    por_id = {b.id: b for b in bots}
+    if any(bid not in por_id for bid in ids):
+        # Mismo 404 para inexistente y ajeno, y sin repetir qué id falló.
+        db.rollback()
+        raise BotNoEncontrado()
+    for bid in ids:
+        b = por_id[bid]
+        if b.trigger_type != models.BOT_TRIGGER_DEFAULT or b.status != "active":
+            db.rollback()
+            raise RepartoInvalido(
+                "Solo los bots activos que atienden por defecto pueden entrar al reparto"
+            )
+    if reparto and sum(int(pct) for _, pct in reparto) != 100:
+        db.rollback()
+        raise RepartoInvalido("Los porcentajes del reparto deben sumar exactamente 100")
+
+    ahora = datetime.utcnow()
+    pcts = dict(reparto)
+    for b in bots:
+        if b.id in pcts:
+            b.reparto_pct = int(pcts[b.id]) or None
+            b.reparto_desde = ahora
+        else:
+            b.reparto_pct = None
+        db.add(b)
+    db.commit()
+    _log.info(
+        "bots: reparto guardado team_id=%s user_id=%s reparto=%s",
+        member.team_id, member.user_id, sorted(pcts.items()),
+    )
+
+
+def duplicar_bot(
+    db: Session,
+    member: models.TeamMember,
+    origen: models.Bot,
+    *,
+    name: Optional[str],
+    instrucciones: Optional[str],
+) -> models.Bot:
+    """Crea una variante del bot `origen` (otro guion sobre los mismos productos).
+
+    Qué se copia: la config del bot (incluido `llm_config` tal cual — el
+    secreto Shopify va cifrado y es de esta misma cuenta), sus pasos de flujo
+    con `next_step_id` remapeado, los productos que ve (`bot_producto_bots`) y
+    sus recordatorios propios. Qué NO: historial (sesiones, decisiones LLM,
+    pedidos, demos, mascotas), contadores, ni recordatorios `bot_id = 0` (son
+    de todos los bots y ya aplican a la variante).
+
+    **Por qué la variante no recibe tráfico al nacer** (aunque nace `active` y
+    `default`): nace con `reparto_pct = NULL` y `reparto_desde = NULL`. El
+    router (`bot_router._bot_default`) sin ningún bot con pct atiende con el
+    default de menor id — el original, que es más viejo —, y con un reparto
+    configurado solo entran los bots con pct > 0. Recién al guardar un reparto
+    que la incluya empieza a recibir conversaciones.
+
+    `user_id` y `team_id` salen SIEMPRE del servidor, nunca del body. Todo en
+    una transacción: si algo falla no queda una variante a medias.
+    """
+    if origen.trigger_type != models.BOT_TRIGGER_DEFAULT:
+        raise RepartoInvalido("Solo se pueden duplicar bots que atienden por defecto")
+    if origen.team_id is not None and origen.team_id != member.team_id:
+        raise BotDeOtroTeam()
+
+    owner_id = _resolve_owner_user_id(db, member)
+    # FOR UPDATE: dos duplicados a la vez no deben pasar ambos el tope.
+    cuantos = len(
+        db.query(models.Bot.id)
+        .filter(models.Bot.user_id == owner_id)
+        .with_for_update()
+        .all()
+    )
+    if cuantos >= MAX_BOTS_POR_CUENTA:
+        raise RepartoInvalido(
+            f"La cuenta ya tiene {MAX_BOTS_POR_CUENTA} bots, el máximo permitido"
+        )
+
+    nombre = (name or "").strip()
+    if not nombre:
+        nombre = f"{origen.name} (variante)"[:120]
+    elif len(nombre) > 120:
+        raise RepartoInvalido("El nombre no puede superar 120 caracteres")
+    if _CONTROL_RE.search(nombre):
+        raise RepartoInvalido("El nombre tiene caracteres no permitidos")
+    # El guion de la variante tiene que poder editarse después: si el del
+    # original ya no cabe en el tope, mejor decirlo ahora que crear un bot
+    # cuyo guion no se puede guardar.
+    guion = (instrucciones or "").strip() or None
+    if guion is not None and len(guion) > MAX_INSTRUCCIONES:
+        raise RepartoInvalido(
+            f"El guion de este bot supera {MAX_INSTRUCCIONES} caracteres y no se "
+            "puede duplicar; acórtalo primero"
+        )
+
+    try:
+        nuevo = models.Bot(
+            user_id=owner_id,
+            team_id=member.team_id,
+            name=nombre,
+            description=origen.description,
+            status="active",
+            channels=origen.channels,
+            engine=origen.engine,
+            llm_config=origen.llm_config,
+            instrucciones=guion,
+            instrucciones_version=1,
+            trigger_type=origen.trigger_type,
+            trigger_config=origen.trigger_config,
+            reparto_pct=None,
+            reparto_desde=None,
+            triggered_count=0,
+            completed_steps_count=0,
+            finished_count=0,
+        )
+        db.add(nuevo)
+        db.flush()
+
+        # Pasos: primero todos (para tener ids), después el remapeo.
+        viejo_a_nuevo: Dict[int, models.BotStep] = {}
+        pasos_origen = (
+            db.query(models.BotStep)
+            .filter(models.BotStep.bot_id == origen.id)
+            .order_by(models.BotStep.position)
+            .all()
+        )
+        for p in pasos_origen:
+            copia = models.BotStep(
+                bot_id=nuevo.id,
+                position=p.position,
+                step_type=p.step_type,
+                label=p.label,
+                config=p.config,
+            )
+            db.add(copia)
+            viejo_a_nuevo[p.id] = copia
+        db.flush()
+        for p in pasos_origen:
+            if p.next_step_id is not None and p.next_step_id in viejo_a_nuevo:
+                viejo_a_nuevo[p.id].next_step_id = viejo_a_nuevo[p.next_step_id].id
+
+        # Productos que ve: solo los de esta cuenta (join a bot_productos).
+        enlaces = (
+            db.query(models.BotProductoBot)
+            .join(
+                models.BotProducto,
+                models.BotProducto.id == models.BotProductoBot.producto_id,
+            )
+            .filter(
+                models.BotProductoBot.bot_id == origen.id,
+                models.BotProducto.team_id == member.team_id,
+            )
+            .all()
+        )
+        for e in enlaces:
+            db.add(
+                models.BotProductoBot(
+                    bot_id=nuevo.id,
+                    producto_id=e.producto_id,
+                    activo=e.activo,
+                    orden=e.orden,
+                )
+            )
+
+        # Recordatorios propios del bot (nunca los `bot_id = 0`).
+        recordatorios = (
+            db.query(models.BotRecordatorio)
+            .filter(
+                models.BotRecordatorio.bot_id == origen.id,
+                models.BotRecordatorio.team_id == member.team_id,
+            )
+            .all()
+        )
+        for r in recordatorios:
+            db.add(
+                models.BotRecordatorio(
+                    team_id=member.team_id,
+                    bot_id=nuevo.id,
+                    orden=r.orden,
+                    minutos=r.minutos,
+                    texto=r.texto,
+                    omitir_si=r.omitir_si,
+                    hora_min=r.hora_min,
+                    hora_max=r.hora_max,
+                    activo=r.activo,
+                )
+            )
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    db.refresh(nuevo)
+    _log.info(
+        "bots: duplicado bot_id=%s -> %s team_id=%s user_id=%s pasos=%s "
+        "productos=%s recordatorios=%s",
+        origen.id, nuevo.id, member.team_id, member.user_id,
+        len(pasos_origen), len(enlaces), len(recordatorios),
+    )
+    return nuevo
+
+
+#: Tope del guion editable. El guion de viajes (`bot_contexts/demo_viajes.md`)
+#: ya tiene ~34.000 caracteres (~9.000 tokens por turno) y tiene que caber para
+#: poder duplicarlo y editarlo; más que esto es un documento pegado, no un guion.
+MAX_INSTRUCCIONES = 40000
+
+# Caracteres de control (salvo \n \r \t), C1, marcas bidi y de ancho cero:
+# sirven para esconder texto en un guion que otra persona va a revisar.
+# U+200C/U+200D (ZWNJ/ZWJ) NO van: el ZWJ une emojis compuestos (🚣‍♀️, 👨‍👩‍👧)
+# y el guion de viajes los usa.
+_CONTROL_RE = re.compile(
+    "[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f"
+    "\u200b\u200e\u200f\u202a-\u202e\u2066-\u2069\ufeff]"
+)
+
+
+def validar_instrucciones(texto: Optional[str]) -> str:
+    """Strip + 1..MAX_INSTRUCCIONES + sin caracteres de control (salvo \\n \\r \\t)."""
+    limpio = (texto or "").strip()
+    if not limpio:
+        raise RepartoInvalido("Las instrucciones no pueden quedar vacías")
+    if len(limpio) > MAX_INSTRUCCIONES:
+        raise RepartoInvalido(
+            f"Las instrucciones no pueden superar {MAX_INSTRUCCIONES} caracteres"
+        )
+    if _CONTROL_RE.search(limpio):
+        raise RepartoInvalido("Las instrucciones tienen caracteres no permitidos")
+    return limpio
+
+
+def guardar_instrucciones(
+    db: Session, member: models.TeamMember, bot: models.Bot, texto: str
+) -> models.Bot:
+    """Guarda el guion y sube `instrucciones_version`. Lanza `RepartoInvalido`."""
+    limpio = validar_instrucciones(texto)
+    bot.instrucciones = limpio
+    bot.instrucciones_version = int(bot.instrucciones_version or 0) + 1
+    db.add(bot)
+    db.commit()
+    db.refresh(bot)
+    # Auditoría sin el contenido (regla #1): quién, qué bot, versión y tamaño.
+    _log.info(
+        "bots: instrucciones guardadas user_id=%s team_id=%s bot_id=%s version=%s len=%s",
+        member.user_id, member.team_id, bot.id, bot.instrucciones_version, len(limpio),
+    )
+    return bot
 
 
 def create_bot_with_steps(

@@ -764,6 +764,16 @@ def _instrucciones_de(bot, cfg: Dict[str, Any]) -> str:
     return _load_context(cfg.get("context_key", ""))
 
 
+def instrucciones_efectivas(bot) -> Optional[str]:
+    """El guion que de verdad usa el bot (columna o `.md`), o None si no hay.
+
+    Público para `/bots/{id}` y para duplicar: la variante nace con su propia
+    copia en la columna, editable sin desplegar.
+    """
+    texto = _instrucciones_de(bot, config_de(bot)).strip()
+    return texto or None
+
+
 def _system_prompt(
     bot,
     cfg: Dict[str, Any],

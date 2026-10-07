@@ -280,12 +280,25 @@ class Conversation(Base):
     # NULL = sin etiqueta; no hay default a propósito, para que "sin marcar" y
     # "marcada" sean distinguibles sin inventar un valor centinela.
     etiqueta = Column(String, nullable=True)
+    # Reparto de conversaciones nuevas entre varios bots `default` de la cuenta
+    # (A/B de guiones). Qué bot le tocó a este contacto y cuándo. Es pegajoso:
+    # si vuelve días después, lo atiende el mismo guion y la comparación no se
+    # ensucia. NULL = nunca entró a un reparto (cuentas con un solo bot).
+    bot_asignado_id = Column(
+        Integer,
+        ForeignKey("bots.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    bot_asignado_at = Column(DateTime, nullable=True)
     last_message_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
     __table_args__ = (
         UniqueConstraint("team_id", "contact_wa_id", name="uq_team_contact"),
         Index("ix_conversations_team_last_message", "team_id", "last_message_at"),
+        # Conteo del reparto: conversaciones por bot desde `reparto_desde`.
+        # También cubre el ON DELETE SET NULL de la FK (columna líder).
+        Index("ix_conversations_bot_asignado_at", "bot_asignado_id", "bot_asignado_at"),
     )
 
     team = relationship("Team", back_populates="conversations")
@@ -402,6 +415,15 @@ class Bot(Base):
         String(32), nullable=False, default=BOT_TRIGGER_MANUAL
     )
     trigger_config = Column(Text, nullable=True)  # JSON serializado
+    # Porcentaje de las conversaciones NUEVAS que recibe este bot entre los
+    # bots `default` activos de la cuenta (varios guiones sobre los mismos
+    # productos). NULL o 0 = no entra al reparto. Si ningún bot de la cuenta
+    # tiene porcentaje, se usa el default de menor id, como siempre.
+    reparto_pct = Column(Integer, nullable=True)
+    # Cuándo se guardó el reparto vigente. El conteo para cumplir los
+    # porcentajes arranca aquí: cambiar 100/0 a 50/50 no debe mandarle al bot
+    # nuevo todo lo que "le debe" del reparto anterior.
+    reparto_desde = Column(DateTime, nullable=True)
     triggered_count = Column(Integer, nullable=False, default=0)
     completed_steps_count = Column(Integer, nullable=False, default=0)
     finished_count = Column(Integer, nullable=False, default=0)

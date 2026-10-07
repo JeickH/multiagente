@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useRouter } from 'next/router';
 import Head from 'next/head';
+import { ApiError, authedFetch } from '../../lib/api';
 import { cerrarSesion, getToken } from '../../lib/session';
 
 type BotStep = {
@@ -27,7 +28,192 @@ type BotDetail = {
   created_at: string;
   updated_at: string;
   steps: BotStep[];
+  /** Guion (prompt) del bot LLM. `null` si el bot no tiene uno guardado. */
+  instrucciones?: string | null;
+  /** % de las conversaciones nuevas que recibe; `null` = fuera del reparto. */
+  reparto_pct?: number | null;
 };
+
+const MAX_GUION = 40000;
+const MSG_SOLO_DUENO = 'Solo el dueño de la cuenta puede cambiar esto.';
+
+type EstadoGuardado = 'idle' | 'guardando' | 'guardado' | 'error';
+
+/**
+ * Guion del bot LLM: el texto con el que la IA decide qué responder. Editarlo
+ * acá es la forma de probar otra estructura de conversación en una variante
+ * (A/B) sin tocar el bot original.
+ */
+function GuionPanel({
+  bot,
+  puedeEditar,
+  abiertoInicial,
+  onGuardado,
+}: {
+  bot: BotDetail;
+  puedeEditar: boolean;
+  abiertoInicial: boolean;
+  onGuardado: (bot: BotDetail) => void;
+}) {
+  const original = bot.instrucciones ?? '';
+  const [abierto, setAbierto] = useState(abiertoInicial);
+  const [texto, setTexto] = useState(original);
+  const [estado, setEstado] = useState<EstadoGuardado>('idle');
+  const [error, setError] = useState('');
+
+  // Si el bot se recarga (p. ej. tras guardar), el borrador vuelve a lo guardado.
+  useEffect(() => {
+    setTexto(bot.instrucciones ?? '');
+  }, [bot.instrucciones]);
+
+  const sucio = texto !== original;
+  // Por code points, como `len()` del backend: con `.length` (UTF-16) cada
+  // emoji cuenta doble y la UI bloquearía un guion que el backend acepta.
+  const largo = Array.from(texto).length;
+  const vacio = texto.trim().length === 0;
+  const excedido = largo > MAX_GUION;
+
+  // No perder un guion largo a medio editar por cerrar la pestaña.
+  useEffect(() => {
+    if (!sucio) return;
+    const avisar = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = '';
+    };
+    window.addEventListener('beforeunload', avisar);
+    return () => window.removeEventListener('beforeunload', avisar);
+  }, [sucio]);
+
+  const guardar = async () => {
+    if (!sucio || vacio || excedido) return;
+    setEstado('guardando');
+    setError('');
+    try {
+      const actualizado = await authedFetch<BotDetail>(`/bots/${bot.id}/instrucciones`, {
+        method: 'PUT',
+        body: JSON.stringify({ instrucciones: texto }),
+      });
+      onGuardado(actualizado);
+      setEstado('guardado');
+    } catch (err) {
+      setEstado('error');
+      if (err instanceof ApiError && err.status === 403) setError(MSG_SOLO_DUENO);
+      else if (err instanceof ApiError) setError(err.message);
+      else setError('No se pudo guardar el guion. Intenta de nuevo.');
+    }
+  };
+
+  const editor = (
+    <>
+      {bot.instrucciones == null && (
+        <p className="mt-3 text-xs text-gray-500">Este bot todavía no tiene un guion guardado.</p>
+      )}
+      <textarea
+        value={texto}
+        onChange={(e) => {
+          setTexto(e.target.value);
+          if (estado !== 'guardando') setEstado('idle');
+        }}
+        spellCheck={false}
+        rows={18}
+        aria-label="Guion del bot"
+        className="mt-3 w-full font-mono text-[13px] leading-relaxed text-gray-800 px-3 py-2 border border-gray-300 rounded-md resize-y focus:outline-none focus:border-gloma-mint focus:ring-1 focus:ring-gloma-mint"
+        placeholder="Escribe aquí cómo debe atender el bot: tono, pasos de la conversación, qué ofrecer y cuándo pasar a un asesor."
+      />
+      <div className="mt-1 flex flex-wrap items-center justify-between gap-2 text-xs">
+        <span className={excedido ? 'text-red-600 font-medium' : 'text-gray-400'}>
+          {largo.toLocaleString('es-CO')} / {MAX_GUION.toLocaleString('es-CO')} caracteres
+          {excedido && ' — supera el máximo permitido'}
+        </span>
+        <span className="text-gray-500">
+          El cambio aplica a las próximas respuestas del bot.
+        </span>
+      </div>
+      <p className="mt-2 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded px-3 py-2">
+        ⚠️ No pegues contraseñas, llaves ni links privados: el guion se le envía al modelo de IA y
+        un cliente podría sacárselo al bot.
+      </p>
+
+      {error && (
+        <div className="mt-3 bg-red-50 border border-red-200 text-red-700 px-3 py-2 rounded text-sm">
+          {error}
+        </div>
+      )}
+
+      <div className="mt-3 flex items-center gap-3">
+        <button
+          type="button"
+          onClick={guardar}
+          disabled={!sucio || vacio || excedido || estado === 'guardando'}
+          className="px-4 py-1.5 text-sm bg-gloma-brown text-white rounded-md font-semibold hover:bg-gloma-brown-dark disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {estado === 'guardando' ? 'Guardando…' : 'Guardar guion'}
+        </button>
+        {sucio && estado !== 'guardando' && (
+          <button
+            type="button"
+            onClick={() => {
+              setTexto(original);
+              setEstado('idle');
+              setError('');
+            }}
+            className="text-sm text-gray-600 hover:text-gray-800"
+          >
+            Descartar cambios
+          </button>
+        )}
+        {estado === 'guardado' && !sucio && (
+          <span className="text-sm text-gloma-forest" aria-live="polite">
+            ✓ Guardado
+          </span>
+        )}
+        {vacio && sucio && (
+          <span className="text-xs text-red-600">El guion no puede quedar vacío.</span>
+        )}
+      </div>
+    </>
+  );
+
+  return (
+    <section
+      className={`sticky left-0 mt-4 max-w-4xl bg-white border border-gray-200 rounded-lg shadow-sm ${
+        bot.steps.length === 0 ? 'mx-auto mb-8' : 'mx-4'
+      }`}
+    >
+      <button
+        type="button"
+        onClick={() => setAbierto((v) => !v)}
+        className="w-full flex items-center justify-between gap-3 px-4 py-3 text-left"
+        aria-expanded={abierto}
+      >
+        <div>
+          <h2 className="text-sm font-semibold text-gray-800">📝 Guion del bot</h2>
+          <p className="text-xs text-gray-500">
+            Las instrucciones que sigue la IA para conversar con tus clientes.
+          </p>
+        </div>
+        <span className="text-xs text-gray-500 shrink-0">
+          {sucio && <span className="text-amber-600 font-medium mr-2">Cambios sin guardar</span>}
+          {abierto ? 'Ocultar ▲' : puedeEditar ? 'Ver y editar ▼' : 'Ver ▼'}
+        </span>
+      </button>
+
+      {abierto && (
+        <div className="px-4 pb-4 border-t border-gray-100">
+          {puedeEditar ? (
+            editor
+          ) : (
+            // El backend no manda el guion a quien no es dueño (viene `null`),
+            // así que no hay nada que mostrar: solo se explica por qué.
+            <p className="mt-3 text-sm text-gray-600">
+              Solo el dueño de la cuenta puede ver y editar el guion.
+            </p>
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
 
 type BotAction = {
   type: 'say' | 'say_media' | 'say_catalog' | 'ask' | 'pause' | 'end' | 'handoff';
@@ -774,6 +960,16 @@ export default function BotDetailPage() {
   // #265: zoom del visualizador. null = aún sin calcular; al cargar el bot se
   // ajusta automáticamente para VER EL ESQUEMA COMPLETO (vista por defecto).
   const [zoom, setZoom] = useState<number | null>(null);
+  // `null` = no se pudo saber: se deja editar y el backend responde con 403.
+  // El rol sale de /teams/me, nunca del JWT (regla 7).
+  const [esDueno, setEsDueno] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    if (!getToken()) return;
+    authedFetch<{ member: { role: string } }>('/teams/me')
+      .then((me) => setEsDueno(me?.member?.role === 'owner'))
+      .catch(() => setEsDueno(null));
+  }, []);
 
   useEffect(() => {
     if (!id || typeof id !== 'string') return;
@@ -972,6 +1168,14 @@ export default function BotDetailPage() {
             <h1 className="text-lg font-semibold text-gray-800">
               {bot?.name || (error ? 'Error' : 'Cargando…')}
             </h1>
+            {bot?.reparto_pct != null && (
+              <span
+                className="text-xs font-medium px-2 py-0.5 rounded-full bg-gloma-soft-mint text-gloma-forest border border-gloma-mint/40"
+                title="Porcentaje de las conversaciones nuevas que recibe este bot"
+              >
+                Recibe {bot.reparto_pct} % de las conversaciones nuevas
+              </span>
+            )}
           </div>
           <div className="flex items-center gap-2">
             <button
@@ -1022,6 +1226,15 @@ export default function BotDetailPage() {
               de acción indican qué hace y de dónde saca la información; el texto
               final al cliente siempre lo redacta la IA.
             </div>
+          )}
+
+          {bot && bot.engine === 'llm' && (
+            <GuionPanel
+              bot={bot}
+              puedeEditar={esDueno !== false}
+              abiertoInicial={bot.steps.length === 0}
+              onGuardado={(b) => setBot((prev) => (prev ? { ...prev, ...b } : b))}
+            />
           )}
 
           {bot && (bot.engine !== 'llm' || bot.steps.length > 0) && (

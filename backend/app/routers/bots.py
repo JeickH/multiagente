@@ -1,15 +1,27 @@
+import logging
 from datetime import datetime
-from typing import List
+from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Body, Depends, HTTPException
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
 from .. import crud, models, schemas
-from ..dependencies import get_current_membership, get_db
+from ..dependencies import get_current_membership, get_current_owner_membership, get_db
 from ..services import bot_engine, llm_engine, pausa, pedidos_sheet
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/bots", tags=["bots"])
+
+
+def _detalle(bot: models.Bot, member: models.TeamMember) -> dict:
+    """`BotDetail` con el guion efectivo solo para el owner (None para los
+    demás miembros: el guion es configuración del negocio, no de la bandeja)."""
+    instrucciones = (
+        llm_engine.instrucciones_efectivas(bot) if member.role == "owner" else None
+    )
+    return crud.bot_to_detail(bot, instrucciones=instrucciones)
 
 
 @router.get("", response_model=List[schemas.BotListItem])
@@ -21,8 +33,7 @@ def list_bots(
 
     Cualquier miembro del team ve los mismos bots (los del owner). Sprint 9.
     """
-    bots = crud.list_bots_visible_to_member(db, member)
-    return [crud.bot_to_list_item(b) for b in bots]
+    return crud.list_bot_items_for_member(db, member)
 
 
 @router.get("/export")
@@ -50,6 +61,31 @@ def export_bots(
     )
 
 
+# OJO: declarada ANTES de `/{bot_id}`. Hoy no chocan (métodos distintos), pero
+# si algún día se agrega `PUT /{bot_id}`, FastAPI intentaría parsear "reparto"
+# como id y respondería 422.
+@router.put("/reparto", response_model=List[schemas.BotListItem])
+def put_reparto(
+    payload: schemas.BotRepartoIn,
+    db: Session = Depends(get_db),
+    member: models.TeamMember = Depends(get_current_owner_membership),
+):
+    """Reparte las conversaciones NUEVAS entre los bots default activos (A/B).
+
+    Los porcentajes deben sumar 100. `{"reparto": []}` quita el reparto y la
+    cuenta vuelve a atender con el default de menor id.
+    """
+    try:
+        crud.guardar_reparto(
+            db, member, [(i.bot_id, i.pct) for i in payload.reparto]
+        )
+    except crud.BotNoEncontrado:
+        raise HTTPException(status_code=404, detail="Bot no encontrado")
+    except crud.RepartoInvalido as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return crud.list_bot_items_for_member(db, member)
+
+
 @router.get("/{bot_id}", response_model=schemas.BotDetail)
 def get_bot_detail(
     bot_id: int,
@@ -60,7 +96,61 @@ def get_bot_detail(
     bot = crud.get_bot_visible_to_member(db, member, bot_id)
     if not bot:
         raise HTTPException(status_code=404, detail="Bot no encontrado")
-    return crud.bot_to_detail(bot)
+    return _detalle(bot, member)
+
+
+@router.post(
+    "/{bot_id}/duplicar", response_model=schemas.BotDetail, status_code=201
+)
+def duplicar_bot(
+    bot_id: int,
+    payload: Optional[schemas.BotDuplicarIn] = Body(default=None),
+    db: Session = Depends(get_db),
+    member: models.TeamMember = Depends(get_current_owner_membership),
+):
+    """Crea una variante del bot (otro guion sobre los mismos productos).
+
+    La variante no recibe conversaciones hasta que se la incluya en el
+    reparto (`PUT /bots/reparto`).
+    """
+    origen = crud.get_bot_visible_to_member(db, member, bot_id)
+    if not origen:
+        raise HTTPException(status_code=404, detail="Bot no encontrado")
+    try:
+        nuevo = crud.duplicar_bot(
+            db,
+            member,
+            origen,
+            name=payload.name if payload else None,
+            instrucciones=llm_engine.instrucciones_efectivas(origen),
+        )
+    except crud.RepartoInvalido as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except crud.BotDeOtroTeam:
+        logger.warning(
+            "bots: duplicar bot de otro team bot_id=%s team_id=%s user_id=%s",
+            bot_id, member.team_id, member.user_id,
+        )
+        raise HTTPException(status_code=409, detail="No se puede duplicar este bot")
+    return _detalle(nuevo, member)
+
+
+@router.put("/{bot_id}/instrucciones", response_model=schemas.BotDetail)
+def put_instrucciones(
+    bot_id: int,
+    payload: schemas.BotInstruccionesIn,
+    db: Session = Depends(get_db),
+    member: models.TeamMember = Depends(get_current_owner_membership),
+):
+    """Guarda el guion del bot. Manda desde el turno siguiente, sin desplegar."""
+    bot = crud.get_bot_visible_to_member(db, member, bot_id)
+    if not bot:
+        raise HTTPException(status_code=404, detail="Bot no encontrado")
+    try:
+        bot = crud.guardar_instrucciones(db, member, bot, payload.instrucciones)
+    except crud.RepartoInvalido as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return _detalle(bot, member)
 
 
 @router.post("/{bot_id}/simulate", response_model=schemas.BotSimulateOut)

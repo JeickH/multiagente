@@ -54,8 +54,10 @@ STATEMENTS: list[str] = [
     "CREATE INDEX IF NOT EXISTS ix_bots_user_id ON bots(user_id);",
     "CREATE INDEX IF NOT EXISTS ix_bots_user_updated ON bots(user_id, updated_at);",
 
-    # 6) UNIQUE parcial: un solo bot con trigger_type='default' por usuario
-    "CREATE UNIQUE INDEX IF NOT EXISTS uq_one_default_bot_per_user ON bots(user_id) WHERE trigger_type = 'default';",
+    # 6) (Retirado 2026-10-07) Aquí se creaba `uq_one_default_bot_per_user`,
+    #    un UNIQUE parcial de un solo bot default por usuario. Lo quitó
+    #    `migrate_reparto_bots.py`: una cuenta puede tener varios default y
+    #    repartir entre ellos. No volver a crearlo.
 
     # 7) Drop is_premium (ya no se usa)
     "ALTER TABLE bots DROP COLUMN IF EXISTS is_premium;",
