@@ -1,6 +1,6 @@
 from datetime import date, datetime
-from typing import Optional, List, Dict, Any
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
+from typing import Optional, List, Dict, Any, Literal
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
 
 
 # ===== Users =====
@@ -31,6 +31,8 @@ class UserOut(BaseModel):
 # ===== Tutoriales interactivos (Sprint 15) =====
 ALLOWED_TUTORIAL_MODULES = {
     "mi_plan", "mensajes", "bots", "campanas", "agendamientos",
+    # Pestaña Interesados de /agendamientos (estrategia #22).
+    "agendamientos_interesados",
 }
 
 
@@ -43,7 +45,8 @@ class TutorialStateOut(BaseModel):
 class TutorialsOut(BaseModel):
     """Estado de los tutoriales del usuario autenticado por módulo.
 
-    Llaves: mi_plan, mensajes, bots, campanas, agendamientos (whitelist).
+    Llaves: mi_plan, mensajes, bots, campanas, agendamientos,
+    agendamientos_interesados (whitelist).
     Si una llave no está presente significa que el usuario NUNCA hizo
     ese tutorial → el frontend debe mostrarlo.
     """
@@ -1125,3 +1128,85 @@ class AvisoPagoOut(BaseModel):
     mostrar: bool
     clave: Optional[str] = None
     pausado: bool = False
+
+
+# ===== Interesados (estrategia #22, /agendamientos/interesados) =====
+#
+# Lo que viaja: nombre y teléfono del cliente (la asesora tiene que escribirle o
+# llamarlo), el fragmento de lo que escribió (ya sin teléfonos, correos ni
+# enlaces) y el resumen del bot. Del bot, solo id y nombre (nada de su config).
+# De quien lo gestionó, solo su nombre visible (nunca el correo).
+
+class InteresadoBotOut(BaseModel):
+    id: int
+    nombre: str
+
+
+class InteresadoInteresOut(BaseModel):
+    mes: Optional[str] = None      # "2026-12"
+    hotel: Optional[str] = None
+
+
+class InteresadoOut(BaseModel):
+    id: int
+    conversation_id: int
+    contacto: Optional[str] = None
+    telefono: str
+    tipos: List[str]
+    fragmento: Optional[str] = None
+    resumen: Optional[str] = None
+    detectado_at: datetime
+    conversacion_inicio_at: datetime
+    interesado_desde: datetime
+    ultimo_mensaje_cliente_at: Optional[datetime] = None
+    ventana_cierra_at: Optional[datetime] = None
+    interes: Optional[InteresadoInteresOut] = None
+    bot: InteresadoBotOut
+    estado: str
+    gestionado_por: Optional[str] = None
+    gestionado_at: Optional[datetime] = None
+    motivo_descarte: Optional[str] = None
+    # Además del contrato (aditivos): quién la tomó desde Interesados.
+    tomado_por: Optional[str] = None
+    tomado_at: Optional[datetime] = None
+    # "bot" mientras la atiende el bot; "asesor" si ya la tiene una persona.
+    atiende: str = "bot"
+
+
+class InteresadosResumenOut(BaseModel):
+    por_contactar: int
+    urgentes: int
+    ventana_cerrada: int
+    contactados_hoy: int = 0
+
+
+class InteresadosPageOut(BaseModel):
+    habilitado: bool
+    interesados: List[InteresadoOut]
+    total: int
+    pagina: int
+    por_pagina: int
+    resumen: InteresadosResumenOut
+    generado_at: datetime
+    umbral_horas: float
+    puede_tomar: bool
+
+
+class InteresadoCambioIn(BaseModel):
+    """`PATCH /agendamientos/interesados/{id}`.
+
+    `motivo` es una lista cerrada (revisión de seguridad S9): obligatorio con
+    `descartado`, prohibido con los otros dos estados.
+    """
+    model_config = ConfigDict(extra="forbid")
+
+    estado: Literal["por_contactar", "contactado", "descartado"]
+    motivo: Optional[Literal["no_interesa", "ya_compro", "numero_equivocado", "otro"]] = None
+
+    @model_validator(mode="after")
+    def _motivo_segun_estado(self):
+        if self.estado == "descartado" and not self.motivo:
+            raise ValueError("falta el motivo del descarte")
+        if self.estado != "descartado" and self.motivo:
+            raise ValueError("el motivo solo aplica al descartar")
+        return self

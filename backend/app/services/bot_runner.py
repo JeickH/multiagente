@@ -294,17 +294,38 @@ def _marcar_abandonada(
     """
     asesor = _asesor_para_el_abandono(db, conversation)
 
+    if asesor and not crud.asignar_si_sigue(
+        db,
+        conversation_id=conversation.id,
+        team_id=conversation.team_id,
+        # Literal, no `conversation.assigned_to`: `_asesor_para_el_abandono`
+        # puede hacer commit (reparto por turnos) y con expire_on_commit el
+        # objeto se relee con el valor ACTUAL — si alguien tomó el chat en ese
+        # instante, el compara-y-asigna "acertaría" y se lo quitaría.
+        # `_procesar_silencio`, el único llamador, ya comprobó que era del bot.
+        esperado="bot",
+        destino=asesor,
+    ):
+        # Compara-y-asigna (revisión de seguridad S2): si una persona tomó el
+        # chat (Interesados, /mensajes) entre la revisión de
+        # `_procesar_silencio` y este punto, ya es suyo: no se le quita, no se
+        # etiqueta como abandonado y no se agenda llamada.
+        db.rollback()
+        logger.info(
+            "bot_runner: abandono sin efecto, el chat ya tiene dueño conv=%s",
+            conversation.id,
+        )
+        return None
+
     conversation.etiqueta = etiqueta
-    if asesor:
-        conversation.status = "pending"
-        conversation.assigned_to = asesor
-    else:
+    if not asesor:
         # Sin nadie a quien entregársela, dejarla `pending` sería mentirle a la
         # bandeja: figuraría por atender y seguiría siendo del bot. Se cierra
         # etiquetada, como antes de este cambio.
         conversation.status = "closed"
     db.add(conversation)
     db.commit()
+    db.refresh(conversation)
 
     if asesor:
         etapas = etapas or [{"minutos": minutos}]
@@ -425,6 +446,130 @@ def _apuntar_en_el_historial(
     db.commit()
 
 
+def _cambio_de_dueno(
+    db: Session, conversation: models.Conversation, asignado_al_inicio: str
+) -> bool:
+    """¿Alguien le cambió el dueño al chat mientras corría el turno?
+
+    Se relee solo `assigned_to` de la base. Compara contra lo que había al
+    empezar el turno, no contra "bot": así un llamador que corre un turno sobre
+    un chat que ya era de una persona no cambia de comportamiento.
+    """
+    try:
+        db.refresh(conversation, ["assigned_to"])
+    except Exception:  # pragma: no cover - objeto fuera de la sesión
+        return False
+    return (conversation.assigned_to or "bot") != asignado_al_inicio
+
+
+def _ya_se_presento(
+    db: Session,
+    bot: models.Bot,
+    conversation: models.Conversation,
+    session: models.BotSession,
+    state: Optional[dict],
+    retomada: bool,
+) -> bool:
+    """#11: ¿el bot ya se presentó en ESTE chat, en esta sesión o en otra?
+
+    Cómo se decide (sin leer textos, que sería adivinar con una regex):
+      1. La sesión actual ya trae historial, o es una sesión cerrada que se
+         retomó (ventana `retomar`): el bot ya habló aquí.
+      2. Hay una sesión ANTERIOR de este mismo bot en esta conversación (de
+         cualquier fecha, fuera de la ventana `retomar` también) **y** el bot
+         alcanzó a mandarle al cliente al menos un mensaje antes de que
+         empezara la sesión actual. El primer turno de toda sesión es el
+         saludo con la presentación, así que "hubo sesión y salió algo" es "ya
+         se presentó". Se exige el mensaje para no contar una sesión que se
+         cayó antes de decir nada.
+
+    Mensaje "del bot" = saliente, sin `sent_by_user_id` (no lo escribió una
+    persona), que no sea nota interna ni haya fallado. Las dos consultas van
+    por índice (`ix_bot_sessions_conv_status`, `ix_messages_conversation_created`).
+    Ante cualquier error responde False: presentarse de más es el
+    comportamiento de hoy; no presentarse nunca sería peor.
+    """
+    if retomada or (isinstance(state, dict) and state.get("history")):
+        return True
+    try:
+        anterior = (
+            db.query(models.BotSession.id)
+            .filter(
+                models.BotSession.conversation_id == conversation.id,
+                models.BotSession.bot_id == bot.id,
+                models.BotSession.id != session.id,
+                models.BotSession.started_at <= session.started_at,
+            )
+            .first()
+        )
+        if anterior is None:
+            return False
+        hablo = (
+            db.query(models.Message.id)
+            .filter(
+                models.Message.conversation_id == conversation.id,
+                models.Message.direction == "outbound",
+                models.Message.sent_by_user_id.is_(None),
+                # Ni la nota interna (no viaja) ni la plantilla de una campaña
+                # (no es el bot presentándose).
+                models.Message.message_type.notin_(("nota_interna", "template")),
+                models.Message.status != "failed",
+                models.Message.created_at < session.started_at,
+            )
+            .first()
+        )
+        return hablo is not None
+    except Exception:  # pragma: no cover - defensivo
+        logger.exception(
+            "bot_runner: no se pudo saber si el bot ya se presentó conv=%s",
+            conversation.id,
+        )
+        return False
+
+
+def soltar_conversacion(db: Session, conversation: models.Conversation) -> int:
+    """El bot suelta el chat porque lo tomó una persona (Interesados).
+
+    Mismo efecto que el pase del bot sobre lo programado: se cancelan TODAS
+    las acciones pendientes de sus sesiones vivas (recordatorios, abandono,
+    pausas) y las sesiones terminan. No toca `assigned_to` (eso ya lo hizo el
+    compara-y-asigna) ni le escribe nada al cliente. Devuelve cuántas acciones
+    canceló.
+    """
+    ahora = datetime.utcnow()
+    vivas = (
+        db.query(models.BotSession)
+        .filter(
+            models.BotSession.conversation_id == conversation.id,
+            models.BotSession.status.in_(
+                (models.BOT_SESSION_RUNNING, models.BOT_SESSION_WAITING)
+            ),
+        )
+        .all()
+    )
+    canceladas = 0
+    for sesion in vivas:
+        canceladas += _cancelar_pendientes(db, sesion)
+        otras = (
+            db.query(models.BotPendingAction)
+            .filter(
+                models.BotPendingAction.session_id == sesion.id,
+                models.BotPendingAction.status == models.BOT_PENDING_STATUS_PENDING,
+            )
+            .all()
+        )
+        for pa in otras:
+            pa.status = models.BOT_PENDING_STATUS_DONE
+            pa.processed_at = ahora
+        canceladas += len(otras)
+        sesion.status = models.BOT_SESSION_FINISHED
+        sesion.finished_at = ahora
+        sesion.updated_at = ahora
+        db.add(sesion)
+    db.commit()
+    return canceladas
+
+
 def run_turn(
     db: Session,
     *,
@@ -478,22 +623,33 @@ def run_turn(
         # marcado como abandonado.
         _reabrir_conversacion(db, conversation)
 
+    # Quién atendía el chat al empezar el turno. La llamada al modelo tarda
+    # segundos y en ese rato una asesora puede tomarlo desde Interesados o
+    # /mensajes: lo que el bot redactó para un chat que ya no es suyo no se
+    # envía (revisión de seguridad S2, ver abajo).
+    asignado_al_inicio = conversation.assigned_to or "bot"
+
     state = _load_state(session)
     if is_llm:
-        result = llm_engine.advance(
-            bot,
-            state,
-            user_input,
-            runtime={
-                "bot_id": getattr(bot, "id", None),
-                "source": "whatsapp",
-                "conversation_id": conversation.id,
-                # Lo que hace que el nombre sobreviva a que se acabe la sesión.
-                "contact_name": (conversation.contact_name or "").strip() or None,
-                "retomada": retomada,
-                "desde": llm_engine.hace_cuanto(cerrada_desde) if retomada else None,
-            },
-        )
+        runtime = {
+            "bot_id": getattr(bot, "id", None),
+            "source": "whatsapp",
+            "conversation_id": conversation.id,
+            # Lo que hace que el nombre sobreviva a que se acabe la sesión.
+            "contact_name": (conversation.contact_name or "").strip() or None,
+            "retomada": retomada,
+            "desde": llm_engine.hace_cuanto(cerrada_desde) if retomada else None,
+        }
+        # #11 / #4 (bot 2): solo con `presentacion_una_vez` o
+        # `apertura_vitrina` se calcula y se agrega la llave (el motor la usa
+        # para no repetir presentación ni el saludo + flyer a quien vuelve).
+        # Sin esos flags el runtime queda idéntico al de siempre (lo vigila el
+        # golden del bot 1) y no se paga ninguna consulta.
+        if cfg.get("presentacion_una_vez") or cfg.get("apertura_vitrina"):
+            runtime["ya_se_presento"] = _ya_se_presento(
+                db, bot, conversation, session, state, retomada
+            )
+        result = llm_engine.advance(bot, state, user_input, runtime=runtime)
         # #255: registrar la decisión del turno (camino, tools, latencia) en
         # bot_llm_decisions. Nunca rompe el turno (record_decision es defensivo).
         llm_engine.record_decision(
@@ -517,6 +673,18 @@ def run_turn(
             team_id=conversation.team_id,
             conversation_id=conversation.id,
         )
+        # #22 (bot 2): intención de compra → `intenciones_compra` (Interesados).
+        # Sin `llm_config.intencion_compra` no entra: ni consulta ni escritura.
+        if agendamientos.config_intencion(cfg) is not None:
+            agendamientos.registrar_intencion(
+                db,
+                cfg=cfg,
+                bot=bot,
+                conversation=conversation,
+                session=session,
+                user_input=user_input,
+                telemetry=result.get("telemetry"),
+            )
     else:
         result = bot_engine.advance(bot, state, user_input)
 
@@ -525,6 +693,25 @@ def run_turn(
     finished = bool(result["finished"])
     # Un bot LLM sin finalizar siempre espera el próximo mensaje del usuario.
     waiting = any(a.get("type") == "ask" for a in actions) or (is_llm and not finished)
+
+    if is_llm and _cambio_de_dueno(db, conversation, asignado_al_inicio):
+        # Una persona tomó el chat mientras el modelo pensaba. No sale nada
+        # hacia el cliente (ni texto, ni media, ni despedida, ni pase); solo se
+        # guarda el historial, para que el contexto no se pierda si el chat
+        # vuelve al bot. El estado de la sesión lo decidió quien lo tomó.
+        for action in actions:
+            if action.get("type") == "perfil":
+                _guardar_nombre(db, conversation, (action.get("payload") or {}).get("nombre", ""))
+        db.refresh(session)
+        session.state = json.dumps(next_state) if next_state else None
+        session.updated_at = datetime.utcnow()
+        db.add(session)
+        db.commit()
+        logger.info(
+            "bot_runner: turno descartado, el chat cambió de dueño conv=%s bot=%s",
+            conversation.id, getattr(bot, "id", None),
+        )
+        return session
 
     # Procesamos las acciones en orden. Si encontramos un `pause`, cortamos
     # el turno y programamos un delay; el resto queda para cuando vuelva.
@@ -600,10 +787,24 @@ def run_turn(
             # entra al turno igual: ver `crud.resolver_asesor`.
             team = db.query(models.Team).get(conversation.team_id)
             assignee = crud.resolver_asesor(db, team, payload.get("assignee"))
-            conversation.status = "pending"
-            conversation.assigned_to = assignee
-            db.add(conversation)
+            # Compara-y-asigna (revisión de seguridad S2): solo si sigue con
+            # quien lo tenía al empezar el turno. Si una persona lo tomó en el
+            # medio, el chat es suyo y el pase del bot no se hace.
+            if not crud.asignar_si_sigue(
+                db,
+                conversation_id=conversation.id,
+                team_id=conversation.team_id,
+                esperado=asignado_al_inicio,
+                destino=assignee,
+            ):
+                db.rollback()
+                logger.info(
+                    "bot_runner: handoff sin efecto, el chat ya tiene dueño conv=%s",
+                    conversation.id,
+                )
+                continue
             db.commit()
+            db.refresh(conversation)
             _nota_de_handoff(db, conversation, payload)
             text = payload.get("text", "")
             if text and text.strip():
@@ -649,6 +850,7 @@ def _nota_de_handoff(
     payload: dict,
     *,
     titulo: str = _TITULO_NOTA,
+    sent_by_user_id: Optional[int] = None,
 ) -> None:
     """Deja en el chat lo que el bot ya averiguó, para el asesor que lo recibe.
 
@@ -663,6 +865,8 @@ def _nota_de_handoff(
 
     `titulo` existe para que el abandono (Sprint 24) reutilice esta nota sin
     encabezarla como un "resumen del bot": ahí no hubo pase, hubo silencio.
+    `sent_by_user_id` lo pone "tomar" de Interesados: el pase lo hizo una
+    persona y la nota queda a su nombre (auditoría).
     """
     resumen = (payload.get("resumen") or "").strip()
     motivo = (payload.get("motivo") or "").strip()
@@ -686,7 +890,7 @@ def _nota_de_handoff(
             content="\n".join(lineas),
             message_type="nota_interna",
             status="sent",
-            sent_by_user_id=None,
+            sent_by_user_id=sent_by_user_id,
         )
     except Exception:
         # Una nota que falle no puede tumbar el handoff: el chat ya cambió de
@@ -949,6 +1153,71 @@ def _condicion_cumplida(
     return None
 
 
+def _plantilla_de(seguimiento: Optional[dict], etapa: dict) -> Optional[str]:
+    """La `plantilla` de la etapa, buscada en `llm_config.seguimiento`.
+
+    `llm_engine.recordatorios_de` normaliza las etapas a cinco campos y la
+    `plantilla` no viaja (el motor no es de este agente). Se recupera del JSON
+    crudo emparejando por minutos **y** texto fijo: una etapa que vino de la
+    tabla `bot_recordatorios` tiene otro texto y no hereda plantillas del JSON.
+    Si algún día el motor la pasa en la etapa, se usa esa.
+    """
+    propia = etapa.get("plantilla") if isinstance(etapa, dict) else None
+    if isinstance(propia, str) and propia.strip():
+        return propia
+    crudos = (seguimiento or {}).get("recordatorios")
+    if not isinstance(crudos, list):
+        return None
+    for item in crudos:
+        if not isinstance(item, dict):
+            continue
+        try:
+            minutos = max(1, int(item.get("minutos") or 0))
+        except (TypeError, ValueError):
+            continue
+        if minutos == etapa.get("minutos") and str(item.get("texto") or "") == etapa.get("texto"):
+            plantilla = item.get("plantilla")
+            return plantilla if isinstance(plantilla, str) and plantilla.strip() else None
+    return None
+
+
+def _texto_con_contexto(
+    db: Session,
+    conversation: models.Conversation,
+    bot: models.Bot,
+    cfg: dict,
+    seguimiento: Optional[dict],
+    etapa: dict,
+) -> Optional[str]:
+    """El recordatorio con contexto (#28) o None para usar el texto fijo.
+
+    `services.recordatorios_contexto` lo escribe otro agente; se importa
+    perezoso para que un fallo ahí (o que no exista) nunca tumbe la cadena de
+    recordatorios: ante cualquier error, None.
+    """
+    plantilla = _plantilla_de(seguimiento, etapa)
+    if not plantilla:
+        return None
+    try:
+        from . import recordatorios_contexto
+
+        texto = recordatorios_contexto.texto_recordatorio(
+            db,
+            conversation=conversation,
+            bot=bot,
+            cfg=cfg,
+            etapa={**etapa, "plantilla": plantilla},
+            hoy=agendamientos.hoy_en_colombia(),
+        )
+    except Exception as exc:
+        logger.error(
+            "bot_runner: recordatorio con contexto falló conv=%s bot=%s (%s)",
+            conversation.id, getattr(bot, "id", None), type(exc).__name__,
+        )
+        return None
+    return texto if isinstance(texto, str) and texto.strip() else None
+
+
 def _procesar_silencio(db: Session, pa: models.BotPendingAction) -> None:
     """Atiende un `seguimiento` o un `abandono` vencido. NUNCA llama al modelo.
 
@@ -994,6 +1263,15 @@ def _procesar_silencio(db: Session, pa: models.BotPendingAction) -> None:
         # agenda el siguiente y sólo el último le abre paso al abandono.
         etapa = min(_etapa_de(pa), len(etapas) - 1)
         texto = etapas[etapa]["texto"]
+        # #28 (bot 2): con `recordatorios_con_contexto` y una `plantilla` en la
+        # etapa, el texto se arma con lo que el cliente consultó. Si falta
+        # cualquier dato sale el fijo de siempre. Tiempos, franjas y la cadena
+        # no cambian: solo el texto. Sin el flag no se consulta nada.
+        cfg_bot = llm_engine.config_de(bot)
+        if cfg_bot.get("recordatorios_con_contexto"):
+            texto = _texto_con_contexto(
+                db, conversation, bot, cfg_bot, seguimiento, etapas[etapa]
+            ) or texto
         omitido = _condicion_cumplida(db, conversation, etapas[etapa].get("omitir_si"))
         if omitido:
             # A quien ya cumplió lo que se le estaba pidiendo (comprar, dejar

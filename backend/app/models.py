@@ -1978,6 +1978,135 @@ class Agendamiento(Base):
     __str__ = __repr__
 
 
+# ===== Interesados: intención de compra detectada mientras el bot atiende ====
+#
+# Estrategia #22 del bot 2 de Arranquemos Pues (decisión del CEO, 7-oct-2026).
+# Un *interesado* es un episodio de conversación (una `bot_sessions`) en el que
+# el cliente mostró intención de compra —preguntó por el anticipo, pidió
+# reservar, dio una fecha concreta o dejó sus datos— y que sigue abierto
+# `horas_para_interesado` (6 por defecto) después de su primer mensaje. El bot
+# sigue a cargo; la lista es para que la asesora ayude a cerrar antes de que se
+# enfríe.
+#
+# Va en su propia tabla y no en `agendamientos` a propósito: aquella tiene un
+# índice único parcial de pendientes por conversación que chocaría con la
+# llamada que se agenda cuando el mismo chat se abandona. Y no son columnas en
+# `conversations` porque el interesado es del **episodio**, no del contacto:
+# si vuelve en un mes es otra oportunidad.
+
+INTENCION_POR_CONTACTAR = "por_contactar"
+INTENCION_CONTACTADO = "contactado"
+INTENCION_DESCARTADO = "descartado"
+AVAILABLE_INTENCION_ESTADOS = (
+    INTENCION_POR_CONTACTAR,
+    INTENCION_CONTACTADO,
+    INTENCION_DESCARTADO,
+)
+
+#: Los cuatro tipos de señal. Mismos nombres que la herramienta
+#: `registrar_intencion` del motor y que `services/intencion_compra.detectar`.
+INTENCION_TIPOS = ("anticipo", "reservar", "fecha_concreta", "datos")
+
+INTENCION_ORIGEN_REGEX = "regex"
+INTENCION_ORIGEN_HERRAMIENTA = "herramienta"
+INTENCION_ORIGEN_AMBOS = "ambos"
+
+#: Por qué la asesora descarta a un interesado. Lista cerrada (los textos los
+#: pone el frontend): nada de texto libre que termine guardando datos.
+INTENCION_MOTIVOS_DESCARTE = ("no_interesa", "ya_compro", "numero_equivocado", "otro")
+
+#: Horas desde el primer mensaje del episodio hasta que entra a la lista, si
+#: la config del bot no dice otra cosa.
+INTENCION_HORAS_DEFAULT = 6
+
+
+class IntencionCompra(Base):
+    """Un episodio (sesión del bot) con intención de compra detectada.
+
+    Una fila por `session_id`: el bot hace upsert en cada turno en que detecta
+    una señal nueva, uniendo los `tipos`. `visible_desde` = inicio de la sesión
+    + horas del umbral; antes de eso la fila existe pero no sale en la lista.
+
+    Como en `agendamientos`, nombre y teléfono **no se copian**: se leen de
+    `conversations`. `fragmento` (lo que escribió el cliente, ≤160) y `resumen`
+    (lo que redactó el bot, ≤300) son datos de un tercero: nunca a los logs
+    (reglas 1 y 8) y fuera del `__repr__`.
+    """
+
+    __tablename__ = "intenciones_compra"
+
+    id = Column(Integer, primary_key=True, index=True)
+    team_id = Column(
+        Integer, ForeignKey("teams.id", ondelete="CASCADE"), nullable=False
+    )
+    conversation_id = Column(
+        Integer,
+        ForeignKey("conversations.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    session_id = Column(
+        Integer,
+        ForeignKey("bot_sessions.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    bot_id = Column(
+        Integer, ForeignKey("bots.id", ondelete="CASCADE"), nullable=False
+    )
+    tipos = Column(JSONB, nullable=False, default=list, server_default="[]")
+    origen = Column(String(16), nullable=False)
+    fragmento = Column(String(160), nullable=True)
+    resumen = Column(String(300), nullable=True)
+    primera_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    ultima_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    visible_desde = Column(DateTime, nullable=False)
+    estado = Column(
+        String(16),
+        nullable=False,
+        default=INTENCION_POR_CONTACTAR,
+        server_default=INTENCION_POR_CONTACTAR,
+    )
+    gestionado_por_user_id = Column(
+        Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    gestionado_at = Column(DateTime, nullable=True)
+    #: Código de `INTENCION_MOTIVOS_DESCARTE`, nunca texto libre.
+    motivo_descarte = Column(String(120), nullable=True)
+    #: Quién la tomó desde Interesados y cuándo (auditoría del handoff manual;
+    #: se escribe en la misma transacción que la asignación de la conversación).
+    tomado_por_user_id = Column(
+        Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    tomado_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+    )
+
+    conversation = relationship("Conversation")
+    session = relationship("BotSession")
+    bot = relationship("Bot")
+    gestionado_por = relationship("User", foreign_keys=[gestionado_por_user_id])
+    tomado_por = relationship("User", foreign_keys=[tomado_por_user_id])
+
+    __table_args__ = (
+        # Un interesado por episodio: el upsert del bot se apoya en esto.
+        UniqueConstraint("session_id", name="uq_intenciones_compra_session"),
+        # La pantalla pregunta "lo de este team que ya cumplió el umbral".
+        Index("ix_intenciones_compra_team_visible", "team_id", "visible_desde"),
+    )
+
+    def __repr__(self) -> str:
+        # Sin fragmento ni resumen: son palabras del cliente (regla 8).
+        return (
+            f"<IntencionCompra id={self.id} team_id={self.team_id} "
+            f"conversation_id={self.conversation_id} session_id={self.session_id} "
+            f"estado={self.estado!r}>"
+        )
+
+    __str__ = __repr__
+
+
 # ===== Pedidos cerrados por el bot =====
 #
 # Cuando el cliente manda nombre, dirección y pedido, el bot llama a

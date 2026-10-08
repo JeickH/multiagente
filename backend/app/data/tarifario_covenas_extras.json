@@ -1,0 +1,33 @@
+{
+  "_fuente": "Valores copiados el 2026-10-07 de app/bot_contexts/demo_viajes.md (secciones «Niños», «Condición de reserva» e itinerario), que a su vez salen de las imágenes de info de los dos hoteles. El bot 1 los sigue teniendo en su prompt; el bot 2 los lee de aquí. Si cambian de temporada, se cambian en los DOS sitios.",
+  "anticipo_pct": 30,
+  "saldo_texto": "el saldo se paga en su totalidad de 8 a 10 días hábiles antes del viaje",
+  "ninos": [
+    {
+      "edad_min": 0,
+      "edad_max": 2,
+      "etiqueta": "Menores de 2 años",
+      "concepto": "solo pagan seguro de viaje",
+      "valor": 55000
+    },
+    {
+      "edad_min": 3,
+      "edad_max": 4,
+      "etiqueta": "De 3 a 4 años",
+      "concepto": "pagan silla más seguro",
+      "valor": 195000
+    }
+  ],
+  "nota_ninos": "De 5 años en adelante pagan el valor del plan.",
+  "otros": [
+    {
+      "concepto": "canoa a la Casa Flotante (opcional, aprox. por persona)",
+      "valor": 25000
+    },
+    {
+      "concepto": "bici-taxi al Malecón de Tolú (no incluido)",
+      "valor_min": 3000,
+      "valor_max": 4000
+    }
+  ]
+}

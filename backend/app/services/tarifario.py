@@ -706,3 +706,288 @@ def consultar(
         "solo la imagen del tarifario que corresponde al mes."
     )
     return "\n".join(partes)
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# Bot 2 (variante B) de Arranquemos Pues — lo que leen el motor, el guardarraíl
+# de precio y los recordatorios con contexto.
+#
+# Todo lo de aquí abajo es ADITIVO: ninguna función de arriba cambia de salida
+# (el bot 1 la usa y `tests/viajes/test_bot1_sin_cambios.py` lo vigila). Y sigue
+# la misma regla del módulo: ninguna cifra escrita a mano. Los precios salen de
+# `tarifario_covenas.json`; lo de niños y el anticipo, de
+# `tarifario_covenas_extras.json`.
+# ════════════════════════════════════════════════════════════════════════════
+
+_EXTRAS = Path(__file__).resolve().parent.parent / "data" / "tarifario_covenas_extras.json"
+
+
+@lru_cache(maxsize=1)
+def _extras_crudos() -> Dict[str, Any]:
+    try:
+        return json.loads(_EXTRAS.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        logger.exception("tarifario: no se pudo leer %s", _EXTRAS.name)
+        return {}
+
+
+def extras() -> dict:
+    """Lo que el plan cobra aparte del tarifario: niños y anticipo.
+
+    Estrategia 19 del informe de Arranquemos Pues: los valores de niños vivían
+    escritos a mano en el prompt (`demo_viajes.md`, sección «Niños») y el
+    guardarraíl de precio no podía validarlos. Aquí se leen del JSON de extras.
+
+    Forma: ``{"anticipo_pct": int, "saldo_texto": str, "ninos": [{"edad_min",
+    "edad_max", "etiqueta", "concepto", "valor"}], "nota_ninos": str,
+    "otros": [{"concepto", "valor" | "valor_min"/"valor_max"}]}``. `otros` son
+    los montos fijos del itinerario (canoa, bici-taxi) que el bot 1 ya cita
+    desde su prompt: el guardarraíl de precio los necesita para no tumbar un
+    mensaje correcto.
+
+    Devuelve una copia: quien la reciba puede mutarla sin ensuciar la caché.
+    Si el archivo no se puede leer devuelve ``{}`` (y queda en el log): el
+    llamador debe tratar la ausencia de una llave como «no lo sé», nunca
+    inventar un valor por defecto.
+    """
+    return json.loads(json.dumps(_extras_crudos()))
+
+
+def linea_ninos() -> str:
+    """La política de niños en una línea, para pegar al final de un resultado
+    de precios (`consultar_tarifario` / `consultar_precios`) del bot 2.
+
+    Cadena vacía si el archivo de extras no trae niños: mejor no decir nada
+    que decir una cifra que no está en ningún dato.
+    """
+    datos = extras()
+    partes = []
+    for nino in datos.get("ninos") or []:
+        try:
+            valor = int(nino["valor"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        etiqueta = str(nino.get("etiqueta") or "").strip()
+        if not etiqueta:
+            etiqueta = f"De {nino.get('edad_min')} a {nino.get('edad_max')} años"
+        concepto = str(nino.get("concepto") or "").strip()
+        texto = f"{etiqueta}: {concepto}, {_pesos(valor)}" if concepto else (
+            f"{etiqueta}: {_pesos(valor)}"
+        )
+        partes.append(texto)
+    if not partes:
+        return ""
+    nota = str(datos.get("nota_ninos") or "").strip()
+    linea = "NIÑOS (valor aparte, no por persona del plan): " + "; ".join(partes) + "."
+    if nota:
+        linea += f" {nota}"
+    return linea
+
+
+def _linea_anticipo(datos: Dict[str, Any]) -> str:
+    try:
+        pct = int(datos.get("anticipo_pct"))
+    except (TypeError, ValueError):
+        return ""
+    if not 0 < pct < 100:
+        return ""
+    saldo = str(datos.get("saldo_texto") or "").strip()
+    linea = (
+        f"ANTICIPO: se aparta el cupo con un anticipo del {pct}% del valor "
+        "total por persona"
+    )
+    return linea + (f"; {saldo}." if saldo else ".")
+
+
+def _linea_otros(datos: Dict[str, Any]) -> str:
+    partes = []
+    for otro in datos.get("otros") or []:
+        if not isinstance(otro, dict):
+            continue
+        concepto = str(otro.get("concepto") or "").strip()
+        if not concepto:
+            continue
+        try:
+            if "valor" in otro:
+                valor = _pesos(int(otro["valor"]))
+            else:
+                valor = (
+                    f"{_pesos(int(otro['valor_min']))}–"
+                    f"{_pesos(int(otro['valor_max']))}"
+                )
+        except (KeyError, TypeError, ValueError):
+            continue
+        partes.append(f"{concepto}: {valor}")
+    if not partes:
+        return ""
+    return "OPCIONALES (no incluidos en el plan): " + "; ".join(partes) + "."
+
+
+def linea_extras() -> str:
+    """Todo lo que el bot 2 puede cobrar o citar aparte del tarifario, en
+    líneas listas para pegar al resultado de precios: niños (lo mismo que
+    `linea_ninos()`), anticipo y saldo, y los opcionales del itinerario.
+
+    El prompt del bot 2 no trae ninguna cifra: esta es su **única** fuente del
+    porcentaje de anticipo y de los valores de los opcionales. Todo sale de
+    `tarifario_covenas_extras.json`; lo que falte en el archivo simplemente no
+    se dice (nunca se rellena con un valor por defecto). Cadena vacía si no hay
+    nada.
+    """
+    datos = extras()
+    segunda = " ".join(x for x in (_linea_anticipo(datos), _linea_otros(datos)) if x)
+    return "\n".join(x for x in (linea_ninos(), segunda) if x)
+
+
+def desde_temporada(hoy: date) -> int | None:
+    """El «desde» de la vitrina del primer mensaje (decisión 3 del CEO).
+
+    Mínimo por persona de TODAS las salidas que todavía no han pasado
+    (``inicio >= hoy``), de cualquier hotel y cualquier acomodación. Sale de las
+    filas: nunca de una constante. ``None`` si no queda ninguna salida
+    publicada.
+    """
+    precios = [
+        int(min(p["multiple"], p["doble"]))
+        for p in _datos().get("planes", [])
+        if date.fromisoformat(p["inicio"]) >= hoy
+    ]
+    return min(precios) if precios else None
+
+
+def _mes_de_apertura(hoy: date) -> Optional[tuple]:
+    """(mes, año) del flyer de apertura: el mes en curso si todavía le quedan
+    salidas; si no, el siguiente mes que tenga alguna (máximo un año hacia
+    adelante)."""
+    vigentes = [
+        date.fromisoformat(p["inicio"])
+        for p in _datos().get("planes", [])
+        if date.fromisoformat(p["inicio"]) >= hoy
+    ]
+    if not vigentes:
+        return None
+    for i in range(13):
+        mes = (hoy.month - 1 + i) % 12 + 1
+        anio = hoy.year + (hoy.month - 1 + i) // 12
+        if any(d.month == mes and d.year == anio for d in vigentes):
+            return mes, anio
+    return None
+
+
+def flyer_apertura(hoy: date, cfg: Optional[Dict[str, Any]] = None) -> str | None:
+    """Clave de `llm_config.media` del flyer que va en el primer mensaje.
+
+    **Cómo mapea mes → clave** (no hay ninguna tabla en el código): cada flyer
+    de tarifario del catálogo de medios declara `hotel` y `meses`
+    (`app/data/bot_viajes.py`, hoy ``tarifario_amordios_ago_nov`` = Amor de Dios
+    8-11, ``tarifario_amordios_dic_ene`` = Amor de Dios 12-1,
+    ``tarifario_piedramar_jul_oct`` = Piedra Mar 7-10 y
+    ``tarifario_piedramar_nov_ene`` = Piedra Mar 11-1). No hay un flyer por mes
+    sino uno por hotel y tramo de meses, así que:
+
+      1. El mes es el **en curso** si le queda alguna salida desde ``hoy``; si
+         no, el siguiente mes que tenga salidas.
+      2. Entre los flyers que cubren ese mes (uno por hotel), va el del hotel
+         **más barato ese mes** (mínimo en múltiple de las salidas vigentes) —
+         el «flyer general más barato». Es el que concuerda con el «desde» que
+         se anuncia. Empate → el que aparezca primero en el catálogo.
+      3. Bohíos no tiene flyer propio; nunca es candidato.
+
+    ``cfg`` es opcional y es el `llm_config` del bot (se lee su `media`); sin
+    él se usa el catálogo de `app/data/bot_viajes.py`. ``None`` si no hay mes
+    con salidas o ningún flyer cubre ese mes.
+    """
+    if cfg is None:
+        from app.data.bot_viajes import MEDIA  # import tardío: evita ciclos
+
+        media: Any = MEDIA
+    else:
+        media = cfg.get("media")
+    if not isinstance(media, dict):
+        return None
+    objetivo = _mes_de_apertura(hoy)
+    if objetivo is None:
+        return None
+    mes, anio = objetivo
+
+    mejor: Optional[tuple] = None
+    for orden, (clave, item) in enumerate(media.items()):
+        if not isinstance(item, dict):
+            continue
+        hotel = item.get("hotel")
+        meses = item.get("meses")
+        if hotel not in _NOMBRE_HOTEL or hotel == "bohios":
+            continue
+        if not isinstance(meses, list) or mes not in meses:
+            continue
+        planes = [
+            p for p in planes_vigentes(hotel, hoy, mes)
+            if date.fromisoformat(p["inicio"]).year == anio
+        ]
+        barato = _mas_barato(planes)
+        if barato is None:
+            continue
+        candidato = (int(barato["multiple"]), orden, str(clave))
+        if mejor is None or candidato < mejor:
+            mejor = candidato
+    return mejor[2] if mejor else None
+
+
+_FECHA_FILA_RE = re.compile(
+    r"^\s*([A-ZÁÉÍÓÚÑ]+)\s+(\d{1,2})\s+AL\s+(\d{1,2})(?:\s+DE\s+([A-ZÁÉÍÓÚÑ]+))?",
+    re.IGNORECASE,
+)
+
+
+def etiqueta_corta(fecha: str) -> str:
+    """«OCTUBRE 16 AL 19» → «16 al 19»; «OCTUBRE 30 AL 02 DE NOVIEMBRE
+    FESTIVO» → «30 al 2 de noviembre». Si no reconoce el formato, devuelve la
+    fecha tal cual en minúsculas (mejor un texto feo que uno inventado)."""
+    m = _FECHA_FILA_RE.match(fecha or "")
+    if not m:
+        return (fecha or "").strip().lower()
+    ini, fin = int(m.group(2)), int(m.group(3))
+    texto = f"{ini} al {fin}"
+    if m.group(4):
+        texto += f" de {m.group(4).lower()}"
+    return texto
+
+
+def salidas_restantes(
+    mes: int, anio: int, hotel: str | None, hoy: date
+) -> list[dict]:
+    """Las salidas de ese mes que todavía no han pasado, para los recordatorios.
+
+    ``[{"etiqueta": "16 al 19", "desde": <int>}, ...]`` en orden de fecha. Una
+    entrada por etiqueta: el plan estándar (16 al 19) y el de «Obsequio a
+    Barú» (16 al 20) salen el mismo día pero son planes distintos, y van
+    aparte. ``desde`` es el mínimo por persona en múltiple de esa salida entre
+    los hoteles considerados.
+
+    ``hotel=None`` → todos los hoteles. Un nombre de hotel que no se reconozca
+    devuelve ``[]`` (nunca se adivina). El tarifario no tiene cupos: esto dice
+    qué salidas **quedan** (no han pasado), jamás que tengan cupo.
+    """
+    if hotel:
+        clave = normalizar_hotel(hotel)
+        if clave is None:
+            return []
+        hoteles = [clave]
+    else:
+        hoteles = ["amor_de_dios", "piedra_mar"]
+
+    por_etiqueta: Dict[str, Dict[str, Any]] = {}
+    for h in hoteles:
+        for p in planes_vigentes(h, hoy, mes):
+            inicio = date.fromisoformat(p["inicio"])
+            if inicio.year != anio:
+                continue
+            etiqueta = etiqueta_corta(p["fecha"])
+            valor = int(p["multiple"])
+            actual = por_etiqueta.get(etiqueta)
+            if actual is None:
+                por_etiqueta[etiqueta] = {"inicio": p["inicio"], "desde": valor}
+            else:
+                actual["desde"] = min(actual["desde"], valor)
+    ordenadas = sorted(por_etiqueta.items(), key=lambda kv: (kv[1]["inicio"], kv[0]))
+    return [{"etiqueta": et, "desde": d["desde"]} for et, d in ordenadas]

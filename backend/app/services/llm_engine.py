@@ -52,12 +52,15 @@ import logging
 import os
 import re
 import time
+import unicodedata
 from datetime import date, datetime, timedelta, timezone
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from . import productos, productos_bot, shopify_client, tarifario
+from . import (
+    productos, productos_bot, recortes_turno, senales, shopify_client, tarifario,
+)
 from .crypto import encrypt_secret
 from .messaging.base import MARCADOR_NOTA_DE_VOZ
 
@@ -797,6 +800,13 @@ def _system_prompt(
             "## Medios disponibles para `enviar_media`\n"
             "Usa EXACTAMENTE estas claves (no inventes otras):\n" + "\n".join(lines)
         )
+    if cfg.get("anticipo_en_sistema"):
+        # Bot 2 (QA #3): el % de anticipo como dato fijo, no sólo pegado a los
+        # resultados de precios. Antes de la fecha de hoy y de todo lo que
+        # cambia por conversación: es parte estable del prefijo cacheado.
+        anticipo = _bloque_anticipo(cfg)
+        if anticipo:
+            parts.append(anticipo)
     # Qué día es hoy. Sin esto el modelo adivina el año y se equivoca: le decía
     # a un cliente que quería viajar el 18 de diciembre que esa fecha "ya pasó",
     # porque al llamar a las herramientas escribía 2025. Vale para todos los
@@ -842,6 +852,10 @@ def _system_prompt(
         # Va de últimas a propósito: es lo último que el modelo lee antes del
         # historial, y es la instrucción que en producción se le olvidaba.
         parts.append(continuidad)
+    if cfg.get("apertura_vitrina") and _es_primer_turno(cfg, history):
+        # Bot 2 (#1 #3 #4 #5): sólo el primer turno. Cambia el prefijo de ese
+        # turno y de ningún otro; entre conversaciones del mismo día es igual.
+        parts.append(_bloque_apertura(cfg))
 
     partes = [p for p in parts if p]
     if ctx_productos is not None:
@@ -917,8 +931,23 @@ def _ya_se_sabe_el_nombre(cfg: Dict[str, Any]) -> bool:
     """
     if not cfg.get("recordar_nombre"):
         return False
+    return bool(_nombre_del_contacto(cfg))
+
+
+def _nombre_del_contacto(cfg: Dict[str, Any]) -> str:
+    """El nombre que el bot puede dar por sabido, o "".
+
+    Sin `filtrar_nombres_genericos` es exactamente `nombre_saneado` del
+    `contact_name` del runtime, como siempre. Con el flag (#9, bot 2), un perfil
+    de WhatsApp que dice «Casa», «Cliente» o «Mecánica JR» cuenta como nombre
+    desconocido: saludar a alguien por «Casa» es peor que no saber su nombre.
+    """
     runtime = cfg.get("_runtime") or {}
-    return bool(nombre_saneado(runtime.get("contact_name")))
+    nombre = nombre_saneado(runtime.get("contact_name"))
+    if nombre and cfg.get("filtrar_nombres_genericos") \
+            and senales.es_nombre_generico(nombre):
+        return ""
+    return nombre
 
 
 def _frases(linea: str) -> List[str]:
@@ -1225,7 +1254,7 @@ def _bloque_continuidad(cfg: Dict[str, Any]) -> str:
     lineas: List[str] = []
 
     if cfg.get("recordar_nombre"):
-        nombre = nombre_saneado(runtime.get("contact_name"))
+        nombre = _nombre_del_contacto(cfg)
         if nombre:
             # La frase sobre "su última línea" es la que hace el trabajo. El
             # contexto de viajes trae el mensaje de apertura redactado palabra
@@ -1275,6 +1304,820 @@ def _bloque_continuidad(cfg: Dict[str, Any]) -> str:
     if not lineas:
         return ""
     return "## Con quién estás hablando\n" + "\n".join(f"- {l}" for l in lineas)
+
+
+# ---------------------------------------------------------------------------
+# Variante B del bot de viajes (bot 2 de Arranquemos Pues, oct-2026)
+# ---------------------------------------------------------------------------
+#
+# Todo lo de esta sección va detrás de flags de `llm_config` que sólo tiene el
+# bot 2. **Sin el flag, el comportamiento es idéntico al de hoy**: el bot 1, el
+# de mascotas, Gloma y Natulcé comparten este motor, y lo verifica
+# `tests/viajes/variante_b/test_motor_bot1_intacto.py`. La lógica pura vive en
+# `senales.py` (lo que dijo el cliente) y `recortes_turno.py` (lo que redactó
+# el bot); aquí sólo están los enganches.
+#
+#   "apertura_vitrina": true          #1 #3 #4 #5 — «desde» y flyer del primer turno
+#   "una_pregunta_por_turno": true    #10 #17
+#   "presentacion_una_vez": true      #11 — lee `runtime.ya_se_presento`
+#   "nombre_una_vez": true            #8
+#   "filtrar_nombres_genericos": true #9
+#   "no_cerrar_aplazadas": true       #14
+#   "guardarrail_precio": true        #18 — `services/guardarrail_precio.py`
+#   "cargos_ninos": true              #19 #16 — `tarifario.linea_extras()` (o `linea_ninos()`)
+#   "promo_inexistente": {"montos": [...], "texto": "...", "motivo": "..."}  #20 #21
+#   "intencion_compra": {"horas_para_interesado": 6}   #22 — `registrar_intencion`
+#   — Arreglos de la corrida de QA contra Bedrock (2026-10-07) —
+#   "aviso_en_traspaso": "texto"      traspaso nunca mudo: aviso si no hubo texto
+#   "correcciones_silenciosas": true  la corrección no se disculpa ante el cliente
+#   "anticipo_en_sistema": true       % de anticipo y saldo como dato del system
+#   "marcas_a_medios": true           `[enviaste: x]` escrito como texto → el adjunto real
+#   "duracion_por_plan": true         `_viola_duracion` que entiende «Plan estándar (2 noches…)»
+#   "consulta_obligatoria_por_mes": true  nombró un mes → precios sólo después de consultar
+
+#: Las formas de pedir el nombre, más la de la reserva («¿a nombre de quién
+#: aparto el cupo?», estrategia #2). Es un patrón aparte y no una alternativa
+#: más de `_PIDE_EL_NOMBRE` a propósito: ese lo usa el bot 1 para quitar la
+#: pregunta del saludo, y ensancharlo le borraría al bot 1 la pregunta con la
+#: que hoy aparta el cupo.
+_PIDE_EL_NOMBRE_AMPLIO = re.compile(
+    _PIDE_EL_NOMBRE.pattern + r"|a\s+nombre\s+de\s+qui[eé]n",
+    re.IGNORECASE,
+)
+
+#: Intenciones de compra que acepta `registrar_intencion` (#22). Lista blanca:
+#: el `tipo` termina en la base y en un filtro del panel.
+TIPOS_DE_INTENCION = ("anticipo", "reservar", "fecha_concreta", "datos")
+_RESUMEN_INTENCION_MAX = 300
+_SERIE_DE_DIGITOS_RE = re.compile(r"\+?\d(?:[\s.\-()]?\d){6,}")
+
+#: Cuántas consultas de precios recuerda la sesión para el guardarraíl (#18).
+#: Cada resultado son 2-3 KB; tres alcanzan para «lo que le cotizaste antes».
+_PRECIOS_RECORDADOS = 3
+#: Cuánto del cliente se lee para saber qué cifras dijo (#18, auditoría H1).
+_MENSAJES_CLIENTE_PRECIO = 10
+_CARACTERES_CLIENTE_PRECIO = 1000
+_SERIE_IMPOSIBLE_RE = re.compile(r"\d{16,}")
+
+#: Cuando el bot agotó las correcciones y sigue citando un precio que no es el
+#: de la fila (auditoría M2): sin cifras, y a un asesor.
+_TEXTO_PRECIO_A_ASESOR = (
+    "Déjame confirmarte el valor exacto con un compañero para no darte un "
+    "dato equivocado 🙏"
+)
+_MOTIVO_PRECIO_A_ASESOR = (
+    "el bot no logró cotizar el valor exacto del tarifario (guardarraíl de precio)"
+)
+
+#: Las herramientas que cierran el turno. Si una corrección nueva (precio,
+#: cierre aplazado) se dispara en la ronda en que el modelo llamó una de
+#: estas, el cierre se anula — ver `_anular_cierres`.
+_CIERRES = ("finalizar_conversacion", "no_responder", "escalar_a_asesor")
+_SUFIJO_ANULADA = ":anulada"
+
+_TEXTO_PROMO_DEFAULT = (
+    "Déjame confirmarlo con un compañero para no darte un dato equivocado 🙏 "
+    "Ya te escribe por aquí."
+)
+
+
+_AVISO_TRASPASO_DEFAULT = (
+    "¡Listo! 🙌 Ya le paso tus datos a una compañera para que te confirme todo "
+    "por aquí 💬"
+)
+
+#: Lo que se le agrega a cada corrección del bot 2: la ronda siguiente le
+#: llega al cliente, y la corrección no (QA: «Tienes razón, disculpa…» en el
+#: 56 % de los turnos corregidos). El bot 1 conserva sus textos de siempre: el
+#: golden los congela.
+_SIN_DISCULPAS = (
+    " No te disculpes ni menciones esta corrección: el cliente no vio nada de "
+    "lo anterior. Escribe directamente el mensaje para el cliente."
+)
+
+#: Herramientas que traen datos. La ronda que sólo consulta y además escribe
+#: un texto («Déjame consultar los precios…») está narrando, no respondiendo.
+_CONSULTAS = frozenset({"consultar_tarifario"}) | productos_bot.TOOLS
+#: Herramientas que no le mandan nada al cliente: no cambian que una ronda
+#: sea sólo de consulta.
+_SILENCIOSAS = frozenset({"registrar_intencion", "registrar_nombre"})
+
+
+def _bloque_anticipo(cfg: Dict[str, Any]) -> str:
+    """El anticipo y el saldo como dato fijo del system (bot 2). Va en la
+    parte estable del prefijo: no cambia por turno ni por conversación."""
+    datos = _de_tarifario("extras") or {}
+    if not isinstance(datos, dict):
+        return ""
+    try:
+        pct = int(datos.get("anticipo_pct"))
+    except (TypeError, ValueError):
+        return ""
+    lineas = [f"El cupo se aparta con un anticipo del **{pct} %** del valor del plan."]
+    saldo = str(datos.get("saldo_texto") or "").strip()
+    if saldo:
+        lineas.append(saldo[:1].upper() + saldo[1:].rstrip(".") + ".")
+    return "## Anticipo y saldo (datos del sistema)\n" + "\n".join(f"- {l}" for l in lineas)
+
+
+def _traspaso_promo(
+    cfg: Dict[str, Any], user_input: Optional[str]
+) -> Optional[tuple]:
+    """#20, decidido ANTES de llamar al modelo: `(texto, payload)` o None.
+
+    Sólo depende de lo que escribió el cliente, así que no gasta rondas. Si el
+    monto es su presupuesto («tengo 350 mil»), el texto no le habla de ninguna
+    promoción; si lo vio publicado, el motivo lo dice para la asesora.
+    """
+    promo = cfg.get("promo_inexistente")
+    if not isinstance(promo, dict) or not user_input:
+        return None
+    monto = senales.monto_mencionado(user_input, promo.get("montos") or [])
+    if monto is None:
+        return None
+    if senales.es_presupuesto(user_input):
+        texto = str(promo.get("texto_presupuesto") or "").strip() or _TEXTO_PRESUPUESTO_DEFAULT
+        motivo = str(promo.get("motivo_presupuesto") or "").strip() or (
+            f"cliente con presupuesto de {_pesos(monto)}"
+        )
+        resumen = str(promo.get("resumen_presupuesto") or (
+            "El cliente dijo cuánto tiene para el viaje. Muéstrale las salidas "
+            "que le sirven."
+        ))
+    else:
+        texto = str(promo.get("texto") or "").strip() or _TEXTO_PROMO_DEFAULT
+        motivo = str(promo.get("motivo") or "").strip() or (
+            "cliente pregunta por la promo de lunes a jueves"
+        )
+        resumen = str(promo.get("resumen") or (
+            "El cliente mencionó un precio de promoción que no está en el "
+            "tarifario. Confírmale si existe y para qué fechas."
+        ))
+    payload = {
+        # Misma acción que `escalar_a_asesor`: `bot_runner` asigna por la
+        # misma rotación (`crud.resolver_asesor`) y deja la nota interna.
+        "assignee": cfg.get("assignee") or "",
+        "text": "",
+        "motivo": motivo[:300],
+        "resumen": resumen[:500],
+    }
+    return texto, payload
+
+
+#: Una salida nombrada también como «8-11 dic» (además de «8 al 11»). Sólo
+#: para el bot 2 (`duracion_por_plan`): la del bot 1 no cambia.
+_SALIDA_REF_B_RE = re.compile(
+    # Topes en los espacios: con `\s*` a ambos lados de un opcional era
+    # cuadrático sobre un texto del modelo con miles de espacios.
+    r"(\d{1,2})\s{0,3}[*_]?\s{0,3}(?:al|[-–])\s{0,3}[*_]?\s{0,3}(\d{1,2})\b", re.IGNORECASE
+)
+#: «(2 noches / 3 días, Plan estándar)» en el resultado de la herramienta.
+_PLAN_EN_RESULTADO_RE = re.compile(
+    r"\((\d{1,2})\s*noches?\s*/\s*(\d{1,2})\s*d[ií]as?,\s*([^)]+)\)", re.IGNORECASE
+)
+
+
+def _plano_mismo_largo(texto: str) -> str:
+    """Minúsculas y sin tildes, carácter por carácter: las posiciones no se
+    mueven, así que sirven para el texto original."""
+    return "".join(
+        (unicodedata.normalize("NFD", c)[0] if c.strip() else c).lower()
+        for c in texto
+    )
+
+
+def _menciones_b(texto: str) -> List[tuple]:
+    """Como `_menciones_de_duracion`, con la posición y con «8-11» como salida:
+    `[(pos, ref, clase, valor)]`."""
+    refs = [
+        (m.start(), (int(m.group(1)), int(m.group(2))))
+        for m in _SALIDA_REF_B_RE.finditer(texto)
+    ]
+    menciones: List[tuple] = []
+    tramos: List[tuple] = []
+    for m in _DURACION_PAR_RE.finditer(texto):
+        n1, p1, n2, p2 = m.groups()
+        primera_noche = p1.lower().startswith("noche")
+        if primera_noche == p2.lower().startswith("noche"):
+            continue
+        noches, dias = (n1, n2) if primera_noche else (n2, n1)
+        tramos.append((m.start(), m.end()))
+        menciones.append((m.start(), "par", (int(noches), int(dias))))
+    for m in _NOCHES_RE.finditer(texto):
+        if any(a <= m.start() < b for a, b in tramos):
+            continue
+        menciones.append((m.start(), "noches", int(m.group(1))))
+    salida = []
+    for pos, clase, valor in sorted(menciones):
+        previas = [r for p, r in refs if p < pos]
+        ref = previas[-1] if previas else (refs[0][1] if len(refs) == 1 else None)
+        salida.append((pos, ref, clase, valor))
+    return salida
+
+
+def _viola_duracion_por_plan(
+    cfg: Dict[str, Any],
+    textos_de_la_ronda: List[str],
+    duraciones_ok: List[str],
+) -> bool:
+    """`_viola_duracion` para el bot 2 (QA 2026-10-07: falso positivo con
+    «**Plan Estándar** (2 noches / 3 días)» en un mes con dos duraciones).
+
+    Una duración vale si es la de la salida nombrada antes (como siempre,
+    reconociendo también «8-11») **o** la del plan nombrado en el mismo
+    renglón («Plan estándar», «Obsequio a Barú»), que el resultado de la
+    herramienta trae al lado de cada salida. Sin ninguna de las dos, se juzga
+    como generalización, igual que la original.
+    """
+    if not cfg.get("tarifario") or not textos_de_la_ronda:
+        return False
+    por_salida: Dict[tuple, set] = {}
+    por_plan: Dict[str, set] = {}
+    todas: set = set()
+    for resultado in duraciones_ok:
+        for _pos, ref, clase, valor in _menciones_b(resultado):
+            if clase != "par":
+                continue
+            todas.add(valor)
+            if ref is not None:
+                por_salida.setdefault(ref, set()).add(valor)
+        for m in _PLAN_EN_RESULTADO_RE.finditer(resultado):
+            nombre = " ".join(_plano_mismo_largo(m.group(3)).split())
+            if nombre:
+                por_plan.setdefault(nombre, set()).add((int(m.group(1)), int(m.group(2))))
+
+    for texto in textos_de_la_ronda:
+        texto = texto or ""
+        plano = _plano_mismo_largo(texto)
+        for pos, ref, clase, valor in _menciones_b(texto):
+            inicio = plano.rfind("\n", 0, pos) + 1
+            fin = plano.find("\n", pos)
+            renglon = plano[inicio:fin if fin != -1 else len(plano)]
+            permitidas: set = set()
+            for nombre, pares in por_plan.items():
+                if nombre in renglon:
+                    permitidas |= pares
+            if ref is not None and ref in por_salida:
+                permitidas |= por_salida[ref]
+            if not permitidas:
+                if len(todas) != 1:
+                    return True
+                permitidas = todas
+            if clase == "par":
+                if valor not in permitidas:
+                    return True
+            elif valor not in {noches for noches, _ in permitidas}:
+                return True
+    return False
+
+
+#: Un monto o una salida concreta en lo que escribió el bot.
+_MONTO_EN_TEXTO_RE = re.compile(
+    r"\$\s*\d|\b\d{1,3}(?:[.,]\d{3})+\b|\b\d{2,3}\s*mil\b", re.IGNORECASE
+)
+
+_CORRECCION_CONSULTA_MES = (
+    "ALTO: la persona te nombró un mes y respondiste con precios o fechas de "
+    "salida sin consultar. Ese mensaje NO se le envió. Consulta los precios de "
+    "ese mes con la herramienta `consultar_tarifario` antes de responder; no "
+    "uses el «desde» de la apertura ni inventes fechas: di solo lo que te "
+    "devuelva la herramienta."
+)
+
+
+def _viola_consulta_por_mes(
+    cfg: Dict[str, Any],
+    user_input: Optional[str],
+    textos_de_la_ronda: List[str],
+    tools_called: List[Dict[str, Any]],
+) -> bool:
+    """#9 de QA (bot 2): la persona nombró un mes, el bot no consultó precios
+    en todo el turno y aun así escribió montos o salidas."""
+    if not cfg.get("consulta_obligatoria_por_mes") or not textos_de_la_ronda:
+        return False
+    if senales.mes_mencionado(user_input or "") is None:
+        return False
+    if any(
+        (t.get("tool") or "") in ("consultar_tarifario", productos_bot.PRECIOS)
+        for t in tools_called
+    ):
+        return False
+    return any(
+        _MONTO_EN_TEXTO_RE.search(t or "") or _SALIDA_REF_B_RE.search(t or "")
+        for t in textos_de_la_ronda
+    )
+
+
+_TEXTO_PRESUPUESTO_DEFAULT = (
+    "¡Gracias por contarme! 🙌 Déjame revisar con una compañera las salidas que "
+    "mejor te sirven, para no darte un dato equivocado. Ya te escribe por aquí 💬"
+)
+
+
+def _dato_runtime(cfg: Dict[str, Any], clave: str) -> Any:
+    """Un dato del runtime, venga como dict (lo de siempre) o como objeto."""
+    runtime = cfg.get("_runtime")
+    if isinstance(runtime, dict):
+        return runtime.get(clave)
+    return getattr(runtime, clave, None)
+
+
+def _ya_se_presento(cfg: Dict[str, Any]) -> bool:
+    """#11: ¿el bot ya se presentó en esta conversación, aunque sea en otra
+    sesión? Lo decide `bot_runner` (`runtime.ya_se_presento`), que ve todos los
+    mensajes; aquí sólo se lee, y sólo con `presentacion_una_vez`."""
+    return bool(cfg.get("presentacion_una_vez")) and bool(
+        _dato_runtime(cfg, "ya_se_presento")
+    )
+
+
+def _es_primer_turno(cfg: Dict[str, Any], history: Optional[List[Dict[str, str]]]) -> bool:
+    """¿Es el primer mensaje que esta persona recibe del bot? Sin historial, sin
+    sesión retomada y sin que el bot se haya presentado antes."""
+    if history:
+        return False
+    return not _dato_runtime(cfg, "retomada") and not _dato_runtime(
+        cfg, "ya_se_presento"
+    )
+
+
+def _de_tarifario(nombre: str, *args: Any) -> Any:
+    """Llama una función del tarifario que puede no existir todavía.
+
+    `desde_temporada`, `flyer_apertura`, `linea_ninos` y `extras` las escribe
+    el módulo de precios. Si faltan, o fallan, el enganche se apaga solo para
+    ese turno — nunca tumba la respuesta al cliente (regla #6: el detalle sólo
+    al log).
+    """
+    funcion = getattr(tarifario, nombre, None)
+    if not callable(funcion):
+        logger.warning("llm_engine: tarifario.%s no existe; enganche apagado", nombre)
+        return None
+    try:
+        return funcion(*args)
+    except Exception:
+        logger.exception("llm_engine: tarifario.%s falló; enganche apagado", nombre)
+        return None
+
+
+def _pesos(valor: int) -> str:
+    return f"${int(valor):,}".replace(",", ".")
+
+
+def _bloque_apertura(cfg: Dict[str, Any]) -> str:
+    """Datos vivos del primer mensaje (#1 #3 #4 #5). Sólo en el primer turno.
+
+    Son **datos**, no reglas de redacción: cómo se escribe la apertura lo dice
+    el documento del bot. Aquí va lo que el documento no puede saber sin
+    desplegar — el «desde» de la temporada (decisión del CEO: el mínimo de las
+    salidas que quedan, no el del mes) — y el aviso de que el flyer lo adjunta
+    el sistema, para que el modelo no lo mande dos veces.
+    """
+    hoy = tarifario.hoy_colombia()
+    desde = _de_tarifario("desde_temporada", hoy)
+    flyer = _de_tarifario("flyer_apertura", hoy, cfg)
+    lineas: List[str] = []
+    if desde:
+        lineas.append(
+            f"El precio «desde» de la temporada es **{_pesos(desde)}** por "
+            "persona: es el valor más bajo de todas las salidas que quedan. Si "
+            "mencionas un precio en este primer mensaje, es ese, dicho como "
+            "«desde». No hace falta consultar el tarifario para saludar."
+        )
+    if flyer:
+        lineas.append(
+            "El sistema adjunta solo a este primer mensaje el flyer del "
+            "tarifario: el del mes que nombró la persona o, si no nombró "
+            "ninguno, el del mes en curso. No hace falta que lo mandes tú con "
+            "`enviar_media` ni que lo anuncies."
+        )
+    if not lineas:
+        return ""
+    return "## Datos para tu primer mensaje\n" + "\n".join(f"- {l}" for l in lineas)
+
+
+def _flyer_de_apertura(
+    cfg: Dict[str, Any],
+    ctx_productos: Optional[Any],
+    user_input: Optional[str] = None,
+) -> Optional[tuple]:
+    """`(clave, item)` del flyer del primer mensaje, o None.
+
+    Si la persona abrió nombrando un mes («¿cuánto vale en diciembre?»), va el
+    flyer de ESE mes cuando existe; si no nombró mes, o ese mes no tiene flyer
+    con salidas, el del mes en curso (`tarifario.flyer_apertura`).
+
+    El tarifario elige entre los flyers del catálogo de ESTE bot (los de la
+    config más los del catálogo de productos, si lo tiene), no el del bot 1.
+    """
+    catalogo = _media_catalog(cfg, ctx_productos)
+    hoy = tarifario.hoy_colombia()
+    clave = None
+    mes = senales.mes_mencionado(user_input) if user_input else None
+    if mes:
+        # El próximo `mes`: si ya pasó este año, el del año que viene. En el
+        # mes en curso se parte de hoy, para no contar salidas que ya pasaron.
+        anio = hoy.year if mes >= hoy.month else hoy.year + 1
+        desde = hoy if (mes, anio) == (hoy.month, hoy.year) else date(anio, mes, 1)
+        candidata = _de_tarifario("flyer_apertura", desde, {"media": catalogo})
+        meses = (catalogo.get(str(candidata)) or {}).get("meses") if candidata else None
+        # `flyer_apertura` salta al mes siguiente si el pedido no tiene salidas:
+        # eso ya no sería «el de ese mes», así que se cae al del mes en curso.
+        if isinstance(meses, list) and mes in meses:
+            clave = candidata
+    if not clave:
+        clave = _de_tarifario("flyer_apertura", hoy, {"media": catalogo})
+    if not clave:
+        return None
+    item = catalogo.get(str(clave))
+    if not item:
+        logger.warning(
+            "llm_engine: el flyer de apertura %r no está en el catálogo de medios",
+            str(clave)[:60],
+        )
+        return None
+    return str(clave), item
+
+
+def _intencion_limpia(tool_input: Dict[str, Any]) -> tuple:
+    """`(intencion, problema)` de `registrar_intencion`. Lista blanca de tipos y
+    resumen recortado sin caracteres de control (bot_runner vuelve a sanear:
+    defensa doble)."""
+    tipo = str(tool_input.get("tipo") or "").strip().lower()
+    if tipo not in TIPOS_DE_INTENCION:
+        return None, (
+            "no anoté nada: `tipo` tiene que ser uno de "
+            + ", ".join(TIPOS_DE_INTENCION)
+        )
+    crudo = str(tool_input.get("resumen") or "")
+    # Sin caracteres de control (Cc → espacio) ni invisibles de formato (Cf:
+    # ancho cero, marcas de dirección), que esconden texto en el panel.
+    resumen = "".join(
+        " " if unicodedata.category(c) == "Cc"
+        else "" if unicodedata.category(c) == "Cf"
+        else c
+        for c in crudo
+    )
+    # Ni teléfonos ni cédulas en el resumen (regla #8): cualquier serie de 7 o
+    # más dígitos, con o sin separadores, se tapa.
+    resumen = _SERIE_DE_DIGITOS_RE.sub("[número]", resumen)
+    resumen = " ".join(resumen.split())[:_RESUMEN_INTENCION_MAX]
+    return {"tipo": tipo, "resumen": resumen}, ""
+
+
+def _pide_el_nombre(texto: str) -> bool:
+    """¿El texto pregunta el nombre (cualquier forma, incluida la de la
+    reserva), sin contar el formulario de «nombre completo y cédula»?"""
+    for linea in (texto or "").split("\n"):
+        for frase in _frases(linea):
+            if "?" not in frase and "¿" not in frase:
+                continue
+            if _PIDE_EL_NOMBRE_AMPLIO.search(frase) \
+                    and not _NOMBRE_DE_LA_RESERVA.search(frase):
+                return True
+    return False
+
+
+def _nombre_ya_pedido(cfg: Dict[str, Any], history: List[Dict[str, str]]) -> bool:
+    """#8: ¿el nombre ya se sabe, o el bot ya lo preguntó en esta conversación?"""
+    if cfg.get("recordar_nombre") and _nombre_del_contacto(cfg):
+        return True
+    return any(
+        m.get("role") == "assistant" and _pide_el_nombre(m.get("content") or "")
+        for m in history
+    )
+
+
+def _sin_pregunta_del_nombre_amplia(texto: str) -> str:
+    return _sin_la_frase(
+        texto, _PIDE_EL_NOMBRE_AMPLIO,
+        solo_preguntas=True, excepcion=_NOMBRE_DE_LA_RESERVA,
+    )
+
+
+def _sin_pregunta_por_el_origen(texto: str) -> str:
+    """#21: sin la frase que le pregunta al cliente de dónde sacó un precio."""
+    return _sin_la_frase(
+        texto, recortes_turno.PREGUNTA_ORIGEN_PRECIO, solo_preguntas=True,
+    )
+
+
+def _recortar_con_estado(
+    actions: List[Dict[str, Any]], say_texts: List[str], fabrica
+) -> bool:
+    """Como `_recortar_lo_dicho`, para recortes que recuerdan lo ya visto en el
+    turno: `fabrica()` da un recorte nuevo para cada una de las dos pasadas
+    (lo que lee el cliente y lo que se guarda en el historial)."""
+    tocado = _recortar_lo_dicho(actions, [], fabrica())
+    recorte = fabrica()
+    say_texts[:] = [t for t in (recorte(texto) for texto in say_texts) if t]
+    return tocado
+
+
+def _anular_cierres(tools_called: List[Dict[str, Any]], desde: int) -> None:
+    """La trampa de las correcciones nuevas: en la ronda corregida el modelo
+    pudo haber llamado ya `finalizar_conversacion`/`no_responder`/escalar. Su
+    acción se deshace con el resto de la ronda, pero el registro seguiría
+    diciendo que se llamó — y el borrado de `no_responder` de más abajo vaciaría
+    el turno corregido. Se renombran (no se borran: la telemetría conserva que
+    el modelo lo intentó)."""
+    for llamada in tools_called[desde:]:
+        if llamada.get("tool") in _CIERRES:
+            llamada["tool"] = f"{llamada['tool']}{_SUFIJO_ANULADA}"
+
+
+_CORRECCION_APLAZADA = (
+    "ALTO: la persona no se despidió: dejó la decisión para después (lo va a "
+    "consultar, a pensar o te va a avisar). Esa conversación sigue abierta: en "
+    "este turno NO uses `finalizar_conversacion` ni `no_responder`. Ese cierre "
+    "NO se aplicó y tu mensaje NO se le envió. Vuelve a responder en una o dos "
+    "líneas: dile que con gusto, que quedas pendiente, y si en su mensaje "
+    "preguntó algo, respóndeselo."
+)
+
+_CORRECCION_PRECIO = (
+    "ALTO: un precio de tu mensaje no corresponde a lo que ofreces ({detalle}). "
+    "Ese mensaje NO se le envió al cliente. En el tarifario cada valor "
+    "pertenece a UNA fila —hotel, salida y acomodación—, y un valor que existe "
+    "en otra fila sigue estando mal. Vuelve a responder copiando TEXTUALMENTE "
+    "el valor de la fila que ofreces, del resultado de `consultar_tarifario`; "
+    "si todavía no lo consultaste, llámalo con el mes. Si no tienes el dato, "
+    "responde sin cifras."
+)
+
+
+def _viola_cierre_aplazado(
+    cfg: Dict[str, Any],
+    user_input: Optional[str],
+    tools_de_la_ronda: List[Dict[str, Any]],
+) -> bool:
+    """#14: ¿el modelo cerró la conversación de alguien que sólo aplazó?"""
+    if not cfg.get("no_cerrar_aplazadas"):
+        return False
+    if not any(
+        t.get("tool") in ("finalizar_conversacion", "no_responder")
+        for t in tools_de_la_ronda
+    ):
+        return False
+    return senales.es_aplazamiento(user_input or "")
+
+
+def _viola_precio(
+    cfg: Dict[str, Any],
+    textos_de_la_ronda: List[str],
+    resultados_precios: List[str],
+    textos_del_cliente: List[str],
+) -> Optional[str]:
+    """#18: la explicación del precio equivocado, o None si todo cuadra.
+
+    Delega en `services.guardarrail_precio.viola_precio` (módulo de precios).
+    Si el módulo no está o falla, **no bloquea**: un guardarraíl roto no puede
+    tumbar el turno al fail-safe. Queda en el log, sin contenido (regla #1).
+    """
+    if not cfg.get("guardarrail_precio") or not textos_de_la_ronda:
+        return None
+    try:
+        from . import guardarrail_precio
+    except ImportError:
+        logger.warning("llm_engine: guardarrail_precio no existe; #18 apagado")
+        return None
+    hoy = tarifario.hoy_colombia()
+    desde = _de_tarifario("desde_temporada", hoy)
+    desde_validos = {int(desde)} if desde else set()
+    extras = _de_tarifario("extras") or {}
+    # Las cifras se leen con el mismo módulo que juzga, para que las dos
+    # mitades entiendan igual «450 mil». Si no la trae, respaldo.
+    extraer = getattr(guardarrail_precio, "extraer_montos", None)
+
+    def _montos(texto: str) -> set:
+        try:
+            return set(extraer(texto)) if callable(extraer) else senales.cifras(texto)
+        except Exception:
+            logger.exception("llm_engine: extraer_montos falló; se usa el respaldo")
+            return senales.cifras(texto)
+
+    # Si el bot no escribió ningún monto no hay nada que juzgar, y no se gasta
+    # ni un ciclo en lo que escribió el cliente (auditoría H1: cada ronda
+    # releía todo el historial).
+    if not any(_montos(texto) for texto in textos_de_la_ronda):
+        return None
+    # Acotado: los últimos mensajes del cliente y cada uno recortado. Un
+    # mensaje de 20.000 dígitos no puede volver lento cada turno.
+    # Además, una serie de más de 15 dígitos no es plata de nadie: se borra
+    # antes de leer, y así ni el peor mensaje le cuesta al parser.
+    cifras_cliente: set = set()
+    for texto in textos_del_cliente[-_MENSAJES_CLIENTE_PRECIO:]:
+        acotado = _SERIE_IMPOSIBLE_RE.sub(" ", (texto or "")[:_CARACTERES_CLIENTE_PRECIO])
+        cifras_cliente |= _montos(acotado)
+    for texto in textos_de_la_ronda:
+        try:
+            explicacion = guardarrail_precio.viola_precio(
+                texto,
+                resultados_precios=list(resultados_precios),
+                desde_validos=desde_validos,
+                cifras_cliente=cifras_cliente,
+                extras=extras if isinstance(extras, dict) else {},
+            )
+        except Exception:
+            logger.exception("llm_engine: guardarrail_precio falló; #18 sin efecto")
+            return None
+        if explicacion:
+            return str(explicacion)[:300]
+    return None
+
+
+def _decir_con_marcas(
+    texto: str,
+    cfg: Dict[str, Any],
+    actions: List[Dict[str, Any]],
+    say_texts: List[str],
+    sent_media_log: List[str],
+    ctx_productos: Optional[Any],
+) -> None:
+    """QA #4: el texto sin las marcas del historial; cada `[enviaste: x]` con
+    una clave del catálogo se manda de verdad, en su lugar. Las claves que no
+    existen o que ya salieron en este turno no se mandan."""
+    media = _media_catalog(cfg, ctx_productos)
+    for clase, valor in recortes_turno.partir_por_marcas(texto):
+        if clase == "texto":
+            if valor:
+                actions.append({"type": "say", "payload": {"text": valor}})
+                say_texts.append(valor)
+        elif valor in media and valor not in sent_media_log:
+            _run_tool(
+                "enviar_media", {"claves": [valor]}, cfg, actions, sent_media_log,
+                ctx_productos=ctx_productos,
+            )
+            logger.info("llm_engine: marca de adjunto convertida en envío (%s)", valor[:60])
+
+
+def _precio_a_asesor(
+    cfg: Dict[str, Any],
+    actions: List[Dict[str, Any]],
+    acciones_previas: int,
+    say_texts: List[str],
+    textos_previos: int,
+    tools_called: List[Dict[str, Any]],
+    tools_previas: int,
+) -> None:
+    """M2: los textos de la ronda se cambian por uno sin cifras + `handoff`.
+
+    Lo que no es mensaje (un adjunto, `perfil`) se conserva; los cierres de la
+    ronda se anulan, que el cierre ahora es el pase al asesor.
+    """
+    _anular_cierres(tools_called, tools_previas)
+    actions[acciones_previas:] = [
+        a for a in actions[acciones_previas:]
+        if a.get("type") not in ("say", "end", "handoff")
+    ]
+    actions.append({"type": "say", "payload": {"text": _TEXTO_PRECIO_A_ASESOR}})
+    actions.append({
+        "type": "handoff",
+        "payload": {
+            "assignee": cfg.get("assignee") or "",
+            "text": "",
+            "motivo": _MOTIVO_PRECIO_A_ASESOR,
+            "resumen": (
+                "El bot no logró darle el precio exacto de la salida que pidió. "
+                "Confírmale el valor con el tarifario."
+            ),
+        },
+    })
+    say_texts[textos_previos:] = [_TEXTO_PRECIO_A_ASESOR]
+    tools_called.append({
+        "tool": "escalar_a_asesor",
+        "input": {"motivo": _MOTIVO_PRECIO_A_ASESOR[:200]},
+        "resultado": "traspaso por precio sin corregir (motor)",
+    })
+
+
+def _postproceso_variante(
+    cfg: Dict[str, Any],
+    *,
+    bot,
+    history: List[Dict[str, str]],
+    user_input: Optional[str],
+    actions: List[Dict[str, Any]],
+    say_texts: List[str],
+    sent_media_log: List[str],
+    tools_called: List[Dict[str, Any]],
+    ctx_productos: Optional[Any],
+    finished: bool,
+    escalated_to: Optional[str],
+    narraciones: Optional[List[Dict[str, Any]]] = None,
+) -> tuple:
+    """Los recortes del bot 2, en el orden de la spec. Devuelve
+    `(finished, escalated_to)`. Cada paso mira su propio flag: sin flags, no
+    toca nada.
+
+    1. presentación (#11) · 2. nombre (#8) · 3. pregunta por el origen de un
+    precio (#21) · 4. (la promoción inexistente, #20, se decide antes del
+    modelo) · 4b. narración de consulta (QA #6) · 4c. aviso en traspaso (QA
+    #1) · 5. una pregunta por turno (#10 #17) · 6. flyer del primer turno (#4,
+    QA #8: uno solo).
+    """
+    bot_id = getattr(bot, "id", "?")
+
+    # 1 — #11: ya se presentó en otra sesión (la que retoma la cubre
+    # `_ya_nos_conocemos`, más arriba en `_turno`).
+    if _ya_se_presento(cfg) and not _ya_nos_conocemos(cfg, history):
+        if _recortar_lo_dicho(actions, say_texts, _sin_la_presentacion):
+            logger.info("llm_engine: presentación repetida quitada (bot=%s)", bot_id)
+
+    # 2 — #8: el nombre se pregunta una sola vez en toda la conversación.
+    if cfg.get("nombre_una_vez"):
+        ya_pedido = _nombre_ya_pedido(cfg, history)
+
+        def _fabrica():
+            visto = {"ya": ya_pedido}
+
+            def _recorte(texto: str) -> str:
+                if visto["ya"]:
+                    return _sin_pregunta_del_nombre_amplia(texto)
+                if _pide_el_nombre(texto):
+                    visto["ya"] = True      # la primera de este turno se queda
+                return texto
+            return _recorte
+
+        if _recortar_con_estado(actions, say_texts, _fabrica):
+            logger.info("llm_engine: pregunta del nombre repetida quitada (bot=%s)", bot_id)
+
+    promo = cfg.get("promo_inexistente")
+    if isinstance(promo, dict):
+        # 3 — #21: nunca interrogar al cliente por un precio que publica la
+        # agencia.
+        if _recortar_lo_dicho(actions, say_texts, _sin_pregunta_por_el_origen):
+            logger.info("llm_engine: pregunta por el origen de un precio quitada (bot=%s)", bot_id)
+
+        # 4 — #20: se decide antes de llamar al modelo (`_traspaso_promo`).
+
+    # 4b — QA #6: la narración de una ronda que sólo consultaba («Déjame
+    # consultar los precios…») sobra cuando otra ronda trajo el mensaje.
+    if cfg.get("una_pregunta_por_turno") and narraciones:
+        ids = {id(a) for a in narraciones}
+        if any(a.get("type") == "say" and id(a) not in ids for a in actions):
+            actions[:] = [a for a in actions if id(a) not in ids]
+            say_texts[:] = [
+                (a.get("payload") or {}).get("text") or ""
+                for a in actions if a.get("type") == "say"
+            ]
+            logger.info("llm_engine: narración de consulta descartada (bot=%s)", bot_id)
+
+    # 4c — QA #1: un traspaso nunca es mudo. Si el turno pasa a un asesor sin
+    # haberle escrito nada al cliente, va el aviso de la config.
+    aviso = cfg.get("aviso_en_traspaso")
+    if aviso and any(a.get("type") == "handoff" for a in actions) and not any(
+        (a.get("type") == "say" and ((a.get("payload") or {}).get("text") or "").strip())
+        or (a.get("type") == "say_media"
+            and ((a.get("payload") or {}).get("caption") or "").strip())
+        for a in actions
+    ):
+        texto_aviso = aviso.strip() if isinstance(aviso, str) and aviso.strip() \
+            else _AVISO_TRASPASO_DEFAULT
+        corte = next(i for i, a in enumerate(actions) if a.get("type") == "handoff")
+        actions.insert(corte, {"type": "say", "payload": {"text": texto_aviso}})
+        say_texts.append(texto_aviso)
+        logger.info("llm_engine: aviso agregado a un traspaso sin texto (bot=%s)", bot_id)
+
+    # 5 — #10 #17: el turno se cierra en la primera pregunta.
+    if cfg.get("una_pregunta_por_turno") and recortes_turno.cortar_tras_pregunta(actions):
+        say_texts[:] = [
+            (a.get("payload") or {}).get("text") or ""
+            for a in actions if a.get("type") == "say"
+        ]
+        logger.info("llm_engine: turno cortado en la primera pregunta (bot=%s)", bot_id)
+
+    # 6 — #4: el flyer del mes va con el primer mensaje.
+    if cfg.get("apertura_vitrina") and _es_primer_turno(cfg, history) \
+            and not finished and any(t.strip() for t in say_texts):
+        flyer = _flyer_de_apertura(cfg, ctx_productos, user_input)
+        if flyer is not None:
+            clave, item = flyer
+            # QA #8: en la apertura va UN flyer de tarifario, el elegido; los
+            # que el modelo haya mandado de más se caen.
+            catalogo = _media_catalog(cfg, ctx_productos)
+            de_tarifario = {
+                str(v.get("url")): k for k, v in catalogo.items()
+                if isinstance(v, dict) and v.get("meses") and v.get("url") != item.get("url")
+            }
+            sobran = [
+                a for a in actions
+                if a.get("type") == "say_media"
+                and (a.get("payload") or {}).get("url") in de_tarifario
+            ]
+            if sobran:
+                actions[:] = [a for a in actions if a not in sobran]
+                for a in sobran:
+                    k = de_tarifario[a["payload"]["url"]]
+                    if k in sent_media_log:
+                        sent_media_log.remove(k)
+            modo = recortes_turno.poner_flyer(actions, item)
+            if modo:
+                sent_media_log.append(clave)
+                logger.info(
+                    "llm_engine: flyer de apertura agregado (%s) (bot=%s)", modo, bot_id,
+                )
+    return finished, escalated_to
 
 
 # ---------------------------------------------------------------------------
@@ -1671,6 +2514,48 @@ def _tools_for(
                             "description": "Fecha del pedido en formato YYYY-MM-DD",
                         },
                     },
+                },
+            }
+        )
+    if cfg.get("intencion_compra"):
+        # #22 (bot 2): avisar al equipo cuando hay intención de compra, no 23 h
+        # después cuando la conversación ya se abandonó. No escribe en la base:
+        # viaja en `telemetry["intenciones"]` y lo registra `bot_runner`.
+        tools.append(
+            {
+                "name": "registrar_intencion",
+                "description": (
+                    "Le avisa al equipo de ventas que esta persona quiere "
+                    "comprar, para que una asesora la llame a tiempo. Llámala "
+                    "EN EL MISMO TURNO en que pase cualquiera de estas cosas: "
+                    "pregunta cuánto es el anticipo, cómo pagar o cómo separar "
+                    "el cupo (tipo `anticipo`); dice que quiere reservar o "
+                    "apartar (tipo `reservar`); pregunta por una salida o una "
+                    "fecha concreta («¿el 16 de octubre hay?») (tipo "
+                    "`fecha_concreta`); o te entrega sus datos para la reserva: "
+                    "nombre completo, cédula, cuántas personas viajan (tipo "
+                    "`datos`). No le manda nada a la persona: escribe también "
+                    "tu respuesta normal en ese turno y no le menciones el aviso."
+                ),
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "tipo": {
+                            "type": "string",
+                            "enum": list(TIPOS_DE_INTENCION),
+                            "description": "Qué señal de compra viste.",
+                        },
+                        "resumen": {
+                            "type": "string",
+                            "description": (
+                                "Una línea para la asesora con lo que la "
+                                "persona quiere: mes o salida, hotel, cuántas "
+                                "personas, qué preguntó. Solo lo que dijo, sin "
+                                "inventar; sin teléfonos ni números de cédula."
+                            ),
+                        },
+                    },
+                    "required": ["tipo", "resumen"],
                 },
             }
         )
@@ -2992,12 +3877,26 @@ def _run_tool(
     db: Optional[Any] = None,
     ctx_productos: Optional[Any] = None,
     fallbacks: Optional[List[str]] = None,
+    intenciones: Optional[List[Dict[str, str]]] = None,
 ) -> tuple[str, bool]:
     """Ejecuta una tool. Devuelve (tool_result_text, turno_terminado).
 
     `fallbacks` recoge el motivo de cada vez que la capa nueva falló y respondió
     la vieja; el turno lo marca en `bot_llm_decisions.fuente_datos`.
+    `intenciones` recoge lo que anote `registrar_intencion` (#22, bot 2).
     """
+    if name == "registrar_intencion" and cfg.get("intencion_compra"):
+        intencion, problema = _intencion_limpia(tool_input)
+        if intencion is None:
+            return problema, False
+        if intenciones is not None:
+            intenciones.append(intencion)
+        # Sin el contenido en el log (regla #1): ni el tipo ni el resumen.
+        return (
+            "anotado: el equipo ya sabe que quiere comprar. Sigue la "
+            "conversación normal y no le menciones este aviso."
+        ), False
+
     if name in productos_bot.TOOLS:
         if ctx_productos is None or db is None:
             # El modelo llamó una herramienta que ya no está declarada (puede
@@ -3123,6 +4022,14 @@ def _run_tool(
                 "no guardé nada: eso no parece un nombre (llegó vacío, con "
                 "números o demasiado largo). Sigue la conversación normal y no "
                 "se lo vuelvas a preguntar si ya te lo dijo."
+            ), False
+        if cfg.get("filtrar_nombres_genericos") and senales.es_nombre_generico(nombre):
+            # #9 (bot 2): «Cliente», «No proporcionado», «Casa»… no son nombres.
+            logger.info("llm_engine: registrar_nombre descartado (nombre genérico)")
+            return (
+                "no guardé nada: eso no es un nombre de persona. Registra el "
+                "nombre solo cuando la persona te diga cómo se llama; si no lo "
+                "sabes, sigue la conversación sin él."
             ), False
         # El runner lo escribe en `conversations.contact_name` sólo si está
         # vacío: el nombre que venga del canal (el perfil de WhatsApp) manda.
@@ -3793,8 +4700,51 @@ def _turno(
     duraciones_ok: List[str] = []
     # Consumo del turno, sumando todas las rondas (#366).
     uso = {"tokens_in": 0, "tokens_out": 0, "cache_read": 0, "cache_write": 0}
+    # Bot 2 (#18): lo que la sesión ya consultó en turnos anteriores — el bot
+    # puede repetir un precio que cotizó hace dos mensajes sin volver a
+    # consultar. Sólo existe con el flag.
+    precios_previos: List[str] = []
+    if cfg.get("guardarrail_precio") and isinstance(state, dict):
+        crudos = state.get("precios_consultados")
+        if isinstance(crudos, list):
+            precios_previos = [str(r) for r in crudos if r][-_PRECIOS_RECORDADOS:]
+    # Bot 2 (#22): lo que anote `registrar_intencion`.
+    intenciones: List[Dict[str, str]] = []
+    # Bot 2 (#18): lo que escribió el cliente, para las cifras que el bot
+    # puede repetirle. Se arma una vez por turno, no en cada ronda.
+    textos_cliente: List[str] = (
+        [m.get("content") or "" for m in history if m.get("role") == "user"]
+        + [user_input or ""]
+    ) if cfg.get("guardarrail_precio") else []
 
-    for _ in range(_MAX_TOOL_ROUNDS):
+    # Bot 2 (#20, QA #5): la promoción inexistente se decide antes de llamar
+    # al modelo — depende sólo del mensaje del cliente. Cero rondas.
+    traspaso_previo = _traspaso_promo(cfg, user_input)
+    if traspaso_previo is not None:
+        texto_promo, payload_promo = traspaso_previo
+        actions.append({"type": "say", "payload": {"text": texto_promo}})
+        actions.append({"type": "handoff", "payload": payload_promo})
+        say_texts.append(texto_promo)
+        tools_called.append({
+            "tool": "escalar_a_asesor",
+            "input": {"motivo": payload_promo["motivo"][:200]},
+            "resultado": "traspaso por promoción o presupuesto (motor, sin modelo)",
+        })
+        finished = True
+        escalated_to = cfg.get("assignee") or "(por turno)"
+        logger.info(
+            "llm_engine: traspaso por monto de promoción sin llamar al modelo (bot=%s)",
+            getattr(bot, "id", "?"),
+        )
+    # Bot 2 (QA #6): lo que el modelo narró en rondas que sólo consultaban.
+    narraciones: List[Dict[str, Any]] = []
+
+    for _ in range(0 if traspaso_previo is not None else _MAX_TOOL_ROUNDS):
+        # Cómo estaba el turno antes de esta ronda: si una corrección nueva la
+        # deshace, el cierre que haya hecho una herramienta también se deshace.
+        finished_previo, escalado_previo = finished, escalated_to
+        tools_previas = len(tools_called)
+        intenciones_previas = len(intenciones)
         data = _invoke_model(model_id, system, working, tools)
         rounds += 1
         _u = data.get("usage") or {}
@@ -3815,7 +4765,17 @@ def _turno(
                 text = _con_reemplazos(
                     _to_whatsapp_format((block.get("text") or "").strip()), cfg
                 )
-                if text:
+                if text and correcciones and cfg.get("correcciones_silenciosas"):
+                    # Bot 2: la ronda que sigue a una corrección no arranca
+                    # disculpándose con alguien que no vio nada.
+                    text = recortes_turno.sin_disculpa_inicial(text)
+                if text and cfg.get("marcas_a_medios"):
+                    # Bot 2: `[enviaste: x]` escrito como texto (imitando el
+                    # historial) se vuelve el adjunto de verdad, en su lugar.
+                    _decir_con_marcas(
+                        text, cfg, actions, say_texts, sent_media_log, ctx_productos,
+                    )
+                elif text:
                     actions.append({"type": "say", "payload": {"text": text}})
                     say_texts.append(text)
             elif btype == "tool_use":
@@ -3825,7 +4785,23 @@ def _turno(
                     name, tool_input, cfg, actions, sent_media_log, bookings,
                     notas_historial, pedidos_cerrados,
                     db=db, ctx_productos=ctx_productos, fallbacks=fallbacks,
+                    intenciones=intenciones,
                 )
+                if cfg.get("cargos_ninos") and name in (
+                    "consultar_tarifario", productos_bot.PRECIOS
+                ):
+                    # #19 #16 (bot 2): niños, anticipo y opcionales salen del
+                    # tarifario, no del prompt. Van antes de registrar el
+                    # resultado para que el guardarraíl de precio también los
+                    # vea. `linea_extras` incluye a `linea_ninos`; si aún no
+                    # existe, se cae a la de niños sola.
+                    linea = _de_tarifario(
+                        "linea_extras"
+                        if callable(getattr(tarifario, "linea_extras", None))
+                        else "linea_ninos"
+                    )
+                    if linea:
+                        result_text = f"{result_text}\n{str(linea).strip()}"
                 # #255: cada tool llamada es una decisión — queda registrada.
                 tools_called.append(
                     {
@@ -3871,7 +4847,10 @@ def _turno(
                 correccion, motivo = _CORRECCION_FICHA, "ficha descrita sin consultarla"
             elif _viola_link(cfg, say_texts[textos_previos:], tools_called):
                 correccion, motivo = _CORRECCION_LINK, "link de pago inventado"
-            elif _viola_duracion(cfg, say_texts[textos_previos:], duraciones_ok):
+            elif (
+                _viola_duracion_por_plan if cfg.get("duracion_por_plan")
+                else _viola_duracion
+            )(cfg, say_texts[textos_previos:], duraciones_ok):
                 correccion, motivo = _CORRECCION_DURACION, "duración inventada"
             elif _viola_disponibilidad(
                 cfg, say_texts[textos_previos:], tools_called
@@ -3885,10 +4864,65 @@ def _turno(
                     ) if ctx_productos is not None else _CORRECCION_DISPONIBILIDAD,
                     "disponibilidad sin consultar",
                 )
+            # Las dos de abajo son del bot 2 y sólo existen con su flag. A
+            # diferencia de las de arriba, deshacen también el cierre de la
+            # ronda (ver `_anular_cierres`).
+            else:
+                detalle_precio = _viola_precio(
+                    cfg, say_texts[textos_previos:],
+                    precios_previos + duraciones_ok, textos_cliente,
+                )
+                if detalle_precio:
+                    texto_correccion = _CORRECCION_PRECIO.format(detalle=detalle_precio)
+                    if ctx_productos is not None:
+                        texto_correccion = texto_correccion.replace(
+                            "consultar_tarifario", productos_bot.PRECIOS
+                        )
+                    correccion, motivo = texto_correccion, "precio que no es el de la fila"
+                elif _viola_consulta_por_mes(
+                    cfg, user_input, say_texts[textos_previos:], tools_called,
+                ):
+                    correccion, motivo = (
+                        _CORRECCION_CONSULTA_MES.replace(
+                            "consultar_tarifario", productos_bot.PRECIOS
+                        ) if ctx_productos is not None else _CORRECCION_CONSULTA_MES,
+                        "precios de un mes sin consultar",
+                    )
+                elif _viola_cierre_aplazado(
+                    cfg, user_input, tools_called[tools_previas:]
+                ):
+                    correccion, motivo = _CORRECCION_APLAZADA, "cierre de una decisión aplazada"
+                if correccion is not None:
+                    finished, escalated_to = finished_previo, escalado_previo
+                    _anular_cierres(tools_called, tools_previas)
+        elif (cfg.get("guardarrail_precio") and _viola_precio(
+            cfg, say_texts[textos_previos:], precios_previos + duraciones_ok,
+            textos_cliente,
+        )) or _viola_consulta_por_mes(
+            cfg, user_input, say_texts[textos_previos:], tools_called,
+        ):
+            # Auditoría M2 (bot 2): ya no quedan correcciones y el precio sigue
+            # mal. No sale: va un texto sin cifras y la conversación pasa a un
+            # asesor, con el mismo `handoff` y la misma rotación que #20.
+            _precio_a_asesor(
+                cfg, actions, acciones_previas, say_texts, textos_previos,
+                tools_called, tools_previas,
+            )
+            finished = True
+            escalated_to = cfg.get("assignee") or "(por turno)"
+            logger.warning(
+                "llm_engine: precio equivocado tras %s correcciones; pasa a "
+                "asesor (bot=%s)", correcciones, getattr(bot, "id", "?"),
+            )
         if correccion is not None:
             correcciones += 1
             del actions[acciones_previas:]
             del say_texts[textos_previos:]
+            # Lo que `registrar_intencion` anotó en la ronda descartada se va
+            # con ella (auditoría B4): el modelo lo vuelve a anotar si aplica.
+            del intenciones[intenciones_previas:]
+            if cfg.get("correcciones_silenciosas"):
+                correccion = correccion + _SIN_DISCULPAS
             logger.warning(
                 "llm_engine: %s bloqueado (bot=%s, corrección %s)",
                 motivo, getattr(bot, "id", "?"), correcciones,
@@ -3912,6 +4946,13 @@ def _turno(
             else:
                 working.append({"role": "user", "content": correccion})
             continue
+
+        if cfg.get("una_pregunta_por_turno") and data.get("stop_reason") == "tool_use":
+            de_la_ronda = {t.get("tool") for t in tools_called[tools_previas:]}
+            if de_la_ronda & _CONSULTAS and de_la_ronda <= (_CONSULTAS | _SILENCIOSAS):
+                narraciones.extend(
+                    a for a in actions[acciones_previas:] if a.get("type") == "say"
+                )
 
         if finished or data.get("stop_reason") != "tool_use" or not tool_results:
             break
@@ -4008,6 +5049,23 @@ def _turno(
             getattr(bot, "id", "?"),
         )
 
+    # Bot 2: los recortes de la variante, en el orden de la spec. Cada paso
+    # mira su flag; con la config del bot 1 no toca nada.
+    finished, escalated_to = _postproceso_variante(
+        cfg,
+        bot=bot,
+        history=history,
+        user_input=user_input,
+        actions=actions,
+        say_texts=say_texts,
+        sent_media_log=sent_media_log,
+        tools_called=tools_called,
+        ctx_productos=ctx_productos,
+        finished=finished,
+        escalated_to=escalated_to,
+        narraciones=narraciones,
+    )
+
     # Historial aplanado: texto del asistente + marcas de medios enviados.
     assistant_summary = "\n\n".join(say_texts)
     if sent_media_log:
@@ -4027,6 +5085,10 @@ def _turno(
         next_state = None
     else:
         next_state = {"history": history}
+        if cfg.get("guardarrail_precio"):
+            next_state["precios_consultados"] = (
+                precios_previos + duraciones_ok
+            )[-_PRECIOS_RECORDADOS:]
     telemetry = {
         "user_input": user_input,
         "bookings": bookings,   # #276: las persiste el caller con record_booking()
@@ -4047,6 +5109,10 @@ def _turno(
         "fuente_datos": _fuente_datos(cfg, ctx_productos, fallbacks),
         **uso,
     }
+    if cfg.get("intencion_compra"):
+        # #22: lo registra `bot_runner` (tabla `intenciones_compra`). La clave
+        # sólo existe con el flag: la telemetría del bot 1 no cambia.
+        telemetry["intenciones"] = intenciones
     return {
         "actions": actions,
         "next_state": next_state,

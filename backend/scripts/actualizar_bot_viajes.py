@@ -17,15 +17,26 @@ declare se conserva tal cual (`fusionar`). El archivo manda sobre cómo habla el
 bot; cómo está operando —`fuente_datos`, un `model_id` fijado a mano— vive solo
 en la fila y correr esto no puede apagarlo.
 
+**Solo toca el bot 1** (`context_key == "demo_viajes"` y sin `variante`). La
+cuenta tiene además el bot 2 (variante B, `crear_bot_viajes_b.py`) y antes este
+script recorría TODOS los bots LLM del dueño: correrlo le pisaba al bot 2 su
+guion y sus banderas con la config del bot 1, y el A/B dejaba de comparar nada.
+Si no hay exactamente un bot 1, aborta sin escribir.
+
 Idempotente: se puede correr las veces que haga falta.
+
+`BOT_OWNER_EMAIL` es **obligatoria** y no tiene valor por defecto: el repo es
+público y el correo de un cliente no va en un archivo versionado (CLAUDE.md
+#8). El correo vive en el gestor del CEO.
 
 Uso:
     # Local (el proyecto de compose se llama `wati`)
-    docker compose -p wati exec -T backend python scripts/actualizar_bot_viajes.py
+    docker compose -p wati exec -T -e BOT_OWNER_EMAIL='<correo del dueño>' \\
+        backend python scripts/actualizar_bot_viajes.py
 
     # Producción (RDS)
     ./backend/scripts/rds_exec.sh backend/scripts/actualizar_bot_viajes.py \\
-        BOT_OWNER_EMAIL='arranquemospues.marketing@gmail.com'
+        BOT_OWNER_EMAIL='<correo del dueño>'
 """
 from __future__ import annotations
 
@@ -48,9 +59,9 @@ from app.data.bot_viajes import LLM_CONFIG  # type: ignore
 from app.database import SessionLocal  # type: ignore
 
 
-CORREO_OWNER = os.environ.get(
-    "BOT_OWNER_EMAIL", "arranquemospues.marketing@gmail.com"
-)
+#: El `context_key` del bot 1. El bot 2 tiene otro (`demo_viajes_b`) y además
+#: la llave `variante`; cualquiera de las dos basta para dejarlo fuera.
+CONTEXT_KEY_BOT_1 = "demo_viajes"
 
 #: Lo único que este script **borra** a propósito de la config que ya estaba.
 #: Todo lo demás que no venga del archivo de datos se conserva (ver `fusionar`).
@@ -85,25 +96,74 @@ def fusionar(anterior: dict) -> dict:
     return nueva
 
 
-def main() -> int:
-    db = SessionLocal()
+def _config(bot) -> dict:
+    try:
+        cfg = json.loads(bot.llm_config or "{}")
+    except (ValueError, TypeError):
+        return {}
+    return cfg if isinstance(cfg, dict) else {}
+
+
+def es_bot_1(cfg: dict) -> bool:
+    """¿Esta config es la del bot 1? `demo_viajes` y sin `variante`.
+
+    Las dos condiciones a propósito: la variante se crea duplicando el bot 1,
+    así que durante un instante tiene su `context_key`; y una variante futura
+    podría reusar el contexto. Con `variante` puesta, no es el bot 1.
+    """
+    return (
+        cfg.get("context_key") == CONTEXT_KEY_BOT_1
+        and not cfg.get("variante")
+    )
+
+
+def enmascarar_correo(correo: str) -> str:
+    """`ab***@***.com`: suficiente para saber a qué cuenta se le corrió, sin
+    dejar el correo completo en la salida (que en RDS queda en CloudWatch)."""
+    usuario, _, dominio = (correo or "").partition("@")
+    tld = dominio.rsplit(".", 1)[-1] if "." in dominio else ""
+    return f"{usuario[:2]}***@***.{tld}" if tld else f"{usuario[:2]}***"
+
+
+def main(db=None, correo: str | None = None) -> int:
+    correo = (correo if correo is not None else os.environ.get("BOT_OWNER_EMAIL", "")).strip()
+    if not correo:
+        print(
+            "ERROR: falta BOT_OWNER_EMAIL (el correo del dueño de la cuenta). "
+            "No tiene valor por defecto a propósito."
+        )
+        return 2
+
+    propia = db is None
+    if propia:
+        db = SessionLocal()
     try:
         owner = (
             db.query(models.User)
-            .filter(models.User.correo == CORREO_OWNER)
+            .filter(models.User.correo == correo)
             .first()
         )
         if owner is None:
-            print(f"ERROR: no existe el usuario {CORREO_OWNER} en esta base.")
+            print(f"ERROR: no existe el usuario {enmascarar_correo(correo)} en esta base.")
             return 1
 
-        bots = (
+        todos = (
             db.query(models.Bot)
             .filter(models.Bot.user_id == owner.id, models.Bot.engine == "llm")
+            .order_by(models.Bot.id)
             .all()
         )
-        if not bots:
-            print(f"ERROR: {CORREO_OWNER} no tiene ningún bot con engine='llm'.")
+        bots = [b for b in todos if es_bot_1(_config(b))]
+        for b in todos:
+            if b not in bots:
+                print(f"· bot {b.id} omitido: no es el bot 1 (variante u otro contexto)")
+        if len(bots) != 1:
+            print(
+                f"ERROR: se esperaba exactamente un bot 1 (context_key="
+                f"'{CONTEXT_KEY_BOT_1}' sin variante) y hay {len(bots)}"
+                + (f": {', '.join(str(b.id) for b in bots)}" if bots else "")
+                + ". No se escribió nada."
+            )
             return 1
 
         for bot in bots:
@@ -121,15 +181,14 @@ def main() -> int:
             if conservadas:
                 # Se imprime siempre: si la corrida apagara el piloto, esta
                 # línea es lo único que lo habría delatado a tiempo.
-                print(
-                    "  · llaves operativas conservadas: "
-                    + ", ".join(f"{k}={nueva[k]!r}" for k in conservadas)
-                )
+                # Solo los NOMBRES: un valor puede ser una credencial cifrada y
+                # esta salida queda en CloudWatch cuando se corre contra RDS.
+                print("  · llaves operativas conservadas: " + ", ".join(conservadas))
 
             if anterior.get("assignee"):
                 print(
-                    f"  ✓ assignee '{anterior['assignee']}' eliminado de "
-                    "llm_config → los chats entran al reparto por turnos"
+                    "  ✓ assignee eliminado de llm_config → los chats entran "
+                    "al reparto por turnos"
                 )
 
             # El reporte mira el catálogo COMPLETO, no solo las claves: la URL y
@@ -192,7 +251,8 @@ def main() -> int:
                   f"assignee={cfg.get('assignee') or '(por turno)'}")
         return 0
     finally:
-        db.close()
+        if propia:
+            db.close()
 
 
 if __name__ == "__main__":

@@ -1,4 +1,5 @@
 import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
+import { useRouter } from 'next/router';
 import GrabadorVoz from '../components/GrabadorVoz';
 import Layout from '../components/Layout';
 import SelectorEmoji from '../components/SelectorEmoji';
@@ -341,6 +342,15 @@ export default function Mensajes() {
   const [porPagina, setPorPagina] = useState(OPCIONES_POR_PAGINA[0]);
   const [total, setTotal] = useState(0);
   const [selectedId, setSelectedId] = useState<number | null>(null);
+  const router = useRouter();
+  // `/mensajes?conversacion={id}` abre ese chat: lo usan "Ver chat" de
+  // Agendamientos, Pedidos e Interesados, y el redirect tras "Tomar". El
+  // detalle se carga por `selectedId`, sin depender de que esté en la página.
+  useEffect(() => {
+    if (!router.isReady) return;
+    const id = Number(router.query.conversacion);
+    if (Number.isInteger(id) && id > 0) setSelectedId(id);
+  }, [router.isReady, router.query.conversacion]);
   const [detail, setDetail] = useState<ConversationDetail | null>(null);
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);

@@ -42,7 +42,13 @@ type TutorialsResponse = {
 };
 
 type Props = {
-  moduleKey: 'mi_plan' | 'mensajes' | 'bots' | 'campanas' | 'agendamientos';
+  moduleKey:
+    | 'mi_plan'
+    | 'mensajes'
+    | 'bots'
+    | 'campanas'
+    | 'agendamientos'
+    | 'agendamientos_interesados';
   steps: TutorialStep[];
   /** Si true, fuerza arrancar el tutorial ignorando el estado del backend.
    *  Útil para un futuro botón "Ver tutorial otra vez" (no implementado en UI). */

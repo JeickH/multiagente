@@ -232,6 +232,45 @@ def resolver_asesor(
     return siguiente_asesor(db, team)
 
 
+def asignar_si_sigue(
+    db: Session,
+    *,
+    conversation_id: int,
+    team_id: int,
+    esperado: str,
+    destino: str,
+    status: str = "pending",
+) -> bool:
+    """Compara-y-asigna: pasa la conversación a `destino` **solo si** hoy la
+    atiende `esperado` (por defecto, el bot). Devuelve si la ganó.
+
+    Es un único `UPDATE ... WHERE assigned_to = :esperado`, así que dos
+    asesoras que toman el mismo chat a la vez no se pisan: una gana y la otra
+    recibe 0 filas (→ 409 en Interesados). Lo usan "tomar" de Interesados, el
+    handoff del bot y el abandono, que antes escribían sin mirar.
+
+    No hace commit: quien llama decide la transacción (Interesados guarda en la
+    misma quién la tomó). El objeto `Conversation` que haya en la sesión queda
+    viejo hasta el próximo commit/refresh.
+    """
+    filas = (
+        db.query(models.Conversation)
+        .filter(
+            models.Conversation.id == conversation_id,
+            models.Conversation.team_id == team_id,
+            func.coalesce(models.Conversation.assigned_to, "bot") == (esperado or "bot"),
+        )
+        .update(
+            {
+                models.Conversation.assigned_to: destino,
+                models.Conversation.status: status,
+            },
+            synchronize_session=False,
+        )
+    )
+    return filas == 1
+
+
 # ===================== Meta Account =====================
 def get_meta_account_for_team(db: Session, team_id: int) -> Optional[models.MetaAccount]:
     return (
