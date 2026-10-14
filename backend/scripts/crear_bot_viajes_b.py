@@ -5,6 +5,11 @@ medios y mismos reenganches, con otro guion (`bot_contexts/demo_viajes_b.md`)
 y las banderas de `app/data/bot_viajes_b.py`. Las conversaciones nuevas se
 reparten entre los dos (A/B) y cada contacto se queda con el bot que le tocó.
 
+Para el bot 3 y el reparto entre tres bots (34/33/33) se usa
+`crear_bot_viajes_variante.py` (`VARIANTE=C`), que generaliza este. Con un
+reparto de tres bots vigente, este script se niega a volver al 50/50 sin
+`FORZAR=1` («otro reparto»).
+
 **Por defecto simula**: imprime lo que haría y no escribe nada. Para escribir,
 `APLICAR=1`. Idempotente: la segunda corrida con `APLICAR=1` no cambia nada y
 en particular **no reinicia `reparto_desde`** (el conteo del A/B sigue).

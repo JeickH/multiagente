@@ -991,3 +991,35 @@ def salidas_restantes(
                 actual["desde"] = min(actual["desde"], valor)
     ordenadas = sorted(por_etiqueta.items(), key=lambda kv: (kv[1]["inicio"], kv[0]))
     return [{"etiqueta": et, "desde": d["desde"]} for et, d in ordenadas]
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# Bot 3 (variante C) de Arranquemos Pues — menú de meses de la bienvenida.
+# ADITIVO: no cambia la salida de nada de arriba (bot 1 y bot 2 la usan).
+# ════════════════════════════════════════════════════════════════════════════
+
+def meses_disponibles(hoy: date, maximo: int = 4) -> list[dict]:
+    """Los meses que todavía tienen salidas, del más próximo al más lejano,
+    para las opciones numeradas del mensaje de bienvenida del bot 3.
+
+    ``[{"mes": 10, "anio": 2026, "nombre": "octubre", "desde": <int>}, ...]``.
+    Un mes entra si le queda al menos una salida con ``inicio >= hoy`` (de
+    cualquier hotel). ``desde`` es el mínimo por persona en múltiple de esas
+    salidas — el mismo criterio del «desde» del mes en `consultar`. Todo sale
+    de `tarifario_covenas.json`; ninguna cifra a mano. Máximo ``maximo``
+    meses (``[]`` si es 0 o negativo, o si no queda temporada).
+    """
+    if maximo <= 0:
+        return []
+    por_mes: Dict[tuple, int] = {}
+    for p in _datos().get("planes", []):
+        inicio = date.fromisoformat(p["inicio"])
+        if inicio < hoy:
+            continue
+        clave = (inicio.year, inicio.month)
+        valor = int(p["multiple"])
+        por_mes[clave] = min(valor, por_mes.get(clave, valor))
+    return [
+        {"mes": mes, "anio": anio, "nombre": _NOMBRE_MES[mes].lower(), "desde": desde}
+        for (anio, mes), desde in sorted(por_mes.items())[:maximo]
+    ]

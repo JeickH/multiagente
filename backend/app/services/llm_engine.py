@@ -807,6 +807,11 @@ def _system_prompt(
         anticipo = _bloque_anticipo(cfg)
         if anticipo:
             parts.append(anticipo)
+    if cfg.get("menu_edades_ninos"):
+        # Bot 3 (R3): datos estables, junto al anticipo.
+        edades = _bloque_edades_ninos(cfg)
+        if edades:
+            parts.append(edades)
     # Qué día es hoy. Sin esto el modelo adivina el año y se equivoca: le decía
     # a un cliente que quería viajar el 18 de diciembre que esa fecha "ya pasó",
     # porque al llamar a las herramientas escribía 2025. Vale para todos los
@@ -821,6 +826,11 @@ def _system_prompt(
         "próximo 18 de diciembre, no al del año pasado. Nunca supongas un año "
         "anterior al de hoy."
     )
+    if cfg.get("menu_meses"):
+        # Bot 3: cambia con la fecha, igual que el bloque de arriba.
+        menu = _bloque_menu_meses(cfg)
+        if menu:
+            parts.append(menu)
     parts.append(
         "## Reglas operativas\n"
         "- Responde siempre en español, con mensajes cortos estilo WhatsApp.\n"
@@ -856,6 +866,24 @@ def _system_prompt(
         # Bot 2 (#1 #3 #4 #5): sólo el primer turno. Cambia el prefijo de ese
         # turno y de ningún otro; entre conversaciones del mismo día es igual.
         parts.append(_bloque_apertura(cfg))
+    # Bot 3 (M3): con `system_en_dos_bloques` lo que cambia por turno va a una
+    # cola que se manda como segundo bloque, SIN `cache_control`: si no, cada
+    # «Opción elegida» reescribía los ~14,6 K tokens del prefijo cacheado.
+    cola: List[str] = [] if cfg.get("system_en_dos_bloques") else parts
+    if cfg.get("menu_meses"):
+        cola.append(_bloque_mes_nombrado(cfg, history, user_text))
+    if isinstance(cfg.get("horario_asesores"), dict):
+        # Bot 3: al final, porque cambia con la hora (dentro del día no).
+        cola.append(_bloque_horario(cfg))
+    if cfg.get("respuesta_por_numero"):
+        # Bot 3: «2» → qué opción es, como dato del sistema (cambia por turno).
+        cola.append(_bloque_opcion_elegida(cfg, history, user_text))
+    if cfg.get("contexto_de_regreso_y_hora"):
+        # Bot 3: los dos al final, con lo que cambia por conversación y por
+        # franja del día (ver `_bloque_hora_local` sobre la caché).
+        cola.append(_bloque_regreso(cfg, history))
+        cola.append(_bloque_hora_local(cfg))
+    cola_aparte = [c for c in cola if c] if cola is not parts else []
 
     partes = [p for p in parts if p]
     if ctx_productos is not None:
@@ -876,6 +904,8 @@ def _system_prompt(
                 ),
             ),
         )
+    if cola_aparte:
+        return "\n\n".join(partes) + _COLA_SIN_CACHE + "\n\n".join(cola_aparte)
     return "\n\n".join(partes)
 
 
@@ -1349,7 +1379,21 @@ _PIDE_EL_NOMBRE_AMPLIO = re.compile(
 #: el `tipo` termina en la base y en un filtro del panel.
 TIPOS_DE_INTENCION = ("anticipo", "reservar", "fecha_concreta", "datos")
 _RESUMEN_INTENCION_MAX = 300
-_SERIE_DE_DIGITOS_RE = re.compile(r"\+?\d(?:[\s.\-()]?\d){6,}")
+#: Sin el `$` delante: «$1.100.000» es un monto, no un dato personal.
+# Auditoría E1: un monto con forma de plata («$1.100.000», «$ 459.000»: signo
+# y grupos de miles, hasta $999.999.999) se respeta; cualquier otra serie de 7
+# o más dígitos se tapa, venga como venga («C.C.1000000011», «Cel.3000000011»,
+# «$1000000011» sin separadores, «ced.1.000.000.011»).
+_SERIE_DE_DIGITOS_RE = re.compile(
+    r"(?P<monto>\$\s?\d{1,3}(?:[.,]\d{3}){1,2}(?![.,]?\d))"
+    r"|(?P<serie>(?<!\d)\+?\d(?:[\s.\-()]?\d){6,})"
+)
+
+
+def _tapar_series(texto: str) -> str:
+    return _SERIE_DE_DIGITOS_RE.sub(
+        lambda m: m.group("monto") if m.group("monto") else "[número]", texto
+    )
 
 #: Cuántas consultas de precios recuerda la sesión para el guardarraíl (#18).
 #: Cada resultado son 2-3 KB; tres alcanzan para «lo que le cotizaste antes».
@@ -1420,6 +1464,43 @@ def _bloque_anticipo(cfg: Dict[str, Any]) -> str:
     return "## Anticipo y saldo (datos del sistema)\n" + "\n".join(f"- {l}" for l in lineas)
 
 
+def _bloque_edades_ninos(cfg: Dict[str, Any]) -> str:
+    """R3 (`menu_edades_ninos`): el menú de edades de niños, ya numerado, con
+    los tramos que cobra el plan según `tarifario.extras()["ninos"]` y una
+    última opción para los que ya pagan el plan completo. Sin precios: lo que
+    paga cada tramo sale de la consulta. Va en la parte estable del prefijo.
+
+    El modelo inventaba tramos («Menor de 3 / 3 a 5 / 6 a 11») y un niño de 5
+    se cotizaba como de 3."""
+    datos = _de_tarifario("extras") or {}
+    ninos = datos.get("ninos") if isinstance(datos, dict) else None
+    if not isinstance(ninos, list):
+        return ""
+    tramos = []
+    for nino in ninos:
+        if not isinstance(nino, dict):
+            continue
+        try:
+            minima, maxima = int(nino.get("edad_min")), int(nino.get("edad_max"))
+        except (TypeError, ValueError):
+            continue
+        etiqueta = str(nino.get("etiqueta") or "").strip() or f"De {minima} a {maxima} años"
+        tramos.append((minima, maxima, etiqueta))
+    if not tramos:
+        return ""
+    tramos.sort()
+    opciones = [t[2] for t in tramos]
+    opciones.append(f"Paga el plan completo (desde {max(t[1] for t in tramos) + 1} años)")
+    menu = "\n".join(f"{_keycap(i)} {o}" for i, o in enumerate(opciones, 1))
+    return (
+        "## Edades de niños (datos del sistema)\n"
+        "Cuando preguntes la edad de un niño, ofrece exactamente estas opciones, "
+        "en este orden:\n" + menu + "\n"
+        "Si la persona ya te dijo la edad de cada niño, no se la vuelvas a "
+        "preguntar: cotiza con esa edad."
+    )
+
+
 def _traspaso_promo(
     cfg: Dict[str, Any], user_input: Optional[str]
 ) -> Optional[tuple]:
@@ -1486,13 +1567,26 @@ def _plano_mismo_largo(texto: str) -> str:
     )
 
 
-def _menciones_b(texto: str) -> List[tuple]:
+#: A2 (bot 3): también «29 dic al 02 ene», con el mes entre los días.
+_SALIDA_REF_C_RE = re.compile(
+    r"(\d{1,2})\s*[*_]?\s*(?:de\s+)?(?:[a-záéíóú]{3,10}\.?\s+)?"
+    r"(?:al|[-–])\s*[*_]?\s*(\d{1,2})\b"
+    # «4 a 7 de diciembre»: con «a» sólo si sigue el mes (si no, «de 8 a 10
+    # días hábiles» se leería como una salida).
+    r"|(\d{1,2})\s*[*_]?\s*a\s+[*_]?(\d{1,2})[*_]?\s+de\s+(?:enero|febrero|marzo|"
+    r"abril|mayo|junio|julio|agosto|septiembre|setiembre|octubre|noviembre|"
+    r"diciembre)\b",
+    re.IGNORECASE,
+)
+
+
+def _menciones_b(texto: str, ref_re: "re.Pattern" = _SALIDA_REF_B_RE) -> List[tuple]:
     """Como `_menciones_de_duracion`, con la posición y con «8-11» como salida:
     `[(pos, ref, clase, valor)]`."""
-    refs = [
-        (m.start(), (int(m.group(1)), int(m.group(2))))
-        for m in _SALIDA_REF_B_RE.finditer(texto)
-    ]
+    refs = []
+    for m in ref_re.finditer(texto):
+        dias = [g for g in m.groups() if g]
+        refs.append((m.start(), (int(dias[0]), int(dias[1]))))
     menciones: List[tuple] = []
     tramos: List[tuple] = []
     for m in _DURACION_PAR_RE.finditer(texto):
@@ -1520,6 +1614,23 @@ def _viola_duracion_por_plan(
     textos_de_la_ronda: List[str],
     duraciones_ok: List[str],
 ) -> bool:
+    if cfg.get("duracion_con_sesion"):
+        # Bot 3 (A2): la ronda se lee como un solo mensaje —la salida suele ir
+        # en la burbuja anterior a la de los precios— y la salida se reconoce
+        # también con el mes entre los días.
+        return _viola_duracion_plan(
+            cfg, ["\n".join(t or "" for t in textos_de_la_ronda)] if textos_de_la_ronda else [],
+            duraciones_ok, _SALIDA_REF_C_RE,
+        )
+    return _viola_duracion_plan(cfg, textos_de_la_ronda, duraciones_ok, _SALIDA_REF_B_RE)
+
+
+def _viola_duracion_plan(
+    cfg: Dict[str, Any],
+    textos_de_la_ronda: List[str],
+    duraciones_ok: List[str],
+    ref_re: "re.Pattern",
+) -> bool:
     """`_viola_duracion` para el bot 2 (QA 2026-10-07: falso positivo con
     «**Plan Estándar** (2 noches / 3 días)» en un mes con dos duraciones).
 
@@ -1535,7 +1646,7 @@ def _viola_duracion_por_plan(
     por_plan: Dict[str, set] = {}
     todas: set = set()
     for resultado in duraciones_ok:
-        for _pos, ref, clase, valor in _menciones_b(resultado):
+        for _pos, ref, clase, valor in _menciones_b(resultado, ref_re):
             if clase != "par":
                 continue
             todas.add(valor)
@@ -1549,7 +1660,7 @@ def _viola_duracion_por_plan(
     for texto in textos_de_la_ronda:
         texto = texto or ""
         plano = _plano_mismo_largo(texto)
-        for pos, ref, clase, valor in _menciones_b(texto):
+        for pos, ref, clase, valor in _menciones_b(texto, ref_re):
             inicio = plano.rfind("\n", 0, pos) + 1
             fin = plano.find("\n", pos)
             renglon = plano[inicio:fin if fin != -1 else len(plano)]
@@ -1612,6 +1723,713 @@ _TEXTO_PRESUPUESTO_DEFAULT = (
     "¡Gracias por contarme! 🙌 Déjame revisar con una compañera las salidas que "
     "mejor te sirven, para no darte un dato equivocado. Ya te escribe por aquí 💬"
 )
+
+
+# ---------------------------------------------------------------------------
+# Variante C del bot de viajes (bot 3, «embudo guiado», oct-2026)
+# ---------------------------------------------------------------------------
+#
+# Igual que la variante B: todo detrás de flags que sólo tiene el bot 3, y sin
+# flag el turno es idéntico (lo fijan el golden del bot 1, los tests del bot 2
+# y `tests/viajes/variante_c/test_motor_*.py`).
+#
+#   "menu_meses": true                meses con salidas (del tarifario) para el menú
+#   "respuesta_por_numero": true      «2» → bloque «Opción elegida» (dato del sistema)
+#   "opciones_cerradas": true         el turno cierra con opciones o sí/no (1 corrección)
+#   "etapas_funnel": true             `next_state["etapa"]` y `telemetry["etapa"]`
+#   "horario_asesores": {...}         en/fuera de horario y {cuando} (`services/horario.py`)
+#   "mensaje_ausencia": "… {cuando} …"  aviso fuera de horario en todo traspaso
+#   "comprobante_a_asesor": {"texto", "motivo"}  comprobante en etapa `pago` → asesor
+#   "cliente_con_reserva": true       herramienta `marcar_cliente(tema)` → etapa `cliente`
+#   "contexto_de_regreso_y_hora": true  «Ya hablaron antes» + franja del día (saludo)
+#   "menu_edades_ninos": true         menú de edades de niños desde `tarifario.extras()`
+#   "turno_nunca_vacio": true         corrección en la última ronda → salida segura
+#   "media_sin_repetir": true         el mismo adjunto no sale dos veces en un turno
+
+#: Las etapas del embudo, en orden. `cliente` y `asesor` van aparte.
+ETAPAS_FUNNEL = (
+    "bienvenida", "mes", "fecha", "cotizacion", "reserva", "pago", "comprobante",
+)
+ETAPA_CLIENTE = "cliente"
+ETAPA_ASESOR = "asesor"
+
+#: Cómo entra un adjunto al turno del cliente (`messaging.base.marcador_inbound`):
+#: Twilio manda «[imagen]» o «[media]» (un PDF); Meta «[imagen]» o «[document]».
+_MARCADORES_ADJUNTO = frozenset({
+    "[imagen]", "[image]", "[media]", "[document]", "[documento]", "[archivo]",
+    "[file]", "[pdf]",
+})
+
+#: C10: un párrafo que es el aviso de horario escrito por el modelo.
+_AVISO_PARAFRASEADO_RE = re.compile(
+    r"atienden\s+de|horario\s+de\s+atenci[oó]n|mientras\s+tanto|"
+    r"lunes\s+a\s+viernes", re.IGNORECASE,
+)
+
+_TEXTO_TURNO_INCOMPLETO = (
+    "Déjame confirmarte esa información con un compañero para no darte un "
+    "dato equivocado 🙏"
+)
+_MOTIVO_TURNO_INCOMPLETO = "el bot no completó la respuesta"
+
+#: C10: el «cuándo» que escribe el modelo en su propio texto de traspaso; fuera
+#: de horario lo dice el aviso de la cuenta, una sola vez.
+_CUANDO_DEL_MODELO_RE = re.compile(
+    r"te\s+escrib\w+\s+por\s+aqu[ií]|te\s+escrib\w+\s+(?:en\s+un\s+momento|"
+    r"el\s+(?:lunes|martes|mi[eé]rcoles|jueves|viernes|s[aá]bado|domingo)|"
+    r"ma[nñ]ana|hoy)|en\s+un\s+momento",
+    re.IGNORECASE,
+)
+
+_TEXTO_COMPROBANTE_DEFAULT = (
+    "¡Gracias! 🙌 Recibimos tu comprobante. Un compañero verifica el pago y te "
+    "confirma la reserva por aquí {cuando} ✨"
+)
+_CUANDO_DEFAULT = "en un momento"
+
+_TEMAS_CLIENTE = ("salida", "que_llevar", "saldo", "cambio_o_cancelacion", "otra")
+
+_CORRECCION_OPCIONES = (
+    "ALTO: tu mensaje terminó sin opciones para responder. En este chat cada "
+    "mensaje cierra con opciones numeradas (1️⃣ 2️⃣ 3️⃣, máximo 5) o con una "
+    "pregunta de sí o no. Ese mensaje NO se le envió. Escríbelo de nuevo, igual, "
+    "y ciérralo con las opciones."
+)
+
+#: Pedir los datos de la reserva es el único mensaje que va sin opciones; el
+#: comprobante («mándame el comprobante por aquí 📎») tampoco las lleva.
+_SIN_OPCIONES_RE = re.compile(
+    r"nombre\s+completo|c[eé]dula|tus\s+datos|datos\s+(?:para|de)\s+(?:la\s+)?reserva|"
+    r"comprobante",
+    re.IGNORECASE,
+)
+_TOTAL_RE = re.compile(r"\btotal\b", re.IGNORECASE)
+#: El menú de atención al cliente: las dos opciones juntas, en cualquier orden.
+#: Dos búsquedas lineales y no un solo patrón con `[\s\S]*` (auditoría B3).
+_PUNTO_DE_SALIDA_RE = re.compile(r"punto\s+de\s+salida", re.IGNORECASE)
+_QUE_LLEVAR_RE = re.compile(r"qu[eé]\s+llevar", re.IGNORECASE)
+
+
+def _es_menu_cliente(texto: str) -> bool:
+    return bool(_PUNTO_DE_SALIDA_RE.search(texto or "")) and bool(
+        _QUE_LLEVAR_RE.search(texto or "")
+    )
+
+
+def _keycap(n: int) -> str:
+    return f"{n}\ufe0f\u20e3" if 0 <= n <= 9 else f"{n}."
+
+
+def _ahora_utc() -> datetime:
+    """Separado para poder fijar la hora en los tests."""
+    return datetime.now(timezone.utc)
+
+
+def _horario(cfg: Dict[str, Any]) -> Optional[tuple]:
+    """`(en_horario, cuando)` según `horario_asesores`, o None si el bot no lo
+    configura o `services/horario.py` no está. Nunca tumba el turno."""
+    datos = cfg.get("horario_asesores")
+    if not isinstance(datos, dict):
+        return None
+    try:
+        from . import horario
+    except ImportError:
+        logger.warning("llm_engine: services/horario.py no existe; horario apagado")
+        return None
+    try:
+        ahora = _ahora_utc()
+        return bool(horario.en_horario(ahora, datos)), str(horario.cuando_atienden(ahora, datos))
+    except Exception:
+        logger.exception("llm_engine: horario falló; se trata como en horario")
+        return None
+
+
+def _cuando(cfg: Dict[str, Any]) -> str:
+    estado = _horario(cfg)
+    return estado[1] if estado else _CUANDO_DEFAULT
+
+
+def _ausencia(cfg: Dict[str, Any]) -> str:
+    """El mensaje de ausencia con su {cuando}, sólo fuera de horario; "" si no."""
+    texto = str(cfg.get("mensaje_ausencia") or "").strip()
+    if not texto:
+        return ""
+    estado = _horario(cfg)
+    if estado is None or estado[0]:
+        return ""
+    return _poner_cuando(texto, estado[1])
+
+
+def _con_ausencia(cfg: Dict[str, Any], texto: str) -> str:
+    """Un texto de traspaso del sistema, con el aviso de ausencia si toca."""
+    ausencia = _ausencia(cfg)
+    return f"{texto}\n\n{ausencia}" if ausencia else texto
+
+
+def _bloque_horario(cfg: Dict[str, Any]) -> str:
+    """Dato vivo del system: ¿atienden ya o cuándo? Va al final (cambia con la
+    hora; dentro del día es estable)."""
+    estado = _horario(cfg)
+    if estado is None:
+        return ""
+    en_horario, cuando = estado
+    if en_horario:
+        linea = (
+            "Ahora los asesores están **en horario**: si pasas la conversación "
+            "a un asesor, la atienden en un momento."
+        )
+    else:
+        linea = (
+            f"Ahora los asesores están **fuera de horario**; vuelven {cuando}. "
+        )
+        if _ausencia(cfg):
+            # C10: el aviso es el de la cuenta, palabra por palabra; si el
+            # modelo lo parafrasea pide datos que no son («número de celular»).
+            linea += (
+                "Cuando pases la conversación a un asesor, el sistema agrega "
+                "solo el aviso de ausencia de la cuenta (con el cuándo y lo que "
+                "conviene dejar adelantado): no lo escribas tú ni lo parafrasees."
+            )
+        else:
+            linea += "En todo mensaje en que pases la conversación a un asesor, dile cuándo la atienden."
+    return "## Horario de los asesores (datos del sistema)\n- " + linea
+
+
+def _bloque_menu_meses(cfg: Dict[str, Any]) -> str:
+    """Los meses que todavía tienen salidas, listos para el menú de
+    bienvenida (máx. 4 + «Aún no sé»). Salen del tarifario, nunca del prompt."""
+    meses = _de_tarifario("meses_disponibles", tarifario.hoy_colombia(), 4)
+    if not isinstance(meses, list) or not meses:
+        return ""
+    nombres = [
+        str(m.get("nombre") or "").strip().capitalize()
+        for m in meses[:4] if isinstance(m, dict) and m.get("nombre")
+    ]
+    if not nombres:
+        return ""
+    opciones = [f"{_keycap(i)} {n}" for i, n in enumerate(nombres, 1)]
+    opciones.append(f"{_keycap(len(nombres) + 1)} Aún no sé")
+    return (
+        "## Meses con salidas (datos del sistema)\n"
+        "Son los únicos meses que puedes ofrecer en el menú de meses, en este "
+        "orden:\n" + "\n".join(opciones)
+    )
+
+
+def _bloque_mes_nombrado(
+    cfg: Dict[str, Any], history: Optional[List[Dict[str, str]]], user_input: Optional[str]
+) -> str:
+    """Primer turno: si el primer mensaje ya trae el mes, el menú de meses
+    sobra (campañas por mes con su propio texto precargado)."""
+    if history or not user_input:
+        return ""
+    mes = senales.mes_mencionado(user_input)
+    if mes is None:
+        return ""
+    nombre = _MESES_ES[mes - 1]
+    meses = _de_tarifario("meses_disponibles", tarifario.hoy_colombia(), 12)
+    disponibles = {
+        int(m.get("mes")) for m in (meses or []) if isinstance(m, dict) and m.get("mes")
+    } if isinstance(meses, list) else set()
+    if disponibles and mes not in disponibles:
+        linea = (
+            f"En su primer mensaje la persona nombró *{nombre}*, pero ese mes "
+            "no tiene salidas publicadas: díselo en una línea y muéstrale el "
+            "menú de meses."
+        )
+    else:
+        linea = (
+            f"En su primer mensaje la persona ya nombró *{nombre}*: no le "
+            "muestres el menú de meses, sigue con el plan de ese mes."
+        )
+    return "## La persona ya dijo el mes\n- " + linea
+
+
+def _opcion_elegida(
+    cfg: Dict[str, Any], user_input: Optional[str], history: Optional[List[Dict[str, str]]]
+) -> Optional[tuple]:
+    """`respuesta_por_numero`: `(n, etiqueta)` si la persona respondió SOLO con
+    el número de una opción del último mensaje del bot; si no, None."""
+    if not cfg.get("respuesta_por_numero") or not user_input or not history:
+        return None
+    n = senales.numero_elegido(user_input)
+    if n is None:
+        return None
+    ultimo = next(
+        (m.get("content") or "" for m in reversed(history) if m.get("role") == "assistant"),
+        "",
+    )
+    etiqueta = recortes_turno.opciones_numeradas(ultimo).get(n)
+    if not etiqueta:
+        return None
+    return n, " ".join(etiqueta.split())[:120]
+
+
+def _bloque_opcion_elegida(
+    cfg: Dict[str, Any], history: Optional[List[Dict[str, str]]], user_input: Optional[str]
+) -> str:
+    """La opción que eligió la persona, como **dato del sistema**.
+
+    No va dentro del mensaje del cliente (auditoría M1/M2): ahí se guardaba en
+    el historial como si lo hubiera escrito él —y un precio del menú contaba
+    como cifra suya para el guardarraíl de precio— y cualquiera podía escribir
+    el mismo formato para hacerse pasar por el sistema. Va al final: cambia en
+    cada turno.
+    """
+    elegida = _opcion_elegida(cfg, user_input, history)
+    if elegida is None:
+        return ""
+    n, etiqueta = elegida
+    respuesta = " ".join(str(user_input or "").split())[:20]
+    return (
+        "## Opción elegida (datos del sistema)\n"
+        f"- La persona respondió «{respuesta}»: es la opción {n} de tu último "
+        f"mensaje: {etiqueta}"
+    )
+
+
+def _viola_opciones_cerradas(
+    cfg: Dict[str, Any],
+    say_texts: List[str],
+    textos_previos: int,
+    actions: List[Dict[str, Any]],
+    finished: bool,
+    ultima_ronda: bool,
+) -> bool:
+    """`opciones_cerradas`: ¿el mensaje final del turno quedó abierto?
+
+    Sólo mira la ronda que cierra el turno, y sólo si el último texto es de
+    esa ronda (si no, corregir duplicaría lo ya dicho). No aplica a un
+    traspaso, a un cierre, ni a pedir los datos de la reserva o el comprobante.
+    """
+    if not cfg.get("opciones_cerradas") or not ultima_ronda or finished:
+        return False
+    if len(say_texts) <= textos_previos:
+        return False
+    if any(a.get("type") in ("handoff", "end") for a in actions):
+        return False
+    ultimo = say_texts[-1] or ""
+    if _SIN_OPCIONES_RE.search(ultimo):
+        return False
+    return not recortes_turno.cierra_con_opciones(ultimo)
+
+
+def _es_adjunto(cfg: Dict[str, Any], user_input: Optional[str]) -> bool:
+    """¿El cliente mandó una imagen o un documento?
+
+    Con runtime (WhatsApp) manda SOLO `runtime["adjunto"]`, que el runner saca
+    del mensaje guardado: el marcador es texto y un cliente puede escribir
+    «[imagen]» a mano (auditoría B1). Sin runtime (simulador) se lee el
+    marcador del turno.
+    """
+    if cfg.get("_runtime"):
+        return bool(_dato_runtime(cfg, "adjunto"))
+    return (user_input or "").strip().lower() in _MARCADORES_ADJUNTO
+
+
+def _traspaso_comprobante(
+    cfg: Dict[str, Any], state: Optional[Dict[str, Any]], user_input: Optional[str]
+) -> Optional[tuple]:
+    """`comprobante_a_asesor`: en etapa `pago`, un adjunto es el comprobante.
+    `(texto, payload)` para traspasar ANTES del modelo, o None."""
+    conf = cfg.get("comprobante_a_asesor")
+    if not conf:
+        return None
+    conf = conf if isinstance(conf, dict) else {}
+    etapa = state.get("etapa") if isinstance(state, dict) else None
+    if etapa != "pago" or not _es_adjunto(cfg, user_input):
+        return None
+    texto = str(conf.get("texto") or "").strip() or _TEXTO_COMPROBANTE_DEFAULT
+    texto = _poner_cuando(texto, _cuando(cfg))
+    payload = {
+        "assignee": cfg.get("assignee") or "",
+        "text": "",
+        "motivo": str(conf.get("motivo") or "comprobante de pago")[:300],
+        "resumen": _resumen_de_comprobante(conf, state)[:500],
+    }
+    return texto, payload
+
+
+def _resumen_de_comprobante(conf: Dict[str, Any], state: Dict[str, Any]) -> str:
+    """M5: lo que la asesora necesita para verificar el pago. Reusa el resumen
+    del último `registrar_intencion(datos)` de la sesión (ya saneado: sin
+    números largos), o arma uno con la última consulta. Nunca va a logs."""
+    base = str(conf.get("resumen") or "El cliente envió el comprobante del anticipo.")
+    # Auditoría D2: lo que escribió el cliente va delimitado y rotulado como
+    # no verificado, y la instrucción a la asesora al final.
+    instruccion = "Verifica el pago en el banco antes de confirmar la reserva."
+    # Sin comillas angulares: el cliente no puede «cerrar» la cita y escribir
+    # algo que la asesora lea como del sistema (auditoría E3).
+    datos = str(state.get("resumen_reserva") or "").replace("«", "").replace("»", "").strip()
+    if datos:
+        return f"{base} Datos que dio el cliente (sin verificar): «{datos}». {instruccion}"
+    consulta = state.get("ultima_consulta")
+    if isinstance(consulta, dict):
+        partes = [str(consulta.get(k) or "").strip() for k in ("mes", "hotel", "fecha")]
+        partes = [p for p in partes if p]
+        if partes:
+            return f"{base} Lo último que consultó: {', '.join(partes)}. {instruccion}"
+    return f"{base} {instruccion}"
+
+
+def _ultima_consulta(tools_called: List[Dict[str, Any]]) -> Optional[Dict[str, str]]:
+    """M5: la última consulta de precios del turno, validada (mes, hotel del
+    tarifario, fecha ISO). Para el resumen del comprobante y para el runner."""
+    for t in reversed(tools_called):
+        if (t.get("tool") or "") not in ("consultar_tarifario", productos_bot.PRECIOS):
+            continue
+        entrada = t.get("input") or {}
+        mes = senales.mes_mencionado(str(entrada.get("mes") or entrada.get("desde_mes") or ""))
+        clave = tarifario.normalizar_hotel(
+            str(entrada.get("hotel") or entrada.get("variante") or "")
+        )
+        fecha = str(entrada.get("fecha") or "").strip()
+        salida = {
+            "mes": _MESES_ES[mes - 1] if mes else "",
+            "hotel": getattr(tarifario, "_NOMBRE_HOTEL", {}).get(clave, "") if clave else "",
+            "fecha": fecha if _FECHA_ISO_RE.fullmatch(fecha) else "",
+        }
+        return salida if any(salida.values()) else None
+    return None
+
+
+#: Cómo se nombra cada etapa en el bloque «Ya hablaron antes». Sin datos de la
+#: persona: sólo hasta dónde llegó.
+_ETAPA_LEGIBLE = {
+    "mes": "elegir el mes", "fecha": "ver las salidas de un hotel",
+    "cotizacion": "la cotización", "reserva": "empezar la reserva (formulario)",
+    "pago": "el pago del anticipo", "comprobante": "enviar el comprobante",
+    "cliente": "ya tiene una reserva con nosotros", "asesor": "hablar con un asesor",
+}
+
+#: Franjas del día en Colombia para el saludo: (desde, hasta, franja, saludo).
+_FRANJAS = (
+    (5, 12, "mañana", "buenos días", "de 5:00 a.m. a 12:00 m."),
+    (12, 19, "tarde", "buenas tardes", "de 12:00 m. a 7:00 p.m."),
+)
+_NOCHE = ("noche", "buenas noches", "de 7:00 p.m. a 5:00 a.m.")
+
+
+def franja_del_dia(hora: int) -> tuple:
+    """`(franja, saludo, rango)` para una hora local 0-23."""
+    for desde, hasta, franja, saludo, rango in _FRANJAS:
+        if desde <= hora < hasta:
+            return franja, saludo, rango
+    return _NOCHE
+
+
+def _bloque_hora_local(cfg: Dict[str, Any]) -> str:
+    """`contexto_de_regreso_y_hora`: la franja del día en Colombia, para que el
+    saludo sea «buenos días/tardes/noches».
+
+    **Sólo la franja, no la hora exacta**: el `system` entero es un solo bloque
+    cacheado, y cualquier cambio en él lo reescribe. Con la hora al minuto, el
+    prefijo cambiaría 1.440 veces al día; con la franja, 3 (más el cambio de
+    fecha que ya existía). Va al final por la misma razón que el horario.
+    """
+    local = _ahora_utc().astimezone(_TZ_CO)
+    franja, saludo, rango = franja_del_dia(local.hour)
+    return (
+        "## Momento del día (datos del sistema)\n"
+        f"- En Colombia ahora es de **{franja}** ({rango}). Si saludas, di "
+        f"«{saludo}»."
+    )
+
+
+def _bloque_regreso(cfg: Dict[str, Any], history: Optional[List[Dict[str, str]]]) -> str:
+    """`contexto_de_regreso_y_hora`: primer turno de una sesión nueva de alguien
+    que ya habló con el bot (`runtime.ya_se_presento`).
+
+    Lo que el runner traiga de la sesión anterior (`ultimo_mes`,
+    `ultimo_hotel`, `etapa_previa`) se valida contra listas cerradas — un mes,
+    un hotel del tarifario, una etapa — y nada más entra al prompt: ni nombres
+    ni texto libre.
+    """
+    if history or not _dato_runtime(cfg, "ya_se_presento"):
+        return ""
+    lineas = [
+        "La persona **ya conversó contigo antes**, en otra conversación. No te "
+        "presentes de nuevo ni repitas la bienvenida: salúdala como a alguien "
+        "que vuelve (*/bienvenida_regreso*)."
+    ]
+    detalle, etapa = _contexto_regreso(cfg)
+    if detalle:
+        lineas.append(f"La última vez estuvo mirando {detalle}.")
+    if etapa in _ETAPA_LEGIBLE:
+        lineas.append(f"Había llegado hasta {_ETAPA_LEGIBLE[etapa]}.")
+    return "## Ya hablaron antes\n" + "\n".join(f"- {l}" for l in lineas)
+
+
+def _contexto_regreso(cfg: Dict[str, Any]) -> tuple:
+    """`(detalle, etapa)` de la sesión anterior, validados contra listas
+    cerradas: «*diciembre* en *Piedra Mar*» (o "") y una etapa conocida (o "").
+    Nada de texto libre del runtime llega al cliente ni al prompt."""
+    mes = senales.mes_mencionado(str(_dato_runtime(cfg, "ultimo_mes") or ""))
+    clave_hotel = tarifario.normalizar_hotel(str(_dato_runtime(cfg, "ultimo_hotel") or ""))
+    hotel = getattr(tarifario, "_NOMBRE_HOTEL", {}).get(clave_hotel) if clave_hotel else None
+    detalle = " en ".join(
+        x for x in (f"*{_MESES_ES[mes - 1]}*" if mes else "", f"*{hotel}*" if hotel else "") if x
+    )
+    etapa = str(_dato_runtime(cfg, "etapa_previa") or "")
+    etapa = etapa if etapa in ETAPAS_FUNNEL + (ETAPA_CLIENTE, ETAPA_ASESOR) else ""
+    return detalle, etapa
+
+
+#: M0 — `/bienvenida_regreso` sin modelo. La config (`bienvenida_regreso`) trae
+#: `{"con_contexto": …, "sin_contexto": …}` (o un solo texto). En la plantilla,
+#: `{mes_hotel}` → «*diciembre* en *Piedra Mar*» y `{ultima_vez}` → «La última
+#: vez miraste … ». Sin mes ni hotel válidos se usa `sin_contexto`.
+_BIENVENIDA_REGRESO_DEFAULT = {
+    "con_contexto": (
+        "¡Hola de nuevo! 😊 {ultima_vez}¿Seguimos? 👇\n"
+        "1️⃣ Seguir con esa cotización\n2️⃣ Ver otras fechas 📅\n"
+        "3️⃣ Tengo una pregunta 🤔"
+    ),
+    "sin_contexto": (
+        "¡Hola de nuevo! 😊 ¿Seguimos con tu plan a Coveñas? 👇\n"
+        "1️⃣ Ver salidas y precios 📅\n2️⃣ Seguir donde íbamos\n"
+        "3️⃣ Tengo una pregunta 🤔"
+    ),
+}
+
+
+def _texto_regreso(
+    cfg: Dict[str, Any], history: Optional[List[Dict[str, str]]], user_input: Optional[str]
+) -> Optional[str]:
+    """M0 (`regreso_sin_modelo`): quien vuelve en una sesión nueva y sólo
+    saluda (o manda el texto del anuncio) recibe `/bienvenida_regreso` sin
+    pasar por el modelo — 4 de 6 veces el modelo le repetía la bienvenida."""
+    if not cfg.get("regreso_sin_modelo") or history or not user_input:
+        return None
+    if not _dato_runtime(cfg, "ya_se_presento"):
+        return None
+    if not senales.es_saludo_sin_contenido(user_input):
+        return None
+    detalle, _ = _contexto_regreso(cfg)
+    conf = cfg.get("bienvenida_regreso")
+    if isinstance(conf, dict):
+        con = str(conf.get("con_contexto") or "").strip() or _BIENVENIDA_REGRESO_DEFAULT["con_contexto"]
+        sin = str(conf.get("sin_contexto") or "").strip() or _BIENVENIDA_REGRESO_DEFAULT["sin_contexto"]
+    elif isinstance(conf, str) and conf.strip():
+        con = sin = conf.strip()
+    else:
+        con, sin = _BIENVENIDA_REGRESO_DEFAULT["con_contexto"], _BIENVENIDA_REGRESO_DEFAULT["sin_contexto"]
+    ultima_vez = f"La última vez miraste {detalle}. " if detalle else ""
+    plantilla = con if detalle else sin
+    # `replace` y no `format`: el texto es de la config y no abre llaves
+    # arbitrarias. `{mes_hotel}` es el detalle solo («*diciembre* en *Piedra
+    # Mar*», ya validado); `{ultima_vez}`, la frase completa.
+    texto = plantilla.replace("{mes_hotel}", detalle).replace("{ultima_vez}", ultima_vez)
+    return texto.replace("  ", " ").strip()
+
+
+def _poner_cuando(texto: str, cuando: str) -> str:
+    """`{cuando}` en su lugar, sin el doble punto de «8:00 a.m..» (B2)."""
+    salida = (texto or "").replace("{cuando}", cuando)
+    return re.sub(r"((?:a|p)\.\s?m\.|\bm\.)\.", r"\1", salida)
+
+
+_CORRECCION_NO_CERRAR = (
+    "ALTO: la persona sólo agradeció o contestó corto; no se despidió, y le "
+    "habías dado opciones. La conversación sigue abierta: NO uses "
+    "`finalizar_conversacion` ni `no_responder`. Ese cierre NO se aplicó. "
+    "Respóndele en una línea y vuelve a darle las opciones de tu último mensaje."
+)
+
+_CORRECCION_PROMESA = (
+    "ALTO: le prometiste que un compañero o un asesor le va a responder o "
+    "confirmar algo, pero no le pasaste la conversación. Ese mensaje NO se le "
+    "envió. Si lo sabes por tus instrucciones o por una herramienta, respóndelo "
+    "tú; si no lo sabes, no lo inventes: pásalo a un asesor con "
+    "`escalar_a_asesor`, con el resumen de lo que preguntó, y díselo."
+)
+_MOTIVO_PROMESA = "pregunta sin respuesta"
+
+_CORRECCION_CONSULTA_SALIDA = (
+    "ALTO: la persona eligió una salida o un hotel y le diste precios sin "
+    "consultar esa salida. Ese mensaje NO se le envió. Llama `consultar_tarifario` "
+    "con el mes, el hotel y la fecha de esa salida, y responde sólo con lo que "
+    "te devuelva."
+)
+
+_HOTEL_EN_TEXTO_RE = re.compile(r"amor\s+de\s+dios|piedra\s*mar|boh[ií]os", re.IGNORECASE)
+
+#: M3 — separa en dos el `system` del bot 3: lo de antes es estable y lleva
+#: `cache_control`; lo de después cambia por turno y no se cachea. Un carácter
+#: de control que ningún texto del negocio trae.
+_COLA_SIN_CACHE = "\n\n\x1e\n\n"
+
+
+def _viola_cierre_con_opciones(
+    cfg: Dict[str, Any],
+    state: Optional[Dict[str, Any]],
+    history: List[Dict[str, str]],
+    user_input: Optional[str],
+    tools_de_la_ronda: List[Dict[str, Any]],
+) -> bool:
+    """A1 (`opciones_cerradas`): «gracias» después de un menú con precios no es
+    despedida. Ya en el embudo (etapa ≥ `mes`) y con el último mensaje del bot
+    cerrando en opciones, cerrar sólo vale ante una despedida explícita."""
+    if not cfg.get("opciones_cerradas"):
+        return False
+    if not any(t.get("tool") in ("finalizar_conversacion", "no_responder")
+               for t in tools_de_la_ronda):
+        return False
+    etapa = state.get("etapa") if isinstance(state, dict) else None
+    if _rango(etapa) < _rango("mes"):
+        return False
+    ultimo = next(
+        (m.get("content") or "" for m in reversed(history) if m.get("role") == "assistant"),
+        "",
+    )
+    if len(recortes_turno.opciones_numeradas(ultimo)) < 2:
+        return False
+    return not senales.es_despedida_explicita(user_input or "")
+
+
+def _viola_promesa(
+    cfg: Dict[str, Any],
+    textos_de_la_ronda: List[str],
+    tools_called: List[Dict[str, Any]],
+    actions: List[Dict[str, Any]],
+    etapa: Optional[str] = None,
+) -> bool:
+    """A3 (`escalar_si_promete`): promete que alguien del equipo le responde y
+    el turno no pasó la conversación a nadie."""
+    if not cfg.get("escalar_si_promete") or not textos_de_la_ronda:
+        return False
+    if any(a.get("type") == "handoff" for a in actions):
+        return False
+    if any(t.get("tool") == "escalar_a_asesor" for t in tools_called):
+        return False
+    return any(
+        recortes_turno.promete_respuesta_de_otro(t, etapa=etapa) for t in textos_de_la_ronda
+    )
+
+
+def _promesa_a_asesor(
+    cfg: Dict[str, Any],
+    actions: List[Dict[str, Any]],
+    acciones_previas: int,
+    tools_called: List[Dict[str, Any]],
+    tools_previas: int,
+) -> None:
+    """A3, si la promesa persiste: se cumple — el texto del modelo sale y la
+    conversación pasa a un asesor (misma acción y rotación que escalar)."""
+    _anular_cierres(tools_called, tools_previas)
+    actions[acciones_previas:] = [
+        a for a in actions[acciones_previas:] if a.get("type") != "end"
+    ]
+    actions.append({
+        "type": "handoff",
+        "payload": {
+            "assignee": cfg.get("assignee") or "",
+            "text": "",
+            "motivo": _MOTIVO_PROMESA,
+            "resumen": (
+                "El cliente hizo una pregunta que el bot no sabe responder y el "
+                "bot le dijo que un compañero se la confirma. Revisa el último "
+                "mensaje del cliente."
+            ),
+        },
+    })
+    tools_called.append({
+        "tool": "escalar_a_asesor",
+        "input": {"motivo": _MOTIVO_PROMESA},
+        "resultado": "traspaso por promesa sin escalar (motor)",
+    })
+
+
+def _viola_consulta_por_salida(
+    cfg: Dict[str, Any],
+    user_input: Optional[str],
+    history: List[Dict[str, str]],
+    textos_de_la_ronda: List[str],
+    tools_called: List[Dict[str, Any]],
+) -> bool:
+    """M2a (`consulta_obligatoria_por_salida`): eligió una salida o un hotel
+    (por número o por nombre) y el bot respondió con montos sin una consulta
+    con `fecha` u `hotel` en el turno."""
+    if not cfg.get("consulta_obligatoria_por_salida") or not textos_de_la_ronda:
+        return False
+    if not any(_MONTO_EN_TEXTO_RE.search(t or "") for t in textos_de_la_ronda):
+        return False
+    elegida = _opcion_elegida(cfg, user_input, history)
+    senal = f"{user_input or ''} {elegida[1] if elegida else ''}"
+    if not (_SALIDA_REF_B_RE.search(senal) or _HOTEL_EN_TEXTO_RE.search(senal)):
+        return False
+    for t in tools_called:
+        if (t.get("tool") or "") in ("consultar_tarifario", productos_bot.PRECIOS):
+            entrada = t.get("input") or {}
+            if any(str(entrada.get(k) or "").strip() for k in ("hotel", "fecha", "variante")):
+                return False
+    return True
+
+
+def _rango(etapa: Optional[str]) -> int:
+    return ETAPAS_FUNNEL.index(etapa) if etapa in ETAPAS_FUNNEL else -1
+
+
+def _inferir_etapa(
+    previa: Optional[str],
+    *,
+    tools_called: List[Dict[str, Any]],
+    sent_media_log: List[str],
+    say_texts: List[str],
+    intenciones: List[Dict[str, str]],
+    actions: List[Dict[str, Any]],
+    por_comprobante: bool,
+) -> str:
+    """`etapas_funnel`: dónde quedó la conversación después de este turno.
+
+    Determinista, de lo que pasó: herramientas, adjuntos enviados, intenciones
+    y textos. Nunca retrocede dentro del embudo; `cliente` puede ponerse en
+    cualquier momento, y `asesor` cuando el turno pasó a un humano por algo
+    que no es el comprobante.
+    """
+    previa = previa if previa in ETAPAS_FUNNEL + (ETAPA_CLIENTE, ETAPA_ASESOR) else "bienvenida"
+    usadas = [t for t in tools_called if not str(t.get("tool") or "").endswith(_SUFIJO_ANULADA)]
+    nombres = {t.get("tool") for t in usadas}
+    tipos = {i.get("tipo") for i in intenciones}
+
+    if "marcar_cliente" in nombres or any(_es_menu_cliente(t) for t in say_texts):
+        return ETAPA_CLIENTE
+    if por_comprobante:
+        return "comprobante"
+    if any(a.get("type") == "handoff" for a in actions):
+        return previa if previa == "comprobante" else ETAPA_ASESOR
+    if previa == ETAPA_CLIENTE:
+        return previa
+
+    candidata = -1
+    for t in usadas:
+        if t.get("tool") in ("consultar_tarifario", productos_bot.PRECIOS):
+            entrada = t.get("input") or {}
+            con_detalle = any(
+                str(entrada.get(k) or "").strip() for k in ("hotel", "fecha", "variante")
+            )
+            candidata = max(candidata, _rango("fecha" if con_detalle else "mes"))
+    # M2b: listar hoteles con precio para una salida ya es estar en `fecha`.
+    if any(
+        _SALIDA_REF_B_RE.search(t or "") and _HOTEL_EN_TEXTO_RE.search(t or "")
+        and _MONTO_EN_TEXTO_RE.search(t or "")
+        for t in say_texts
+    ):
+        candidata = max(candidata, _rango("fecha"))
+    if any(_TOTAL_RE.search(t or "") and _MONTO_EN_TEXTO_RE.search(t or "") for t in say_texts):
+        candidata = max(candidata, _rango("cotizacion"))
+    reserva = "formulario_reserva" in sent_media_log or "reservar" in tipos
+    if reserva:
+        candidata = max(candidata, _rango("reserva"))
+    if "datos" in tipos or (
+        "medios_pago" in sent_media_log and (reserva or _rango(previa) >= _rango("reserva"))
+    ):
+        candidata = max(candidata, _rango("pago"))
+
+    base = _rango(previa)       # -1 si venía de `asesor`: el embudo sigue desde ahí
+    if candidata > base:
+        return ETAPAS_FUNNEL[candidata]
+    return previa
 
 
 def _dato_runtime(cfg: Dict[str, Any], clave: str) -> Any:
@@ -1760,7 +2578,7 @@ def _intencion_limpia(tool_input: Dict[str, Any]) -> tuple:
     )
     # Ni teléfonos ni cédulas en el resumen (regla #8): cualquier serie de 7 o
     # más dígitos, con o sin separadores, se tapa.
-    resumen = _SERIE_DE_DIGITOS_RE.sub("[número]", resumen)
+    resumen = _tapar_series(resumen)
     resumen = " ".join(resumen.split())[:_RESUMEN_INTENCION_MAX]
     return {"tipo": tipo, "resumen": resumen}, ""
 
@@ -1970,7 +2788,8 @@ def _precio_a_asesor(
         a for a in actions[acciones_previas:]
         if a.get("type") not in ("say", "end", "handoff")
     ]
-    actions.append({"type": "say", "payload": {"text": _TEXTO_PRECIO_A_ASESOR}})
+    texto = _con_ausencia(cfg, _TEXTO_PRECIO_A_ASESOR)
+    actions.append({"type": "say", "payload": {"text": texto}})
     actions.append({
         "type": "handoff",
         "payload": {
@@ -1983,7 +2802,7 @@ def _precio_a_asesor(
             ),
         },
     })
-    say_texts[textos_previos:] = [_TEXTO_PRECIO_A_ASESOR]
+    say_texts[textos_previos:] = [texto]
     tools_called.append({
         "tool": "escalar_a_asesor",
         "input": {"motivo": _MOTIVO_PRECIO_A_ASESOR[:200]},
@@ -2074,10 +2893,63 @@ def _postproceso_variante(
     ):
         texto_aviso = aviso.strip() if isinstance(aviso, str) and aviso.strip() \
             else _AVISO_TRASPASO_DEFAULT
+        texto_aviso = _con_ausencia(cfg, texto_aviso)   # bot 3, fuera de horario
         corte = next(i for i, a in enumerate(actions) if a.get("type") == "handoff")
         actions.insert(corte, {"type": "say", "payload": {"text": texto_aviso}})
         say_texts.append(texto_aviso)
         logger.info("llm_engine: aviso agregado a un traspaso sin texto (bot=%s)", bot_id)
+
+    # 4d — Bot 3: fuera de horario, todo traspaso lleva el aviso de ausencia
+    # DE LA CUENTA, palabra por palabra (C10: el modelo lo parafraseaba y
+    # pedía «número de celular» a alguien que escribe por WhatsApp). Lo que el
+    # modelo haya escrito con forma de aviso de horario se quita.
+    ausencia = _ausencia(cfg)
+    if ausencia and any(a.get("type") == "handoff" for a in actions):
+        if not any(ausencia in t for t in say_texts):
+            for accion in [a for a in actions if a.get("type") == "say"]:
+                original = accion["payload"].get("text") or ""
+                parrafos = [
+                    p for p in original.split("\n\n")
+                    if not _AVISO_PARAFRASEADO_RE.search(p)
+                ]
+                accion["payload"]["text"] = "\n\n".join(parrafos).strip()
+            actions[:] = [
+                a for a in actions
+                if a.get("type") != "say" or (a.get("payload") or {}).get("text")
+            ]
+            corte = next(i for i, a in enumerate(actions) if a.get("type") == "handoff")
+            actions.insert(corte, {"type": "say", "payload": {"text": ausencia}})
+            logger.info("llm_engine: aviso de ausencia de la cuenta en el traspaso (bot=%s)", bot_id)
+        # C10 (2): cuándo lo atienden se dice UNA vez, en el aviso. El «Te
+        # escribe por aquí en un momento» del modelo se va.
+        for accion in [a for a in actions if a.get("type") == "say"]:
+            original = accion["payload"].get("text") or ""
+            if ausencia in original:
+                continue
+            accion["payload"]["text"] = _sin_la_frase(original, _CUANDO_DEL_MODELO_RE)
+        actions[:] = [
+            a for a in actions
+            if a.get("type") != "say" or ((a.get("payload") or {}).get("text") or "").strip()
+        ]
+        say_texts[:] = [
+            (a.get("payload") or {}).get("text") or ""
+            for a in actions if a.get("type") == "say"
+        ]
+
+    # 4e — Bot 3 (M4): una burbuja que sólo trae las opciones va pegada a la
+    # pregunta que las pide.
+    # Primero los adjuntos suben antes de la pregunta (si no, `medios_pago`
+    # separa la pregunta de sus opciones y ya no se pueden unir).
+    if cfg.get("unir_opciones") and (
+        recortes_turno.adjuntos_antes_de_la_pregunta(actions)
+        | recortes_turno.sin_pregunta_repetida(actions)
+        | recortes_turno.unir_opciones(actions)
+    ):
+        say_texts[:] = [
+            (a.get("payload") or {}).get("text") or ""
+            for a in actions if a.get("type") == "say"
+        ]
+        logger.info("llm_engine: opciones unidas a su pregunta (bot=%s)", bot_id)
 
     # 5 — #10 #17: el turno se cierra en la primera pregunta.
     if cfg.get("una_pregunta_por_turno") and recortes_turno.cortar_tras_pregunta(actions):
@@ -2514,6 +3386,31 @@ def _tools_for(
                             "description": "Fecha del pedido en formato YYYY-MM-DD",
                         },
                     },
+                },
+            }
+        )
+    if cfg.get("cliente_con_reserva"):
+        # Bot 3: el camino de atención al cliente (ya tiene reserva).
+        tools.append(
+            {
+                "name": "marcar_cliente",
+                "description": (
+                    "Marca que esta persona YA tiene una reserva con nosotros y "
+                    "escribe por atención al cliente (hora y punto de salida, "
+                    "qué llevar, pagar el saldo, cambio o cancelación). Llámala "
+                    "en el turno en que lo sepas. No le manda nada a la persona: "
+                    "escribe también tu respuesta normal."
+                ),
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "tema": {
+                            "type": "string",
+                            "enum": list(_TEMAS_CLIENTE),
+                            "description": "De qué escribe.",
+                        },
+                    },
+                    "required": ["tema"],
                 },
             }
         )
@@ -3885,6 +4782,15 @@ def _run_tool(
     la vieja; el turno lo marca en `bot_llm_decisions.fuente_datos`.
     `intenciones` recoge lo que anote `registrar_intencion` (#22, bot 2).
     """
+    if name == "marcar_cliente" and cfg.get("cliente_con_reserva"):
+        tema = str(tool_input.get("tema") or "").strip().lower()
+        if tema not in _TEMAS_CLIENTE:
+            tema = "otra"
+        return (
+            f"listo: quedó marcado como cliente con reserva (tema: {tema}). "
+            "Sigue con el menú de atención al cliente."
+        ), False
+
     if name == "registrar_intencion" and cfg.get("intencion_compra"):
         intencion, problema = _intencion_limpia(tool_input)
         if intencion is None:
@@ -4058,6 +4964,13 @@ def _run_tool(
             item = media.get(str(key))
             if not item:
                 unknown.append(str(key))
+                continue
+            if cfg.get("media_sin_repetir") and any(
+                a.get("type") == "say_media"
+                and (a.get("payload") or {}).get("url") == item.get("url")
+                for a in actions
+            ):
+                # Bot 3 (1c): el mismo adjunto no sale dos veces en un turno.
                 continue
             actions.append(
                 {
@@ -4322,6 +5235,20 @@ def _bedrock_client():
     return boto3.client("bedrock-runtime", region_name=region)
 
 
+def _bloques_system(system: str) -> List[Dict[str, Any]]:
+    """El `system` como bloques de la API. Lo de siempre: uno solo, con
+    `cache_control`. Con la cola del bot 3 (`_COLA_SIN_CACHE`): el estable con
+    `cache_control` y la cola sin él, para que lo que cambia por turno no
+    reescriba la caché."""
+    estable, _, cola = system.partition(_COLA_SIN_CACHE)
+    bloques: List[Dict[str, Any]] = [
+        {"type": "text", "text": estable, "cache_control": {"type": "ephemeral"}}
+    ]
+    if cola.strip():
+        bloques.append({"type": "text", "text": cola})
+    return bloques
+
+
 def _invoke_model(
     model_id: str,
     system: str,
@@ -4342,13 +5269,7 @@ def _invoke_model(
         # Si el prefijo de un bot queda por debajo del mínimo cacheable del
         # modelo, Bedrock simplemente no cachea y cobra normal: no es un error
         # y no hay que tratarlo como tal.
-        "system": [
-            {
-                "type": "text",
-                "text": system,
-                "cache_control": {"type": "ephemeral"},
-            }
-        ],
+        "system": _bloques_system(system),
         "messages": messages,
         "tools": tools,
     }
@@ -4719,7 +5640,14 @@ def _turno(
 
     # Bot 2 (#20, QA #5): la promoción inexistente se decide antes de llamar
     # al modelo — depende sólo del mensaje del cliente. Cero rondas.
-    traspaso_previo = _traspaso_promo(cfg, user_input)
+    # Bot 3: en etapa `pago`, un adjunto es el comprobante → asesor, también
+    # sin modelo.
+    traspaso_previo = _traspaso_comprobante(cfg, state, user_input)
+    por_comprobante = traspaso_previo is not None
+    if traspaso_previo is None:
+        traspaso_previo = _traspaso_promo(cfg, user_input)
+        if traspaso_previo is not None:
+            traspaso_previo = (_con_ausencia(cfg, traspaso_previo[0]), traspaso_previo[1])
     if traspaso_previo is not None:
         texto_promo, payload_promo = traspaso_previo
         actions.append({"type": "say", "payload": {"text": texto_promo}})
@@ -4728,18 +5656,40 @@ def _turno(
         tools_called.append({
             "tool": "escalar_a_asesor",
             "input": {"motivo": payload_promo["motivo"][:200]},
-            "resultado": "traspaso por promoción o presupuesto (motor, sin modelo)",
+            "resultado": (
+                "traspaso por comprobante (motor, sin modelo)" if por_comprobante
+                else "traspaso por promoción o presupuesto (motor, sin modelo)"
+            ),
         })
         finished = True
         escalated_to = cfg.get("assignee") or "(por turno)"
         logger.info(
-            "llm_engine: traspaso por monto de promoción sin llamar al modelo (bot=%s)",
+            "llm_engine: traspaso %s sin llamar al modelo (bot=%s)",
+            "por comprobante" if por_comprobante else "por monto de promoción",
+            getattr(bot, "id", "?"),
+        )
+    # Bot 3 (M0): quien vuelve y sólo saluda recibe `/bienvenida_regreso` sin
+    # modelo; la etapa sigue donde la dejó.
+    regreso = None if traspaso_previo is not None else _texto_regreso(cfg, history, user_input)
+    if regreso:
+        actions.append({"type": "say", "payload": {"text": regreso}})
+        say_texts.append(regreso)
+        logger.info(
+            "llm_engine: bienvenida de regreso sin llamar al modelo (bot=%s)",
             getattr(bot, "id", "?"),
         )
     # Bot 2 (QA #6): lo que el modelo narró en rondas que sólo consultaban.
     narraciones: List[Dict[str, Any]] = []
+    # Bot 3: la corrección de `opciones_cerradas` se da una sola vez; la de la
+    # promesa sin escalar (A3), también — la segunda vez se cumple la promesa.
+    opciones_corregidas = False
+    promesa_corregida = False
+    etapa_previa = state.get("etapa") if isinstance(state, dict) else None
 
-    for _ in range(0 if traspaso_previo is not None else _MAX_TOOL_ROUNDS):
+    sin_modelo = traspaso_previo is not None or bool(regreso)
+    # Bot 3 (1b): ¿la última ronda terminó en una corrección sin respuesta?
+    correccion_pendiente = False
+    for _ in range(0 if sin_modelo else _MAX_TOOL_ROUNDS):
         # Cómo estaba el turno antes de esta ronda: si una corrección nueva la
         # deshace, el cierre que haya hecho una herramienta también se deshace.
         finished_previo, escalado_previo = finished, escalated_to
@@ -4769,6 +5719,14 @@ def _turno(
                     # Bot 2: la ronda que sigue a una corrección no arranca
                     # disculpándose con alguien que no vio nada.
                     text = recortes_turno.sin_disculpa_inicial(text)
+                if text and cfg.get("recortar_narracion"):
+                    # Bot 3 (M1): «Déjame consultar…», «Ahora sí.», «Un
+                    # momento» al borde de la burbuja; después de una
+                    # corrección, en cualquier parte.
+                    text = recortes_turno.sin_narracion(
+                        text, solo_bordes=not correcciones,
+                        ronda_consulta=data.get("stop_reason") == "tool_use",
+                    )
                 if text and cfg.get("marcas_a_medios"):
                     # Bot 2: `[enviaste: x]` escrito como texto (imitando el
                     # historial) se vuelve el adjunto de verdad, en su lugar.
@@ -4850,7 +5808,15 @@ def _turno(
             elif (
                 _viola_duracion_por_plan if cfg.get("duracion_por_plan")
                 else _viola_duracion
-            )(cfg, say_texts[textos_previos:], duraciones_ok):
+            )(
+                cfg,
+                # Bot 3 (A2): todo lo dicho en el turno (la salida puede ir en
+                # una ronda y su duración en la siguiente) y lo consultado en
+                # turnos anteriores.
+                say_texts if cfg.get("duracion_con_sesion") else say_texts[textos_previos:],
+                (precios_previos + duraciones_ok) if cfg.get("duracion_con_sesion")
+                else duraciones_ok,
+            ):
                 correccion, motivo = _CORRECCION_DURACION, "duración inventada"
             elif _viola_disponibilidad(
                 cfg, say_texts[textos_previos:], tools_called
@@ -4888,10 +5854,35 @@ def _turno(
                         ) if ctx_productos is not None else _CORRECCION_CONSULTA_MES,
                         "precios de un mes sin consultar",
                     )
+                elif _viola_consulta_por_salida(
+                    cfg, user_input, history, say_texts[textos_previos:], tools_called,
+                ):
+                    correccion, motivo = (
+                        _CORRECCION_CONSULTA_SALIDA.replace(
+                            "consultar_tarifario", productos_bot.PRECIOS
+                        ) if ctx_productos is not None else _CORRECCION_CONSULTA_SALIDA,
+                        "precios de una salida sin consultarla",
+                    )
                 elif _viola_cierre_aplazado(
                     cfg, user_input, tools_called[tools_previas:]
                 ):
                     correccion, motivo = _CORRECCION_APLAZADA, "cierre de una decisión aplazada"
+                elif _viola_cierre_con_opciones(
+                    cfg, state, history, user_input, tools_called[tools_previas:],
+                ):
+                    correccion, motivo = _CORRECCION_NO_CERRAR, "cierre tras un menú sin despedida"
+                elif not promesa_corregida and _viola_promesa(
+                    cfg, say_texts[textos_previos:], tools_called, actions, etapa_previa,
+                ):
+                    promesa_corregida = True
+                    correccion, motivo = _CORRECCION_PROMESA, "promesa de un compañero sin escalar"
+                elif not opciones_corregidas and _viola_opciones_cerradas(
+                    cfg, say_texts, textos_previos, actions, finished,
+                    data.get("stop_reason") != "tool_use" or not tool_results,
+                ):
+                    # Bot 3: suave — una corrección y, si persiste, pasa.
+                    opciones_corregidas = True
+                    correccion, motivo = _CORRECCION_OPCIONES, "mensaje sin opciones"
                 if correccion is not None:
                     finished, escalated_to = finished_previo, escalado_previo
                     _anular_cierres(tools_called, tools_previas)
@@ -4900,6 +5891,8 @@ def _turno(
             textos_cliente,
         )) or _viola_consulta_por_mes(
             cfg, user_input, say_texts[textos_previos:], tools_called,
+        ) or _viola_consulta_por_salida(
+            cfg, user_input, history, say_texts[textos_previos:], tools_called,
         ):
             # Auditoría M2 (bot 2): ya no quedan correcciones y el precio sigue
             # mal. No sale: va un texto sin cifras y la conversación pasa a un
@@ -4914,6 +5907,16 @@ def _turno(
                 "llm_engine: precio equivocado tras %s correcciones; pasa a "
                 "asesor (bot=%s)", correcciones, getattr(bot, "id", "?"),
             )
+        if correccion is None and (promesa_corregida or correcciones >= _MAX_CORRECCIONES) \
+                and not finished and _viola_promesa(
+                    cfg, say_texts[textos_previos:], tools_called, actions, etapa_previa,
+                ):
+            # Bot 3 (A3): la promesa persiste → se cumple: pasa a un asesor.
+            _promesa_a_asesor(cfg, actions, acciones_previas, tools_called, tools_previas)
+            finished = True
+            escalated_to = cfg.get("assignee") or "(por turno)"
+            logger.info("llm_engine: promesa sin escalar → asesor (bot=%s)", getattr(bot, "id", "?"))
+        correccion_pendiente = correccion is not None
         if correccion is not None:
             correcciones += 1
             del actions[acciones_previas:]
@@ -4959,6 +5962,34 @@ def _turno(
 
         working.append({"role": "assistant", "content": content})
         working.append({"role": "user", "content": tool_results})
+
+    if correccion_pendiente and not finished and cfg.get("turno_nunca_vacio"):
+        # Bot 3 (1b): la corrección se comió la última ronda y el turno quedaba
+        # a medias (C05b: «Aquí están las salidas de diciembre 📅» + flyers, sin
+        # la lista ni opciones). Salida segura, como la del guardarraíl de
+        # precio: texto fijo sin cifras y a un asesor. Se eligió esto y no un
+        # reintento sin herramientas porque ese reintento puede volver a
+        # equivocarse y ya no quedaría con qué corregirlo.
+        texto_seguro = _con_ausencia(cfg, _TEXTO_TURNO_INCOMPLETO)
+        actions.append({"type": "say", "payload": {"text": texto_seguro}})
+        actions.append({"type": "handoff", "payload": {
+            "assignee": cfg.get("assignee") or "",
+            "text": "",
+            "motivo": _MOTIVO_TURNO_INCOMPLETO,
+            "resumen": (
+                "El bot no logró armar la respuesta (sus intentos no pasaron "
+                "los controles). Revisa el último mensaje del cliente."
+            ),
+        }})
+        say_texts.append(texto_seguro)
+        tools_called.append({
+            "tool": "escalar_a_asesor",
+            "input": {"motivo": _MOTIVO_TURNO_INCOMPLETO},
+            "resultado": "traspaso por turno incompleto (motor)",
+        })
+        finished = True
+        escalated_to = cfg.get("assignee") or "(por turno)"
+        logger.warning("llm_engine: turno incompleto → asesor (bot=%s)", getattr(bot, "id", "?"))
 
     # `no_responder` manda sobre todo lo demás del turno: el modelo a veces
     # llama la herramienta y ADEMÁS escribe un "¡con gusto! 🤗", que es
@@ -5089,6 +6120,33 @@ def _turno(
             next_state["precios_consultados"] = (
                 precios_previos + duraciones_ok
             )[-_PRECIOS_RECORDADOS:]
+    if next_state is not None and cfg.get("comprobante_a_asesor"):
+        # Bot 3 (M5): lo que necesita el traspaso del comprobante, que no pasa
+        # por el modelo. Se arrastra de turno en turno.
+        previo = state if isinstance(state, dict) else {}
+        datos = [i["resumen"] for i in intenciones if i.get("tipo") == "datos" and i.get("resumen")]
+        resumen = datos[-1] if datos else previo.get("resumen_reserva")
+        if resumen:
+            next_state["resumen_reserva"] = str(resumen)[:_RESUMEN_INTENCION_MAX]
+        consulta = _ultima_consulta(tools_called) or previo.get("ultima_consulta")
+        if isinstance(consulta, dict):
+            next_state["ultima_consulta"] = consulta
+    etapa = None
+    if cfg.get("etapas_funnel"):
+        etapa = _inferir_etapa(
+            state.get("etapa") if isinstance(state, dict) else None,
+            tools_called=tools_called,
+            sent_media_log=sent_media_log,
+            say_texts=say_texts,
+            intenciones=intenciones,
+            actions=actions,
+            por_comprobante=por_comprobante,
+        )
+        if regreso:
+            # M0: la etapa sigue donde la dejó la sesión anterior.
+            etapa = _contexto_regreso(cfg)[1] or "bienvenida"
+        if next_state is not None:
+            next_state["etapa"] = etapa
     telemetry = {
         "user_input": user_input,
         "bookings": bookings,   # #276: las persiste el caller con record_booking()
@@ -5113,6 +6171,8 @@ def _turno(
         # #22: lo registra `bot_runner` (tabla `intenciones_compra`). La clave
         # sólo existe con el flag: la telemetría del bot 1 no cambia.
         telemetry["intenciones"] = intenciones
+    if etapa is not None:
+        telemetry["etapa"] = etapa
     return {
         "actions": actions,
         "next_state": next_state,

@@ -33,6 +33,9 @@ __all__ = [
     "menciona_monto",
     "monto_mencionado",
     "es_presupuesto",
+    "numero_elegido",
+    "es_despedida_explicita",
+    "es_saludo_sin_contenido",
     "cifras",
     "NOMBRES_GENERICOS",
 ]
@@ -386,3 +389,83 @@ def cifras(texto: object) -> Set[int]:
         elif entero > 0:
             salida.add(entero * 1_000)
     return {v for v in salida if v >= 1_000}
+
+
+# ---------------------------------------------------------------------------
+# Respuesta por número (bot 3, `respuesta_por_numero`)
+# ---------------------------------------------------------------------------
+
+_ORDINALES = {
+    "primera": 1, "primero": 1, "segunda": 2, "segundo": 2, "tercera": 3,
+    "tercero": 3, "cuarta": 4, "cuarto": 4, "quinta": 5, "quinto": 5,
+}
+#: Un dígito suelto como teclado de WhatsApp: «2️⃣» = «2» + U+FE0F + U+20E3.
+_KEYCAP_RE = re.compile(r"([0-9])️?⃣")
+_NUMERO_SOLO_RE = re.compile(
+    r"^(?:(?:la|el|opcion|opción|numero|número|nro|no\.|#)\s*)*"
+    r"(?:la|el)?\s*(\d)\s*[.)\-]?\s*(?:opcion|opción)?\s*[!.]*$"
+)
+_ORDINAL_RE = re.compile(
+    r"^(?:(?:la|el)\s+)?(" + "|".join(_ORDINALES) + r")(?:\s+(?:opcion|opción))?\s*[!.]*$"
+)
+
+
+def numero_elegido(texto: object) -> "int | None":
+    """El número de opción que eligió el cliente, si su mensaje es SOLO eso.
+
+    «2», «2️⃣», «2.», «la 2», «opción 2», «la segunda», «el tercero» → el
+    número. Cualquier otra cosa («2 personas», «somos 2 adultos», «el 2 de
+    diciembre») → None: ahí hay más información que una elección y el modelo
+    la lee mejor sola.
+    """
+    crudo = _KEYCAP_RE.sub(r"\1", str(texto or ""))
+    normal = normalizar(crudo).strip(" ¡!¿?")
+    if not normal:
+        return None
+    m = _NUMERO_SOLO_RE.match(normal)
+    if m:
+        n = int(m.group(1))
+        return n if n >= 1 else None
+    m = _ORDINAL_RE.match(normal)
+    if m:
+        return _ORDINALES[m.group(1)]
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Bot 3: despedida explícita (A1) y saludo sin contenido (M0)
+# ---------------------------------------------------------------------------
+
+_DESPEDIDA_RE = re.compile(
+    r"\b(?:chao|chau|adios|bye|hasta\s+luego|hasta\s+pronto|nos\s+vemos|"
+    r"ya\s+no\s+me\s+interesa|no\s+me\s+interesa|no\s+estoy\s+interesad[oa]|"
+    r"no\s+gracias|ya\s+no\s+(?:quiero|voy)|me\s+retiro|dejemos\s+asi|"
+    r"no\s+(?:me\s+)?escrib\w+\s+mas)\b"
+)
+
+
+def es_despedida_explicita(texto: object) -> bool:
+    """«chao», «ya no me interesa», «no gracias»: la persona cierra de verdad.
+    Un «gracias» suelto no lo es (A1: el bot cerraba tras el precio)."""
+    return bool(_DESPEDIDA_RE.search(normalizar(texto)))
+
+
+_SIN_CONTENIDO = frozenset({
+    "hola", "holi", "holis", "ola", "buenas", "buenos", "buen", "dia", "dias",
+    "tardes", "noches", "quiero", "queria", "quisiera", "mas", "informacion",
+    "info", "informes", "me", "interesa", "interesado", "interesada", "el",
+    "la", "del", "de", "sobre", "plan", "por", "favor", "porfa", "porfavor",
+    "hey", "saludos", "que", "tal", "como", "estas", "esta", "y", "a", "un",
+    "una", "ver", "vi", "anuncio", "publicidad", "gracias", "ok", "listo",
+})
+
+
+def es_saludo_sin_contenido(texto: object) -> bool:
+    """¿El mensaje es sólo un saludo o el texto precargado del anuncio
+    («¡Hola! Quiero más información»)? Nada que contestar en concreto: ni un
+    mes, ni una cifra, ni una pregunta con sustantivo propio."""
+    normal = normalizar(texto)
+    palabras = re.findall(r"[a-zñ]+", normal)
+    if not palabras or len(palabras) > 10 or re.search(r"\d", normal):
+        return False
+    return all(p in _SIN_CONTENIDO for p in palabras)

@@ -202,6 +202,11 @@ class Fila:
     multiple: int
     doble: int
     etiqueta: str
+    #: Variantes de la salida, en minúscula y sin tildes, leídas del propio
+    #: resultado: el paréntesis de la fecha («(Obsequio a Barú)», «(Cena
+    #: Navideña)»), «festivo» de la fecha y el plan del final del renglón
+    #: («…, Fin de semana festivo)»). Nunca una lista a mano.
+    variantes: frozenset = frozenset()
 
 
 _TITULO_RE = re.compile(
@@ -229,6 +234,9 @@ _LINEA_PRECIOS_RE = re.compile(
 _FECHA_FILA_RE = re.compile(
     r"(?P<mes>" + _MES_RE + r")\s{1,3}(?P<ini>\d{1,2})\s{1,3}al\s{1,3}(?P<fin>\d{1,2})"
 )
+#: El paréntesis final del renglón: «(2 noches / 3 días, Plan estándar)».
+_PLAN_RE = re.compile(r"\(\d{1,2} noches / \d{1,2} dias, ([^()\n]{1,60})\)")
+_PAREN_RE = re.compile(r"\(([^()\n]{1,60})\)")
 _PESOS_RE = re.compile(r"\$\s?(" + _NUM_PUNTOS + r")" + _FIN_NUM)
 
 
@@ -288,10 +296,17 @@ def filas_de_resultados(resultados: Iterable[str]) -> List[Fila]:
             mes = _MESES[f.group("mes")] if f else None
             ini = int(f.group("ini")) if f else None
             fin = int(f.group("fin")) if f else None
+            variantes = {x.strip() for x in _PAREN_RE.findall(fecha) if x.strip()}
+            if re.search(r"\bfestivo\b", fecha):
+                variantes.add("festivo")
+            cola = plano[m.end():plano.find("\n", m.end()) if "\n" in plano[m.end():] else len(plano)]
+            plan = _PLAN_RE.search(cola)
+            if plan:
+                variantes.add(plan.group(1).strip())
             filas.append(Fila(
                 hotel=hotel, mes=mes, dia_ini=ini, dia_fin=fin,
                 multiple=_entero(m.group("m")), doble=_entero(m.group("d")),
-                etiqueta=etiqueta,
+                etiqueta=etiqueta, variantes=frozenset(variantes),
             ))
     return filas
 
@@ -494,7 +509,7 @@ _ACOM_RE = re.compile(
 _DESDE_RE = re.compile(
     r"(?:desde|a\s{1,3}partir\s{1,3}de|arrancan?\s{1,3}(?:en|desde)|empiezan?\s{1,3}(?:en|desde)"
     r"|partiendo\s{1,3}de|parten\s{1,3}de|precios?\s{1,3}de\s{1,3}entrada\s{1,3}de)"
-    r"(?:\s{1,3}(?:solo|solamente|tan\s{1,3}solo|apenas|unos|los|el|en)){0,4}\s{0,3}$"
+    r"(?:[\s*_]{1,4}(?:solo|solamente|tan\s{1,3}solo|apenas|unos|los|el|en)){0,4}[\s*_]{0,4}$"
 )
 
 
@@ -610,7 +625,10 @@ class _Lineas:
         for k, a in enumerate(self.inicios):
             b = self.inicios[k + 1] - 1 if k + 1 < len(self.inicios) else len(plano)
             linea = plano[a:b].lstrip()
-            self.vineta.append(bool(linea) and not (linea[0].isalnum() or linea[0] in "¿¡$"))
+            numerada = bool(re.match(r"\d{1,2}\s?(?:\u20e3|[.)])", linea))
+            self.vineta.append(bool(linea) and (
+                numerada or not (linea[0].isalnum() or linea[0] in "¿¡$")
+            ))
 
     def de(self, pos: int) -> int:
         return bisect.bisect_right(self.inicios, pos) - 1
@@ -724,9 +742,31 @@ def _casa(fila: Fila, fecha: _ClaveFecha, con_fin: bool) -> bool:
     return True
 
 
+def _variante_casa(fila: Fila, nombradas: Iterable[str]) -> bool:
+    return any(n in v or v in n for n in nombradas for v in fila.variantes)
+
+
 def _filas_que_casan(filas: Sequence[Fila], hoteles: Iterable[str],
-                     fechas: Iterable[_ClaveFecha]) -> List[Fila]:
-    hoteles, fechas = list(hoteles), list(fechas)
+                     fechas: Iterable[_ClaveFecha],
+                     variantes: Iterable[str] = ()) -> List[Fila]:
+    hoteles, fechas, variantes = list(hoteles), list(fechas), list(variantes)
+    casan = _por_fecha(filas, hoteles, fechas)
+    if variantes and fechas:
+        # «18 al 21 de diciembre … Obsequio a Barú: $550.000»: la variante
+        # nombrada suma la fila de esa variante que sale el mismo día (la del
+        # 18 al 22) a las de la fecha escrita (QA bot 3, C06). Se SUMA, no se
+        # reemplaza: «el 11 al 14 a $459.000 y el 11 al 15 (Obsequio a Barú)
+        # a $550.000» en un mismo renglón tiene que seguir pasando.
+        candidatas = [f for f in filas if not hoteles or f.hotel in hoteles]
+        casan = casan + [
+            f for f in candidatas if f not in casan and _variante_casa(f, variantes)
+            and any(_casa(f, d, False) for d in fechas)
+        ]
+    return casan
+
+
+def _por_fecha(filas: Sequence[Fila], hoteles: List[str],
+               fechas: List[_ClaveFecha]) -> List[Fila]:
     candidatas = [f for f in filas if not hoteles or f.hotel in hoteles]
     if not fechas:
         return candidatas
@@ -758,6 +798,31 @@ def _describir(filas: Sequence[Fila], acom: Set[str]) -> str:
             + " · ".join(precios)
         )
     return "; ".join(partes)
+
+
+def _de_quien_es(valor: int, filas: Sequence[Fila], hoteles: Iterable[str],
+                 fechas: Iterable[_ClaveFecha] = ()) -> str:
+    """«$550.000 es del DICIEMBRE 18 AL 22 (Obsequio a Barú) en Amor de Dios
+    (múltiple): si es esa la que ofreces, nómbrala así.» Sin esto el modelo
+    reescribía el mismo texto tres veces (QA bot 3, C06)."""
+    hoteles, fechas = list(hoteles), list(fechas)
+    suyas = []
+    # Primero las que salen el mismo día que la fecha nombrada.
+    orden = sorted(filas, key=lambda f: not any(_casa(f, d, False) for d in fechas))
+    for f in orden:
+        if hoteles and f.hotel not in hoteles:
+            continue
+        for precio, acom in ((f.multiple, "múltiple"), (f.doble, "doble")):
+            if precio == valor:
+                suyas.append(
+                    f"del {f.etiqueta} en {_NOMBRE_HOTEL.get(f.hotel, f.hotel)} ({acom})"
+                )
+    if not suyas:
+        return ""
+    return (
+        f" {_pesos(valor)} es {suyas[0]}: si es esa la que ofreces, nómbrala "
+        "así (fecha y plan)."
+    )
 
 
 def viola_precio(
@@ -819,7 +884,17 @@ def viola_precio(
     # conjuntos válidos una vez por combinación: lineal en el largo del texto.
     por_frase: Dict[int, Tuple[Any, ...]] = {}
     validos: Dict[Tuple[Any, ...], _Validos] = {}
-    casan_cache: Dict[Tuple[frozenset, frozenset], List[Fila]] = {}
+    casan_cache: Dict[Tuple[frozenset, ...], List[Fila]] = {}
+    etiquetas = sorted({x for f in filas for x in f.variantes}, key=len, reverse=True)
+    etiquetas_re = [(x, re.compile(r"\b" + re.escape(x) + r"\b")) for x in etiquetas]
+    variantes_frase: Dict[int, frozenset] = {}
+
+    def _variantes(i: int) -> frozenset:
+        if i not in variantes_frase:
+            a, b = frases[i] if frases else (0, len(plano))
+            texto = plano[a:b]
+            variantes_frase[i] = frozenset(x for x, r in etiquetas_re if r.search(texto))
+        return variantes_frase[i]
 
     def _de_frase(i: int) -> Tuple[Any, ...]:
         if i not in por_frase:
@@ -837,10 +912,10 @@ def viola_precio(
             )
         return por_frase[i]
 
-    def _casan(h: frozenset, f: frozenset) -> List[Fila]:
-        if (h, f) not in casan_cache:
-            casan_cache[(h, f)] = _filas_que_casan(filas, h, f)
-        return casan_cache[(h, f)]
+    def _casan(h: frozenset, f: frozenset, var: frozenset = frozenset()) -> List[Fila]:
+        if (h, f, var) not in casan_cache:
+            casan_cache[(h, f, var)] = _filas_que_casan(filas, h, f, var)
+        return casan_cache[(h, f, var)]
 
     def _validos(casan: Sequence[Fila], acom: Set[str], con_ninos: bool) -> _Validos:
         clave = (tuple(id(f) for f in casan), frozenset(acom), con_ninos)
@@ -930,9 +1005,28 @@ def viola_precio(
         # 1. Extras (niños, itinerario).
         if v in extras_ok:
             continue
+        h_attr = _atributos(monto.inicio, h_frase, hoteles, lineas)
+        f_attr = _atributos(monto.inicio, f_frase, fechas, lineas)
+        a_attr = set(a_frase)
+
         # 2. «desde».
         antes = plano[max(0, monto.inicio - 40):monto.inicio]
         if _DESDE_RE.search(antes):
+            if filas and (h_attr or f_attr):
+                # El «desde» de una salida u hotel nombrado se mide contra
+                # ESAS filas: «Del 4 al 7: desde $369.000» no vale porque el
+                # mínimo de la temporada sea $369.000 (QA bot 3, C05).
+                casan_desde = _casan(h_attr, f_attr, _variantes(i))
+                if casan_desde:
+                    piso = min(min(f.multiple, f.doble) for f in casan_desde)
+                    if v >= piso:
+                        continue
+                    return (
+                        f"Anunciaste un «desde» de {_pesos(v)}, pero lo que "
+                        f"nombraste arranca en {_pesos(piso)} "
+                        f"({_describir(casan_desde[:1], set())}).{_de_quien_es(v, filas, h_attr, f_attr)}"
+                        " Reescribe con el valor de esa salida."
+                    )
             if v in desde_ok or (minimo is not None and v >= minimo):
                 continue
             minimos = sorted(desde_ok | ({minimo} if minimo else set()))
@@ -943,16 +1037,21 @@ def viola_precio(
                 + " Reescribe el mensaje con el valor que devolvió la herramienta."
             )
 
-        h_attr = _atributos(monto.inicio, h_frase, hoteles, lineas)
-        f_attr = _atributos(monto.inicio, f_frase, fechas, lineas)
-        a_attr = set(a_frase)
-
         # 3. Con atributos: la fila que nombró.
         if filas and (h_attr or f_attr or a_attr):
-            casan = _casan(h_attr, f_attr)
+            casan = _casan(h_attr, f_attr, _variantes(i))
             if casan:
                 if _validos(casan, a_attr, ctx.ninos).contiene(v, ctx):
                     continue
+                de_quien = _de_quien_es(v, filas, h_attr, f_attr)
+                if de_quien:
+                    # Corto (el motor recorta a 300): lo que sirve es decirle
+                    # al modelo de qué salida es la cifra que escribió.
+                    return (
+                        f"Cotizaste {_pesos(v)}, pero lo que nombraste vale: "
+                        f"{_describir(casan[:1], a_attr)}.{de_quien} Si no, "
+                        "usa el valor de esa salida."
+                    )
                 return (
                     f"Cotizaste {_pesos(v)}, pero para lo que nombraste el "
                     f"tarifario consultado dice: {_describir(casan, a_attr)} "

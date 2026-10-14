@@ -527,6 +527,132 @@ def _ya_se_presento(
         return False
 
 
+#: `message_type` del entrante → lo que se le pasa al motor en
+#: `runtime["adjunto"]`. Solo lo que puede ser un comprobante de pago: foto o
+#: archivo (PDF). Twilio llama `media` a todo adjunto que no es audio ni
+#: imagen. Notas de voz, stickers y texto NO cuentan: una nota de voz en etapa
+#: `pago` no puede terminar en traspaso "por comprobante".
+_ADJUNTOS_COMPROBANTE = {
+    "image": "imagen", "imagen": "imagen", "photo": "imagen",
+    "document": "documento", "documento": "documento", "media": "documento",
+}
+
+
+def _adjunto_del_turno(
+    db: Session, conversation: models.Conversation, user_input: str
+) -> Optional[str]:
+    """`"imagen"` / `"documento"` si el mensaje del cliente que disparó este
+    turno trae un adjunto que puede ser un comprobante; si no, None.
+
+    `run_turn` solo recibe el texto. Los webhooks (Twilio y Meta) guardan el
+    entrante con su `message_type` ANTES de llamar a `run_turn`, así que se lee
+    el último entrante de la conversación. Para no atribuirle a este turno una
+    foto vieja, su contenido tiene que empezar con el texto del turno (el
+    webhook guarda `texto` o `texto + "\n" + url del adjunto`).
+    """
+    try:
+        ultimo = (
+            db.query(models.Message.message_type, models.Message.content)
+            .filter(
+                models.Message.conversation_id == conversation.id,
+                models.Message.direction == "inbound",
+            )
+            .order_by(models.Message.id.desc())
+            .first()
+        )
+    except Exception:  # pragma: no cover - defensivo
+        logger.exception("bot_runner: no se pudo leer el adjunto conv=%s", conversation.id)
+        return None
+    ui = (user_input or "").strip()
+    if ultimo is None or not ui:
+        # Sin texto del turno no hay con qué emparejar: un prefijo vacío haría
+        # pasar por adjunto cualquier foto vieja (auditoría de seguridad B2).
+        return None
+    tipo, contenido = ultimo
+    contenido = contenido or ""
+    # El webhook guarda el texto tal cual llegó (con sus espacios) o
+    # `texto + "\n" + url`; se acepta el texto crudo o el recortado, pero
+    # siempre completo, nunca un prefijo suelto.
+    if not any(
+        contenido == t or contenido.startswith(t + "\n")
+        for t in {user_input, ui}
+    ):
+        return None
+    return _ADJUNTOS_COMPROBANTE.get((tipo or "").strip().lower())
+
+
+_MESES_NOMBRE = (
+    "enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto",
+    "septiembre", "octubre", "noviembre", "diciembre",
+)
+
+
+def _contexto_de_regreso(
+    db: Session,
+    bot: models.Bot,
+    conversation: models.Conversation,
+    session: models.BotSession,
+) -> dict:
+    """`{"etapa_previa", "ultimo_mes", "ultimo_hotel"}` de la sesión anterior
+    de este bot en este chat (solo las llaves con dato).
+
+    - `etapa_previa`: `state["etapa"]` de la última sesión anterior (la que
+      escribe el motor con `etapas_funnel`).
+    - `ultimo_mes` / `ultimo_hotel`: el input de la última consulta de precios
+      de este bot en la conversación (`recordatorios_contexto._ultima_consulta`,
+      la misma lectura de `bot_llm_decisions.tools_called` que usa el
+      recordatorio con contexto). La sesión actual es nueva y todavía no tiene
+      decisiones, así que esa consulta es de una sesión anterior.
+
+    Ante cualquier error, dict vacío: el bloque de regreso sale sin detalle.
+    """
+    salida: dict = {}
+    try:
+        anterior = (
+            db.query(models.BotSession.state)
+            .filter(
+                models.BotSession.conversation_id == conversation.id,
+                models.BotSession.bot_id == bot.id,
+                models.BotSession.id != session.id,
+            )
+            .order_by(models.BotSession.started_at.desc(), models.BotSession.id.desc())
+            .first()
+        )
+        if anterior is not None:
+            try:
+                estado = json.loads(anterior[0] or "{}")
+            except (ValueError, TypeError):
+                estado = {}
+            etapa = estado.get("etapa") if isinstance(estado, dict) else None
+            if isinstance(etapa, str) and etapa.strip():
+                salida["etapa_previa"] = etapa.strip()[:40]
+
+        from . import recordatorios_contexto
+
+        consulta = recordatorios_contexto._ultima_consulta(db, conversation, bot) or {}
+        mes = (consulta.get("mes") or "").strip()
+        if not mes:
+            # Solo pidió una fecha (AAAA-MM-DD): el motor espera el NOMBRE del
+            # mes, así que se traduce.
+            fecha = (consulta.get("fecha") or "").strip()
+            if len(fecha) >= 7 and fecha[:4].isdigit() and fecha[4] == "-" and fecha[5:7].isdigit():
+                numero = int(fecha[5:7])
+                if 1 <= numero <= 12:
+                    mes = _MESES_NOMBRE[numero - 1]
+        hotel = (consulta.get("hotel") or consulta.get("variante") or "").strip()
+        if mes:
+            salida["ultimo_mes"] = mes[:60]
+        if hotel:
+            salida["ultimo_hotel"] = hotel[:60]
+    except Exception as exc:  # nunca tumba el turno
+        logger.error(
+            "bot_runner: no se pudo armar el contexto de regreso conv=%s (%s)",
+            conversation.id, type(exc).__name__,
+        )
+        return {}
+    return salida
+
+
 def soltar_conversacion(db: Session, conversation: models.Conversation) -> int:
     """El bot suelta el chat porque lo tomó una persona (Interesados).
 
@@ -645,10 +771,34 @@ def run_turn(
         # para no repetir presentación ni el saludo + flyer a quien vuelve).
         # Sin esos flags el runtime queda idéntico al de siempre (lo vigila el
         # golden del bot 1) y no se paga ninguna consulta.
-        if cfg.get("presentacion_una_vez") or cfg.get("apertura_vitrina"):
+        if (
+            cfg.get("presentacion_una_vez")
+            or cfg.get("apertura_vitrina")
+            or cfg.get("contexto_de_regreso_y_hora")
+        ):
             runtime["ya_se_presento"] = _ya_se_presento(
                 db, bot, conversation, session, state, retomada
             )
+        # Bot 3 (`contexto_de_regreso_y_hora`): quien vuelve en una sesión
+        # NUEVA trae de la anterior la etapa y lo último que consultó, para el
+        # bloque «## Ya hablaron antes» del motor. Solo datos del plan (mes,
+        # hotel, etapa), nada personal; el motor los valida contra listas
+        # cerradas. Las llaves solo aparecen si hay dato.
+        if (
+            cfg.get("contexto_de_regreso_y_hora")
+            and runtime.get("ya_se_presento")
+            and not retomada
+            and not (isinstance(state, dict) and state.get("history"))
+        ):
+            runtime.update(_contexto_de_regreso(db, bot, conversation, session))
+        # Bot 3 (`comprobante_a_asesor`): ¿el mensaje que disparó el turno trae
+        # un adjunto? Por Twilio una foto CON pie llega como el texto del pie,
+        # sin `[imagen]`, y el motor no la vería como comprobante. Solo con el
+        # flag (el runtime de los bots 1 y 2 no cambia) y solo si hay adjunto.
+        if cfg.get("comprobante_a_asesor") and user_input:
+            adjunto = _adjunto_del_turno(db, conversation, user_input)
+            if adjunto:
+                runtime["adjunto"] = adjunto
         result = llm_engine.advance(bot, state, user_input, runtime=runtime)
         # #255: registrar la decisión del turno (camino, tools, latencia) en
         # bot_llm_decisions. Nunca rompe el turno (record_decision es defensivo).
@@ -1218,6 +1368,39 @@ def _texto_con_contexto(
     return texto if isinstance(texto, str) and texto.strip() else None
 
 
+#: Etapas del embudo en las que el recordatorio por etapa no aplica: ya hubo
+#: traspaso a una persona (comprobante de pago u otro motivo). En el flujo
+#: normal ni llegan aquí (`assigned_to != "bot"` corta antes); si llegaran,
+#: sale el texto fijo.
+_ETAPAS_SIN_RECORDATORIO_PROPIO = frozenset({"comprobante", "asesor"})
+
+
+def _texto_por_etapa(
+    cfg: dict, session: models.BotSession, posicion: int
+) -> Optional[str]:
+    """`llm_config.recordatorios_por_etapa[etapa][posicion]` o None (bot 3).
+
+    `etapa` es la que el motor dejó en `session.state["etapa"]`
+    (`next_state["etapa"]`, flag `etapas_funnel`). `posicion` es cuál
+    recordatorio de la cadena toca (0 = 15 min, 1 = 5 h, 2 = 23 h con la
+    cadena del bot 1). None —y entonces sale el texto fijo— si el flag no es
+    un dict, la sesión no tiene etapa, la etapa es de traspaso, o falta el
+    texto de esa etapa en esa posición.
+    """
+    por_etapa = cfg.get("recordatorios_por_etapa")
+    if not isinstance(por_etapa, dict):
+        return None
+    estado = _load_state(session) or {}
+    etapa = estado.get("etapa") if isinstance(estado, dict) else None
+    if not isinstance(etapa, str) or not etapa or etapa in _ETAPAS_SIN_RECORDATORIO_PROPIO:
+        return None
+    textos = por_etapa.get(etapa)
+    if not isinstance(textos, list) or not (0 <= posicion < len(textos)):
+        return None
+    texto = textos[posicion]
+    return texto if isinstance(texto, str) and texto.strip() else None
+
+
 def _procesar_silencio(db: Session, pa: models.BotPendingAction) -> None:
     """Atiende un `seguimiento` o un `abandono` vencido. NUNCA llama al modelo.
 
@@ -1268,6 +1451,11 @@ def _procesar_silencio(db: Session, pa: models.BotPendingAction) -> None:
         # cualquier dato sale el fijo de siempre. Tiempos, franjas y la cadena
         # no cambian: solo el texto. Sin el flag no se consulta nada.
         cfg_bot = llm_engine.config_de(bot)
+        # Bot 3 (variante C): el texto sale de la etapa del embudo en que quedó
+        # la sesión. Mismos tiempos, franjas y cadena; si falta la etapa o su
+        # texto, el fijo de siempre. Sin el flag no se mira el estado.
+        if cfg_bot.get("recordatorios_por_etapa"):
+            texto = _texto_por_etapa(cfg_bot, session, etapa) or texto
         if cfg_bot.get("recordatorios_con_contexto"):
             texto = _texto_con_contexto(
                 db, conversation, bot, cfg_bot, seguimiento, etapas[etapa]
