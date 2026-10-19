@@ -1084,3 +1084,21 @@ def promocion_mencionada(texto: object, hoy: date) -> Optional[Dict[str, Any]]:
         if any(_sin_tildes(str(c)) in limpio for c in claves if str(c or "").strip()):
             return promo
     return None
+
+
+def medios_promociones(hoy: date) -> Dict[str, Dict[str, Any]]:
+    """El flyer y el video de las promociones vigentes, por clave de medio.
+
+    Mismo formato que `llm_config.media` (`url`, `media_type`, `descripcion`),
+    para que el motor los sume al catálogo de `enviar_media`. Una entrada sin
+    `url` se ignora. Se apagan con la promoción.
+    """
+    fuera: Dict[str, Dict[str, Any]] = {}
+    for promo in promociones_vigentes(hoy):
+        medios = promo.get("medios")
+        if not isinstance(medios, dict):
+            continue
+        for clave, item in medios.items():
+            if isinstance(item, dict) and str(item.get("url") or "").strip():
+                fuera[str(clave)] = dict(item)
+    return fuera

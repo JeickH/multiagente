@@ -3,7 +3,8 @@
   "_reglas": [
     "Aquí NO van precios: el valor de la salida vive en su fila del tarifario (`tarifario_covenas.json` y `bot_producto_filas`) y el bot lo pide con la herramienta, como cualquier otro precio.",
     "`inicio` tiene que ser una salida que exista en el tarifario, y esas filas tienen que llevar `plan` igual a `nombre`: lo vigila `tests/viajes/test_promociones.py`.",
-    "Una promoción cuya salida ya pasó se apaga sola; no hace falta borrarla."
+    "Una promoción cuya salida ya pasó se apaga sola; no hace falta borrarla.",
+    "`medios`: el flyer y el video de la pauta. El motor los suma al catálogo de los tres bots mientras la promoción esté vigente y los adjunta solo en el primer mensaje de quien llega por la pauta. Los archivos viven en `frontend/public/demo_viajes/` (salen con el deploy de Amplify)."
   ],
   "promociones": [
     {
@@ -19,7 +20,21 @@
       ],
       "incluye_cierre": "entre otros",
       "mensaje_pauta": "¡Hola! Quiero más información del simulacro decembrino",
-      "disparadores": ["simulacro"]
+      "disparadores": [
+        "simulacro"
+      ],
+      "medios": {
+        "flyer_simulacro_decembrino": {
+          "url": "https://app.glomabeauty.com/demo_viajes/simulacro_decembrino.jpeg",
+          "media_type": "image",
+          "descripcion": "flyer del Simulacro decembrino (23 al 26 de octubre, con su precio). Es el que se manda al ofrecer el Simulacro, en vez del tarifario de octubre"
+        },
+        "video_simulacro_decembrino": {
+          "url": "https://app.glomabeauty.com/demo_viajes/simulacro_decembrino.mp4",
+          "media_type": "video",
+          "descripcion": "video del Simulacro decembrino (DJ, música en vivo y ambiente de la salida)"
+        }
+      }
     }
   ]
 }

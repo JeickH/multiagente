@@ -145,20 +145,90 @@ def test_bot2_por_la_pauta_no_lleva_la_vitrina():
     assert "## Datos para tu primer mensaje" not in _system(LLM_CONFIG_B, user_text=PAUTA)
 
 
-def _turno(cfg, mensaje):
-    respuesta = {
-        "content": [{"type": "text", "text": "¡Hola! 😊 Te cuento del Simulacro decembrino."}],
+SALUDO = ("¡Hola! 😊 Te cuento del Simulacro decembrino. ¿Cuál hotel prefieres? 👇\n"
+          "1️⃣ Amor de Dios\n2️⃣ Bohíos\n3️⃣ Piedra Mar")
+MEDIOS = json.loads(tarifario._PROMOS.read_text(encoding="utf-8"))["promociones"][0]["medios"]
+FLYER_URL = MEDIOS["flyer_simulacro_decembrino"]["url"]
+VIDEO_URL = MEDIOS["video_simulacro_decembrino"]["url"]
+
+
+def _turno(cfg, mensaje, *bloques):
+    bloques = bloques or ({"type": "text", "text": SALUDO},)
+    respuestas = []
+    for bloque in bloques:
+        if bloque["type"] == "tool_use":
+            respuestas.append({"content": [bloque], "stop_reason": "tool_use"})
+    respuestas.append({
+        "content": [b for b in bloques if b["type"] == "text"] or [{"type": "text", "text": SALUDO}],
         "stop_reason": "end_turn",
-    }
-    with patch.object(llm_engine, "_invoke_model", side_effect=[respuesta]):
+    })
+    with patch.object(llm_engine, "_invoke_model", side_effect=respuestas):
         return llm_engine.advance(Bot(cfg), None, mensaje, runtime={})
 
 
+def _urls(salida):
+    return [a["payload"]["url"] for a in salida["actions"] if a["type"] == "say_media"]
+
+
 def test_bot2_por_la_pauta_no_manda_el_flyer_del_mes():
-    tipos_normal = [a["type"] for a in _turno(LLM_CONFIG_B, "Hola, info")["actions"]]
-    tipos_pauta = [a["type"] for a in _turno(LLM_CONFIG_B, PAUTA)["actions"]]
-    assert "say_media" in tipos_normal
-    assert tipos_pauta == ["say"]
+    normal = _urls(_turno(LLM_CONFIG_B, "Hola, info"))
+    pauta = _urls(_turno(LLM_CONFIG_B, PAUTA))
+    assert normal and FLYER_URL not in normal
+    assert pauta == [FLYER_URL, VIDEO_URL]
+
+
+# ---------------------------------------------------------------------------
+# Flyer y video de la promoción
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("cfg", [LLM_CONFIG, LLM_CONFIG_B, LLM_CONFIG_C], ids=["bot1", "bot2", "bot3"])
+def test_los_medios_estan_en_el_catalogo_de_los_tres_bots(cfg, monkeypatch):
+    catalogo = llm_engine._media_catalog(cfg, None)
+    assert catalogo["flyer_simulacro_decembrino"]["url"] == FLYER_URL
+    assert catalogo["video_simulacro_decembrino"]["media_type"] == "video"
+    assert "`flyer_simulacro_decembrino`" in _system(cfg)
+    monkeypatch.setattr(tarifario, "hoy_colombia", lambda: date(2026, 10, 24))
+    assert "flyer_simulacro_decembrino" not in llm_engine._media_catalog(cfg, None)
+
+
+@pytest.mark.parametrize("cfg", [LLM_CONFIG, LLM_CONFIG_B, LLM_CONFIG_C], ids=["bot1", "bot2", "bot3"])
+def test_por_la_pauta_el_primer_mensaje_lleva_flyer_y_video(cfg):
+    salida = _turno(cfg, PAUTA)
+    assert _urls(salida)[-2:] == [FLYER_URL, VIDEO_URL] or _urls(salida) == [FLYER_URL, VIDEO_URL]
+    textos = [a["payload"].get("text") or a["payload"].get("caption") for a in salida["actions"]]
+    assert any(SALUDO in (t or "") for t in textos)
+    ultimo = salida["next_state"]["history"][-1]["content"]
+    assert "flyer_simulacro_decembrino" in ultimo and "video_simulacro_decembrino" in ultimo
+
+
+@pytest.mark.parametrize("cfg", [LLM_CONFIG, LLM_CONFIG_C], ids=["bot1", "bot3"])
+def test_sin_pauta_no_hay_medios_de_la_promocion(cfg):
+    urls = _urls(_turno(cfg, "Hola, quiero más información"))
+    assert FLYER_URL not in urls and VIDEO_URL not in urls
+
+
+def test_por_la_pauta_se_quita_el_flyer_del_mes_que_mando_el_modelo():
+    envio = {"type": "tool_use", "id": "t1", "name": "enviar_media",
+             "input": {"claves": ["tarifario_amordios_ago_nov"]}}
+    urls = _urls(_turno(LLM_CONFIG, PAUTA, envio, {"type": "text", "text": SALUDO}))
+    assert urls == [FLYER_URL, VIDEO_URL]
+
+
+def test_no_se_duplican_si_el_modelo_ya_los_mando():
+    envio = {"type": "tool_use", "id": "t1", "name": "enviar_media",
+             "input": {"claves": ["flyer_simulacro_decembrino", "video_simulacro_decembrino"]}}
+    urls = _urls(_turno(LLM_CONFIG, PAUTA, envio, {"type": "text", "text": SALUDO}))
+    assert sorted(urls) == sorted([FLYER_URL, VIDEO_URL])
+
+
+def test_el_segundo_turno_no_los_repite():
+    estado = {"history": [{"role": "user", "content": PAUTA},
+                          {"role": "assistant", "content": SALUDO}]}
+    respuesta = {"content": [{"type": "text", "text": "¿Cuántas personas viajan?"}],
+                 "stop_reason": "end_turn"}
+    with patch.object(llm_engine, "_invoke_model", side_effect=[respuesta]):
+        salida = llm_engine.advance(Bot(LLM_CONFIG), estado, "Piedra Mar", runtime={})
+    assert _urls(salida) == []
 
 
 # ---------------------------------------------------------------------------
@@ -189,3 +259,50 @@ def test_guardarrail_con_la_fila_del_simulacro(texto, pasa):
         extras=tarifario.extras(),
     )
     assert (viola is None) is pasa
+
+
+def _segundo_turno(primer_mensaje, claves):
+    estado = {"history": [{"role": "user", "content": primer_mensaje},
+                          {"role": "assistant", "content": SALUDO}]}
+    respuestas = [
+        {"content": [{"type": "tool_use", "id": "t1", "name": "enviar_media",
+                      "input": {"claves": claves}}], "stop_reason": "tool_use"},
+        {"content": [{"type": "text", "text": "¿Cuántas personas viajan?"}],
+         "stop_reason": "end_turn"},
+    ]
+    with patch.object(llm_engine, "_invoke_model", side_effect=respuestas):
+        return llm_engine.advance(Bot(LLM_CONFIG), estado, "Piedra Mar", runtime={})
+
+
+def test_en_la_conversacion_de_la_pauta_no_sale_el_tarifario_viejo_del_mes():
+    salida = _segundo_turno(PAUTA, ["tarifario_piedramar_jul_oct", "info_piedramar"])
+    urls = _urls(salida)
+    assert all("tarifario_piedramar2" not in u for u in urls)
+    assert any("hotel_piedramar.jpeg" in u for u in urls)
+    assert "tarifario_piedramar_jul_oct" not in salida["next_state"]["history"][-1]["content"]
+
+
+def test_fuera_de_la_pauta_el_tarifario_del_mes_si_sale():
+    urls = _urls(_segundo_turno("Hola, info de octubre", ["tarifario_piedramar_jul_oct"]))
+    assert any("tarifario_piedramar2" in u for u in urls)
+
+
+def test_el_tarifario_de_otro_mes_si_sale_en_la_conversacion_de_la_pauta():
+    urls = _urls(_segundo_turno(PAUTA, ["tarifario_piedramar_nov_ene"]))
+    assert any("tarifario_piedramar1" in u for u in urls)
+
+
+# ---------------------------------------------------------------------------
+# «Mes sin consultar» no tumba un mes que la sesión ya consultó
+# ---------------------------------------------------------------------------
+
+def test_mes_ya_consultado_en_la_sesion_no_viola():
+    cfg = {"consulta_obligatoria_por_mes": True}
+    texto = ["1️⃣ *Múltiple*: $489.000 c/u → *$978.000 total*"]
+    pregunta = "En la imagen de octubre dice otro valor, por qué cambia?"
+    assert llm_engine._viola_consulta_por_mes(cfg, pregunta, texto, [])
+    assert not llm_engine._viola_consulta_por_mes(
+        cfg, pregunta, texto, [], [_resultado_octubre()])
+    # Un mes que la sesión nunca consultó sigue violando.
+    assert llm_engine._viola_consulta_por_mes(
+        cfg, "y en noviembre?", texto, [], [_resultado_octubre()])

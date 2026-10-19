@@ -510,6 +510,14 @@ def _media_catalog(
         if isinstance(media, dict)
         else {}
     )
+    if cfg.get("tarifario"):
+        # El flyer y el video de las promociones vigentes del tarifario
+        # (`promociones_covenas.json`): llegan a los tres bots de Arranquemos
+        # sin tocar su `llm_config` en la base, y se apagan con la promoción.
+        promos = _de_tarifario("medios_promociones", tarifario.hoy_colombia())
+        if isinstance(promos, dict):
+            for clave, item in promos.items():
+                declarados.setdefault(str(clave), item)
     if ctx_productos is None:
         return declarados
     del_catalogo = productos_bot.medios_declarados(ctx_productos)
@@ -1708,16 +1716,31 @@ def _viola_consulta_por_mes(
     user_input: Optional[str],
     textos_de_la_ronda: List[str],
     tools_called: List[Dict[str, Any]],
+    consultados: Optional[List[str]] = None,
 ) -> bool:
     """#9 de QA (bot 2): la persona nombró un mes, el bot no consultó precios
-    en todo el turno y aun así escribió montos o salidas."""
+    en todo el turno y aun así escribió montos o salidas.
+
+    `consultados` son los resultados de precios de turnos anteriores de la
+    sesión: si ese mes ya se consultó, repetir sus precios no viola (igual los
+    valida el guardarraíl de precio contra esos resultados). Sin esto, «en la
+    imagen de octubre dice otro valor», en una conversación que ya cotizó
+    octubre, tumbaba la respuesta entera (QA del Simulacro, 2026-10-19).
+    """
     if not cfg.get("consulta_obligatoria_por_mes") or not textos_de_la_ronda:
         return False
-    if senales.mes_mencionado(user_input or "") is None:
+    mes = senales.mes_mencionado(user_input or "")
+    if mes is None:
         return False
     if any(
         (t.get("tool") or "") in ("consultar_tarifario", productos_bot.PRECIOS)
         for t in tools_called
+    ):
+        return False
+    nombre = _MESES_ES[mes - 1]
+    if any(
+        f"— {nombre.capitalize()} (" in r or f"· {nombre.upper()} " in r
+        for r in consultados or []
     ):
         return False
     return any(
@@ -1976,13 +1999,25 @@ def _bloque_promociones(cfg: Dict[str, Any], ctx_productos: Optional[Any]) -> st
             "Si esa fecha no le sirve, sigue el flujo normal con las otras "
             f"salidas, y aclárale que lo del {nombre} es solo de esta salida."
         )
+        medios = promo.get("medios") if isinstance(promo.get("medios"), dict) else {}
+        claves = [f"`{c}`" for c, m in medios.items() if isinstance(m, dict) and m.get("url")]
+        if claves:
+            lineas.append(
+                f"Sus medios: {' y '.join(claves)}. Al que llega por la pauta el "
+                "sistema se los adjunta solo a tu primer mensaje: no los mandes "
+                "tú ahí. Después, mándalos con `enviar_media` cuando ofrezcas el "
+                f"{nombre} a alguien que no los haya recibido, o si los pide."
+            )
         lineas.append(
             "El flyer del tarifario de ese mes todavía muestra esta salida con su "
             f"valor anterior. Cuando ofrezcas solo el {nombre}, no mandes ese "
-            "flyer, aunque la herramienta lo pida. Si la persona pregunta por la "
-            "diferencia, NO repitas el valor del flyer: explícale que esta salida "
-            f"es la edición {nombre}, con lo que trae de más, y que su valor es "
-            "el que te da la herramienta."
+            "flyer, aunque la herramienta lo pida"
+            + (" (manda el del " + nombre + ")" if claves else "")
+            + ". Si la persona pregunta por qué una imagen o el tarifario dice otro "
+            "valor, NO repitas ese valor ni escales: respóndele en una o dos líneas "
+            f"algo como «Esa imagen es del plan normal de esa fecha 😊 Esta es la "
+            f"edición *{nombre}*, que trae de más …(la lista de arriba)… y por eso "
+            "tiene su propio valor», y sigue con la conversación donde iba."
         )
         bloques.append(
             f"## Promoción vigente: {nombre} (datos del sistema)\n"
@@ -2005,6 +2040,125 @@ def _llega_por_promocion(
     return bool(
         _de_tarifario("promocion_mencionada", user_input, tarifario.hoy_colombia())
     )
+
+
+def _promocion_de_la_conversacion(
+    cfg: Dict[str, Any], history: List[Dict[str, str]], user_input: Optional[str]
+) -> Optional[Dict[str, Any]]:
+    """La promoción vigente por la que llegó la persona (su primer mensaje) o
+    que nombra ahora, o None."""
+    if not cfg.get("tarifario"):
+        return None
+    primero = next((m.get("content") for m in history or [] if m.get("role") == "user"), None)
+    hoy = tarifario.hoy_colombia()
+    for texto in (primero, user_input):
+        if texto:
+            promo = _de_tarifario("promocion_mencionada", texto, hoy)
+            if isinstance(promo, dict):
+                return promo
+    return None
+
+
+def _quitar_flyers_del_mes(
+    cfg: Dict[str, Any],
+    promo: Dict[str, Any],
+    actions: List[Dict[str, Any]],
+    sent_media_log: List[str],
+    ctx_productos: Optional[Any],
+) -> None:
+    """Saca del turno los flyers de tarifario del mes de la promoción: todavía
+    muestran su salida con el valor anterior. Si el flyer llevaba el texto
+    como pie, el texto se queda como mensaje."""
+    try:
+        mes = date.fromisoformat(str(promo.get("inicio"))).month
+    except ValueError:
+        return
+    catalogo = _media_catalog(cfg, ctx_productos)
+    viejos = {
+        str(v.get("url")): k for k, v in catalogo.items()
+        if isinstance(v, dict) and isinstance(v.get("meses"), list) and mes in v["meses"]
+    }
+    for i, a in reversed(list(enumerate(actions))):
+        payload = a.get("payload") or {}
+        if a.get("type") != "say_media" or payload.get("url") not in viejos:
+            continue
+        pie = str(payload.get("caption") or "").strip()
+        if pie:
+            actions[i] = {"type": "say", "payload": {"text": pie}}
+        else:
+            del actions[i]
+        clave = viejos[payload["url"]]
+        if clave in sent_media_log:
+            sent_media_log.remove(clave)
+        logger.info("llm_engine: flyer del mes quitado en una conversación de la promoción")
+
+
+def _adjuntar_medios_promocion(
+    cfg: Dict[str, Any],
+    *,
+    history: List[Dict[str, str]],
+    user_input: Optional[str],
+    actions: List[Dict[str, Any]],
+    sent_media_log: List[str],
+    ctx_productos: Optional[Any],
+    finished: bool,
+    escalated_to: Optional[str],
+) -> None:
+    """Los medios de la promoción, para quien llegó por su pauta (los tres bots).
+
+    En TODO turno de esa conversación se quita el flyer de tarifario del mes de
+    la promoción: muestra su salida con el valor anterior y la persona termina
+    preguntando por qué cambió el precio (QA del 2026-10-19).
+
+    En el PRIMER mensaje, además, el flyer y el video de la promoción van sí o
+    sí, puestos por el sistema y no por el modelo: el flyer como la vitrina
+    del bot 2 (`recortes_turno.poner_flyer`: pie de foto o antes de la
+    pregunta) y el video justo después.
+    """
+    if finished or escalated_to:
+        return
+    promo = _promocion_de_la_conversacion(cfg, history, user_input)
+    if promo is None:
+        return
+    _quitar_flyers_del_mes(cfg, promo, actions, sent_media_log, ctx_productos)
+    if not _llega_por_promocion(cfg, history, user_input):
+        return
+    if not any(
+        a.get("type") == "say" and str((a.get("payload") or {}).get("text") or "").strip()
+        or a.get("type") == "say_media" and str((a.get("payload") or {}).get("caption") or "").strip()
+        for a in actions
+    ):
+        return
+    medios = promo.get("medios")
+    if not isinstance(medios, dict) or not medios:
+        return
+
+    imagenes = [(k, m) for k, m in medios.items()
+                if isinstance(m, dict) and m.get("url") and m.get("media_type", "image") == "image"]
+    otros = [(k, m) for k, m in medios.items()
+             if isinstance(m, dict) and m.get("url") and m.get("media_type", "image") != "image"]
+    ancla: Optional[int] = None
+    for clave, item in imagenes[:1]:
+        if recortes_turno.poner_flyer(actions, item):
+            sent_media_log.append(clave)
+        ancla = next(
+            (i for i, a in enumerate(actions)
+             if a.get("type") == "say_media" and (a.get("payload") or {}).get("url") == item["url"]),
+            None,
+        )
+    for clave, item in otros:
+        if any((a.get("payload") or {}).get("url") == item["url"] for a in actions):
+            continue
+        accion = {
+            "type": "say_media",
+            "payload": {"caption": "", "media_type": item.get("media_type", "video"),
+                        "url": item["url"]},
+        }
+        posicion = ancla + 1 if ancla is not None else len(actions)
+        actions.insert(posicion, accion)
+        ancla = posicion
+        sent_media_log.append(clave)
+    logger.info("llm_engine: medios de la promoción adjuntados al primer mensaje")
 
 
 def _bloque_mes_nombrado(
@@ -5941,6 +6095,7 @@ def _turno(
                     correccion, motivo = texto_correccion, "precio que no es el de la fila"
                 elif _viola_consulta_por_mes(
                     cfg, user_input, say_texts[textos_previos:], tools_called,
+                    precios_previos,
                 ):
                     correccion, motivo = (
                         _CORRECCION_CONSULTA_MES.replace(
@@ -5985,6 +6140,7 @@ def _turno(
             textos_cliente,
         )) or _viola_consulta_por_mes(
             cfg, user_input, say_texts[textos_previos:], tools_called,
+            precios_previos,
         ) or _viola_consulta_por_salida(
             cfg, user_input, history, say_texts[textos_previos:], tools_called,
         ):
@@ -6189,6 +6345,18 @@ def _turno(
         finished=finished,
         escalated_to=escalated_to,
         narraciones=narraciones,
+    )
+    # Los tres bots: quien llega por la pauta de una promoción recibe su flyer
+    # y su video en el primer mensaje.
+    _adjuntar_medios_promocion(
+        cfg,
+        history=history,
+        user_input=user_input,
+        actions=actions,
+        sent_media_log=sent_media_log,
+        ctx_productos=ctx_productos,
+        finished=finished,
+        escalated_to=escalated_to,
     )
 
     # Historial aplanado: texto del asistente + marcas de medios enviados.
