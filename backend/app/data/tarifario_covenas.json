@@ -2,6 +2,9 @@
   "_fuente": "Tarifario_Covenas_Amor_de_Dios_y_Piedra_Mar.xlsx",
   "_generado_por": "backend/scripts/generar_tarifario_covenas.py",
   "vigencia": "Temporada julio 2026 – enero 2027. Regenerar con el Excel de la próxima temporada.",
+  "_cambios_a_mano": [
+    "2026-10-19 (CEO): la salida OCTUBRE 23 AL 26 es el «Simulacro decembrino» y vale $489.000 por persona en los tres hoteles y en cualquier acomodación. No viene del Excel: si se regenera este archivo antes de esa fecha, hay que volver a ponerlo. Lo que incluye de más vive en app/data/promociones_covenas.json."
+  ],
   "notas": [
     "Los valores son POR PERSONA y en pesos colombianos.",
     "VALOR MÚLTIPLE = acomodación múltiple; VALOR DOBLE = acomodación doble.",
@@ -556,11 +559,11 @@
       "mes": 10,
       "inicio": "2026-10-23",
       "fecha": "OCTUBRE 23 AL 26",
-      "multiple": 459000,
-      "doble": 505000,
+      "multiple": 489000,
+      "doble": 489000,
       "noches": 2,
       "dias": 3,
-      "plan": "Plan estándar"
+      "plan": "Simulacro decembrino"
     },
     {
       "hoteles": [
@@ -569,11 +572,11 @@
       "mes": 10,
       "inicio": "2026-10-23",
       "fecha": "OCTUBRE 23 AL 26",
-      "multiple": 469000,
-      "doble": 516000,
+      "multiple": 489000,
+      "doble": 489000,
       "noches": 2,
       "dias": 3,
-      "plan": "Plan estándar"
+      "plan": "Simulacro decembrino"
     },
     {
       "hoteles": [

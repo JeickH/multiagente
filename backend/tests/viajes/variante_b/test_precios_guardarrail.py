@@ -646,6 +646,8 @@ def test_leer_resultados_es_lineal(nombre):
 # ---------------------------------------------------------------------------
 # QA contra Bedrock real (2026-10-07): las cadenas que daban falso positivo o
 # falso negativo, tal como las escribió el modelo (ningún dato de cliente).
+# Única edición: el 23-26 de octubre pasó a ser el «Simulacro decembrino»
+# (2026-10-19) y su valor en las listas se actualizó al del tarifario.
 # ---------------------------------------------------------------------------
 
 NOV = _consulta(mes="noviembre")
@@ -658,14 +660,14 @@ LISTA_OCTUBRE_GUIONES = """Perfecto 🌴 Para octubre tenemos varias salidas. Te
 • 9-12 de octubre (festivo): $559.000 múltiple
 • 16-19 de octubre: $459.000 múltiple
 • 16-20 de octubre (Barú incluido): $550.000 múltiple
-• 23-26 de octubre: $459.000 múltiple
+• 23-26 de octubre: $489.000 múltiple
 • 30 oct-2 nov (festivo): $559.000 múltiple
 
 *Piedra Mar*:
 • 9-12 de octubre (festivo): $570.000 múltiple
 • 16-19 de octubre: $469.000 múltiple
 • 16-20 de octubre (Barú incluido): $620.000 múltiple
-• 23-26 de octubre: $469.000 múltiple
+• 23-26 de octubre: $489.000 múltiple
 • 30 oct-2 nov (festivo): $570.000 múltiple
 
 Mira el tarifario aquí 👇"""
@@ -676,14 +678,14 @@ LISTA_OCTUBRE_ABREVIADA = """Perfecto 🌴 En octubre tenemos varias salidas:
 • Oct 09–12 (festivo): $559.000
 • Oct 16–19: $459.000 
 • Oct 16–20 (con Barú): $550.000
-• Oct 23–26: $459.000
+• Oct 23–26: $489.000
 • Oct 30–Nov 02 (festivo): $559.000
 
 **Piedra Mar** (desde $469.000):
 • Oct 09–12 (festivo): $570.000
 • Oct 16–19: $469.000
 • Oct 16–20 (con Barú): $620.000
-• Oct 23–26: $469.000
+• Oct 23–26: $489.000
 • Oct 30–Nov 02 (festivo): $570.000
 
 Te dejo los tarifarios completos 📦"""
@@ -694,14 +696,14 @@ LISTA_OCTUBRE_30_NOV_02 = """Te muestro las opciones en octubre 🌴
 · 09 al 12 (festivo) — desde $559.000 en múltiple
 · 16 al 19 — desde $459.000 en múltiple ✨
 · 16 al 20 (Barú incluido) — $550.000 en múltiple
-· 23 al 26 — $459.000 en múltiple
+· 23 al 26 — $489.000 en múltiple
 · 30 nov 02 (festivo) — $559.000 en múltiple
 
 **Piedra Mar:**
 · 09 al 12 (festivo) — desde $570.000 en múltiple
 · 16 al 19 — desde $469.000 en múltiple ✨
 · 16 al 20 (Barú incluido) — $620.000 en múltiple
-· 23 al 26 — $469.000 en múltiple
+· 23 al 26 — $489.000 en múltiple
 · 30 nov 02 (festivo) — $570.000 en múltiple
 
 ¿Cuál fecha te sirve? 😊"""
@@ -738,8 +740,9 @@ class TestQA20261007:
                                        "30 de oct al 02 de nov", "Oct 30 - Nov 02"])
     def test_rangos_que_cruzan_de_mes(self, rango):
         festivo = _fila("amor_de_dios", "2026-10-30", "OCTUBRE 30")
-        bien = f"• 23-26 de octubre: {P(AMOR_16['multiple'])}\n• {rango} (festivo): {P(festivo['multiple'])} en Amor de Dios"
-        mal = f"• 23-26 de octubre: {P(AMOR_16['multiple'])}\n• {rango} (festivo): {P(AMOR_16['multiple'])} en Amor de Dios"
+        amor_23 = _fila("amor_de_dios", "2026-10-23", "OCTUBRE 23")
+        bien = f"• 23-26 de octubre: {P(amor_23['multiple'])}\n• {rango} (festivo): {P(festivo['multiple'])} en Amor de Dios"
+        mal = f"• 23-26 de octubre: {P(amor_23['multiple'])}\n• {rango} (festivo): {P(AMOR_16['multiple'])} en Amor de Dios"
         assert v(bien) is None
         assert v(mal) is not None
 

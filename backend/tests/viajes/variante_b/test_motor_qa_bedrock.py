@@ -285,7 +285,14 @@ class TestDuracionPorPlan:
                      "El plan es de 3 noches"):
             assert llm_engine._viola_duracion_por_plan(self.CFG, [malo], [RESULTADO]), malo
 
-    def test_en_el_turno_con_flag_no_hay_correccion(self):
+    def test_en_el_turno_con_flag_no_hay_correccion(self, monkeypatch):
+        # Fecha congelada en la de la corrida de QA (2026-10-07): desde el
+        # 17-oct la salida «OCTUBRE 16 AL 19» ya pasó, el tarifario no la
+        # devuelve y el guardarraíl de duración (bien) corrige el texto.
+        from datetime import date
+
+        from app.services import tarifario
+        monkeypatch.setattr(tarifario, "hoy_colombia", lambda: date(2026, 10, 7))
         salida, mock = jugar(Bot(duracion_por_plan=True), [
             resp(herramienta("consultar_tarifario", {"mes": "octubre"})),
             resp(texto(POR_PLAN)),

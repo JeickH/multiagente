@@ -831,6 +831,10 @@ def _system_prompt(
         menu = _bloque_menu_meses(cfg)
         if menu:
             parts.append(menu)
+    # Después del menú de meses, porque le dice al bot 3 cuándo no mostrarlo.
+    promociones = _bloque_promociones(cfg, ctx_productos)
+    if promociones:
+        parts.append(promociones)
     parts.append(
         "## Reglas operativas\n"
         "- Responde siempre en español, con mensajes cortos estilo WhatsApp.\n"
@@ -862,9 +866,12 @@ def _system_prompt(
         # Va de últimas a propósito: es lo último que el modelo lee antes del
         # historial, y es la instrucción que en producción se le olvidaba.
         parts.append(continuidad)
-    if cfg.get("apertura_vitrina") and _es_primer_turno(cfg, history):
+    if cfg.get("apertura_vitrina") and _es_primer_turno(cfg, history) \
+            and not _llega_por_promocion(cfg, history, user_text):
         # Bot 2 (#1 #3 #4 #5): sólo el primer turno. Cambia el prefijo de ese
         # turno y de ningún otro; entre conversaciones del mismo día es igual.
+        # Quien llega por la pauta de una promoción no la recibe: el «desde»
+        # de la temporada no es el precio de la promoción.
         parts.append(_bloque_apertura(cfg))
     # Bot 3 (M3): con `system_en_dos_bloques` lo que cambia por turno va a una
     # cola que se manda como segundo bloque, SIN `cache_control`: si no, cada
@@ -1916,6 +1923,90 @@ def _bloque_menu_meses(cfg: Dict[str, Any]) -> str:
     )
 
 
+def _bloque_promociones(cfg: Dict[str, Any], ctx_productos: Optional[Any]) -> str:
+    """Las promociones vigentes del tarifario (`promociones_covenas.json`).
+
+    Va en la parte estable del prompt: es igual para todas las conversaciones
+    y solo cambia el día en que la salida pasa y la promoción se apaga. Lleva
+    lo que la promoción trae de más y cómo reconocer a quien llega por la
+    pauta, pero **ninguna cifra**: el precio está en la fila de la salida y
+    sale de la herramienta, así que el guardarraíl de precio lo valida igual
+    que cualquier otro.
+    """
+    if not cfg.get("tarifario"):
+        return ""
+    promos = _de_tarifario("promociones_vigentes", tarifario.hoy_colombia())
+    if not isinstance(promos, list) or not promos:
+        return ""
+    herramienta = productos_bot.PRECIOS if ctx_productos is not None else "consultar_tarifario"
+    bloques = []
+    for promo in promos:
+        nombre = str(promo.get("nombre") or "").strip()
+        inicio = str(promo.get("inicio") or "").strip()
+        fecha = str(promo.get("fecha") or inicio).strip()
+        incluye = [str(x).strip() for x in promo.get("incluye") or [] if str(x).strip()]
+        cierre = str(promo.get("incluye_cierre") or "").strip()
+        pauta = str(promo.get("mensaje_pauta") or "").strip()
+        lineas = [
+            f"Es la salida del *{fecha}* ({inicio}). Vale lo mismo en los tres "
+            "hoteles (Amor de Dios, Bohíos y Piedra Mar) y en cualquier "
+            f"acomodación. La cifra y la duración NO están aquí: salen de "
+            f"`{herramienta}` con fecha={inicio}. Llámala antes de decir "
+            "cualquier precio de esta salida."
+        ]
+        if incluye:
+            lista = ", ".join(incluye[:-1]) + (" y " if len(incluye) > 1 else "") + incluye[-1]
+            lineas.append(
+                "Lo que trae de más, además de todo lo del plan normal: "
+                f"{lista}{', ' + cierre if cierre else ''}. No le agregues nada "
+                "que no esté en esta lista."
+            )
+        llegada = (
+            f"Hay una pauta activa con el mensaje «{pauta}». Quien llegue con "
+            "ese mensaje, o nombre la promoción," if pauta else
+            "Quien nombre la promoción"
+        )
+        lineas.append(
+            f"{llegada} viene por ESTA salida: no le preguntes para qué mes ni le "
+            f"muestres el menú de meses. Preséntale el *{nombre}* —la fecha, lo "
+            "que trae de más y el precio que te dé la herramienta— y sigue como "
+            "siempre: hotel, cuántas personas viajan y la reserva."
+        )
+        lineas.append(
+            "Si esa fecha no le sirve, sigue el flujo normal con las otras "
+            f"salidas, y aclárale que lo del {nombre} es solo de esta salida."
+        )
+        lineas.append(
+            "El flyer del tarifario de ese mes todavía muestra esta salida con su "
+            f"valor anterior. Cuando ofrezcas solo el {nombre}, no mandes ese "
+            "flyer, aunque la herramienta lo pida. Si la persona pregunta por la "
+            "diferencia, NO repitas el valor del flyer: explícale que esta salida "
+            f"es la edición {nombre}, con lo que trae de más, y que su valor es "
+            "el que te da la herramienta."
+        )
+        bloques.append(
+            f"## Promoción vigente: {nombre} (datos del sistema)\n"
+            + "\n".join(f"- {l}" for l in lineas)
+        )
+    return "\n\n".join(bloques)
+
+
+def _llega_por_promocion(
+    cfg: Dict[str, Any], history: Optional[List[Dict[str, str]]], user_input: Optional[str]
+) -> bool:
+    """¿El primer mensaje de la persona nombra una promoción vigente?
+
+    Solo se mira el primer turno: es el que decide la apertura del bot 2 (la
+    vitrina con el «desde» de la temporada y el flyer del mes, que para quien
+    viene por la pauta dicen otra cosa que la promoción).
+    """
+    if not cfg.get("tarifario") or history or not user_input:
+        return False
+    return bool(
+        _de_tarifario("promocion_mencionada", user_input, tarifario.hoy_colombia())
+    )
+
+
 def _bloque_mes_nombrado(
     cfg: Dict[str, Any], history: Optional[List[Dict[str, str]]], user_input: Optional[str]
 ) -> str:
@@ -2960,7 +3051,10 @@ def _postproceso_variante(
         logger.info("llm_engine: turno cortado en la primera pregunta (bot=%s)", bot_id)
 
     # 6 — #4: el flyer del mes va con el primer mensaje.
+    # Quien llega por la pauta de una promoción no recibe el flyer del mes: aún
+    # muestra la salida de la promoción con su valor anterior.
     if cfg.get("apertura_vitrina") and _es_primer_turno(cfg, history) \
+            and not _llega_por_promocion(cfg, history, user_input) \
             and not finished and any(t.strip() for t in say_texts):
         flyer = _flyer_de_apertura(cfg, ctx_productos, user_input)
         if flyer is not None:

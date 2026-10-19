@@ -1023,3 +1023,64 @@ def meses_disponibles(hoy: date, maximo: int = 4) -> list[dict]:
         {"mes": mes, "anio": anio, "nombre": _NOMBRE_MES[mes].lower(), "desde": desde}
         for (anio, mes), desde in sorted(por_mes.items())[:maximo]
     ]
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# Promociones de una salida (los tres bots de Arranquemos Pues).
+# ADITIVO: no cambia la salida de nada de arriba. Lo que se promociona (el
+# nombre, qué incluye de más, el texto de la pauta) vive en
+# `promociones_covenas.json`; el PRECIO sigue en la fila de la salida, y el bot
+# lo pide con la herramienta como cualquier otro.
+# ════════════════════════════════════════════════════════════════════════════
+
+_PROMOS = Path(__file__).resolve().parent.parent / "data" / "promociones_covenas.json"
+
+
+@lru_cache(maxsize=1)
+def _promos_crudas() -> List[Dict[str, Any]]:
+    try:
+        datos = json.loads(_PROMOS.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        logger.exception("tarifario: no se pudo leer %s", _PROMOS.name)
+        return []
+    promos = datos.get("promociones") if isinstance(datos, dict) else None
+    return [p for p in promos or [] if isinstance(p, dict)]
+
+
+def promociones_vigentes(hoy: date) -> List[Dict[str, Any]]:
+    """Las promociones cuya salida todavía no ha pasado (``inicio >= hoy``).
+
+    Mismo criterio que las salidas del tarifario: una promoción de una fecha
+    que ya salió no se ofrece, y se apaga sola sin que nadie tenga que
+    borrarla. Una entrada sin `nombre` o con `inicio` ilegible se ignora (y
+    queda en el log): mejor no anunciar nada que anunciar algo a medias.
+    Devuelve copias.
+    """
+    vigentes = []
+    for promo in _promos_crudas():
+        try:
+            inicio = date.fromisoformat(str(promo.get("inicio")))
+        except ValueError:
+            logger.warning("tarifario: promoción con inicio ilegible, se ignora")
+            continue
+        if not str(promo.get("nombre") or "").strip() or inicio < hoy:
+            continue
+        vigentes.append(json.loads(json.dumps(promo)))
+    return sorted(vigentes, key=lambda p: p["inicio"])
+
+
+def promocion_mencionada(texto: object, hoy: date) -> Optional[Dict[str, Any]]:
+    """La promoción vigente que nombra el texto del cliente, o None.
+
+    Compara sin tildes ni mayúsculas contra el nombre y los `disparadores`:
+    la pauta manda «¡Hola! Quiero más información del simulacro decembrino»,
+    pero la gente también escribe «el simulacro» o «simulacro decembrino».
+    """
+    limpio = _sin_tildes(str(texto or ""))
+    if not limpio:
+        return None
+    for promo in promociones_vigentes(hoy):
+        claves = [promo.get("nombre")] + list(promo.get("disparadores") or [])
+        if any(_sin_tildes(str(c)) in limpio for c in claves if str(c or "").strip()):
+            return promo
+    return None

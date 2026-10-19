@@ -1,0 +1,25 @@
+{
+  "_fuente": "Pedido del CEO del 2026-10-19. Lo lee `tarifario.promociones_vigentes()` y el motor lo pone en el prompt de los tres bots de Arranquemos Pues mientras la salida no haya pasado.",
+  "_reglas": [
+    "Aquí NO van precios: el valor de la salida vive en su fila del tarifario (`tarifario_covenas.json` y `bot_producto_filas`) y el bot lo pide con la herramienta, como cualquier otro precio.",
+    "`inicio` tiene que ser una salida que exista en el tarifario, y esas filas tienen que llevar `plan` igual a `nombre`: lo vigila `tests/viajes/test_promociones.py`.",
+    "Una promoción cuya salida ya pasó se apaga sola; no hace falta borrarla."
+  ],
+  "promociones": [
+    {
+      "nombre": "Simulacro decembrino",
+      "inicio": "2026-10-23",
+      "fecha": "viernes 23 al lunes 26 de octubre",
+      "incluye": [
+        "natilla",
+        "buñuelos",
+        "chicharronada",
+        "música en vivo",
+        "DJ"
+      ],
+      "incluye_cierre": "entre otros",
+      "mensaje_pauta": "¡Hola! Quiero más información del simulacro decembrino",
+      "disparadores": ["simulacro"]
+    }
+  ]
+}
