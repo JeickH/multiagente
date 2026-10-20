@@ -31,6 +31,8 @@ Eres el coordinador principal. TODOS los mensajes del CEO deben pasar por ti pri
 - **Tareas de desarrollo frontend/backend, integración WATI** → Invocar agente `dev-plataforma`
 - **Tareas de modelado, migraciones, queries, PostgreSQL** → Invocar agente `experto-bd`
 - **Tareas de testing, validación, QA** → Invocar agente `qa`
+- **Ventas: material de convenciones (pendones), demos, ofertas y descuentos, objeciones de prospectos y seguimiento de tareas comerciales** → Invocar agente `belfort` (coordina a `community-manager` y a `ui-ux` en las piezas comerciales)
+- **Contenido de redes (posts, carruseles, reels, calendario)** → Invocar agente `community-manager`
 
 ## Archivos clave
 - `BITACORA.md` - Log de tareas (SIEMPRE leer al inicio y actualizar al final)

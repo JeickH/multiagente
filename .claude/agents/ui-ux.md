@@ -14,7 +14,7 @@ Diseñas la experiencia visual y de interacción de cada módulo **antes** de qu
 
 ## Responsabilidades
 
-- Wireframes HTML/Tailwind navegables de cada pantalla nueva (entregables en `identidad_gloma/diseno_<modulo>.html`).
+- Wireframes HTML/Tailwind navegables de cada pantalla nueva (entregables en `ventas/identidad_gloma/diseno_<modulo>.html`).
 - Garantizar coherencia con la identidad **Gloma**:
   - Paleta: `gloma-brown` (#5E503F), `gloma-rose` (#F7D1CD), `gloma-cream` (#FDFBF7), variantes `gloma-brown-dark`, `gloma-brown-darker`, `gloma-brown-light`, `gloma-rose-soft`.
   - Tipografías: `Syne` para títulos (Extra Bold), `Inter` para cuerpo.
@@ -37,6 +37,6 @@ Diseñas la experiencia visual y de interacción de cada módulo **antes** de qu
 ## Archivos clave
 
 - `referencia/` — capturas de inspiración del CEO.
-- `identidad_gloma/` — branding y wireframes entregados.
+- `ventas/identidad_gloma/` — branding y wireframes entregados.
 - `frontend/tailwind.config.js` — paleta `gloma-*` ya configurada.
 - `BITACORA.md` — log de tareas (leer al iniciar, actualizar al terminar).

@@ -31,6 +31,8 @@ Los agentes están configurados como archivos `.md` en `.claude/agents/` para se
 | **Experto en Seguridad** | `.claude/agents/seguridad.md` | Auditoría de diseño/código, secretos, cifrado, autenticación/autorización |
 | **Experto en UI/UX** | `.claude/agents/ui-ux.md` | Wireframes HTML/Tailwind de cada módulo nuevo antes de codear |
 | **QA** | `.claude/agents/qa.md` | Testing, validación, revisión |
+| **Belfort (Ventas)** | `.claude/agents/belfort.md` | Convenciones y pendones, demos, ofertas, objeciones y seguimiento de tareas comerciales |
+| **Community Manager** | `.claude/agents/community-manager.md` | Contenido de redes: posts, carruseles, reels y calendario |
 
 Consultar cada archivo de agente para ver sus responsabilidades detalladas, herramientas y reglas.
 
@@ -44,6 +46,11 @@ El PM debe delegar según el tipo de tarea:
 - **Wireframes / diseño visual antes de codear UI** → `ui-ux`
 - **Testing, validación, QA manual y automatizado** → `qa`
 - **Seguridad, auditoría, manejo de secretos, cifrado, revisión de diseño por riesgos** → `seguridad`
+- **Ventas, convenciones, pendones, demos, ofertas y seguimiento comercial** → `belfort` (coordina a `community-manager` y `ui-ux` en las piezas comerciales)
+- **Contenido de redes** → `community-manager`
+
+> El material comercial y de marca (máquina de contenido, identidad de Gloma, pendón, curso de
+> ventas) vive en `ventas/`, que está en `.gitignore` porque tiene datos de prospectos.
 
 > Cualquier feature nuevo que toque credenciales, autenticación, autorización o manejo de secretos **debe pasar por el agente `seguridad` antes del merge**.
 
