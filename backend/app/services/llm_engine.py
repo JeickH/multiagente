@@ -75,6 +75,23 @@ def _env_model_id() -> str:
     return os.getenv("LLM_MODEL_ID") or _DEFAULT_MODEL_ID
 
 
+# Modelo de respaldo: entra solo cuando el del bot falla `_INTENTOS_MODELO`
+# veces seguidas por un error de AWS. Nació de las caídas de Haiku 4.5 del 19 y
+# el 20-oct-2026 (`ServiceUnavailableException`): cada turno fallido mandaba la
+# disculpa técnica y pasaba la conversación a asesor, y la salida era cambiar
+# `model_id` a mano en la base. Sonnet 4.5 cuesta ~3x, pero solo se paga en los
+# turnos que de otro modo se habrían perdido. Un bot puede fijar el suyo con
+# `llm_config.fallback_model_id`.
+_DEFAULT_FALLBACK_MODEL_ID = "global.anthropic.claude-sonnet-4-5-20250929-v1:0"
+_INTENTOS_MODELO = 3     # llamadas al modelo del bot antes de pasar al respaldo
+_INTENTOS_RESPALDO = 2   # llamadas al respaldo antes de rendirse (failsafe)
+_PAUSAS_REINTENTO = (1.0, 3.0)  # segundos antes del 2.º y el 3.º intento
+
+
+def _env_fallback_model_id() -> str:
+    return os.getenv("LLM_FALLBACK_MODEL_ID") or _DEFAULT_FALLBACK_MODEL_ID
+
+
 def _env_max_tokens() -> int:
     try:
         return max(64, min(int(os.getenv("LLM_MAX_TOKENS", "1024")), 8192))
@@ -5478,9 +5495,22 @@ def record_decision(
 @lru_cache(maxsize=1)
 def _bedrock_client():
     import boto3  # import perezoso: no exigir boto3 para el motor de flujos
+    from botocore.config import Config
 
     region = os.getenv("BEDROCK_REGION", "sa-east-1")
-    return boto3.client("bedrock-runtime", region_name=region)
+    # Sin reintentos de botocore: los hace `_invoke_con_respaldo`, que sabe
+    # cuándo dejar de insistir y pasar al modelo de respaldo. Con los de por
+    # defecto (4 reintentos) un turno tardaba 37 s en rendirse, y sumados a los
+    # nuestros serían 15 llamadas por ronda.
+    return boto3.client(
+        "bedrock-runtime",
+        region_name=region,
+        config=Config(
+            connect_timeout=5,
+            read_timeout=60,
+            retries={"total_max_attempts": 1, "mode": "standard"},
+        ),
+    )
 
 
 def _bloques_system(system: str) -> List[Dict[str, Any]]:
@@ -5537,6 +5567,81 @@ def _invoke_model(
         uso.get("cache_creation_input_tokens"),
     )
     return data
+
+
+#: Códigos de Bedrock en los que insistir con el MISMO modelo tiene sentido:
+#: son del servicio, no de la petición. Cualquier otro error de AWS
+#: (ValidationException, AccessDenied, modelo inexistente) salta directo al
+#: respaldo: repetirlo daría lo mismo.
+_ERRORES_TRANSITORIOS = frozenset({
+    "ServiceUnavailableException",
+    "ThrottlingException",
+    "InternalServerException",
+    "ModelNotReadyException",
+    "ModelTimeoutException",
+})
+
+
+def _es_error_de_aws(exc: Exception) -> bool:
+    """¿Lo lanzó botocore? Solo esos pasan por reintento o respaldo; un error
+    nuestro (un bug, un JSON mal armado) sube tal cual al failsafe de siempre.
+    Por el módulo y no por `isinstance`: las excepciones de Bedrock las fabrica
+    botocore al vuelo y aquí no se importa botocore a nivel de módulo."""
+    return type(exc).__module__.split(".")[0] == "botocore"
+
+
+def _es_transitorio(exc: Exception) -> bool:
+    respuesta = getattr(exc, "response", None)
+    if not isinstance(respuesta, dict):
+        # Sin respuesta del servicio: timeout, conexión cortada, DNS.
+        return True
+    return (respuesta.get("Error") or {}).get("Code") in _ERRORES_TRANSITORIOS
+
+
+def _invoke_con_respaldo(
+    model_id: str,
+    fallback_model_id: Optional[str],
+    system: str,
+    messages: List[Dict[str, Any]],
+    tools: List[Dict[str, Any]],
+) -> tuple:
+    """Llama al modelo del bot hasta `_INTENTOS_MODELO` veces y, si sigue
+    fallando, al de respaldo hasta `_INTENTOS_RESPALDO`. Devuelve
+    `(data, modelo_que_respondió)`. Si todos fallan, re-lanza el último error y
+    recién ahí `advance` manda la disculpa técnica: el cliente no se entera de
+    los intentos fallidos.
+
+    Es por ronda y no por turno a propósito: las herramientas de las rondas
+    anteriores ya corrieron (precios consultados, medios enviados) y repetir el
+    turno entero las duplicaría."""
+    planes = [(model_id, _INTENTOS_MODELO)]
+    if fallback_model_id and fallback_model_id != model_id:
+        planes.append((fallback_model_id, _INTENTOS_RESPALDO))
+
+    ultimo: Optional[Exception] = None
+    for modelo, intentos in planes:
+        for intento in range(intentos):
+            if intento:
+                time.sleep(_PAUSAS_REINTENTO[min(intento, len(_PAUSAS_REINTENTO)) - 1])
+            try:
+                return _invoke_model(modelo, system, messages, tools), modelo
+            except Exception as exc:
+                if not _es_error_de_aws(exc):
+                    raise
+                ultimo = exc
+                # Regla #6: solo el tipo de error, nunca el cuerpo ni el mensaje.
+                logger.warning(
+                    "llm_reintento model=%s intento=%s/%s error=%s",
+                    modelo, intento + 1, intentos, type(exc).__name__,
+                )
+                if not _es_transitorio(exc):
+                    break
+        if modelo == model_id and len(planes) > 1:
+            logger.warning(
+                "llm_respaldo model=%s falló; pasa a %s", model_id, fallback_model_id
+            )
+    assert ultimo is not None
+    raise ultimo
 
 
 # ---------------------------------------------------------------------------
@@ -5835,6 +5940,7 @@ def _turno(
     system = _system_prompt(bot, cfg, history, user_text, ctx_productos)
     tools = _tools_for(cfg, ctx_productos, system)
     model_id = cfg.get("model_id") or _env_model_id()
+    fallback_model_id = cfg.get("fallback_model_id") or _env_fallback_model_id()
 
     # Mensajes de trabajo del turno (el historial persistido queda aplanado).
     working: List[Dict[str, Any]] = [
@@ -5943,7 +6049,11 @@ def _turno(
         finished_previo, escalado_previo = finished, escalated_to
         tools_previas = len(tools_called)
         intenciones_previas = len(intenciones)
-        data = _invoke_model(model_id, system, working, tools)
+        # Si el modelo del bot cayó y respondió el respaldo, el resto del turno
+        # sigue con el respaldo, y la telemetría registra el que respondió.
+        data, model_id = _invoke_con_respaldo(
+            model_id, fallback_model_id, system, working, tools
+        )
         rounds += 1
         _u = data.get("usage") or {}
         uso["tokens_in"] += _u.get("input_tokens") or 0
