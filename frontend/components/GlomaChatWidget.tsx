@@ -61,7 +61,7 @@ export type OpenChatDetail = { message?: string };
 const SUGERENCIAS = [
   '¿Qué hace Gloma por mi empresa?',
   '¿Cómo lo conecto a mi WhatsApp?',
-  '¿Cuánto cuesta?',
+  '¿Cuál es la inversión?',
 ];
 
 type Msg = {
