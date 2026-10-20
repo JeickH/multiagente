@@ -308,7 +308,8 @@ function abrirChatDelBot(mensaje?: string) {
 /**
  * Llamados a la acción, iguales en toda la página (#625): donde se ofrece
  * agendar, el principal es «Agendar una llamada» (abre el calendario de Cal.com
- * en un modal, sin salir de la página) y el secundario «Escribir por WhatsApp».
+ * en un modal, sin salir de la página) y el secundario «Hablar con un asesor»
+ * (el wa.me de siempre; #634, antes «Escribir por WhatsApp»).
  * Antes «Agenda una demo» le pedía la cita a Lía (#302); Lía sigue a un clic
  * con su propio botón.
  */
@@ -593,10 +594,10 @@ function InteractiveHeader() {
             href={WHATSAPP_URL}
             target="_blank"
             rel="noopener noreferrer"
+            aria-label={TEXTOS_AGENDAR.whatsappAria}
             className="inline-block px-6 py-3 rounded-full text-sm font-semibold text-center border-2 border-white/80 text-white hover:bg-white/10 transition-colors"
           >
             {TEXTOS_AGENDAR.whatsapp}
-            <span className="sr-only">{TEXTOS_AGENDAR.nuevaPestana}</span>
           </a>
         </div>
         <button
@@ -1550,10 +1551,10 @@ function PreciosSection() {
               href={WHATSAPP_URL}
               target="_blank"
               rel="noopener noreferrer"
+            aria-label={TEXTOS_AGENDAR.whatsappAria}
               className="px-6 py-3 rounded-full text-sm font-semibold border-2 border-white/80 text-white hover:bg-white/10 transition-colors"
             >
               {TEXTOS_AGENDAR.whatsapp}
-              <span className="sr-only">{TEXTOS_AGENDAR.nuevaPestana}</span>
             </a>
           </div>
         </Reveal>
@@ -1936,11 +1937,10 @@ export default function GlomaLanding() {
               href={WHATSAPP_URL}
               target="_blank"
               rel="noopener noreferrer"
+            aria-label={TEXTOS_AGENDAR.whatsappAria}
               className="px-4 py-3 rounded-full text-sm font-semibold border border-white/70 text-white"
             >
-              <span className="sr-only">Escribir por </span>
               {TEXTOS_AGENDAR.whatsappCorto}
-              <span className="sr-only">{TEXTOS_AGENDAR.nuevaPestana}</span>
             </a>
           </div>
         </div>

@@ -1,6 +1,6 @@
 /**
  * Las dos salidas de la demo (#625): «Agendar una llamada» (principal, abre
- * el modal de Cal.com) y «Escribir por WhatsApp» (secundaria, wa.me con el
+ * el modal de Cal.com) y «Hablar con un asesor» (secundaria, wa.me con el
  * texto prellenado). Los clics se cuentan con `registrarEvento` desde
  * `DemoPage`, que arma `AccionesAgendar`.
  */
@@ -33,10 +33,10 @@ export default function CtaAgendar({
       target="_blank"
       rel="noopener noreferrer"
       onClick={acciones.alClicWhatsapp}
+      aria-label={T.whatsappAria}
       className={clase}
     >
       {texto}
-      <span className="sr-only">{T.nuevaPestana}</span>
     </a>
   );
 

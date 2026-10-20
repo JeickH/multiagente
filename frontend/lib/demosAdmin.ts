@@ -329,7 +329,7 @@ export function hiloConMarcas(d: DetalleDemo): EntradaHilo[] {
   marca(d.traspaso_at, 'Traspaso a asesor');
   marca(
     d.primer_clic_whatsapp_at,
-    `Clic en «Escribir por WhatsApp»${d.clics_whatsapp > 1 ? ` (${d.clics_whatsapp} veces)` : ''}`,
+    `Clic en «Hablar con un asesor» (WhatsApp)${d.clics_whatsapp > 1 ? ` (${d.clics_whatsapp} veces)` : ''}`,
   );
   marca(
     d.primer_apertura_llamada_at,

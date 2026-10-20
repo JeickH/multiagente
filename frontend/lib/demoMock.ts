@@ -88,6 +88,8 @@ export const mock = (() => {
     if (e.includes('tope')) throw new DemoApiError(429);
     if (e.includes('sinred')) throw new DemoApiError(0);
     if (!TIPOS_EMPRESA.some((t) => t.clave === datos.tipo_empresa)) throw new DemoApiError(422, ['tipo_empresa']);
+    // Como `normalizar_telefono` del backend: E.164, 8 a 15 dígitos (#634).
+    if (!/^\+[1-9]\d{7,14}$/.test(datos.telefono)) throw new DemoApiError(422, ['telefono']);
     const id = `mock-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
     const token = `mock-${Math.random().toString(36).slice(2)}`;
     const todo = leer();

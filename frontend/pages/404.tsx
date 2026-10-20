@@ -1,6 +1,7 @@
 import Head from 'next/head';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
+import { TEXTOS_AGENDAR } from '../lib/agendarLlamada';
 
 /**
  * 404 brandeado Gloma. Se muestra cuando:
@@ -86,10 +87,11 @@ export default function NotFound() {
               href="https://wa.me/573150764000?text=Hola%20Gloma"
               target="_blank"
               rel="noopener noreferrer"
+              aria-label={TEXTOS_AGENDAR.whatsappAria}
               className="px-6 py-3 rounded-full text-sm font-semibold transition-opacity hover:opacity-90"
               style={{ backgroundColor: BRAND.rose, color: BRAND.brown }}
             >
-              Escríbenos por WhatsApp
+              {TEXTOS_AGENDAR.whatsapp}
             </a>
           </div>
         </div>

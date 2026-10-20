@@ -3,13 +3,19 @@
  * para poder probarlos con vitest (`demoApi.test.ts`).
  */
 import { DEMO_UI, TIPOS_EMPRESA } from './demo_copy';
+import { PAIS_POR_DEFECTO, normalizarTelefono } from './telefonoPais';
 
 export interface DatosFormulario {
   nombre: string;
   empresa: string;
   tipo_empresa: string;
   tipo_otro: string;
+  /** Número nacional tal como lo escribió (o pegó) la persona. */
   telefono: string;
+  /** ISO del país del teléfono (`CO` por defecto, `OTRO` para escribir el indicativo). */
+  telefono_pais: string;
+  /** Solo con `telefono_pais = 'OTRO'`. */
+  telefono_indicativo: string;
   correo: string;
   acepta_contacto: boolean;
   acepta_promociones: boolean;
@@ -22,6 +28,8 @@ export const FORMULARIO_VACIO: DatosFormulario = {
   tipo_empresa: '',
   tipo_otro: '',
   telefono: '',
+  telefono_pais: PAIS_POR_DEFECTO,
+  telefono_indicativo: '',
   correo: '',
   acepta_contacto: false,
   acepta_promociones: false,
@@ -44,9 +52,23 @@ export function validarCampo(campo: Campo, d: DatosFormulario): string {
     case 'tipo_empresa':
       return TIPOS_EMPRESA.some((t) => t.clave === d.tipo_empresa) ? '' : E.tipo;
     case 'telefono': {
-      if (!d.telefono.trim()) return E.telefonoVacio;
-      const digitos = d.telefono.replace(/\D/g, '').length;
-      return digitos < 7 || digitos > 15 ? E.telefonoInvalido : '';
+      const r = normalizarTelefono(d.telefono_pais, d.telefono_indicativo, d.telefono);
+      switch (r.error) {
+        case null:
+          return '';
+        case 'vacio':
+          return E.telefonoVacio;
+        case 'colombia':
+          return E.telefonoColombia;
+        case 'indicativo':
+          return E.telefonoIndicativo;
+        case 'largo':
+          return E.telefonoLargo
+            .replace('{pais}', r.pais.nombre)
+            .replace('{digitos}', r.pais.min === r.pais.max ? String(r.pais.min) : `${r.pais.min} a ${r.pais.max}`);
+        default:
+          return E.telefonoInvalido;
+      }
     }
     case 'correo':
       if (!d.correo.trim()) return E.correoVacio;
@@ -82,4 +104,9 @@ export function inicialesEmpresa(empresa: string): string {
     .join('')
     .toUpperCase();
   return ini || 'G';
+}
+
+/** El teléfono en E.164 para `POST /demo/iniciar`, o `null` si no es válido. */
+export function telefonoE164(d: Pick<DatosFormulario, 'telefono' | 'telefono_pais' | 'telefono_indicativo'>): string | null {
+  return normalizarTelefono(d.telefono_pais, d.telefono_indicativo, d.telefono).e164;
 }

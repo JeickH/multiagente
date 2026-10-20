@@ -202,7 +202,7 @@ describe('hiloConMarcas', () => {
       'Te paso con un asesor',
       '[Traspaso a asesor]',
       'gracias',
-      '[Clic en «Escribir por WhatsApp» (2 veces)]',
+      '[Clic en «Hablar con un asesor» (WhatsApp) (2 veces)]',
       '[Agendó una llamada (reportada por el navegador)]',
     ]);
   });

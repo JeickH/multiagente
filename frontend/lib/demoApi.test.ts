@@ -12,7 +12,8 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { inicialesEmpresa, validarCampo, FORMULARIO_VACIO } from './demoFormulario';
+import { inicialesEmpresa, telefonoE164, validarCampo, FORMULARIO_VACIO } from './demoFormulario';
+import { normalizarTelefono } from './telefonoPais';
 import { DEMO_UI } from './demo_copy';
 import { CLAVE_DEMO, borrarDemo, enlaceWhatsapp, guardarDemo, leerDemoGuardada, type DemoGuardada } from './demoApi';
 
@@ -119,12 +120,21 @@ describe('sessionStorage gloma_demo', () => {
 describe('validarCampo', () => {
   const con = (cambios: Partial<typeof FORMULARIO_VACIO>) => ({ ...FORMULARIO_VACIO, ...cambios });
 
-  it('teléfono: de 7 a 15 dígitos, con espacios, guiones y +', () => {
-    expect(validarCampo('telefono', con({ telefono: '+57 300 000 0000' }))).toBe('');
-    expect(validarCampo('telefono', con({ telefono: '(1) 234-5678' }))).toBe('');
-    expect(validarCampo('telefono', con({ telefono: '300 12' }))).toBe(DEMO_UI.form.errores.telefonoInvalido);
-    expect(validarCampo('telefono', con({ telefono: '1234567890123456' }))).toBe(DEMO_UI.form.errores.telefonoInvalido);
+  it('teléfono: Colombia por defecto, 10 dígitos que empiezan por 3 o 60', () => {
+    expect(validarCampo('telefono', con({ telefono: '300 000 0000' }))).toBe('');
+    expect(validarCampo('telefono', con({ telefono: '601 234 5678' }))).toBe('');
+    expect(validarCampo('telefono', con({ telefono: '300 12' }))).toMatch(/Colombia tiene 10 dígitos/);
+    expect(validarCampo('telefono', con({ telefono: '700 000 0000' }))).toBe(DEMO_UI.form.errores.telefonoColombia);
     expect(validarCampo('telefono', con({ telefono: '  ' }))).toBe(DEMO_UI.form.errores.telefonoVacio);
+  });
+
+  it('teléfono de otro país: largo del país y «Otro» con indicativo', () => {
+    expect(validarCampo('telefono', con({ telefono_pais: 'MX', telefono: '55 1234 5678' }))).toBe('');
+    expect(validarCampo('telefono', con({ telefono_pais: 'PE', telefono: '12345' }))).toMatch(/Perú tiene 8 a 9 dígitos/);
+    expect(validarCampo('telefono', con({ telefono_pais: 'OTRO', telefono: '612345678', telefono_indicativo: '' }))).toBe(
+      DEMO_UI.form.errores.telefonoIndicativo,
+    );
+    expect(validarCampo('telefono', con({ telefono_pais: 'OTRO', telefono: '612345678', telefono_indicativo: '351' }))).toBe('');
   });
 
   it('tipo de empresa: solo claves de la lista', () => {
@@ -152,5 +162,43 @@ describe('inicialesEmpresa', () => {
     expect(inicialesEmpresa('Ébano')).toBe('É');
     expect(inicialesEmpresa('El Del')).toBe('ED');
     expect(inicialesEmpresa('   ')).toBe('G');
+  });
+});
+
+describe('normalizarTelefono (E.164)', () => {
+  it('Colombia: número nacional → +57', () => {
+    expect(normalizarTelefono('CO', '', '300 123 4567').e164).toBe('+573001234567');
+    expect(normalizarTelefono('CO', '', '(300) 123-4567').e164).toBe('+573001234567');
+  });
+
+  it('pegado con indicativo no queda duplicado', () => {
+    expect(normalizarTelefono('CO', '', '+57 300 123 4567').e164).toBe('+573001234567');
+    expect(normalizarTelefono('CO', '', '573001234567').e164).toBe('+573001234567');
+    expect(normalizarTelefono('CO', '', '0057 300 123 4567').e164).toBe('+573001234567');
+    expect(normalizarTelefono('US', '', '1 201 555 0123').e164).toBe('+12015550123');
+  });
+
+  it('con «+» de otro país se respeta ese país', () => {
+    expect(normalizarTelefono('CO', '', '+52 55 1234 5678').e164).toBe('+525512345678');
+    expect(normalizarTelefono('CO', '', '+57 700 000 0000').error).toBe('colombia');
+  });
+
+  it('otros países, 0 de larga distancia y «Otro»', () => {
+    expect(normalizarTelefono('BR', '', '11 91234 5678').e164).toBe('+5511912345678');
+    expect(normalizarTelefono('AR', '', '011 2345 6789').e164).toBe('+541123456789');
+    expect(normalizarTelefono('ES', '', '612 34 56 78').e164).toBe('+34612345678');
+    expect(normalizarTelefono('OTRO', '351', '912 345 678').e164).toBe('+351912345678');
+    expect(normalizarTelefono('OTRO', '0', '912 345 678').error).toBe('indicativo');
+  });
+
+  it('errores: vacío, largo y el techo de 15 dígitos', () => {
+    expect(normalizarTelefono('CO', '', '').error).toBe('vacio');
+    expect(normalizarTelefono('MX', '', '55 1234').error).toBe('largo');
+    expect(normalizarTelefono('CO', '', '+1234567890123456').error).toBe('total');
+  });
+
+  it('telefonoE164 usa los campos del formulario', () => {
+    expect(telefonoE164({ telefono: '300 123 4567', telefono_pais: 'CO', telefono_indicativo: '' })).toBe('+573001234567');
+    expect(telefonoE164({ telefono: '123', telefono_pais: 'CO', telefono_indicativo: '' })).toBeNull();
   });
 });

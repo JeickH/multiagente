@@ -263,7 +263,7 @@ export function registrarEvento(demo: { id: string; token: string } | null | und
 }
 
 // --------------------------------------------------------------------------
-// «Escribir por WhatsApp»
+// «Hablar con un asesor» (wa.me de Gloma)
 // --------------------------------------------------------------------------
 
 /**

@@ -35,11 +35,11 @@ import {
 import { inicialesEmpresa } from '../../lib/demoFormulario';
 import { horaCorta } from '../../lib/fechas';
 import { formatearWhatsapp } from '../../lib/formatoWhatsapp';
-import { TEXTOS_AGENDAR } from '../../lib/agendarLlamada';
 import CtaAgendar, { type AccionesAgendar } from './CtaAgendar';
 import DemoNoDisponible from './DemoNoDisponible';
+import MenuContacto from './MenuContacto';
 import PanelLateral, { ListaIdeas } from './PanelLateral';
-import { Check, IconoAsesor, IconoCalendario, IconoError, IconoEnviar, IconoFlecha, IconoInfo } from './iconos';
+import { Check, IconoAsesor, IconoError, IconoEnviar, IconoFlecha, IconoInfo } from './iconos';
 
 const U = DEMO_UI;
 
@@ -328,17 +328,8 @@ export default function DemoChat({
                 {escribiendo ? U.chat.escribiendo : U.chat.enLinea}
               </p>
             </div>
-            {/* Cabecera: solo la acción principal (abre el modal de Cal). El
-                WhatsApp está en el panel, en «Ideas» no cabe y al cerrar la demo. */}
-            <button
-              type="button"
-              onClick={acciones.abrirLlamada}
-              className="shrink-0 inline-flex items-center gap-1.5 h-9 px-3 rounded-full border border-white/50 text-white text-xs font-semibold hover:bg-white/10"
-            >
-              <IconoCalendario />
-              <span className="md:hidden">{TEXTOS_AGENDAR.agendarCorto}</span>
-              <span className="hidden md:inline">{TEXTOS_AGENDAR.agendar}</span>
-            </button>
+            {/* #634: menú con las dos salidas (llamada y asesor). */}
+            <MenuContacto acciones={acciones} />
           </div>
           {/* Aviso fijo de #608 (M4): no se cierra ni se desplaza con el hilo. */}
           <p className="px-3 py-1 text-[11px] leading-snug text-white/85 bg-black/20 text-center">{U.chat.avisoIA}</p>

@@ -99,8 +99,11 @@ export const TEXTOS_AGENDAR = {
   agendar: 'Agendar una llamada',
   /** Para espacios chicos (barra fija del celular, cabecera del chat). */
   agendarCorto: 'Agendar',
-  whatsapp: 'Escribir por WhatsApp',
-  whatsappCorto: 'WhatsApp',
+  /** Abre el wa.me de Gloma; el evento sigue siendo `whatsapp` (#634: antes «Escribir por WhatsApp»). */
+  whatsapp: 'Hablar con un asesor',
+  whatsappCorto: 'Asesor',
+  /** `aria-label` de esos enlaces: dice que abre WhatsApp y en otra pestaña. */
+  whatsappAria: 'Hablar con un asesor por WhatsApp (se abre en otra pestaña)',
   nuevaPestana: ' (se abre en otra pestaña)',
   titulo: 'Agenda una llamada con Gloma',
   subtitulo: '30 minutos por videollamada. Elige el día y la hora que te sirvan.',

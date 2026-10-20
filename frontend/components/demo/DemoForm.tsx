@@ -18,6 +18,7 @@ import {
   type Campo,
   type DatosFormulario,
 } from '../../lib/demoFormulario';
+import { PAISES_TELEFONO, PAIS_OTRO, paisPorIso } from '../../lib/telefonoPais';
 import CtaAgendar, { type AccionesAgendar } from './CtaAgendar';
 import { IconoAlerta, IconoError } from './iconos';
 
@@ -100,8 +101,10 @@ export default function DemoForm({
     const sig = { ...d, [campo]: valor };
     // «Otro» se oculta y se BORRA si se elige otro tipo: no se manda.
     if (campo === 'tipo_empresa' && valor !== TIPO_OTRO.clave) sig.tipo_otro = '';
+    if (campo === 'telefono_pais' && valor !== PAIS_OTRO) sig.telefono_indicativo = '';
     setD(sig);
-    const c = campo as Campo;
+    // El país y el indicativo son parte del teléfono: se revalida ese campo.
+    const c = (campo === 'telefono_pais' || campo === 'telefono_indicativo' ? 'telefono' : campo) as Campo;
     if (!ORDEN.includes(c)) return;
     tocados.current.add(c);
     if (servidor.has(c)) {
@@ -113,7 +116,8 @@ export default function DemoForm({
     }
     // Revalida mientras se escribe solo si el campo ya estaba en error, o si
     // es un select/checkbox (ahí el cambio es la interacción completa).
-    if (errores[c] || c === 'tipo_empresa' || c === 'acepta_contacto') validar(c, sig);
+    const esSelector = c === 'tipo_empresa' || c === 'acepta_contacto' || (c === 'telefono' && campo !== 'telefono' && Boolean(sig.telefono.trim()));
+    if (errores[c] || esSelector) validar(c, sig);
   };
 
   const alSalir = (c: Campo) => {
@@ -139,6 +143,7 @@ export default function DemoForm({
   };
 
   const otro = d.tipo_empresa === TIPO_OTRO.clave;
+  const pais = paisPorIso(d.telefono_pais);
   const bloqueado = enviando || alerta === 'tope';
 
   const props = (c: Campo, extraDescr = '') => ({
@@ -253,21 +258,79 @@ export default function DemoForm({
           <label htmlFor="f-tel" className="block text-sm font-medium text-gloma-ink-text mb-1.5">
             {t.telefono}
           </label>
-          <input
-            id="f-tel"
-            ref={(el) => {
-              refs.current.telefono = el;
-            }}
-            type="tel"
-            inputMode="tel"
-            className={CLASE_INPUT}
-            autoComplete="tel"
-            maxLength={20}
-            placeholder={t.telefonoPlaceholder}
-            value={d.telefono}
-            onChange={(e) => cambiar('telefono', e.target.value)}
-            {...props('telefono')}
-          />
+          <div className="flex gap-2">
+            {/* Selector de país: un <select> nativo transparente encima de una
+                caja que muestra solo la bandera y el indicativo. En celular abre
+                el selector del sistema con los nombres completos; el lector de
+                pantalla lee «País del teléfono, Colombia (+57)». */}
+            <div className="relative shrink-0 group rounded-xl focus-within:ring-[3px] focus-within:ring-gloma-mint/30">
+              <label htmlFor="f-tel-pais" className="sr-only">
+                {t.telefonoPais}
+              </label>
+              <div
+                aria-hidden="true"
+                className="h-full min-h-[48px] flex items-center gap-1.5 pl-3 pr-8 rounded-xl border border-white/40 bg-white/[0.03] text-[15px] text-gloma-ink-text demo-select whitespace-nowrap group-focus-within:border-gloma-mint"
+              >
+                <span className="text-lg leading-none">{pais.bandera}</span>
+                {/* En «Otro» el indicativo va en su propio campo: aquí solo el globo. */}
+                {pais.iso !== PAIS_OTRO && <span className="tabular-nums">+{pais.indicativo}</span>}
+              </div>
+              <select
+                id="f-tel-pais"
+                value={d.telefono_pais}
+                onChange={(e) => cambiar('telefono_pais', e.target.value)}
+                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer rounded-xl"
+              >
+                {PAISES_TELEFONO.map((p) => (
+                  <option key={p.iso} value={p.iso}>
+                    {p.bandera} {p.nombre}
+                    {p.indicativo ? ` (+${p.indicativo})` : ''}
+                  </option>
+                ))}
+              </select>
+            </div>
+            {pais.iso === PAIS_OTRO && (
+              <div className="relative w-[4.75rem] shrink-0">
+                <label htmlFor="f-tel-ind" className="sr-only">
+                  {t.telefonoIndicativo}
+                </label>
+                <span aria-hidden="true" className="absolute left-3 top-1/2 -translate-y-1/2 text-gloma-ink-muted">
+                  +
+                </span>
+                <input
+                  id="f-tel-ind"
+                  inputMode="numeric"
+                  autoComplete="tel-country-code"
+                  maxLength={4}
+                  className={`${CLASE_INPUT} pl-6`}
+                  placeholder="1"
+                  value={d.telefono_indicativo}
+                  onChange={(e) => cambiar('telefono_indicativo', e.target.value.replace(/\D/g, ''))}
+                  aria-describedby="h-tel-otro"
+                />
+              </div>
+            )}
+            <input
+              id="f-tel"
+              ref={(el) => {
+                refs.current.telefono = el;
+              }}
+              type="tel"
+              inputMode="tel"
+              className={`${CLASE_INPUT} min-w-0 flex-1`}
+              autoComplete="tel-national"
+              maxLength={20}
+              placeholder={pais.ejemplo}
+              value={d.telefono}
+              onChange={(e) => cambiar('telefono', e.target.value)}
+              {...props('telefono', pais.iso === PAIS_OTRO ? 'h-tel-otro' : '')}
+            />
+          </div>
+          {pais.iso === PAIS_OTRO && (
+            <p id="h-tel-otro" className="text-xs text-gloma-ink-muted mt-1.5">
+              {t.telefonoAyudaOtro}
+            </p>
+          )}
           <MensajeError id="e-telefono" texto={errorDe('telefono')} />
         </div>
 

@@ -187,7 +187,10 @@ export const DEMO_UI = {
     tipo: 'Tipo de empresa',
     tipoPlaceholder: 'Elige el que más se parezca',
     telefono: 'Teléfono (WhatsApp)',
-    telefonoPlaceholder: '+57 300 000 0000',
+    /** Etiqueta (solo para lectores de pantalla) del selector de país. */
+    telefonoPais: 'País del teléfono',
+    telefonoIndicativo: 'Indicativo',
+    telefonoAyudaOtro: 'Escribe el indicativo de tu país (sin el +) y el número.',
     correo: 'Correo',
     checkContacto: 'Acepto que Gloma me contacte sobre esta demo, según la',
     linkPrivacidad: 'política de tratamiento de datos',
@@ -205,7 +208,11 @@ export const DEMO_UI = {
       empresa: 'Escribe el nombre de tu empresa: con él armamos tu agente.',
       tipo: 'Elige el tipo de empresa que más se parezca a la tuya.',
       telefonoVacio: 'Escribe tu teléfono.',
-      telefonoInvalido: 'Revisa el teléfono: debe tener entre 7 y 15 dígitos.',
+      telefonoInvalido: 'Revisa el teléfono: parece incompleto o le sobran dígitos.',
+      /** `{pais}` y `{digitos}` («10» o «8 a 9»). */
+      telefonoLargo: 'Revisa el número: en {pais} tiene {digitos} dígitos, sin el indicativo.',
+      telefonoColombia: 'En Colombia el número tiene 10 dígitos y empieza por 3 (celular) o 60 (fijo).',
+      telefonoIndicativo: 'Escribe el indicativo de tu país: de 1 a 4 dígitos.',
       correoVacio: 'Escribe tu correo.',
       correoInvalido: 'Revisa el correo: parece incompleto.',
       contacto: 'Para iniciar la demo necesitamos tu autorización.',
@@ -291,7 +298,7 @@ export const DEMO_UI = {
     anuncioHandoff: 'Un asesor de {empresa} tomaría la conversación. La demo terminó.',
     anuncioFin: 'La demo terminó.',
   },
-  /** Los botones «Agendar una llamada» / «Escribir por WhatsApp» están en `lib/agendarLlamada.ts`. */
+  /** Los botones «Agendar una llamada» / «Hablar con un asesor» están en `lib/agendarLlamada.ts`. */
   cta: {
     panelTitulo: '¿Te lo imaginas en tu WhatsApp?',
     panelTexto: 'Lo armamos con tus productos y precios reales.',
@@ -304,7 +311,7 @@ export const DEMO_UI = {
     boton: 'Hacer una demo nueva',
   },
   cargando: 'Recuperando tu demo…',
-  /** Texto prellenado del WhatsApp de Gloma («Escribir por WhatsApp»). */
+  /** Texto prellenado del WhatsApp de Gloma («Hablar con un asesor»). */
   agendar: {
     despuesDeLaDemo: 'Hola, acabo de probar la demo de {empresa} y quiero agendar una llamada',
     sinDemo: 'Hola, quiero agendar una demo de Gloma',

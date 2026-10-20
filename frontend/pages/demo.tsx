@@ -33,6 +33,7 @@ import AgendarLlamadaModal from '../components/AgendarLlamadaModal';
 import type { AccionesAgendar } from '../components/demo/CtaAgendar';
 import Turnstile, { TURNSTILE_ACTIVO } from '../components/demo/Turnstile';
 import { DEMO_UI, TIPO_OTRO } from '../lib/demo_copy';
+import { telefonoE164 } from '../lib/demoFormulario';
 import {
   DemoApiError,
   borrarDemo,
@@ -118,7 +119,7 @@ export default function DemoPage() {
   const whatsappSinDemo = useMemo(() => enlaceWhatsapp(null, DEMO_UI.agendar), []);
 
   // ------------------------------------------------------------------
-  // «Agendar una llamada» (Cal.com) y «Escribir por WhatsApp» (#625)
+  // «Agendar una llamada» (Cal.com) y «Hablar con un asesor» (#625, #634)
   // ------------------------------------------------------------------
   const [calAbierto, setCalAbierto] = useState(false);
   // A quién se le suman los clics: solo a una demo con token que siga viva.
@@ -161,7 +162,8 @@ export default function DemoPage() {
       const cuerpo: DatosIniciar = {
         nombre: datos.nombre.trim(),
         empresa: datos.empresa.trim(),
-        telefono: datos.telefono.trim(),
+        // E.164 (`+573001234567`); el formulario ya lo validó.
+        telefono: telefonoE164(datos) ?? datos.telefono.trim(),
         correo: datos.correo.trim(),
         tipo_empresa: datos.tipo_empresa,
         acepta_contacto: true,

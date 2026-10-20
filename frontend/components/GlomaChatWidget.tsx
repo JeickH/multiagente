@@ -438,12 +438,12 @@ export default function GlomaChatWidget() {
                   href={WHATSAPP_URL}
                   target="_blank"
                   rel="noopener noreferrer"
+                  aria-label={TEXTOS_AGENDAR.whatsappAria}
                   className="flex items-center justify-center gap-2 w-full py-2.5 rounded-full text-[13px] font-semibold transition-transform hover:-translate-y-0.5"
                   style={{ backgroundColor: BRAND.whatsapp, color: '#FFFFFF' }}
                 >
                   <WhatsAppGlyph size={16} />
                   {TEXTOS_AGENDAR.whatsapp}
-                  <span className="sr-only">{TEXTOS_AGENDAR.nuevaPestana}</span>
                 </a>
               </div>
             )}
