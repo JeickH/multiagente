@@ -107,8 +107,8 @@ type PreviewSection = {
 
 const PREVIEW_SECTIONS: PreviewSection[] = [
   {
-    title: 'Responde con tus tarifas, no con precios inventados',
-    text: 'Pregunta destino, fechas, cuántos viajan y presupuesto, y cotiza con tu tarifario e itinerarios. Si le falta un dato, no lo inventa: se lo pasa a tu asesor.',
+    title: 'Cotiza con tus tarifas y tus itinerarios',
+    text: 'Pregunta destino, fechas, cuántos viajan y presupuesto antes de dar un precio. Si le falta un dato, no lo inventa: se lo pasa a tu asesor.',
     image: '/gloma/preview_chat_agente.png',
     reverse: false,
   },
@@ -130,7 +130,7 @@ const PREVIEW_SECTIONS: PreviewSection[] = [
     // 24 h de WhatsApp no deja más). Si no vuelve, el abandono se le asigna a
     // un asesor y, si ya había recibido información, entra a /agendamientos.
     title: 'Le vuelve a escribir a quien dejó de contestar',
-    text: 'Si un viajero deja de contestar, el agente le vuelve a escribir (hasta 3 recordatorios). Si no vuelve, se lo pasa a tu asesor para que lo llame.',
+    text: 'Le escribe hasta 3 veces en las 24 horas siguientes. Si no vuelve, se lo pasa a tu asesor para que lo llame.',
     mock: 'recordatorios',
     reverse: true,
   },
@@ -173,7 +173,7 @@ const FAQ = [
   },
   {
     q: '¿Reemplaza a mis asesores?',
-    a: 'No. Lo repetitivo lo resuelve el agente; cerrar la venta sigue siendo de tu asesor, que recibe al viajero con todo el historial.',
+    a: 'No. El agente responde las preguntas de siempre; cerrar la venta sigue siendo de tu asesor, que recibe al viajero con todo el historial.',
   },
   {
     // El motor todavía no transcribe audios: ante una nota de voz el agente
@@ -187,16 +187,16 @@ const FAQ = [
   },
   {
     q: '¿Qué tasa de cierre voy a tener?',
-    a: 'No prometemos un porcentaje genérico: arrancamos con la que ya tienes, la medimos en el tablero y desde ahí trabajamos para subirla.',
+    a: 'No hay un porcentaje genérico que prometer. El agente arranca con una tasa parecida a la que ya tienes, porque vende con tus mismos mensajes e información; la medimos en el tablero y desde ahí trabajamos para subirla.',
   },
   {
     q: '¿Se conecta con mi Excel o mi sistema de reservas?',
-    a: 'Google Sheets y Shopify ya funcionan. Otros sistemas, como tu sistema de reservas, los evaluamos a la medida en la demo.',
+    a: 'Tus contactos se importan desde Excel, y los datos que toma el agente llegan a tu Google Sheets. Shopify también funciona. Otros sistemas, como el de reservas, se conectan a la medida: lo definimos en la demo.',
   },
   {
     // Importación por Excel de `services/contactos_excel.py`, con plantilla descargable.
     q: '¿Conservo mis contactos?',
-    a: 'Sí. Tus contactos se importan desde Excel, con una plantilla que te damos lista para llenar.',
+    a: 'Sí. Se importan desde Excel con una plantilla que te damos, y las columnas que ya usas para clasificarlos (ciudad, tipo de viajero, etapa) se guardan con cada contacto.',
   },
   {
     q: '¿Qué pasa con los datos de mis clientes?',
@@ -233,8 +233,8 @@ const PASOS_INICIO = [
 ];
 
 /**
- * «¿Te suena?»: los dolores tal como los cuentan los dueños de agencias y lo
- * que hace Gloma con cada uno (copy aprobado por el CEO). Reemplaza a «Todo lo que necesitas, sin fricciones» (2026-10-20).
+ * «¿Te suena?»: los dolores con las palabras textuales de la voz del cliente
+ * (ventas/content_machine_gloma/voz-del-cliente; en público se atribuyen a "empresarios", no a dueños de agencias) y lo que hace Gloma con cada uno. Reemplaza a «Todo lo que necesitas, sin fricciones» (2026-10-20).
  */
 const DOLORES: { icon: IconoNombre; dolor: string; solucion: string }[] = [
   {
@@ -244,18 +244,18 @@ const DOLORES: { icon: IconoNombre; dolor: string; solucion: string }[] = [
   },
   {
     icon: 'escalamiento',
-    dolor: 'Si no estoy yo, no funciona',
+    dolor: 'Si no estoy yo, no funciona el negocio',
     solucion: 'El agente sabe cómo vende tu agencia, y lo que pide criterio se lo pasa a tu asesor.',
   },
   {
     icon: 'mensajes',
-    dolor: 'Respondes lo mismo todo el día',
-    solucion: 'Destinos, fechas, qué incluye el plan: lo repetitivo lo resuelve el agente.',
+    dolor: 'Me preguntan constantemente',
+    solucion: 'Destinos, fechas, qué incluye el plan: esas preguntas las responde el agente con la información de tu agencia.',
   },
   {
     icon: 'reenganche',
-    dolor: 'Los interesados que preguntaron y desaparecieron',
-    solucion: 'Les vuelve a escribir y, si no vuelven, se los pasa a tu asesor para que los llame.',
+    dolor: 'Los interesados que abandonaron',
+    solucion: 'Les escribe de nuevo y, si no responden, se los pasa a tu asesor para que los llame.',
   },
 ];
 
@@ -1877,7 +1877,7 @@ export default function GlomaLanding() {
                 className="text-base md:text-lg"
                 style={{ fontFamily: 'Inter, system-ui, sans-serif', color: BRAND.textMuted }}
               >
-                Lo que nos cuentan los dueños de agencias, y lo que hace Gloma con eso.
+                Lo que nos cuentan los empresarios, y lo que hace Gloma con eso.
               </p>
             </Reveal>
 
