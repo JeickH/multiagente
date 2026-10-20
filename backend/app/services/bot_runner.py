@@ -704,8 +704,14 @@ def run_turn(
     session: Optional[models.BotSession],
     user_input: Optional[str],
     meta_account: Optional[models.MetaAccount],
+    primer_mensaje: Optional[str] = None,
 ) -> models.BotSession:
     """Ejecuta un turno del bot para la conversación dada.
+
+    `primer_mensaje`: el texto que abrió una conversación nueva (cuando
+    `user_input` es None). Solo viaja al motor LLM en `runtime`; el motor lo
+    usa si nombra una promoción vigente (ver
+    `llm_engine._primer_mensaje_de_promocion`).
 
     - Si `session` es None, crea una nueva (inicio del flujo).
     - Si hay `user_input`, se pasa al motor.
@@ -799,6 +805,10 @@ def run_turn(
             adjunto = _adjunto_del_turno(db, conversation, user_input)
             if adjunto:
                 runtime["adjunto"] = adjunto
+        # Solo si hay texto y el turno no trae `user_input`: el runtime de
+        # siempre no cambia (lo vigila el golden del bot 1).
+        if primer_mensaje and not user_input and cfg.get("tarifario"):
+            runtime["primer_mensaje"] = str(primer_mensaje)[:2000]
         result = llm_engine.advance(bot, state, user_input, runtime=runtime)
         # #255: registrar la decisión del turno (camino, tools, latencia) en
         # bot_llm_decisions. Nunca rompe el turno (record_decision es defensivo).

@@ -525,6 +525,7 @@ async def receive_webhook(request: Request, db: Session = Depends(get_db)):
                             conversation=conv,
                             session=session,
                             user_input=content if session is not None else None,
+                            primer_mensaje=content if session is None else None,
                             meta_account=account,
                         )
                     except Exception:

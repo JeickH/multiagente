@@ -349,6 +349,7 @@ def process_twilio_inbound(db: Session, form: Dict[str, str]) -> None:
                     conversation=conv,
                     session=session,
                     user_input=content if session is not None else None,
+                    primer_mensaje=content if session is None else None,
                     meta_account=account,
                 )
             except Exception:

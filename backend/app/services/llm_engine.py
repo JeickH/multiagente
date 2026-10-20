@@ -2110,6 +2110,30 @@ def _quitar_flyers_del_mes(
         logger.info("llm_engine: flyer del mes quitado en una conversación de la promoción")
 
 
+def _primer_mensaje_de_promocion(
+    cfg: Dict[str, Any], state: Optional[Dict[str, Any]], user_input: Optional[str]
+) -> Optional[str]:
+    """El primer turno de una conversación nueva llega SIN el texto de la
+    persona (`user_input=None`: el modelo recibe «salúdalo»). El webhook lo
+    manda aparte en `runtime["primer_mensaje"]`, y aquí se usa como entrada del
+    turno solo si nombra una promoción vigente: así el bot ve «Quiero más
+    información del simulacro decembrino» y la promoción se activa. Cualquier
+    otro primer mensaje sigue entrando como hasta hoy (saludo), y los bots sin
+    tarifario no cambian.
+
+    Incidente del 2026-10-19: con esto ausente, ninguna de las 51 personas de
+    la pauta del Simulacro recibió la promoción en su primer mensaje.
+    """
+    if user_input or not cfg.get("tarifario") or _load_history(state):
+        return user_input
+    primero = str(_dato_runtime(cfg, "primer_mensaje") or "").strip()
+    if not primero:
+        return user_input
+    if _de_tarifario("promocion_mencionada", primero, tarifario.hoy_colombia()):
+        return primero[:2000]
+    return user_input
+
+
 def _adjuntar_medios_promocion(
     cfg: Dict[str, Any],
     *,
@@ -5778,6 +5802,7 @@ def advance(
     cfg = _parse_llm_config(bot)
     if runtime:
         cfg = {**cfg, "_runtime": runtime}
+    user_input = _primer_mensaje_de_promocion(cfg, state, user_input)
     actions: List[Dict[str, Any]] = []
     t0 = time.monotonic()
     try:
