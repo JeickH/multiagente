@@ -74,6 +74,10 @@ services:
       # escribe ni borra nada en el bucket de producción.
       MASCOTAS_BUCKET: ${MASCOTAS_BUCKET:-}
       MASCOTAS_MEDIA_DIR: /app/media
+      # Sprint 32 (#619): `/demo/*` responde 404 a un `Origin` que no sea de la
+      # landing. En producción el default del código (glomacx.com y www); en
+      # local se suma el frontend de desarrollo.
+      DEMO_ALLOWED_ORIGINS: ${DEMO_ALLOWED_ORIGINS:-https://glomacx.com,https://www.glomacx.com,http://localhost:3000}
     volumes:
       # Carpeta del repo (git-ignorada) en vez de un volumen anónimo: así las
       # fotos de prueba se ven, se respaldan y se pueden refrescar desde S3 con

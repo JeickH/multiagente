@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { TEXTOS_AGENDAR } from '../lib/agendarLlamada';
 import { formatearWhatsapp } from '../lib/formatoWhatsapp';
+import { abrirAgendarLlamada } from './AgendarLlamadaModal';
 
 /**
  * Widget de chat de la landing Gloma (Sprint 20 #270).
@@ -419,17 +421,31 @@ export default function GlomaChatWidget() {
               </div>
             )}
 
+            {/* #625: al traspaso (o si el chat falla) el visitante elige cómo
+                seguir: agendar en el calendario (modal de Cal.com, sin salir
+                de la página) o escribir por WhatsApp. */}
             {showWhatsappCta && (
-              <a
-                href={WHATSAPP_URL}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center justify-center gap-2 w-full py-2.5 rounded-full text-[13px] font-semibold transition-transform hover:-translate-y-0.5"
-                style={{ backgroundColor: BRAND.whatsapp, color: '#FFFFFF' }}
-              >
-                <WhatsAppGlyph size={16} />
-                Continuar por WhatsApp
-              </a>
+              <div className="flex flex-col gap-2">
+                <button
+                  type="button"
+                  onClick={abrirAgendarLlamada}
+                  className="flex items-center justify-center w-full py-2.5 rounded-full text-[13px] font-semibold transition-transform hover:-translate-y-0.5"
+                  style={{ backgroundColor: BRAND.mint, color: BRAND.bgBase }}
+                >
+                  {TEXTOS_AGENDAR.agendar}
+                </button>
+                <a
+                  href={WHATSAPP_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center justify-center gap-2 w-full py-2.5 rounded-full text-[13px] font-semibold transition-transform hover:-translate-y-0.5"
+                  style={{ backgroundColor: BRAND.whatsapp, color: '#FFFFFF' }}
+                >
+                  <WhatsAppGlyph size={16} />
+                  {TEXTOS_AGENDAR.whatsapp}
+                  <span className="sr-only">{TEXTOS_AGENDAR.nuevaPestana}</span>
+                </a>
+              </div>
             )}
           </div>
 

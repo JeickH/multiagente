@@ -8,6 +8,7 @@ import type { NextRequest } from 'next/server';
  *   /                → landing Gloma (rewrite interno a /gloma, URL navegador queda en /)
  *   /gloma/*         → assets de la landing
  *   /api/landing/*   → passthrough (form de contacto)
+ *   /demo, /api/demo/* → demo interactiva pública (Sprint 32)
  *   /favicon.ico     → passthrough
  *   /_next/*         → internals de Next
  *   cualquier otra   → 404 brandeado (la plataforma NO vive bajo el apex/www)
@@ -76,6 +77,14 @@ function isGlomaAllowed(pathname: string): boolean {
   // Política de datos que enlaza el formulario de la landing (Ley 1581).
   if (pathname === '/privacidad') return true;
   if (pathname.startsWith('/api/landing')) return true;
+  // Sprint 32: demo interactiva pública. Rutas EXACTAS a propósito (#608 y
+  // B6 de #616): ni `startsWith('/demo')` (dejaría pasar `/demosX` o
+  // `/demo-admin`) ni `/demo/*` (cualquier página futura bajo `/demo/` quedaría
+  // pública en la landing sin que nadie lo decida). `/api/demo/` es el
+  // passthrough del backend cuando el front no llama directo a
+  // api.glomacx.com (`NEXT_PUBLIC_DEMO_API_URL`).
+  if (pathname === '/demo' || pathname === '/demo/') return true;
+  if (pathname.startsWith('/api/demo/')) return true;
   if (pathname.startsWith('/_next')) return true;
   return false;
 }

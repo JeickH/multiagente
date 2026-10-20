@@ -210,6 +210,10 @@ class TestAperturaVitrina:
     def test_mes_nombrado_trae_el_flyer_de_ese_mes(self, monkeypatch):
         vistos = []
         self._por_mes(monkeypatch, vistos)
+        # Fecha congelada como en las pruebas hermanas: entre el 2 y el 31 de
+        # diciembre «diciembre» ya es el mes en curso y no se pide su día 1
+        # (lo encontró el barrido de fechas de la ronda #624).
+        monkeypatch.setattr(tarifario, "hoy_colombia", lambda: llm_engine.date(2026, 10, 7))
         assert self._url_del_flyer("¿cuánto vale en diciembre?") == MEDIA[FLYER_DIC]["url"]
         assert any(d.month == 12 and d.day == 1 for d in vistos)
 

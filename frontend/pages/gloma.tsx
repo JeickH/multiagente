@@ -2,7 +2,9 @@ import Head from 'next/head';
 import Image from 'next/image';
 import { useEffect, useRef, useState } from 'react';
 
+import { AgendarLlamadaGlobal, abrirAgendarLlamada } from '../components/AgendarLlamadaModal';
 import GlomaChatWidget, { OPEN_CHAT_EVENT } from '../components/GlomaChatWidget';
+import { TEXTOS_AGENDAR } from '../lib/agendarLlamada';
 import { CHATS_MES_OPCIONES } from '../lib/leads';
 
 /**
@@ -303,13 +305,14 @@ function abrirChatDelBot(mensaje?: string) {
   );
 }
 
-/** Textos de los dos llamados a la acción, iguales en toda la página. */
-const CTA_DEMO = 'Agenda una demo';
+/**
+ * Llamados a la acción, iguales en toda la página (#625): donde se ofrece
+ * agendar, el principal es «Agendar una llamada» (abre el calendario de Cal.com
+ * en un modal, sin salir de la página) y el secundario «Escribir por WhatsApp».
+ * Antes «Agenda una demo» le pedía la cita a Lía (#302); Lía sigue a un clic
+ * con su propio botón.
+ */
 const CTA_LIA = 'Habla con Lía ahora';
-
-/** Lo que "escribe" el visitante al pulsar "Agenda una demo" (#302). */
-const MENSAJE_AGENDAR_DEMO =
-  'Quiero agendar una demostración. ¿Qué horarios tienen disponibles?';
 
 function smoothScrollTo(e: React.MouseEvent<HTMLAnchorElement>, id: string) {
   e.preventDefault();
@@ -507,15 +510,15 @@ function InteractiveHeader() {
           >
             Precios
           </a>
-          {/* #302: en vez de bajar al formulario, le pide la demo al agente —
-              que responde con las franjas disponibles y la registra. */}
+          {/* #625: abre el calendario de Cal.com en un modal. El WhatsApp no
+              cabe en el menú: está en el hero, justo debajo. */}
           <button
             type="button"
-            onClick={() => abrirChatDelBot(MENSAJE_AGENDAR_DEMO)}
+            onClick={abrirAgendarLlamada}
             className="px-5 py-2 rounded-full text-sm font-medium transition-opacity hover:opacity-90"
             style={{ backgroundColor: BRAND.mint, color: BRAND.bgBase }}
           >
-            {CTA_DEMO}
+            {TEXTOS_AGENDAR.agendar}
           </button>
           {/* #303: acceso de clientes actuales. La plataforma vive en otro
               subdominio — bajo el apex, `/login` cae en el 404 brandeado del
@@ -576,25 +579,37 @@ function InteractiveHeader() {
             transition: 'opacity 900ms ease 300ms, transform 900ms cubic-bezier(.22,.61,.36,1) 300ms',
           }}
         >
-          {/* CTAs unificados en toda la página: el principal siempre es
-              "Agenda una demo" (#302: se lo pide al agente, que ofrece las
-              franjas) y el secundario, conversar con Lía aquí mismo. */}
+          {/* #625: las dos formas de agendar. Principal: el calendario (modal
+              de Cal.com); secundaria: WhatsApp. Lía queda como enlace debajo. */}
           <button
             type="button"
-            onClick={() => abrirChatDelBot(MENSAJE_AGENDAR_DEMO)}
+            onClick={abrirAgendarLlamada}
             className="inline-block px-6 py-3 rounded-full text-sm font-semibold text-center transition-opacity hover:opacity-90"
             style={{ backgroundColor: BRAND.mint, color: BRAND.bgBase }}
           >
-            {CTA_DEMO}
+            {TEXTOS_AGENDAR.agendar}
           </button>
-          <button
-            type="button"
-            onClick={() => abrirChatDelBot()}
+          <a
+            href={WHATSAPP_URL}
+            target="_blank"
+            rel="noopener noreferrer"
             className="inline-block px-6 py-3 rounded-full text-sm font-semibold text-center border-2 border-white/80 text-white hover:bg-white/10 transition-colors"
           >
-            {CTA_LIA}
-          </button>
+            {TEXTOS_AGENDAR.whatsapp}
+            <span className="sr-only">{TEXTOS_AGENDAR.nuevaPestana}</span>
+          </a>
         </div>
+        <button
+          type="button"
+          onClick={() => abrirChatDelBot()}
+          className="mt-5 text-sm font-medium text-white/80 hover:text-white underline-offset-4 hover:underline"
+          style={{
+            opacity: inView ? 1 : 0,
+            transition: 'opacity 900ms ease 450ms',
+          }}
+        >
+          o {CTA_LIA.charAt(0).toLowerCase() + CTA_LIA.slice(1)} →
+        </button>
       </div>
     </header>
   );
@@ -1525,11 +1540,11 @@ function PreciosSection() {
           <div className="flex flex-col sm:flex-row gap-3 justify-center">
             <button
               type="button"
-              onClick={() => abrirChatDelBot(MENSAJE_AGENDAR_DEMO)}
+              onClick={abrirAgendarLlamada}
               className="px-6 py-3 rounded-full text-sm font-semibold transition-opacity hover:opacity-90"
               style={{ backgroundColor: BRAND.mint, color: BRAND.bgBase }}
             >
-              {CTA_DEMO}
+              {TEXTOS_AGENDAR.agendar}
             </button>
             <a
               href={WHATSAPP_URL}
@@ -1537,7 +1552,8 @@ function PreciosSection() {
               rel="noopener noreferrer"
               className="px-6 py-3 rounded-full text-sm font-semibold border-2 border-white/80 text-white hover:bg-white/10 transition-colors"
             >
-              Escríbenos por WhatsApp
+              {TEXTOS_AGENDAR.whatsapp}
+              <span className="sr-only">{TEXTOS_AGENDAR.nuevaPestana}</span>
             </a>
           </div>
         </Reveal>
@@ -1906,17 +1922,31 @@ export default function GlomaLanding() {
             backdropFilter: 'blur(8px)',
           }}
         >
-          <button
-            type="button"
-            onClick={() => abrirChatDelBot(MENSAJE_AGENDAR_DEMO)}
-            className="w-full py-3 rounded-full text-sm font-semibold"
-            style={{ backgroundColor: BRAND.mint, color: BRAND.bgBase }}
-          >
-            {CTA_DEMO}
-          </button>
+          {/* #625: las dos formas de agendar; el calendario manda. */}
+          <div className="grid grid-cols-[1fr_auto] gap-2">
+            <button
+              type="button"
+              onClick={abrirAgendarLlamada}
+              className="w-full py-3 rounded-full text-sm font-semibold"
+              style={{ backgroundColor: BRAND.mint, color: BRAND.bgBase }}
+            >
+              {TEXTOS_AGENDAR.agendar}
+            </button>
+            <a
+              href={WHATSAPP_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="px-4 py-3 rounded-full text-sm font-semibold border border-white/70 text-white"
+            >
+              <span className="sr-only">Escribir por </span>
+              {TEXTOS_AGENDAR.whatsappCorto}
+              <span className="sr-only">{TEXTOS_AGENDAR.nuevaPestana}</span>
+            </a>
+          </div>
         </div>
 
         <GlomaChatWidget />
+        <AgendarLlamadaGlobal />
       </div>
     </>
   );
