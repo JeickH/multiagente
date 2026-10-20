@@ -190,6 +190,16 @@ class InstagramClient:
         )
         return data["id"]
 
+    def create_reel(self, video_url: str, caption: str, *, share_to_feed: bool = True) -> str:
+        """Contenedor de un reel. Meta descarga y procesa el video: puede tardar minutos."""
+        data = self._post(
+            f"{self.ig_user_id}/media",
+            {"media_type": "REELS", "video_url": video_url, "caption": caption,
+             "share_to_feed": "true" if share_to_feed else "false"},
+            "Creación del contenedor del reel",
+        )
+        return data["id"]
+
     def container_status(self, container_id: str) -> str:
         data = self._get(
             container_id, {"fields": "status_code"}, "Consulta del estado del contenedor"

@@ -85,7 +85,7 @@ $PY igpost.py whoami              # valida
 
 ```bash
 # Ver qué quedaría publicado, sin tocar nada
-$PY igpost.py post "../../identidad_gloma/redes sociales/01_mensaje_1147pm" \
+$PY igpost.py post "../../ventas/identidad_gloma/redes sociales/01_mensaje_1147pm" \
     --caption-file copy.txt --dry-run
 
 # Publicar ya
@@ -102,6 +102,21 @@ $PY igpost.py run-due             # lo dispara el cron
 
 Pasarle una **carpeta** toma todas sus imágenes ordenadas como carrusel; pasarle
 archivos sueltos usa exactamente esos, en ese orden.
+
+**Reels (desde 2026-10-10):** pasarle **un solo `.mp4`** lo publica como reel (compartido también
+al feed). El video se sube a S3 **tal cual**, sin recodificar: tiene que venir en MP4 H.264 + AAC,
+9:16 (1080 × 1920), de 3 s a 15 min y menos de 300 MB. Al publicar, Meta descarga y procesa el
+video (unos 30 s en la prueba con un reel de 32 s; `run-due` espera hasta 15 min).
+
+```bash
+$PY igpost.py schedule "…/unido/video.mp4" --caption-file caption.txt --slug video_<ficha> --at "2026-10-11 12:00"
+```
+
+En la cola un reel es una pieza con una sola `media_key` terminada en `.mp4` (no hay campo nuevo,
+así el panel del backend la sigue leyendo). **Ojo:** el botón "Publicar ahora" del panel
+(`backend/app/services/instagram_publisher.py`) todavía solo sabe publicar imágenes: con un reel
+fallaría. El cron (`run-due`) sí los publica. Tras cambiar `igpost.py` o `ig/`, correr
+`launchd/install.sh`.
 
 ## Mantenimiento
 

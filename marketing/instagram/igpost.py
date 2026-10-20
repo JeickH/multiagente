@@ -4,7 +4,7 @@
 Uso típico (ver README.md para el setup inicial):
 
     ./igpost.py whoami
-    ./igpost.py schedule "identidad_gloma/redes sociales/01_mensaje_1147pm" \\
+    ./igpost.py schedule "ventas/identidad_gloma/redes sociales/01_mensaje_1147pm" \\
         --caption-file copy.txt --at "2026-08-06 09:00"
     ./igpost.py list
     ./igpost.py run-due          # lo corre el cron; publica lo que ya venció
@@ -42,6 +42,11 @@ logger = logging.getLogger("igpost")
 
 def slides_from(paths: list[str]) -> list[Path]:
     """Resuelve una carpeta de pieza (o una lista de archivos) a slides ordenadas."""
+    if len(paths) == 1 and Path(paths[0]).suffix.lower() in media.VIDEO_SUFFIXES:
+        video = Path(paths[0])
+        if not video.is_file():
+            sys.exit(f"error: no existe {video}")
+        return [video]                     # un reel: un solo archivo de video
     if len(paths) == 1 and Path(paths[0]).is_dir():
         folder = Path(paths[0])
         found = sorted(
@@ -172,6 +177,13 @@ def cmd_refresh_token(args: argparse.Namespace) -> None:
 
 def _upload_slides(slides: list[Path], slug: str) -> list[str]:
     media.ensure_bucket()
+    if len(slides) == 1 and slides[0].suffix.lower() in media.VIDEO_SUFFIXES:
+        try:
+            key = media.upload_video(slides[0], slug)
+        except media.MediaError as exc:
+            sys.exit(f"error: {exc}")
+        print(f"  subido el video: {slides[0].name}")
+        return [key]
     keys = []
     for i, path in enumerate(slides, start=1):
         try:
@@ -185,6 +197,13 @@ def _upload_slides(slides: list[Path], slug: str) -> list[str]:
 def _publish_keys(client: ig_client.InstagramClient, keys: list[str], caption: str) -> str:
     """Crea contenedores y publica. Devuelve el media_id."""
     urls = [media.presign(k) for k in keys]
+
+    if len(keys) == 1 and media.is_video_key(keys[0]):
+        # Reel: Meta descarga y procesa el video; puede tardar varios minutos.
+        container = client.create_reel(urls[0], caption)
+        print("  contenedor del reel creado; esperando a que Meta procese el video…")
+        client.wait_ready(container, timeout=900, interval=10)
+        return client.publish(container)
 
     if len(urls) == 1:
         container = client.create_image(urls[0], caption=caption)
@@ -209,6 +228,9 @@ def cmd_post(args: argparse.Namespace) -> None:
     print(f"Pieza: {slug} — {len(slides)} slide(s)")
     if args.dry_run:
         for i, p in enumerate(slides, 1):
+            if p.suffix.lower() in media.VIDEO_SUFFIXES:
+                print(f"  {i}. {p.name} → reel, {p.stat().st_size // 2**20} MB")
+                continue
             data, size = media.prepare(p)
             print(f"  {i}. {p.name} → {size[0]}x{size[1]}, {len(data)//1024} KB")
         print(f"\nCaption ({len(caption)} chars):\n{caption}")
@@ -260,7 +282,8 @@ def cmd_list(args: argparse.Namespace) -> None:
     print(f"{'ID':<10}{'ESTADO':<12}{'CUANDO (Bogotá)':<20}{'SLIDES':<8}PIEZA")
     for p in posts:
         when = p.due_at.astimezone(TZ)
-        print(f"{p.id:<10}{p.status:<12}{when:%Y-%m-%d %H:%M}     {len(p.media_keys):<8}{p.slug}")
+        tipo = "video" if len(p.media_keys) == 1 and media.is_video_key(p.media_keys[0]) else len(p.media_keys)
+        print(f"{p.id:<10}{p.status:<12}{when:%Y-%m-%d %H:%M}     {tipo!s:<8}{p.slug}")
         if p.error:
             print(f"{'':<10}└─ {p.error}")
         if p.permalink:
@@ -365,7 +388,7 @@ def build_parser() -> argparse.ArgumentParser:
         ("schedule", "programa para una fecha futura", cmd_schedule),
     ):
         p = sub.add_parser(name, help=help_text)
-        p.add_argument("paths", nargs="+", help="carpeta de la pieza o lista de imágenes")
+        p.add_argument("paths", nargs="+", help="carpeta de la pieza, lista de imágenes o un video .mp4 (reel)")
         p.add_argument("--caption")
         p.add_argument("--caption-file")
         p.add_argument("--slug", help="nombre corto de la pieza (por defecto, el de la carpeta)")

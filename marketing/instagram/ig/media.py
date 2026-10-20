@@ -140,6 +140,31 @@ def upload(path: Path, slug: str, index: int) -> str:
     return key
 
 
+# ── Video (reels) ─────────────────────────────────────────────────────────────
+# Instagram descarga el video desde la URL igual que las imágenes. No se recodifica:
+# se sube tal cual (MP4 H.264 + AAC, 9:16). Límite de Reels por API: 300 MB.
+VIDEO_SUFFIXES = (".mp4", ".mov")
+MAX_VIDEO_BYTES = 300 * 1024 * 1024
+
+
+def is_video_key(key: str) -> bool:
+    return key.lower().endswith(VIDEO_SUFFIXES)
+
+
+def upload_video(path: Path, slug: str) -> str:
+    """Sube un video (reel) a S3 sin tocarlo y devuelve su key."""
+    if path.suffix.lower() not in VIDEO_SUFFIXES:
+        raise MediaError(f"{path.name}: el video debe ser .mp4 o .mov.")
+    size = path.stat().st_size
+    if size > MAX_VIDEO_BYTES:
+        raise MediaError(f"{path.name}: pesa {size // 2**20} MB; el tope de Reels es 300 MB.")
+    digest = hashlib.sha256(path.read_bytes()).hexdigest()[:12]
+    key = f"posts/{slug}/video-{digest}{path.suffix.lower()}"
+    _s3().upload_file(str(path), MEDIA_BUCKET, key, ExtraArgs={"ContentType": "video/mp4"})
+    logger.info("Subido %s (%d MB)", key, size // 2**20)
+    return key
+
+
 def presign(key: str, ttl: int = PRESIGN_TTL) -> str:
     """URL temporal que Meta usará para descargar la imagen."""
     return _s3().generate_presigned_url(
