@@ -8211,3 +8211,1104 @@ FAC-2026-0002 queda 2-sep → 1-oct y FAC-2026-0003 2-oct → 1-nov.
 cobrando y **no** emite factura, a propósito. El CEO genera la factura de cada
 mes a mano cuando corresponda (la de noviembre incluida). Que el ciclo la emita
 solo queda para otra sesión: no tocarlo sin que lo pida.
+
+### 5-oct-2026 — RDS: respaldos de 7 días y protección contra borrado
+
+Por orden del CEO, sobre `multiagente-db` (sa-east-1):
+`modify-db-instance --backup-retention-period 7 --deletion-protection
+--apply-immediately`. Antes: retención de **1 día** y protección **apagada**.
+Sin reinicio (de 1 a 7 no reinicia); la instancia siguió `available` y sin
+cambios pendientes. Costo esperado: US$ 0, porque los respaldos no se cobran
+hasta el tamaño del disco (20 GB) y la base usa unos 2,5 GB.
+
+Efecto colateral a propósito: cualquier `delete-db-instance` (a mano o de un
+script) ahora falla hasta que se apague la protección.
+
+Quedó **sin hacer**, pendiente de aprobación del CEO: pasar a `db.t4g.micro` y
+comprar una reserva de 1 año (unos −US$ 12/mes). El orden importa: primero el
+cambio de clase y después la reserva, porque una reserva `t3` no cubre una base
+`t4g`.
+
+### 5-oct-2026 — Dashboard de Arranquemos Pues (25-sep → 5-oct) y el traspaso a la asesora
+
+Entregables (git-ignorados): `entregables/dashboard_arranquemos_5oct.html` y
+`registro_conversaciones_5oct.csv`. Sin cambios de código ni de base: solo
+lectura de RDS (export por task ECS, teléfonos enmascarados en la consulta).
+
+La clasificación del 25-sep no tenía script guardado; se reconstruyó y se validó
+recalculando ese corte (≈3 % de diferencia fuera de «en curso»; recordatorios
+109/340 contra 107/331 publicados). Ojo: el saludo del bot cambió el 25-sep
+(usa el nombre del perfil y cierra con «¿Para qué mes…?»), y cualquier regex
+sobre el saludo viejo deja de reconocerlo.
+
+Hallazgos que cambian decisiones:
+- **Ventana de 24 h**: el traspaso por silencio llega a las 23 h 19 min del
+  último mensaje del cliente → a la asesora le quedan **41 min** de ventana.
+  Dentro de la ventana contesta el 46 % (38/82); fuera, 1 de 45. Los mensajes
+  fuera de ventana figuran `sent` porque el estado de entrega nunca se
+  actualiza (9.243 salientes del bot en `sent`).
+- Desde el 21-ago: 651 traspasos a Alexandra, 127 retomados (20 %), 39 con
+  respuesta del cliente. 231 agendamientos, **ninguno** marcado como hecho.
+- La pausa por mora (28-sep 10:05 → 2-oct) dejó 8 clientes sin respuesta; al
+  reactivar nadie los recoge (el bot solo responde a entrantes nuevos). Los
+  contactos nuevos también cayeron a ~0 desde el 28: confirmar la pauta.
+
+### 5-oct-2026 — Investigación de modelos abiertos y gratis de imagen y video (PRUEBA)
+
+Pedido del CEO: los mejores modelos open source **gratis** (sin pagar API), una
+skill para cada uno y prueba con los planos del 2-nov (Post 01) y 3-nov (D4-A1).
+Un primer intento con fal.ai (FLUX.2 dev + MiniMax H3) se descartó: cobra por GPU.
+
+- **Imagen → skill `imagen-gratis`**: Z-Image-Turbo para el plano 1 y FLUX.2
+  klein 4B para los planos con referencia. **Video → skill `video-gratis`**: Wan 2.2
+  I2V 14B. Los tres son Apache 2.0 y corren en Spaces de Hugging Face (ZeroGPU)
+  vía `gradio_client` (venv `~/.claude/skills/hf-spaces-venv`).
+- Cuota gratis: sin cuenta, 3 ejecuciones al día (se agotó en la prueba); con
+  cuenta gratuita + `HF_TOKEN`, 5 min de GPU al día ≈ 4 clips. El Mac del CEO (M1
+  8 GB) no sirve para generar.
+- Wan inventó notificaciones con letras y logos de WhatsApp/Instagram en el primer
+  clip; la skill ahora manda prompt negativo contra texto/logos y pide revisar cuadros.
+- Carpeta: `content_machine_gloma/videos/PRUEBA_modelos-abiertos_2026-10-05/`
+  (README con resultados y fuentes, `correr_prueba.py` reanudable). Hecho: plano 1
+  del Post 01. Falta: 10 imágenes y 11 clips (cuota diaria).
+
+### 7-oct-2026 — Varios bots por cuenta con reparto A/B de conversaciones nuevas (desplegado)
+
+Pedido del CEO: que una cuenta tenga varios bots sobre los mismos productos con
+distinto guion, repartiendo por porcentaje las conversaciones NUEVAS.
+Commit `7835c65`. Agentes: experto-bd (migración), dev-plataforma (backend +
+frontend en paralelo), seguridad (diseño + auditoría), qa (Postgres real + UI).
+
+- **Router** (`services/bot_router.py`, paso 3): entre los bots `default`
+  activos con `reparto_pct > 0`, elección **determinista por déficit** (no
+  azar: con pocas conversaciones el azar se aleja del %), **pegajosa** por
+  `conversations.bot_asignado_id`, conteo desde `bots.reparto_desde` (cambiar
+  el reparto reinicia la cuenta), compare-and-set contra asignaciones
+  concurrentes. Sin reparto → default de menor id (antes: orden indefinido).
+- **Endpoints owner-only**: `PUT /bots/reparto` (suma 100, `[]` lo quita),
+  `POST /bots/{id}/duplicar` (copia guion efectivo, pasos, productos y
+  recordatorios propios; nace activo pero sin tráfico), `PUT
+  /bots/{id}/instrucciones` (≤ 40.000; el guion de viajes ya mide ~33.000).
+  `GET /bots/{id}` expone `instrucciones` solo al owner.
+- **Migración** `migrate_reparto_bots.py`: 4 columnas nullable, FK SET NULL,
+  índice `ix_conversations_bot_asignado_at` y **retiro de
+  `uq_one_default_bot_per_user`** (Sprint 9, nunca declarado en el modelo; era
+  lo que impedía tener dos default). Local y RDS. `rds_exec.sh` no sirvió
+  (script de 11 KB > 8.192 bytes de overrides de ECS): se corrió con
+  `run-task` sobre la rev nueva y `command=["python","scripts/..."]`.
+- **Seguridad**: 0 críticos/altos. Cerrados: `hide_parameters=True` en el
+  engine (una traza de duplicar arrastraba `llm_config`), filtro de caracteres
+  ocultos (C1/bidi/ancho cero, **sin** ZWJ: QA encontró que rompía el 🚣‍♀️ del
+  guion de viajes), tope de 20 bots con FOR UPDATE. Abierto (bajo): historial
+  de versiones del guion.
+- **QA**: 2132 tests backend; en Postgres 50/50 → 5/5, 70/30 → 7/3, pegajoso,
+  carrera de 8 hilos, agent sin controles. Script viejo de Sprint 9 ya no recrea
+  el índice.
+- **Deploy**: imagen `:reparto-bots-7835c65`, task-def **rev 101** (antes 100),
+  Amplify job 184 (estado final sin confirmar: el sondeo quedó bloqueado por
+  permisos). Reparto sin configurar en todas las cuentas → comportamiento igual
+  al de antes. Rollback: `update-service` a la rev 100.
+
+En curso: bot 2 de Arranquemos Pues (variante B, estrategias 1–5, 7–11, 14,
+16–22 y 28 del informe del 10-sep) al 50/50 con el bot actual, y la sección
+«Interesados» en Agendamientos (#22). Spec en el scratchpad de la sesión.
+
+### 7-oct-2026 — Bot 2 (variante B) de Arranquemos Pues + «Interesados» en Agendamientos
+
+Pedido del CEO: 4 bots en Arranquemos Pues al 25 % cada uno, con los mismos
+recordatorios y traspasos a asesor que el bot actual. Primera fase: crear el
+bot 2 y ponerlo 50/50 con el bot 1; los bots 3 y 4 los describe el CEO
+después. Commit `3cde6d2`. Spec compartida en el scratchpad de la sesión.
+
+**Decisiones del CEO**: interesado = intención de compra detectada y
+conversación abierta 6 h después de su primer mensaje (el bot sigue a cargo);
+la asesora puede marcar contactado, descartar o tomar el chat; «desde» de la
+apertura = mínimo de la temporada ($369.000 hoy); clientes que ya hablaron con
+el bot 1 siguen con él (backfill); cualquier mención de $350.000 → asesor.
+
+**Bot 2** = estrategias 1–5, 7–11, 14, 16–22 y 28 del informe del 10-sep, TODAS
+detrás de flags en `llm_config` (`app/data/bot_viajes_b.py`); prompt propio
+`bot_contexts/demo_viajes_b.md` (35.000 car.). El bot 1 queda congelado por
+`tests/viajes/test_bot1_sin_cambios.py` (31 conversaciones; regenerarlo
+ACEPTA cambios del bot 1). Piezas: `senales.py`, `recortes_turno.py`,
+`guardarrail_precio.py` (precio contra la fila exacta: 0 falsos positivos en
+4.228 mensajes sintéticos, 97,9 % de filas equivocadas atrapadas),
+`recordatorios_contexto.py`, `tarifario_covenas_extras.json` (niños,
+anticipo, opcionales; los valores siguen también en el `.md` del bot 1).
+
+**Interesados (#22)**: tabla `intenciones_compra` (una fila por sesión),
+regex + herramienta `registrar_intencion`, endpoints `GET/PATCH
+/agendamientos/interesados` y `POST …/{id}/tomar` (permiso
+`can_reply_messages`, compara-y-asigna). Pestaña en /agendamientos solo si
+algún bot del team tiene `intencion_compra`. `/mensajes?conversacion=id` ya
+abre el chat (antes «Ver chat» no hacía nada).
+
+**Calidad**: 2869 tests; seguridad con 3 rondas de auditoría (un Alto de ReDoS
+y un Medio de precio falso confirmado por cifra del cliente, cerrados);
+QA local en Postgres (todo PASS); QA contra Bedrock en 3 rondas (US$ ~4,5):
+la 1.ª encontró falsos positivos de precio que mandaban al asesor (9/24),
+traspaso mudo con datos de reserva (12/12), anticipo inventado y disculpas al
+sistema visibles; la 2.ª y la final: 0 en todo eso.
+
+**Pendientes (bajos)**: tras una corrección del guardarraíl se pierde el flyer
+de esa ronda (1/52); apertura de 257 caracteres; enmascarado de teléfonos con
+puntos en Interesados; ventana de carrera en el bucle de acciones; ventana de
+clon en `crear_bot_viajes_b.py` (falla cerrado); el correo del cliente sigue en
+otros archivos versionados (supervision.py, caminos.py, scripts). Para el bot
+1 quedan señalados (sin tocar): nombres genéricos, precio sin guardarraíl,
+`_viola_duracion` con «Plan Estándar (2 noches / 3 días)», traspaso mudo
+posible.
+
+**Ojo con la medición**: ~15 conversaciones/día por bot; 19 estrategias juntas
+no se pueden atribuir una por una; Interesados solo ayuda al bot 2.
+
+**Deploy (7-oct-2026, 20:46–20:57 hora Colombia)**: imagen `:bot-b-3cde6d2`,
+task-def **rev 102** (antes 101); migración `intenciones_compra` en RDS por
+`run-task` (20 columnas, 0 filas); Amplify job 185 SUCCEED. Bot B creado con
+`crear_bot_viajes_b.py` (simulación → `APLICAR=1`): **bot 21**, 50/50 con el
+bot 12 desde `2026-10-08 01:56:26 UTC`; backfill de 1.129 conversaciones al
+bot 12; `llm_config` del bot 12 sin cambios (md5 igual al de antes). 15 min de
+monitoreo sin errores; no entró ninguna conversación nueva en ese lapso.
+Apagar el bot 2: mismo script con `APLICAR=1 REPARTO_B=0`. Rollback de código:
+`update-service` a la rev 101.
+
+### 10-oct-2026 — Diagnóstico (solo lectura): Arranquemos Pues sin entrantes desde el 2-oct
+
+Deploy AWS, a pedido del PM. Nada se cambió en Twilio, AWS ni la BD: dos `run-task`
+de lectura sobre la rev 102 (SELECT + GET a la API de Twilio) y CloudWatch Insights.
+
+- **Twilio hoy está sano**: cuenta `active` (Full, matriz, sin subcuenta), saldo
+  **US$ 29,99**, las tres credenciales (token de BD, token de SSM, API Key) dan 200.
+  Sender de WhatsApp de la cuenta `ONLINE`, calidad `HIGH`, webhook →
+  `api.glomabeauty.com/twilio/webhook` (dominio viejo, vivo y coincide con
+  `TWILIO_WEBHOOK_BASE_URL`, así que la firma valida). Monitor Alerts: 0 desde el 27-sep.
+- **El registro de Twilio tampoco tiene entrantes después del 2-oct**: 49 (27-sep),
+  44 (28), 7 (29), 1 (30), 2 (1-oct), 2 (2-oct), 0 después. Conversaciones nuevas:
+  19 el 28-sep y casi 0 desde el 29. Al backend no le falta nada que Twilio haya
+  recibido: no hay 403 ni 4xx en `/twilio/*`; simplemente no llegan.
+- **El 401/20003 del 3-oct** (03:48 y 21:49 UTC, dos reenganches a la misma
+  conversación) coincide con una suspensión de la cuenta por saldo, igual que el
+  27-ago: uso diario en 0 el 3 y el 4, `date_updated` de la cuenta el 5-oct y el
+  envío manual del 5-oct (15:53 UTC) ya salió. Lo que alguien haya escrito entre el
+  3 y el 5 se perdió (Twilio no lo registra ni lo reintenta).
+- Los "salientes `sent`" del 3 al 7-oct en `messages` son `nota_interna` de las
+  08:00 (no salen a WhatsApp); no hay reenganches pendientes porque no hay
+  conversaciones vivas.
+- **Causa más probable**: el tráfico dejó de llegar al número desde el 29-sep (la
+  pauta de Meta / Click-to-WhatsApp del cliente), no un fallo del canal. Fuera de
+  nuestro alcance. Sigue abierta la brecha de alerta de saldo y auto-recharge.
+- La pausa está levantada: `teams.pausa_servicio = 'nunca'` desde el 2-oct 16:37
+  UTC; las 3 facturas, pagadas.
+
+### 10 al 14-oct-2026 — Bot 3 (variante C, «embudo guiado») de Arranquemos Pues
+
+Pedido del CEO: un tercer bot con la metodología del curso *Ventas con
+WhatsApp* (notas y slides en `curso_ventas_whatsapp/`, NO versionado: material
+del curso), adaptada a la cuenta, y los tres bots al 33 % (queda 34/33/33: el
+reparto debe sumar 100; el punto extra al bot 1). Commit `ebe401b`.
+Documento para el CEO (customer journey, funnel, mapa de conversaciones,
+respuestas rápidas, protocolos): artifact privado «Embudo guiado de
+Arranquemos» (`entregables/bot3_embudo_guiado.html`).
+
+**Decisiones del CEO**: sin pedir el nombre al inicio; el bot acompaña el pago
+hasta el comprobante (lo verifica y confirma la asesora); horario de asesores
+L–V 8–18 y sáb 8–13; **siempre hay cupo** (no se condiciona el pago).
+
+**Diseño**: embudo mes → salidas con precio → hotel (con fotos/videos) →
+personas → cotización → apartar → datos → pago → comprobante; cada mensaje
+cierra con opciones numeradas y el «2» se interpreta por código (como dato del
+sistema, no dentro del mensaje del cliente: auditoría M1/M2); etapa del embudo
+por turno (`next_state["etapa"]`) para recordatorios por etapa y medición;
+mensaje de ausencia literal fuera de horario; atención al cliente; bienvenida
+de regreso sin modelo; comprobante sin modelo. Todo por flags en
+`app/data/bot_viajes_c.py`; el bot 1 congelado por su golden.
+
+**Insumo**: análisis de 1.124 conversaciones reales (scratchpad; con datos
+personales: no versionar). Hallazgos que movieron el diseño: 44 % no responde
+el saludo largo; la pregunta del hotel la responde el 74 % pero solo 17 % elige
+→ el hotel va después del precio; 59 % entra fuera de horario; 43 % de los que
+se van tras el precio dicen «gracias/lo consulto».
+
+**Calidad**: suite 3327 tests; seguridad en 4 rondas (cerrados: ReDoS, opción
+elegida inyectable, cifra del menú como cifra del cliente, falsas promesas,
+enmascarado de cédulas); QA contra Bedrock en 4 rondas (~US$ 4,6): la 1.ª
+encontró cierres silenciosos tras «gracias», falsos positivos de duración,
+promesas sin escalar, regreso mal atendido; la última, limpio salvo cosméticos
+ya arreglados.
+
+**Alerta operativa (10-oct)**: la cuenta no recibe mensajes desde el 2-oct.
+Diagnóstico de solo lectura: Twilio sano (activa, US$ 29,99, sender ONLINE
+calidad HIGH, 0 alertas); a Twilio tampoco le llega nada; la caída empezó el
+29-sep con la pausa por mora → lo más probable es la pauta de Meta apagada.
+Además Twilio estuvo suspendido por saldo del 3 al 5-oct (lo escrito ahí se
+perdió). Recomendado: confirmar la pauta, prueba de humo, auto-recharge y
+alarma de 20003. El A/B (bots 2 y 3) no tiene datos mientras no entren mensajes.
+
+**Pendientes**: tramo de edad «2 años» ambiguo en los extras (menores de 2 vs
+3–4); hora real de inicio de las asesoras (~9:00 según datos vs 8:00
+configurado); franja de silencio para reenganches nocturnos (queja real);
+B5 (ventana de clon del script, falla cerrado).
+
+**Deploy (14-oct-2026)**: imagen `:bot-c-ebe401b`, task-def **rev 103** (antes
+102), sin migración. Amplify job 186 SUCCEED. Bot 3 = **id 22**; reparto 12/21/22
+= 34/33/33 desde `2026-10-14 12:46:14 UTC`; `llm_config` de 12 y 21 sin cambios
+(md5 iguales). 15 min sin errores; 0 conversaciones nuevas (la cuenta sigue sin
+entradas desde el 2-oct). Apagar solo C: `crear_bot_viajes_variante.py`
+`VARIANTE=C REPARTO=A=50,B=50,C=0 APLICAR=1` por `run-task`; antes de volver a la
+rev 102, sacar C del reparto (la imagen 102 no trae `bot_viajes_c.py`).
+
+---
+
+## Sprint 32 — Demo interactiva en glomacx.com/demo (2026-10-16)
+
+**Pedido del CEO.** Una página pública en `glomacx.com/demo` con tres etapas:
+
+1. **Formulario**: nombre, empresa, teléfono, correo, **tipo de empresa**
+   (lista desplegable del sector turismo; cambio del CEO del mismo día: es más
+   rápido que escribir los servicios), «acepto que me contacten» (obligatorio) y «acepto recibir
+   promociones y novedades de Gloma» (opcional). Botón **Iniciar demo**.
+2. **Slides** (3): bienvenida · los 4 beneficios principales de Gloma · «prueba
+   el agente de IA como si fueras un cliente nuevo». La última trae un botón
+   que muestra *cargando* mientras se arma el bot y se activa cuando está
+   listo.
+3. **Ventana tipo WhatsApp** con el bot de la empresa del prospecto. El cuadro
+   de texto trae un primer mensaje **escrito pero sin enviar**, que pregunta por
+   uno de los 3 productos: el prospecto solo presiona enviar.
+
+Al presionar *Iniciar demo* se crea un **bot de demostración nuevo** con **3
+productos** inventados según el tipo de empresa. Las slides existen
+para tapar el tiempo de generación.
+
+### Decisiones de diseño (PM)
+
+- **Una cuenta dueña de todas las demos**: `demos@glomacx.com` (user + team,
+  creada por seed idempotente). Cada demo es un `Bot` de esa cuenta; no se crea
+  usuario por prospecto. Contraseña: en el gestor del CEO, nunca en el repo.
+- **Los productos van en la capa de productos del Sprint 31**:
+  `bot_productos` (`tipo='producto'`, `estado='publicado'`, slug con prefijo de
+  la demo para no chocar con `uq_bot_productos_team_slug`) +
+  `bot_producto_bots`, y el bot con `llm_config.fuente_datos='productos'`. El
+  detalle va en la ficha (`instrucciones` del producto) y **el precio en una
+  fila sin fecha** (`bot_producto_filas` con `inicio`/`fin` NULL, variante 0):
+  `filas_vigentes` la trata como "no vence nunca" y el bot cotiza con
+  `consultar_precios` como cualquier cuenta. *Corrección del mismo día*: la
+  primera versión ponía el precio en la ficha sin filas, pero Belfort detectó
+  que `_abrir_producto` devuelve `sin_datos` sin filas vigentes y escala el
+  chat en el primer mensaje.
+- **Tipo de empresa = lista cerrada** (una sola opción). Claves estables, iguales
+  en backend (valida contra la lista) y frontend:
+
+  | clave | Texto en el desplegable |
+  |---|---|
+  | `agencia_viajes` | Agencia de viajes |
+  | `operador_turistico` | Operador turístico / tours |
+  | `hotel` | Hotel |
+  | `hostal` | Hostal |
+  | `glamping_finca` | Glamping o finca turística |
+  | `apartamentos` | Apartamentos turísticos |
+  | `transporte` | Transporte turístico |
+  | `alquiler_vehiculos` | Alquiler de vehículos |
+  | `actividades` | Actividades y aventura |
+  | `restaurante` | Restaurante |
+  | `eventos` | Eventos y bodas |
+  | `otro` | Otro (abre un campo corto opcional, ≤80 caracteres) |
+
+  Ventaja extra: el único texto libre que llega al prompt es el nombre de la
+  empresa (y el «otro», si lo hay); y el respaldo determinista puede tener 3
+  productos propios por tipo.
+- **Nivel 2 del bot = plantilla versionada** (`bot_contexts/demo_plantilla.md`,
+  con `{empresa}` y `{tipo_empresa}`), copiada a `bots.instrucciones` al crear.
+  Lo que genera el modelo son solo los 3 productos y el mensaje sugerido.
+- **Generación con Bedrock** (mismo cliente que `llm_engine`), salida
+  estructurada por tool use, validada antes de guardar: largos, precio en COP
+  verosímil, **sin teléfonos, correos ni URLs** (lección del guardarraíl de
+  `llm_engine`). Si Bedrock falla o la salida no valida → **3 productos
+  genéricos deterministas**: la demo nunca se cae por la generación.
+- **Asíncrono**: `POST /demo/iniciar` responde de inmediato y la generación
+  corre en segundo plano; el front consulta el estado cada ~1,5 s.
+- **Chat**: mismo patrón anónimo de `/landing/chat` (historial en token Fernet),
+  más el `public_id` de la demo. El handoff no manda a WhatsApp de Gloma: dice
+  que en la cuenta real ahí entraría un asesor de *{empresa}*.
+- **El lead** cae en `leads` (`source='gloma_demo'`, `agencia`=empresa,
+  `acepto_privacidad_at`) para que salga en `/citas` como los demás. Lo propio
+  de la demo (tipo de empresa, consentimiento de promociones, estado, bot, mensaje
+  sugerido, transcripción) va en una tabla nueva `demos`.
+- **Topes de gasto**: demos por IP y por día, techo global diario de demos,
+  tope de turnos por demo y techo global de turnos/hora (como `/landing/chat`).
+- **No se borra nada** sin decisión del CEO: la retención de los bots de demo
+  queda como pregunta abierta (#618).
+
+### Contrato de la API (lo implementan backend y frontend en paralelo)
+
+```
+POST /demo/iniciar
+  in : {nombre, empresa, telefono, correo, tipo_empresa: <clave de la lista>,
+        tipo_otro?: str (solo si tipo_empresa='otro'), acepta_contacto: true,
+        acepta_promociones: bool}
+  out: 202 {demo_id: "<uuid público, no el id de la tabla>", token: "<Fernet>"}
+  err: 422 validación · 429 tope de IP / tope global (mensaje genérico)
+
+GET /demo/{demo_id}/estado        (header X-Demo-Token: <token>)
+  out: {estado: "generando"|"lista"|"error",
+        empresa, productos: [{nombre, resumen}] (solo cuando lista),
+        mensaje_sugerido (solo cuando lista)}
+
+POST /demo/{demo_id}/chat         (header X-Demo-Token: <token>)
+  in : {session?: str, message?: str}
+  out: igual a ChatOut de /landing/chat {actions, session, finished, handoff}
+```
+
+El `token` amarra el `demo_id` a quien lo creó: sin token válido, 404 (no 403,
+para no confirmar que la demo existe).
+
+### Tareas
+
+| # | Tarea | Responsable | Estado | Depende de |
+|---|-------|------------|--------|-----------|
+| 607 | Plan, decisiones y contrato de la API | PM | ✅ | — |
+| 608 | Revisión de seguridad del diseño (endpoint público que crea bots, gasto de Bedrock, PII y Ley 1581, inyección de prompt por empresa/«otro», aislamiento entre demos) | seguridad | ✅ 0 C · 3 A · 5 M · 4 B | — |
+| 609 | Copy de las 3 slides (bienvenida, 4 beneficios, invitación a probar) y plantilla nivel 2 del bot demo `bot_contexts/demo_plantilla.md` | belfort | ✅ `frontend/lib/demo_copy.ts` + `demo_plantilla.md` | — |
+| 610 | Modelo y migración idempotente de `demos` (+ evidencia local; RDS va con el deploy) | experto-bd | ✅ local; RDS en #617 | — |
+| 611 | Wireframe navegable de las 3 etapas + ventana tipo WhatsApp | ui-ux | ✅ `ventas/identidad_gloma/diseno_demo.html` (git-ignorado) | — |
+| 612 | Servicio de generación (con los controles de #608 que le tocan) `services/demo_bot.py` (Bedrock → 3 productos + mensaje sugerido, validación, fallback determinista) | dev-plataforma | ✅ 100 tests; suite 3428 | — |
+| 613 | Creación del bot + productos, endpoints `/demo/*`, seed de la cuenta `demos@glomacx.com`, topes de gasto | dev-plataforma | 🔄 | 608, 610, 612 |
+| 614 | Página `pages/demo.tsx`, `/demo` y `/api/demo` en middleware y `PUBLIC_PAGES` | dev-plataforma | ✅ con mock; falta contra el backend real (#615) | 609, 611 |
+| 615 | QA: pytest + 10 empresas distintas contra Bedrock local, leyendo las conversaciones | qa | ❌ no apto: 2 bloqueantes del bot → #619 | 613, 614 |
+| 616 | Auditoría de código antes del merge | seguridad | ✅ APTO PARA MERGE (0 C · 0 A · 3 M · 6 B) | 613, 614 |
+| 619 | Ronda de arreglos de QA y auditoría (backend y frontend en paralelo) | dev-plataforma | ✅ suite 3580 (normal y tipo CI); vitest 110 | 615, 616 |
+| 620 | Re-prueba de QA con los mismos scripts + revisión de seguridad del delta | qa, seguridad | ❌ QA no apto (precios inventados) · ✅ seguridad apto | 619 |
+| 621 | Ronda de arreglos: precios inventados + lo demás de #620 y los bajos del delta | dev-plataforma | ✅ suite 3655 (normal y tipo CI) | 620 |
+| 622 | Re-prueba de QA centrada en precios | qa | ✅ APTO para merge (condición de CI → #624) | 621 |
+| 624 | Pulido: test con fecha vencida (CI rojo), falsos positivos y defectos menores de #622 — sin reiniciar el entorno del CEO | dev-plataforma | ✅ suite 3697, 0 fallos (normal y tipo CI) | 622 |
+| 623 | Prueba manual del CEO en local | CEO | 🔄 entorno listo | 621 |
+| 617 | Deploy: migración RDS, imagen, task-def, **backend antes que Amplify** | deploy-aws | 📝 runbook listo en `entregables/runbook_deploy_demo.md` (git-ignorado); **no desplegar hasta el visto bueno del CEO** | 622, 623, texto de `/privacidad` |
+| 618 | Pregunta al CEO: retención de los bots de demo y aviso al equipo de ventas por demo nueva | CEO | ❓ | — |
+
+### Resultado de la revisión de seguridad del diseño (#608)
+
+0 críticos, **3 altos (bloquean el merge, se cierran en #613)**, 5 medios, 4 bajos.
+
+- **A1. La IP se falsifica**: `client_ip` de `landing.py`/`ratelimit.py` toma el
+  primer valor de `X-Forwarded-For`, que lo escribe el cliente. Para la demo:
+  topes **en la BD** (no en memoria: se borran en cada deploy) por IP (5/h,
+  15/día), por correo (3/día), por teléfono (3/día) y **global 50/día**; IP
+  confiable vía parameter mapping de API Gateway
+  (`x-gloma-client-ip = $context.identity.sourceIp`) con el front llamando
+  directo a `api.glomacx.com/demo/*`; throttling de ruta 5 rps / burst 10.
+  Turnos: 60/IP/h, 200 globales/h y freno mensual de 4.000 (~US$ 80) +
+  alarma de AWS Budgets. *Backlog aparte*: el mismo defecto de XFF afecta
+  `/landing/chat` y `/landing/leads`.
+- **A2. Las demos pueden ahogar el único proceso** (1 worker, 0,25 vCPU, cliente
+  Bedrock con timeout de 60 s y 5 reintentos) y dejar sin atender los webhooks
+  de clientes reales. Semáforos: 2 generaciones y 4 turnos simultáneos (lleno →
+  respaldo / "muy solicitada"); cliente Bedrock propio (read 25 s, 2 intentos);
+  `generando` > 60 s se resuelve con el respaldo al leer el estado; la tarea de
+  fondo abre su propia `SessionLocal()`.
+- **A3. El contador de turnos se reinicia** reenviando un token viejo (riesgo
+  aceptado en la landing, inaceptable aquí). Contador e historial **en la fila
+  de `demos`** (`UPDATE … SET turnos = turnos + 1 WHERE turnos < 15 RETURNING`),
+  tope 15 turnos por demo. Token de acceso `{"p":"demo","v":1,"d":public_id}`,
+  TTL 6 h, se compara con `hmac.compare_digest` antes de tocar la BD; todo lo
+  inválido → **404** con el mismo cuerpo.
+- **Medios**: (M4) inyección por `empresa`/«otro» → allowlist y largos de
+  entrada, precio como entero aparte, salida sin teléfonos/correos/URLs/dominios
+  ni "Gloma", y guardarraíl `_viola_contacto_demo` en el chat (los actuales no se
+  activan para este bot); `llm_config` mínimo y test de que solo se declaran
+  `escalar_a_asesor`, `finalizar_conversacion` y `abrir_producto`; aviso fijo
+  "Demostración generada con IA · productos y precios ficticios". (M5) Ley 1581:
+  `consent_version`, fecha del consentimiento de promociones, PII nunca al
+  prompt, transcripción en un solo lugar y acotada. (M6) aislamiento explícito
+  de la cuenta de demos: `channels='demo'`, sin reparto, el chat nunca acepta un
+  `bot_id` del cliente, y `bot_router` ignora bots con `cfg.demo`. (M7)
+  honeypot + tiempo mínimo de llenado, y **Cloudflare Turnstile** detrás de una
+  bandera. (M8) un solo texto para todos los 429, sin decir qué tope saltó.
+- **Bajos**: rutas exactas en el middleware (`/demo`, `/demo/`, `/api/demo/`);
+  token en `sessionStorage` bajo `gloma_demo` (nunca la clave `token` de
+  `lib/session.ts`); cuenta de demos sin rol de admin; sugerencia de pausar los
+  bots de demo a los 7 días (decide el CEO en #618).
+
+**Para el CEO**: (1) ¿Turnstile activo desde el día 1? Seguridad lo recomienda;
+casi siempre es invisible, pero requiere cuenta de Cloudflare. (2) La política de
+`/privacidad` tiene que nombrar la finalidad de la demo, la conservación de la
+transcripción y a AWS Bedrock como encargado.
+
+### Copy y plantilla (#609)
+
+`frontend/lib/demo_copy.ts` (lista `TIPOS_EMPRESA` con las 12 claves, `DEMO_COPY`
+y `rellenarCopy()`) y `backend/app/bot_contexts/demo_plantilla.md` (~2.500
+tokens, solo `{empresa}` y `{tipo_empresa}`). Única etiqueta cambiada:
+«Operador turístico o de tours» (la clave no cambia). La plantilla no pide
+cédula, correo, teléfono ni tarjeta para reservar: solo nombre y los datos del
+tipo de negocio. Con la plantilla, las reglas del motor y el índice, el prefijo
+queda bajo 4.096 tokens: **no cachea**, cada turno se paga entero (ya está en
+los topes de #608).
+
+**Para el CEO** (además de #618 y Turnstile):
+1. Cuarto beneficio: «retoma a los interesados que se fueron» (recordatorios).
+   Alternativas: «reactiva cotizaciones frías» o «ves dónde se pierde cada venta».
+2. ¿Se queda «3 productos de ejemplo» en la slide 1? Evita el «esos no son mis
+   productos».
+3. Tras el traspaso a asesor no se promete que Gloma escriba: depende de #618.
+4. Primer pedido de descuento: el bot sostiene el precio; si insiste, pasa a
+   asesor.
+5. Oportunidad: el QR del pendón (V1) puede llevar a `glomacx.com/demo`. Para
+   contar leads por feria, `POST /demo/iniciar` recibiría un `origen`/UTM.
+
+### Wireframe (#611) y decisiones del PM sobre lo que dejó abierto
+
+Wireframe navegable en `ventas/identidad_gloma/diseno_demo.html` (escritorio y
+390 px, con simulador de 4/12/30 s y fallo). 15 decisiones de UX en el reporte;
+las que más pesan: el prospecto escribe primero (sin saludo del bot), el foco
+inicial va al botón de enviar para no abrir el teclado, el botón de la slide 3
+se activa solo con `estado=lista` (nunca por tiempo), las slides no se cierran,
+y el CTA de Gloma nunca flota sobre el chat.
+
+Decisiones del PM:
+- **«Agendar con Gloma»** abre el WhatsApp público de Gloma con un texto
+  prellenado («Hola, acabo de probar la demo de {empresa}…»). Cero backend; el
+  lead ya quedó guardado.
+- **Recargar la página** no pierde la demo: `demo_id` y token en
+  `sessionStorage` bajo `gloma_demo`, como ya lo aprobó seguridad (B10).
+- **Tope de turnos** en el chat: `finished=true` + la barra de fin del
+  wireframe (no un 429).
+- Largos máximos de copy para 360 px: título de slide ≤45, título de beneficio
+  ≤30 y su texto ≤70, aviso del chat ≤140.
+
+### Tabla `demos` (#610)
+
+Modelo `Demo` en `models.py` y `backend/scripts/migrate_demos.py` (crea, repara
+y verifica la definición completa; `--verificar` solo audita). 22 columnas, 5
+CHECK (incluye `tipo_otro` solo con `tipo_empresa='otro'` y que la aceptación de
+promociones siempre traiga su fecha), FK a `leads` y `bots` con `ON DELETE SET
+NULL`, `public_id` UUID único con `gen_random_uuid()`. Incluye `consent_version`
+y `chat_state` pedidos por seguridad. Probado en local: base limpia, después de
+`create_all()`, base rota a propósito y tabla de la versión anterior. Suite:
+3328 passed.
+
+- **#613 debe normalizar** correo (minúsculas) y teléfono (E.164) antes de
+  guardar y comparar; si no, el tope por correo se evade con mayúsculas.
+- **En RDS (#617)** el script pesa ~15 KB, así que no cabe en `rds_exec.sh`: se
+  corre como `command` de un `run-task` con la task-def nueva, antes del
+  `update-service`.
+
+### Generación (#612)
+
+`backend/app/services/demo_bot.py` + `backend/tests/test_demo_bot.py` (100
+tests). Modelo **Haiku 4.5** (`global.anthropic.claude-haiku-4-5-20251001-v1:0`,
+variable propia `DEMO_LLM_MODEL_ID`): 7,7–11,3 s, mediana ~9,3 s en 12 corridas
+reales, ~US$ 0,006 por demo. Respaldo escrito a mano: 3 productos por cada uno
+de los 12 tipos, todos pasan la misma validación.
+
+**Corrección a la decisión del precio**: una sola fila sin fecha **no basta**.
+Medido contra la capa real: sin variante activa `consultar_precios` no muestra
+el precio, y con cualquier `mes` la fila sin fecha deja al bot sin precio
+(«no hay nada publicado para ese período») y `fechas_disponibles` responde
+`sin_datos` (= escalar). Como el mensaje sugerido casi siempre trae una fecha,
+fallaba en el primer turno. Quedó `catalogo_demo(producto, hoy)`: producto
+publicado + variante «Tarifa general» + **12 filas mensuales al mismo precio**
+desde el mes en curso. Consecuencia: con 3 productos se declaran
+`abrir_producto`, `consultar_precios` y `fechas_disponibles`. Sin mes, el bot
+pregunta la fecha, como lo haría un asesor.
+
+Las 3 salidas reales (agencia, hotel, transporte) son verosímiles y con precios
+creíbles. **La validación cuida seguridad y formato, no hechos**: el modelo se
+equivoca en detalles geográficos menores (p. ej. ubicó La Boquilla en la ruta a
+Tayrona). Aceptable para una demo con el aviso de «productos ficticios».
+
+Cambio del contrato del chat (por #608 A3): el historial y el contador viven en
+el servidor; el request lleva solo `{message}` y `session` llega siempre null.
+
+### Página `/demo` (#614)
+
+`pages/demo.tsx`, `components/demo/*` (formulario, slides, chat, panel lateral,
+no-disponible, Turnstile), `lib/demoApi.ts`, `lib/demoMock.ts` (solo con
+`NEXT_PUBLIC_DEMO_MOCK=1`, por `import()` dinámico: no entra al bundle de
+producción), `lib/demoFormulario.ts`; middleware con rutas exactas y `/demo` en
+`PUBLIC_PAGES`; tokens `gloma-ink*` en Tailwind. `tsc` y `build` limpios
+(`/demo` 22,2 kB), vitest 108/108, 61 chequeos en Chrome a 390 y 1400 px sin
+errores de consola; `/demos`, `/demo-admin` y `/api/demox` dan el 404 de marca y
+`/bots` sigue pidiendo sesión. El texto del bot sale como texto (sin HTML ni
+autolinks), y el chat no manda `Authorization` ni cookies.
+
+Desviaciones aceptadas por el PM: al recargar se conserva el hilo visible (≤40
+mensajes) en `gloma_demo` → **que #616 lo confirme**; `finished` sin handoff
+muestra «Esta demo llegó a su fin»; tras un 429 o un error de generación,
+«Agendar con Gloma» usa un texto genérico (la persona no probó la demo);
+microcopy nuevo en `DEMO_UI` al final de `demo_copy.ts`.
+
+Para #613/#617: si el front llama directo a `api.glomacx.com`, CORS debe
+permitir el origen de la landing y el header `X-Demo-Token`.
+
+### Backend (#613)
+
+`routers/demo.py` (las 3 rutas, token, topes, tarea de fondo),
+`scripts/seed_cuenta_demos.py` (idempotente; contraseña por `DEMOS_PWD_HASH` o
+inutilizable; sale con 2 si la cuenta tiene un canal conectado),
+`_viola_contacto_demo` en `llm_engine.py` (solo con `cfg.demo`), `bot_router`
+ignora bots de demo. Tests: `test_demo_api.py` (63) y
+`test_guardarrail_contacto_demo.py` (19); suite **3511 passed**.
+
+Desviaciones aceptadas por el PM:
+- Topes por IP/correo/teléfono se cuentan sobre `leads` (`source='gloma_demo'`),
+  para que también cuenten los leads guardados cuando salta el tope global.
+- Turnstile fallido → 400; chat antes de `lista` → 409; mensaje vacío → 422 sin
+  gastar turno.
+- Recorte de narración («déjame verificar…») solo para la demo, en el router.
+- `demo_plantilla.md` ajustada tras la prueba real (no narrar herramientas, no
+  pedir fecha de regreso ni nombres de acompañantes, ejemplo de cierre, cuentas
+  con la unidad a la vista). Antes de los ajustes 3 de 4 corridas no escalaban.
+- **El prefijo mide ~6.000 tokens y sí cachea** (corrige la nota de #609).
+- CORS global `*` con `allow_credentials=true` sin cambios: decide #616/#617.
+- **Los seeds no corren al arrancar**: en #617, `migrate_demos.py` y después
+  `seed_cuenta_demos.py`.
+
+Dos conversaciones reales (agencia y hotel) leídas por el PM: cotiza con la
+fila correcta, las cuentas cuadran, sostiene el precio ante el descuento, no
+inventa contactos y escala al tener nombre, fecha y personas. Pendiente para QA:
+fecha mal calculada («próximo fin de semana» = 18-19 de octubre siendo viernes
+16), una burbuja corta duplicada, alguna pregunta de más y «tenemos
+disponibilidad» (en parte viene del texto de `fechas_disponibles`).
+
+### Auditoría de código (#616): APTO PARA MERGE
+
+Los 3 altos de #608 quedaron cerrados en el código (A1 con condición de
+deploy). 0 críticos, 0 altos, 3 medios, 6 bajos.
+
+| # | Sev | Hallazgo | Qué se hace |
+|---|---|---|---|
+| M1 | Medio | Con el tope global activo cada intento igual guarda un lead: rotando correos/teléfonos se llena `/citas` | Techo diario de leads `DEMO_MAX_LEADS_DIA=200` → mismo 429 sin guardar (follow-up junto con lo de QA) |
+| M2 | Medio | Los turnos del chat usan el cliente Bedrock compartido (60 s, varios reintentos) | `_bedrock_client_demo()` con timeouts cortos cuando `cfg.demo` |
+| M3 | Medio (legal) | `/privacidad` no menciona la demo, la transcripción ni AWS Bedrock (perfil `global.`: posible transmisión internacional) | **Bloquea la publicación de `/demo`**, no el merge. Texto pendiente del CEO; subir `CONSENT_VERSION` al cambiarlo |
+| B1–B6 | Bajo | Carrera en topes sin lock; freno mensual por `created_at`; el bot de demo hereda `LLM_MODEL_ID` (B3: fijar Haiku); CORS `*` con credenciales; `/api` por defecto si falta la env; `startsWith('/demo/')` amplio | B3 y la restricción de origen en `/demo/*` van en el follow-up; el resto, aceptados o al deploy |
+
+Decisiones sobre las desviaciones: hilo del chat en `sessionStorage` **aceptado**
+(condición permanente: nada de pixels ni analítica de terceros en `/demo` sin
+pasar por seguridad); CORS → dependencia en el router `/demo` que rechaza con
+404 un `Origin` fuera de `DEMO_ALLOWED_ORIGINS`, sin tocar el CORS global
+(backlog: `allow_credentials=False` global); topes sobre `leads` aceptados;
+costo acotado: **~US$ 130/mes en el peor abuso, US$ 40–60 en un mes intenso
+legítimo**, siempre que el modelo quede fijo en Haiku y exista la alarma de
+Budgets.
+
+**Condiciones del deploy (#617)**: (1) `DEMO_IP_HEADER=x-gloma-client-ip` +
+parameter mapping **`overwrite:header.x-gloma-client-ip =
+$context.identity.sourceIp`** en API Gateway (con `append` se falsifica),
+verificado con curl; (2) `NEXT_PUBLIC_DEMO_API_URL=https://api.glomacx.com` en
+Amplify **antes del build**: si el front pasa por el proxy con el header
+activo, todos comparten la IP de Amplify y el tope de 5/h vuelve global; (3)
+throttling de `/demo/*` 5 rps / burst 10; (4) alarma de Budgets sobre Bedrock;
+(5) `migrate_demos.py` → `seed_cuenta_demos.py`, backend antes que Amplify.
+
+### QA (#615): no apto todavía, la infraestructura sí
+
+Suites verdes (3511 en el árbol y como el CI con `TZ=UTC`; front: tsc, build,
+vitest 108/108); E2E real a 390 y 1400 px; 404 uniformes; topes con mayúsculas y
+otro formato de teléfono; ráfagas: 2 generaciones a la vez y contador que nunca
+pasa de 15. Generación p50 8,35 s / p95 9,42 s. Costo de toda la prueba ≈
+US$ 0,55; la caché funciona (~6.160 tokens leídos por turno).
+
+12 demos (una por tipo), 8–9 turnos, leídas completas: **12/12 cotizan con la
+fila correcta y las cuentas cuadran**, 0 contactos inventados, 12/12 resisten la
+inyección, 0 menciones de Gloma. Pero:
+
+- **Bloqueante: fechas** — 9/12 calculan mal el día de la semana («mañana es
+  domingo» un viernes; «el 20 de noviembre ya pasó»).
+- **Bloqueante: afirma disponibilidad** — 8/14, en parte porque
+  `fechas_disponibles` dice «Octubre: todo el mes».
+- Debería: no da precio sin fecha exacta; olvida la ficha tras el primer turno
+  e **inventa restricciones** (perdió un cierre); 15 % de generaciones caen al
+  respaldo por una ñ en el slug; narración que escapa al recorte; pregunta
+  repetida hasta 5 veces; ráfagas → 4 de 6 con productos genéricos; escalamiento
+  al cierre 8/12.
+
+### Ronda de arreglos (#619), decisiones del PM
+
+Fechas: calendario determinista de 21 días (nombre del día, «este/próximo fin
+de semana», festivos) solo con `cfg.demo`. Disponibilidad: los bots de demo **no
+declaran `fechas_disponibles`** y la plantilla prohíbe afirmar cupos. Precio:
+sin fecha se da igual (es plano). Fichas: las 3 van al final de
+`bots.instrucciones` (prefijo cacheado por demo). Slug normalizado en vez de
+rechazado. Semáforo con espera de 8 s. Más M1, M2, B3 (modelo fijo) y la
+restricción de origen de #616. Front: espera a los 3 s antes de enviar,
+iniciales del avatar, middleware exacto, chip de «disponibilidad» cambiado.
+
+### Ronda de arreglos (#619): resultado
+
+QA había medido con **Haiku 4.5** (local y task-def 103 tienen el mismo
+`LLM_MODEL_ID`), así que la comparación vale. Todo cambio va detrás de
+`cfg.demo`, con contraprueba de que los demás bots no cambian (golden de
+Arranquemos incluido). Suite **3580 passed**, normal y tipo CI.
+
+- Nuevo `services/calendario_demo.py` (festivos de Colombia por Ley Emiliani y
+  Pascua; 21 días, fines de semana, puentes a 90 días). Como el modelo igual
+  nombraba mal días fuera de la ventana, `dias_de_semana_corregidos` recalcula
+  en código el día de cualquier «<día> <n> de <mes>» que escriba.
+- Sin `fechas_disponibles`, filas como «tarifa del mes» y además guardarraíl
+  `_viola_disponibilidad_demo` (la regla de la plantilla sola no bastó).
+- El recorte de narración pasó al motor: el historial guarda texto limpio.
+- Agregado por la re-prueba: cuando el modelo escala sin texto, el aviso se arma
+  con el `resumen` de `escalar_a_asesor` (pasando el guardarraíl de contactos).
+- Front: espera a los 3 s, iniciales («Posada El Colibrí» → PC), middleware solo
+  `/demo` y `/demo/`, chip cambiado, aviso de build sin
+  `NEXT_PUBLIC_DEMO_API_URL`; `next.config.js` ahora exporta una función por fase.
+
+4 conversaciones reales del dev: fechas correctas (incluido el puente de Todos
+los Santos), cuentas con la operación a la vista, no afirma disponibilidad, 0
+contactos inventados, 4/4 resisten la inyección, 3/3 reservas escaladas.
+Pendiente de medir en #620: alguna recomendación fuera de la ficha, escalar
+cuando piden un contacto (corta la demo antes de la reserva), insistencia con el
+nombre completo.
+
+### Seguridad del delta de #619: APTO PARA MERGE
+
+0 críticos, 0 altos, 0 medios. M1, M2, B3, B4 y B6 de #616 **cerrados**; B5
+mitigado (aviso en el build). El `ContextVar` del cliente corto no se filtra a
+otros bots (se fija y restaura en cada `advance`, con `finally`);
+`origen_permitido` sin bypass (comparación exacta normalizada, `null`, puerto
+explícito y subdominios no pasan); todas las ramas nuevas detrás de `cfg.demo`;
+`next.config.js` no hornea nada nuevo en el cliente.
+
+Dos bajos nuevos, para la última ronda junto con lo que deje #620:
+- **B-n1**: el `resumen` de `escalar_a_asesor` se pega al aviso de traspaso sin
+  tope de largo y sin pasar el guardarraíl de disponibilidad ni el de marca →
+  recortar a ~160 y caer al aviso genérico si afirma cupos o dice «gloma».
+- **B-n2**: con `acquire(timeout=8)` una ráfaga puede tener muchos hilos del
+  threadpool compartido esperando → máximo ~4 en espera; el resto, respaldo
+  inmediato.
+
+Siguen en pie M3 (`/privacidad`) y las condiciones C1–C5 del deploy.
+
+### Re-prueba (#620): mejoró todo, pero ahora inventa precios
+
+| Métrica | #615 | #620 |
+|---|---|---|
+| Fechas relativas correctas | 3/12 | **11/12** |
+| Afirma disponibilidad | 8/14 | 1 explícita + 2 «suaves» de 14 |
+| Escaló al cierre | 8/12 | 9/12 |
+| **Precio inventado o de otra fila** | 0/12 | **2/12 + 1/2 en el navegador** ❌ |
+| Respaldo por salida inválida | 4/26 | 0/29 |
+| Ráfaga de 6: con modelo | 2/6 | 4/6 |
+| Voseo | 3/12 | 0/12 |
+
+Suites 3580 (normal y tipo CI), build igual que antes (28 rutas, JS compartido
+112 kB), `Origin` ajeno → 404, autocompletado instantáneo ya no pierde la demo.
+Costo ≈ US$ 0,55.
+
+**Bloqueante nuevo**: con las fichas en el prefijo el modelo dejó de llamar
+`consultar_precios` y adivinó ($1.190.000 por $890.000; $420.000 por $520.000;
+una unidad «por persona, 7 noches» multiplicada otra vez por 7).
+
+**#621, decisiones del PM**: el precio exacto va junto a cada ficha en el prefijo
+(es plano: no hay nada que adivinar) + guardarraíl determinista
+`_viola_precio_demo` (toda cifra = precio × k o suma de esas) + regla de unidades
+compuestas. Además: no discutir fechas correctas del cliente, más patrones de
+disponibilidad, el guardarraíl no debe romper el texto ni tomar condiciones de
+la ficha por afirmaciones, narración y burbujas colgando, nombre completo como
+máximo cada 2 turnos, los bajos B-n1/B-n2 del delta (espera de generación 12 s,
+máx. 4 en espera) y la slide 1 en pasado cuando la demo ya está lista.
+
+### Ronda #621: precios
+
+Precio exacto junto a cada ficha del prefijo; `_viola_precio_demo` (precio × k,
+sumas aunque los parciales vengan de mensajes anteriores, operación escrita
+verificada, noches mal contadas); regla de unidades que ya incluyen noches. El
+generador ya no produce temporadas ni recargos (contradecían el precio plano y
+hacían perder cierres), y se quitaron tres de las fichas de respaldo. Cupo de 4
+generaciones en espera, espera de 12 s. 75 tests nuevos; suite **3655**. En 7
+conversaciones reales no llegó al cliente ninguna cifra inválida; el guardarraíl
+atrapó en vivo un total con noches mal contadas.
+
+### 17-oct: el CEO pide probar en local antes de desplegar
+
+Decisión del CEO: **no desplegar todavía**; dejar todo listo y probar a mano en
+local. Entorno: backend docker reconstruido con el código actual y un override
+**fuera del repo** con topes altos (la base local ya tenía 101 demos de QA del
+día y el tope global es 50); frontend con `next build` + `next start` en
+`localhost:3000`, porque `.dockerignore` excluye `frontend/` y el servicio
+`frontend` del compose ya no construye (su contenedor era de hace 10 días;
+backlog: arreglar el compose o quitar ese servicio). Prueba de humo por el
+proxy: demo lista, cotización correcta, sin afirmar cupos.
+
+### Runbook del deploy (#617), preparado solo leyendo AWS
+
+`entregables/runbook_deploy_demo.md` (git-ignorado). Estado leído: servicio en
+task-def **103** (`:bot-c-ebe401b`, sin ninguna `DEMO_*`); API Gateway con una
+sola ruta `ANY /{proxy+}`, sin parameter mappings ni throttling, timeout de
+integración 30 s; `api.glomacx.com` regional sin CloudFront (→ `sourceIp` es la
+IP real) y el SG no deja llegar al 8000 desde internet; Amplify sin
+`NEXT_PUBLIC_DEMO_API_URL`; **no existe ningún AWS Budget** (Bedrock: US$ 38,47
+en septiembre); `glomacx.com` y `www` sirven la landing (los dos van en
+`DEMO_ALLOWED_ORIGINS`).
+
+Hallazgos para tener presentes:
+- El throttling de HTTP API es por ruta: hay que **crear `ANY /demo/{proxy+}`**
+  para poder limitarla (5 rps / burst 10, para toda la ruta).
+- La rama `main` de Amplify tiene `NEXT_PUBLIC_API_URL=https://api.glomabeauty.com`,
+  heredada de antes de la mudanza de dominio; no se tocó (backlog).
+- Commit en una rama `sprint32-demo` sin checkout (no tocar el docker local) y
+  push a `main` solo al final, porque dispara el build de Amplify.
+
+Antes del «adelante» del CEO: texto de `/privacidad` (+ subir `CONSENT_VERSION`),
+contraseña de `demos@glomacx.com` (recomendado: inutilizable), correo y monto de
+la alarma de Budgets (sugerido US$ 100/mes), Turnstile sí/no, un teléfono y
+correo de Gloma para el humo, autorización del commit y del push, y QA #622 apto.
+
+### Re-prueba (#622): APTO PARA MERGE
+
+| Métrica | #615 | #620 | #622 |
+|---|---|---|---|
+| Cifra inválida que llegó al cliente | 0/12 | 3 | **0/18 + 0 navegador** |
+| Fila de precio correcta | 12/12 | 10/12 | **18/18** |
+| Fechas relativas correctas | 3/12 | 11/12 | 11/12 |
+| Escaló al cierre | 8/12 | 9/12 | **11/12** |
+| Afirma disponibilidad | 8/14 | 1 + 2 suaves | 1 + 2 suaves |
+
+Los 3 casos de #620 reproducidos con el mismo catálogo ya no fallan, y 3
+conversaciones diseñadas para romper precios (mezclas, cambios de personas,
+descuentos hipotéticos) tampoco. Ningún texto fijo llegó al cliente: todas las
+correcciones se resolvieron en la primera ronda. Costo ≈ US$ 0,58. Se hizo sin
+tocar el entorno del CEO (TestClient dentro del contenedor + navegador contra
+:3000).
+
+**Condición de CI**: `test_motor_qa_bedrock.py::TestDuracionPorPlan::
+test_en_el_turno_con_flag_no_hay_correccion` falla desde el 17-oct **también en
+HEAD**: usa la salida «OCTUBRE 16 AL 19», que ya pasó. No es del sprint, pero
+deja rojo cualquier PR → se congela su fecha en #624.
+
+Queda para #624 (nada bloqueante): falso positivo de precio con sumas de
+productos, disponibilidad que el detector no ve («disponemos de espacios»), día
+con «es» en medio, traspaso al pedir un contacto (corta la demo), aviso de
+traspaso sin el total o con «..», capacidad (9 personas en 2 vehículos de 4),
+voseo residual, narración tras dos puntos.
+
+### Pulido (#624)
+
+Suite **3697 passed, 0 fallos**, normal y tipo CI. Validado solo con pytest
+(el entorno local estaba reservado a la prueba del CEO).
+
+- **CI**: congelada la fecha (2026-10-07) del test de `TestDuracionPorPlan` que
+  venció el 17-oct. Un barrido con el reloj adelantado (24-oct, 15-nov, 20-dic,
+  15-feb) encontró **otro que vence cada diciembre**
+  (`test_motor_flags.py::TestAperturaVitrina::test_mes_nombrado_trae_el_flyer_de_ese_mes`);
+  quedó arreglado igual. 664 tests no se pudieron evaluar con freezegun
+  (pagos, mascotas, reparto, interesados, instagram); por grep no dependen del
+  reloj, pero no quedó medido.
+- Demo: `operacion_mal_hecha` evalúa sumas de productos; detector de
+  disponibilidad ampliado (y un horario copiado de la ficha ya no excusa la
+  frase entera); corrector de día con «es/sería/cae/será»; pedir un contacto no
+  es motivo de traspaso; el aviso de traspaso se recorta por frase y agrega el
+  total cotizado; regla de capacidad (unidades = personas ÷ capacidad hacia
+  arriba); `sin_voseo_demo`; sin «según la ficha»; narración tras dos puntos.
+- **Pendiente**: las reglas de plantilla (contacto y capacidad) se verifican con
+  el modelo en la siguiente prueba contra Bedrock, después de la prueba manual
+  del CEO, reconstruyendo el backend local.
+
+---
+
+### 17-oct: ajustes del CEO tras su prueba manual («me gusta»)
+
+1. Quitar «Demo gratis · tarda un minuto» (eyebrow de la intro).
+2. Quitar «Gratis y sin tarjeta.» (pie del formulario).
+3. En la cuenta administradora (`gloma@glomabeauty.com`, el portero
+   `require_gloma_account` de `/citas`): ver quiénes han usado la demo y cuántos
+   presionaron «agendar» (el que lleva al WhatsApp).
+4. Agendar una llamada **sin pasar por WhatsApp**, con el pop-up de Cal.com
+   (`gloma/hablemos-de-gloma`, vista mensual).
+
+**Decisiones del PM**
+- **Cal.com sin script de terceros en la página**: la condición permanente de
+  #616 prohíbe scripts de terceros en `/demo` sin revisión de seguridad (podrían
+  leer el token y el hilo de `sessionStorage`). Primero se intenta un modal
+  propio con un **iframe** de Cal (otro origen: no ve nada de la página); el
+  `embed.js` oficial cargado al hacer clic queda solo como respaldo y con visto
+  bueno de seguridad. Se prellenan nombre y correo si están en memoria. Los
+  dos botones conviven: «Agendar una llamada» (principal, Cal) y «Escribir por
+  WhatsApp» (secundario). **`/privacidad` tendrá que nombrar también a Cal.com.**
+- **Eventos**: `POST /demo/{demo_id}/evento` (mismo token, origen y 404
+  uniformes) con `{tipo: "whatsapp" | "llamada_abierta" | "llamada_agendada"}`
+  → 204. Solo se cuentan clics dentro de una demo (con token).
+- **Columnas nuevas en `demos`**: `clics_whatsapp` y `aperturas_llamada`
+  (INTEGER NOT NULL DEFAULT 0, con techo de 100 en el backend),
+  `primer_clic_whatsapp_at`, `primer_apertura_llamada_at`,
+  `llamada_agendada_at` y `traspaso_at` (DateTime NULL; el traspaso al asesor
+  hoy no queda marcado en la fila).
+- **Panel admin**: `GET /admin/demos` (resumen + lista paginada con filtro de
+  fechas) y `GET /admin/demos/{public_id}` (detalle con productos y
+  transcripción), detrás de `require_gloma_account`. Pantalla privada `/demos`
+  en `app.glomacx.com`, en el menú solo de la cuenta de Gloma.
+
+| # | Tarea | Responsable | Estado | Depende de |
+|---|---|---|---|---|
+| 625 | Quitar las 2 etiquetas + botón de Cal.com (modal con iframe, componente reutilizable) + envío de eventos; **también en la landing**: agendar por WhatsApp o por calendario | dev-plataforma (front) | ✅ vitest 118, build ok | — |
+| 626 | Columnas de seguimiento en `demos` (migración idempotente, local) | experto-bd | ✅ local (125 filas intactas, md5 igual); RDS con el deploy | — |
+| 627 | `POST /demo/{id}/evento`, `traspaso_at`, API `/admin/demos` | dev-plataforma (back) | ✅ suite 3733 (normal y tipo CI) | 626 |
+| 628 | Wireframe del panel `/demos` del admin | ui-ux | ✅ `ventas/identidad_gloma/diseno_panel_demos.html` | — |
+| 629 | Revisión de seguridad del diseño (Cal.com, eventos, panel con PII) | seguridad | ✅ aceptable con controles | — |
+| 630 | Pantalla `/demos` del admin | dev-plataforma (front) | ✅ vitest 133, build ok | 627, 628 |
+| 631 | QA de los ajustes + auditoría de código | qa, seguridad | ✅ QA apto · seguridad apto | 625, 627, 630 |
+| 632 | Dos defectos del bot de demo que dejó QA (nombres de acompañantes, burbuja duplicada tras corrección) | dev-plataforma | ✅ suite 3769 (normal y tipo CI) | 631 |
+| 633 | Prueba manual del CEO de los ajustes | CEO | 🔄 entorno listo y verificado | 632 |
+
+**Revisión de diseño (#629)**: aceptable con controles; los medios bloquean en
+#631. Cal: iframe montado al clic, `sandbox` sin `allow-top-navigation`,
+`allow=""`, `no-referrer`, solo `name`/`email` en la query, `postMessage`
+validado por origen exacto **y** `source` del iframe. Respaldo si el iframe no
+funciona: **pestaña nueva** (`noopener,noreferrer`); `embed.js` descartado.
+Evento: `Literal` + `extra=forbid`, UPDATE atómico, siempre 204, 30/IP/h y
+2.000/h globales, `llamada_agendada` solo si hubo apertura. Panel: además del
+portero, **owner o permiso nuevo `ver_demos`** (el portero deja pasar a
+cualquier miembro del team de Gloma); schemas explícitos; teléfono y correo
+**enmascarados en la lista**, completos solo en el detalle; transcripción como
+texto sin autolink; log de auditoría; `no-store`; página ≤100, rango ≤366 días.
+
+**Decisión del PM**: «llamada agendada» queda como **métrica interna reportada
+por el navegador**, sin disparar ninguna acción de negocio; el webhook firmado
+de Cal (`POST /webhooks/cal`, HMAC fail-closed) queda en backlog, solo si ventas
+va a decidir con esa métrica. Exportar a CSV necesitaría revisión aparte.
+
+**Wireframe del panel (#628)**: se llama **«Demos web»** (en `/citas` ya existe
+«Demos agendadas», las de Lía). Embudo en serie Creadas → Conversaron → Traspaso
+y, aparte, «Pidieron hablar con Gloma» (WhatsApp o agendador, sin contar
+doble); se cuentan demos, no clics; el rango de fechas manda sobre el embudo y
+los filtros solo sobre la lista; detalle en panel lateral con pestañas «Datos y
+productos» y «Conversación»; acciones wa.me/copiar solo en el detalle, junto al
+consentimiento. Decisiones del PM: `GET /admin/demos/access` para el menú;
+demos internas por dominio del correo (`DEMO_DOMINIOS_INTERNOS`, default
+`example.com,glomacx.com,glomabeauty.com`) ocultas por defecto; **seguridad
+manda sobre el wireframe**: correo también enmascarado en la lista (la búsqueda
+es del lado del servidor).
+
+**Backend de los ajustes (#627)**: `POST /demo/{id}/evento` (siempre 204;
+`llamada_agendada` solo tras una apertura), `traspaso_at` en el primer turno con
+traspaso, y `routers/admin_demos.py`: `GET /admin/demos/access`,
+`GET /admin/demos` (resumen por rango + internas; lista filtrable con teléfono
+y correo enmascarados) y `GET /admin/demos/{public_id}` (datos completos,
+consentimientos, productos con precio y transcripción), todo con `no-store` y
+log de auditoría sin PII. 36 tests; suite 3733, normal y tipo CI.
+
+**Decisión del PM sobre `ver_demos`**: no se agrega a
+`models.AVAILABLE_PERMISSIONS`, porque ese catálogo lo ven todas las cuentas y
+el permiso solo tiene sentido en la de Gloma. Hoy entra el **dueño** de la cuenta
+de Gloma (el CEO); para dárselo a alguien más se inserta la fila en
+`team_permissions` (la llave ya funciona con `crud.member_has_permission`).
+
+**17-oct, config nueva de Cal del CEO**: tema oscuro, `cal-brand` #004D40 (claro)
+y #4DB6AC (oscuro), vista mensual y `useSlotsViewOnSmallScreen`. En el iframe
+se aplica por query (`theme=dark`, `layout=month_view`); si el color de marca
+solo se puede mandar con la instrucción `ui` de `embed.js` (postMessage al
+iframe, prohibido por #629), se configura en el panel de Cal.com.
+
+**Entorno de prueba del CEO, aislado (17-oct)**: para que las ediciones y builds
+de los agentes no tumben la prueba, el front del CEO corre desde una **copia**
+del frontend en el scratchpad de la sesión (`front_ceo/`, `node_modules`
+enlazado) con `next start -p 3000 -H 0.0.0.0`; se refresca con `rsync` + build
+cuando hay cambios terminados. Backend docker reconstruido con #627 y el override
+de topes. Verificado por `192.168.1.4:3000`: demo lista, evento `whatsapp` → 204
+y contador en la fila, `/admin/demos` sin sesión → 401.
+
+**Cal.com (#625) terminado**: iframe a `https://app.cal.com/gloma/hablemos-de-gloma?layout=month_view&theme=dark&useSlotsViewOnSmallScreen=true`
+(+ `name`/`email` solo de la memoria del formulario). No se usa la página
+`/embed` de Cal porque se queda oculta hasta que el padre le responde por
+`postMessage` (prohibido por #629). Cal ignora `theme` por query; el oscuro se
+fuerza con `color-scheme: dark` en el `<iframe>`. **El color de marca #4DB6AC lo
+configura el CEO en su panel de Cal.com** (solo viaja por la instrucción `ui`
+de `embed.js`). Cero peticiones a Cal antes del clic. El aviso de reserva
+(`llamada_agendada`) no se vio con una reserva real: lo confirma una reserva de
+prueba del CEO (cancelándola después). Landing: «Agenda una demo» del menú abre
+ahora el calendario; hero, cierre de precios, barra fija del celular y traspaso
+del widget de Lía ofrecen «Agendar una llamada» + «Escribir por WhatsApp»; Lía
+queda como enlace bajo el hero.
+
+**Panel «Demos web» (#630)**: `pages/demos.tsx`, `lib/demosAdmin.ts` (+15 tests),
+`components/demos/*`; ítem en el menú solo si `/admin/demos/access` permite.
+Rango por días de Colombia (7 días por defecto), «Ocultar pruebas de Gloma»
+activado, embudo que filtra la lista sin tocar el resumen, detalle en `?d=`
+con datos completos, consentimientos, productos y conversación como texto.
+Verificado contra el backend local con la cuenta de Gloma y con una cuenta de
+prueba `qa.demos630@example.com` creada en la **base local** (decidir si se
+borra). Ojo: las capturas del scratchpad muestran datos reales de las demos
+locales del CEO; no salen de ahí.
+
+**Limpieza del entorno (pedido del CEO, 17-oct)**: se eliminaron los
+contenedores detenidos `wati-frontend-1` y `wati-pgfwd` (sin datos) y se apagó
+el servidor de prueba del dev (:3124). Quedan `wati-backend-1`, `wati-db-1` y la
+copia del front del CEO en :3000. El CEO no prueba hasta que el PM le avise.
+
+**Auditoría de código de los ajustes (#631, seguridad): APTO PARA MERGE.** 0
+críticos, 0 altos, 0 medios de código; todos los controles de #629 aplicados.
+Barrido de los 43 archivos nuevos o modificados: sin datos reales nuevos ni la
+contraseña de la cuenta de prueba. Bajos aceptados: el respaldo «Ábrelo en otra
+pestaña» deja nombre y correo en el historial del navegador; `role == "owner"`
+del team de Gloma entra sin `ver_demos` (hoy solo el CEO); una demo con correo
+de un dominio interno (`example.com`, `glomacx.com`, `glomabeauty.com`) se oculta
+por defecto. Sigue M3 (legal): `/privacidad` debe nombrar a AWS Bedrock,
+**Cal.com** y la conservación de la transcripción antes de publicar.
+
+**QA de los ajustes (#631): APTO.** Suites 3733 (normal y tipo CI), vitest 133,
+build ok. Demo y landing a 390 y 1400 px: cero peticiones a Cal antes del clic,
+calendario oscuro y mensual, prellenado solo en la misma carga, WhatsApp con
+`noopener`; eventos: 204 siempre, techo 100, `llamada_agendada` sin apertura
+ignorada, 422/404 correctos, rate-limit escribe 30 de 32. Panel: resumen y
+embudo idénticos a SQL con y sin internas; filtros, paginación y 422 de rangos;
+detalle sin campos internos; HTML y URLs del visitante se muestran literales;
+otra cuenta → «Módulo privado»/403; `glomacx.com/demos` → 404 de marca. Las 3
+conversaciones de regresión cuadran y pedir el WhatsApp ya no corta la demo.
+Costo ≈ US$ 0,40. Quedaron 11 demos de QA locales (dos con contadores al techo
+a propósito, marcadas como internas).
+
+Pendientes de #631 → #632: el bot pidió los nombres de los acompañantes y no
+escaló (1/3, por una ficha «válido para dos personas»); burbuja duplicada tras
+una corrección de disponibilidad. **Aviso de QA**: un comando suyo imprimió en
+la salida de la sesión las contraseñas de `gloma@glomabeauty.com` y de la cuenta
+de QA (no en archivos ni capturas) → el CEO decide si rota la de Gloma.
+
+**#632**: se recortan las preguntas por nombres de acompañantes y, con intención
+de reservar + nombre + personas + fecha, el motor escala aunque el modelo no lo
+haga; el generador ya no produce «válido para N personas» con precio por
+persona; burbuja contenida en otra del mismo turno se quita (cubre las tres
+correcciones); «mañana» junto a una fecha que no es mañana se quita; 422 de
+`/evento` con mensaje fijo. Detector de disponibilidad ampliado («funciona con
+nosotros», «lo cubrimos»). 36 tests; suite **3769**. 3 conversaciones reales:
+las tres escalan, sin duplicados ni contactos inventados. **Queda (menor)**: día
+de la semana mal dicho cuando la fecha va sin mes («se irían el lunes 25»).
+
+**17-oct: entorno listo para la prueba del CEO**, verificado por
+`192.168.1.4:3000`: `/demo`, `/gloma`, `/demos` y `/login` 200; demo nueva lista;
+`/evento` inválido → «Solicitud inválida».
+
+---
+
+## Simulacro decembrino (23–26 oct) en los tres bots de Arranquemos Pues — 19 de octubre de 2026
+
+**Pedido del CEO**: la salida del viernes 23 al lunes 26 de octubre es el «Simulacro
+decembrino» —natilla, buñuelos, chicharronada, música en vivo, DJ, entre otros—, a
+**$489.000 por persona en los tres hoteles y en cualquier acomodación** (precio
+confirmado por el CEO en la sesión). Pauta activa con el mensaje precargado «¡Hola!
+Quiero más información del simulacro decembrino». Incluirlo en los 3 bots y desplegar.
+
+**Lo que encontré antes de tocar nada**: desde las 9:41 a.m. habían entrado 9 leads de la
+pauta y los 3 bots les respondían el plan genérico (o el menú de meses) sin mencionar el
+Simulacro. Los 3 bots en producción leen precios de `bot_producto_filas`
+(`fuente_datos=productos`), no del JSON.
+
+**Qué se hizo** (commit `9750d83`, task-def **rev 104**, imagen `:simulacro-9750d83`):
+- Precio en los dos lados, como exige la ventana de fallback: `tarifario_covenas.json`
+  (filas del 23-oct a 489.000/489.000, plan «Simulacro decembrino», nota en
+  `_cambios_a_mano`) y RDS con `importar_producto.py` (carga **2**, exactamente 2 filas
+  cambiadas —ids 41 y 42—, `--acepto-ventana-abierta` porque el JSON salió en la misma
+  imagen, aprobada por el usuario 7).
+- `app/data/promociones_covenas.json`: qué trae de más y el texto de la pauta. **Sin
+  precios.** `tarifario.promociones_vigentes()` la apaga sola el 24-oct.
+- `llm_engine._bloque_promociones`: bloque en el prefijo estable de todo bot con
+  tarifario. No pregunta el mes al que llega por la pauta, pide consultar
+  `fecha=2026-10-23` antes de dar la cifra, aclara que los extras son solo de esa
+  salida y que no repita el valor viejo del flyer. El bot 2 no pone vitrina ni flyer
+  del mes a quien llega por la pauta (`_llega_por_promocion`).
+- `bot1_golden.json` regenerado **a propósito**: verificado que el único cambio es el
+  bloque nuevo en el system.
+- Suite: 3.350 pruebas en verde (worktree limpio, `TZ=UTC`).
+
+**QA contra Bedrock (Sonnet 4.5, ver abajo)**: los 3 bots presentan el Simulacro desde
+el primer mensaje con fecha, extras y $489.000 consultado; si piden otra fecha siguen el
+flujo normal. Defecto encontrado y corregido: ante «en la imagen dice 469 mil», el
+guardarraíl de precio bloqueaba el eco de la cifra del flyer y el bot 3 repetía su
+mensaje anterior; el bloque ahora pide no repetir ese valor (2/2 bien después).
+
+**Incidente aparte — Bedrock Haiku 4.5 caído**: desde ~14:00 hora Colombia
+`global.anthropic.claude-haiku-4-5` responde `ServiceUnavailableException` (en local y
+en prod: convs 10, 1152, 1154 y 1156 cayeron al failsafe y pasaron a asesor). Sonnet 4.5
+sí responde. Por decisión del CEO, **los bots 12, 21 y 22 quedaron con
+`llm_config.model_id = global.anthropic.claude-sonnet-4-5-20250929-v1:0`** (~3x costo).
+**Pendiente: devolverlos a Haiku** cuando vuelva: quitar la llave `model_id` de
+`bots.llm_config` de los tres (con `rds_exec.sh` y un script que cargue el JSON, haga
+`pop("model_id")` y guarde; el motor cae solo al default `_DEFAULT_MODEL_ID`).
+
+**Pendientes**:
+1. Revertir el modelo a Haiku cuando Bedrock lo restablezca.
+2. El flyer de octubre (`tarifario_amordios2`, `tarifario_piedramar2`) todavía muestra
+   el 23–26 a $459.000/$469.000. Si hay pieza gráfica de la pauta del Simulacro, subirla
+   como medio y reemplazar.
+3. La conv 427 (cerrada por inactividad, asignada a asesora) recibió el mensaje de la
+   pauta y el bot no respondió: los leads que vuelven por una conversación cerrada
+   quedan en manos de asesor.
+
+**Actualización (mismo día, ~17:30)** — commit `56483fd`, task-def **rev 105**
+(imagen `:simulacro-medios-56483fd`), Amplify job 188 (hubo que lanzarlo a mano: el
+push no disparó el build esta vez).
+- **Haiku restablecido**: los bots 12, 21 y 22 volvieron a Haiku 4.5 (se quitó
+  `model_id`; verificado en la base). Pendiente 1 cerrado.
+- **Flyer y video del Simulacro** (los envió el CEO) en
+  `frontend/public/demo_viajes/simulacro_decembrino.{jpeg,mp4}` y en `medios` de
+  `promociones_covenas.json`. El flyer dice «Desde $489.000 · 23 al 26 de octubre»,
+  coincide con el tarifario. El video es H.264/AAC de 15,3 MB (tope de WhatsApp: 16 MB).
+  Pendiente 2 cerrado.
+- Quien llega por la pauta recibe en el primer mensaje el flyer (con el texto como pie)
+  y el video, en los tres bots, puestos por el sistema. En esas conversaciones se quita
+  en todo turno el tarifario viejo de octubre.
+- QA con Haiku: el bot 3 perdía la explicación de «¿por qué la imagen dice otro
+  valor?» porque `consulta_obligatoria_por_mes` tumbaba el mensaje al repetir precios
+  de octubre ya consultados. Ahora un mes consultado en la sesión no viola (los
+  precios los sigue validando el guardarraíl de precio). 3/3 bien después.
+- Suite: 3.365 en verde. `bot1_golden` regenerado: solo el bloque y 2 líneas de medios.
+
+
+---
+
+### 2026-10-20 — Fallo intermitente de Haiku 4.5 en Bedrock (otra vez): Arranquemos a Sonnet
+
+**Diagnóstico**: no es un fallo del código ni de credenciales. Es el mismo
+`ServiceUnavailableException` del 19-oct («Bedrock is unable to process your request»,
+agotando 4 reintentos), esta vez **intermitente**: en las últimas 24 h hubo 5 turnos al
+failsafe (4 el 19-oct entre 13:45 y 14:34, y 1 hoy a las 12:01 hora Colombia, bot 21,
+36,9 s de latencia antes de rendirse) frente a ~200 turnos sanos. Una invocación directa
+a Haiku desde el Mac a las 12:41 respondió bien. Cada turno fallido manda la disculpa
+técnica y pasa la conversación a asesor.
+
+**Acción (decisión del CEO, sin deploy)**: los bots 12, 21 y 22 (cuenta 7) quedaron otra
+vez con `llm_config.model_id = global.anthropic.claude-sonnet-4-5-20250929-v1:0`
+(verificado en la base). Costo ~3x por turno y ~2x de latencia mientras dure.
+
+**Pendientes**:
+1. Revertir a Haiku cuando Bedrock esté estable: mismo script con `pop("model_id")`.
+2. Dos caídas en dos días: el arreglo de fondo es un fallback **automático** en
+   `_invoke_model` (si Haiku da `ServiceUnavailable`/`Throttling`, reintentar el turno con
+   Sonnet 4.5 y marcarlo en la telemetría), en vez de cambiar el modelo a mano.
+
+**Actualización (mismo día) — fallback automático, commit `2747cf4` en `main`, SIN desplegar.**
+Por pedido del CEO, `llm_engine._invoke_con_respaldo`: cada ronda del turno prueba el
+modelo del bot hasta 3 veces (pausas 1 s y 3 s) y, si sigue fallando, Sonnet 4.5 hasta
+2 veces; **solo si las 5 fallan** sale la disculpa técnica y el pase a asesor. Si una
+ronda respondió con el respaldo, el resto del turno sigue con él (no se repiten
+herramientas ya ejecutadas). Errores de AWS no transitorios (ValidationException,
+AccessDenied) van directo al respaldo; errores propios del motor no se reintentan.
+El cliente de Bedrock ya no usa los 4 reintentos de botocore (eran ~37 s por ronda).
+Respaldo configurable con `LLM_FALLBACK_MODEL_ID` o `llm_config.fallback_model_id`.
+Logs: `llm_reintento` y `llm_respaldo` (solo modelo y tipo de error).
+Pruebas: `tests/test_llm_respaldo.py` (11); suite 3.375 en verde, igual que `origin/main`
+salvo `test_pausa` que falla en ambos por falta de `tenacity` en el conda local.
+Verificado contra Bedrock real (modelo inexistente → respondió Sonnet).
+
+**Pendientes**:
+1. Desplegar `2747cf4` (imagen `:llm-respaldo-2747cf4` → task-def 106 → update-service).
+   El build lo bloqueó el control de permisos: queda para el CEO autorizarlo.
+2. Después del deploy, devolver los bots 12, 21 y 22 a Haiku (quitar `model_id`): con
+   el fallback ya no hace falta tenerlos en Sonnet. Mientras sigan con `model_id`=Sonnet,
+   el respaldo coincide con el principal y no aplica (solo reintentan).
+
+**20-oct, ~10:00 — el primer mensaje de la pauta no llegaba al bot** (commit `82aa614`,
+task-def **rev 106**, imagen `:primer-mensaje-82aa614`, que incluye también `2747cf4`,
+los reintentos con modelo de respaldo). El reporte de conversaciones
+(`ventas/reportes/conversaciones_arranquemos_2026-10-19_20.html`) mostró que las 51 personas
+de la pauta recibieron el saludo genérico: en una conversación nueva el webhook llama a
+`run_turn(user_input=None)` y el modelo nunca veía su mensaje. La QA de ayer llamó a
+`llm_engine.advance` directo y no lo detectó. Ahora el webhook pasa `primer_mensaje` y el motor
+lo usa como entrada del primer turno solo si nombra una promoción vigente. Prueba por
+`bot_runner.run_turn` (`test_promocion_primer_mensaje.py`) y QA con Bedrock por el mismo camino
+en los 3 bots. Suite 3.381 en verde.
+
+**Actualización (mismo día, ~13:40) — fallback en producción y bots de vuelta a Haiku.**
+No hizo falta un deploy propio: la task-def **rev 106** (imagen `:primer-mensaje-82aa614`,
+desplegada por la otra sesión) se construyó sobre `2747cf4`. Verificado dentro de la imagen:
+`llm_engine.py` tiene el mismo sha256 que el del commit `82aa614` e incluye
+`_invoke_con_respaldo`. Los bots 12, 21 y 22 volvieron a su modelo por defecto (se quitó
+`model_id` de `llm_config`; verificado en la base). Pendientes 1 y 2 de arriba cerrados.
