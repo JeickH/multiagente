@@ -25,6 +25,7 @@ const TITULOS: Record<string, string> = {
   '/campanas/plantillas': 'Plantillas · Gloma',
   '/campanas/plantillas/nueva': 'Nueva plantilla · Gloma',
   '/citas': 'Citas · Gloma',
+  '/demos': 'Demos web · Gloma',
   '/usuario': 'Mi plan · Gloma',
   '/mascotas-panel': 'Mascotas · Gloma',
 };
@@ -41,6 +42,10 @@ const PUBLIC_PAGES = [
   '/pago-demo',
   // Política de tratamiento de datos que enlaza el formulario de la landing.
   '/privacidad',
+  // Demo interactiva pública (Sprint 32): la usa un prospecto sin cuenta. Su
+  // acceso es el token propio de la demo (sessionStorage `gloma_demo`), que
+  // no tiene nada que ver con la sesión de la plataforma.
+  '/demo',
 ];
 
 // Hosts donde vive SOLO contenido público — no hay plataforma que proteger.

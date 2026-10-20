@@ -1,0 +1,156 @@
+/**
+ * Pruebas de las piezas puras de la demo pública (`/demo`, #614).
+ *
+ * Lo que se protege:
+ * 1. El enlace «Agendar con Gloma»: el nombre de la empresa lo escribe un
+ *    tercero y viaja dentro del `text` de wa.me; no puede cambiar el destino.
+ * 2. `sessionStorage['gloma_demo']`: lo que se lee de ahí puede venir dañado o
+ *    manipulado; si no tiene la forma esperada se descarta, y si el
+ *    almacenamiento está bloqueado nada revienta. Nunca se usa la clave
+ *    `token` de la sesión de la plataforma (regla #7).
+ * 3. La validación del formulario (teléfono de 7 a 15 dígitos, sin forzar +57).
+ */
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { inicialesEmpresa, validarCampo, FORMULARIO_VACIO } from './demoFormulario';
+import { DEMO_UI } from './demo_copy';
+import { CLAVE_DEMO, borrarDemo, enlaceWhatsapp, guardarDemo, leerDemoGuardada, type DemoGuardada } from './demoApi';
+
+function almacenEnMemoria(): Storage {
+  const datos = new Map<string, string>();
+  return {
+    get length() {
+      return datos.size;
+    },
+    clear: () => datos.clear(),
+    getItem: (k) => (datos.has(k) ? (datos.get(k) as string) : null),
+    key: (i) => Array.from(datos.keys())[i] ?? null,
+    removeItem: (k) => void datos.delete(k),
+    setItem: (k, v) => void datos.set(k, String(v)),
+  };
+}
+
+const DEMO: DemoGuardada = {
+  v: 1,
+  id: 'demo-ficticia',
+  token: 'tok-ficticio',
+  nombre: 'Camila',
+  empresa: 'Viajes Alcaraván Azul',
+  creadoMs: 1_700_000_000_000,
+  etapa: 'slides',
+};
+
+describe('enlaceWhatsapp', () => {
+  it('lleva al WhatsApp de Gloma con la empresa en el texto', () => {
+    const url = enlaceWhatsapp('Viajes Alcaraván Azul', DEMO_UI.agendar);
+    expect(url.startsWith('https://wa.me/573150764000?text=')).toBe(true);
+    expect(decodeURIComponent(url.split('text=')[1])).toBe(
+      'Hola, acabo de probar la demo de Viajes Alcaraván Azul y quiero agendar una llamada',
+    );
+  });
+
+  it('una empresa con caracteres de URL no cambia el destino', () => {
+    const url = enlaceWhatsapp('A&B?x=1#/https://otro.example', DEMO_UI.agendar);
+    const u = new URL(url);
+    expect(u.host).toBe('wa.me');
+    expect(u.pathname).toBe('/573150764000');
+    expect([...u.searchParams.keys()]).toEqual(['text']);
+  });
+
+  it('sin empresa usa el texto genérico', () => {
+    expect(decodeURIComponent(enlaceWhatsapp('  ', DEMO_UI.agendar).split('text=')[1])).toBe(DEMO_UI.agendar.sinDemo);
+  });
+});
+
+describe('sessionStorage gloma_demo', () => {
+  beforeEach(() => {
+    vi.stubGlobal('window', { sessionStorage: almacenEnMemoria() });
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('guarda y recupera la demo bajo su propia clave', () => {
+    guardarDemo(DEMO);
+    expect(window.sessionStorage.getItem('token')).toBeNull();
+    expect(JSON.parse(window.sessionStorage.getItem(CLAVE_DEMO) as string).id).toBe('demo-ficticia');
+    expect(leerDemoGuardada()).toEqual({ ...DEMO, chat: undefined });
+  });
+
+  it('descarta lo que no tiene la forma esperada', () => {
+    window.sessionStorage.setItem(CLAVE_DEMO, '{no es json');
+    expect(leerDemoGuardada()).toBeNull();
+    window.sessionStorage.setItem(CLAVE_DEMO, JSON.stringify({ ...DEMO, v: 2 }));
+    expect(leerDemoGuardada()).toBeNull();
+    window.sessionStorage.setItem(CLAVE_DEMO, JSON.stringify({ ...DEMO, token: 123 }));
+    expect(leerDemoGuardada()).toBeNull();
+  });
+
+  it('limpia mensajes dañados y acota el hilo guardado', () => {
+    const mensajes = Array.from({ length: 60 }, (_, i) => ({ id: i + 1, de: 'yo', texto: `m${i}`, hora: '' }));
+    window.sessionStorage.setItem(
+      CLAVE_DEMO,
+      JSON.stringify({ ...DEMO, etapa: 'chat', chat: { fin: 'raro', mensajes: [...mensajes, { de: 'x' }] } }),
+    );
+    const d = leerDemoGuardada();
+    expect(d?.chat?.fin).toBeNull();
+    expect(d?.chat?.mensajes.length).toBe(40);
+    expect(d?.chat?.mensajes.at(-1)?.texto).toBe('m59');
+  });
+
+  it('borrarDemo la quita', () => {
+    guardarDemo(DEMO);
+    borrarDemo();
+    expect(leerDemoGuardada()).toBeNull();
+  });
+
+  it('con el almacenamiento bloqueado no revienta', () => {
+    vi.stubGlobal('window', {
+      get sessionStorage(): Storage {
+        throw new Error('SecurityError');
+      },
+    });
+    expect(() => guardarDemo(DEMO)).not.toThrow();
+    expect(leerDemoGuardada()).toBeNull();
+    expect(() => borrarDemo()).not.toThrow();
+  });
+});
+
+describe('validarCampo', () => {
+  const con = (cambios: Partial<typeof FORMULARIO_VACIO>) => ({ ...FORMULARIO_VACIO, ...cambios });
+
+  it('teléfono: de 7 a 15 dígitos, con espacios, guiones y +', () => {
+    expect(validarCampo('telefono', con({ telefono: '+57 300 000 0000' }))).toBe('');
+    expect(validarCampo('telefono', con({ telefono: '(1) 234-5678' }))).toBe('');
+    expect(validarCampo('telefono', con({ telefono: '300 12' }))).toBe(DEMO_UI.form.errores.telefonoInvalido);
+    expect(validarCampo('telefono', con({ telefono: '1234567890123456' }))).toBe(DEMO_UI.form.errores.telefonoInvalido);
+    expect(validarCampo('telefono', con({ telefono: '  ' }))).toBe(DEMO_UI.form.errores.telefonoVacio);
+  });
+
+  it('tipo de empresa: solo claves de la lista', () => {
+    expect(validarCampo('tipo_empresa', con({ tipo_empresa: 'hotel' }))).toBe('');
+    expect(validarCampo('tipo_empresa', con({ tipo_empresa: 'banco' }))).toBe(DEMO_UI.form.errores.tipo);
+  });
+
+  it('correo y autorización de contacto', () => {
+    expect(validarCampo('correo', con({ correo: 'camila@example' }))).toBe(DEMO_UI.form.errores.correoInvalido);
+    expect(validarCampo('correo', con({ correo: 'camila@example.com' }))).toBe('');
+    expect(validarCampo('acepta_contacto', con({}))).toBe(DEMO_UI.form.errores.contacto);
+  });
+});
+
+describe('inicialesEmpresa', () => {
+  it('ignora artículos, preposiciones y sufijos societarios', () => {
+    expect(inicialesEmpresa('Posada El Colibrí')).toBe('PC');
+    expect(inicialesEmpresa('Viajes del Sol S.A.S.')).toBe('VS');
+    expect(inicialesEmpresa('Tours & Aventuras Ltda')).toBe('TA');
+    expect(inicialesEmpresa('La Casa de los Abuelos SAS')).toBe('CA');
+    expect(inicialesEmpresa('Hotel Mirador S.A.')).toBe('HM');
+  });
+
+  it('casos límite', () => {
+    expect(inicialesEmpresa('Ébano')).toBe('É');
+    expect(inicialesEmpresa('El Del')).toBe('ED');
+    expect(inicialesEmpresa('   ')).toBe('G');
+  });
+});

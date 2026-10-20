@@ -30,6 +30,16 @@ module.exports = {
           mint: '#4DB6AC',       // Algorithmic Mint (CTAs y métricas)
           'soft-mint': '#E0F2F1',
           black: '#101817',      // Technical Black (fondos oscuros)
+          // Superficie oscura de las páginas públicas (Sprint 32, `/demo`).
+          // Son los mismos valores del objeto `BRAND` de `pages/gloma.tsx`,
+          // ahora como tokens para no repetir hex sueltos. Contrastes sobre
+          // `ink`: `ink-text` ≈ 15:1, `ink-muted` ≈ 7:1, `ink-err` ≈ 8:1.
+          ink: '#101817',
+          'ink-alt': '#0B1413',      // fondo del chat y de los inputs
+          'ink-surface': '#1A2725',  // burbuja entrante, cuadro de texto
+          'ink-text': '#E6EFEE',     // texto principal sobre oscuro
+          'ink-muted': '#A3AFAD',    // texto secundario sobre oscuro
+          'ink-err': '#FF9A8F',      // error sobre oscuro (siempre con ícono)
         },
       },
       fontFamily: {

@@ -165,6 +165,10 @@ def resolve_bot_for_incoming_message(
         .order_by(models.Bot.id)
         .all()
     )
+    # Sprint 32 (#608 M6): los bots de la demo pública (`llm_config.demo`)
+    # solo atienden `/demo/{id}/chat`. Nunca toman un mensaje entrante, ni
+    # por palabra clave ni como default, aunque alguien cambie su trigger.
+    bots = [b for b in bots if not llm_engine.config_de(b).get("demo")]
 
     text_low = (message_text or "").lower()
     for bot in bots:

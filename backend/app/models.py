@@ -1,6 +1,8 @@
+import uuid
 from datetime import datetime
 from sqlalchemy import (
     BigInteger,
+    CHAR,
     Column,
     Integer,
     String,
@@ -16,8 +18,9 @@ from sqlalchemy import (
     func,
     text,
 )
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import JSONB, UUID as PG_UUID
 from sqlalchemy.orm import relationship
+from sqlalchemy.types import TypeDecorator
 from .database import Base
 
 
@@ -715,6 +718,177 @@ class DemoBooking(Base):
 
     def __repr__(self) -> str:  # PII fuera de los logs (regla de seguridad #1)
         return f"<DemoBooking id={self.id} source={self.source} estado={self.estado}>"
+
+
+# ===== Sprint 32 #610: demo interactiva en glomacx.com/demo =====
+
+class UUIDPortable(TypeDecorator):
+    """UUID nativo en Postgres; `CHAR(36)` en cualquier otro motor.
+
+    `postgresql.UUID` no compila en SQLite (SQLAlchemy 1.4 no trae el `Uuid`
+    genérico de la 2.0), y la suite monta todo el metadata en SQLite con
+    `create_all()`: sin esto se caería la colección entera. En Postgres la
+    columna es `uuid` de 16 bytes y la base valida el formato.
+    """
+
+    impl = CHAR(36)
+    cache_ok = True
+
+    def load_dialect_impl(self, dialect):  # noqa: ANN001
+        if dialect.name == "postgresql":
+            return dialect.type_descriptor(PG_UUID(as_uuid=True))
+        return dialect.type_descriptor(CHAR(36))
+
+    def process_bind_param(self, value, dialect):  # noqa: ANN001
+        if value is None or dialect.name == "postgresql":
+            return value
+        return str(value if isinstance(value, uuid.UUID) else uuid.UUID(str(value)))
+
+    def process_result_value(self, value, dialect):  # noqa: ANN001
+        if value is None or isinstance(value, uuid.UUID):
+            return value
+        return uuid.UUID(str(value))
+
+
+DEMO_ESTADO_GENERANDO = "generando"
+DEMO_ESTADO_LISTA = "lista"
+DEMO_ESTADO_ERROR = "error"
+DEMO_ORIGEN_MODELO = "modelo"      # los 3 productos los generó Bedrock
+DEMO_ORIGEN_RESPALDO = "respaldo"  # Bedrock falló o no validó: genéricos por tipo
+
+
+class Demo(Base):
+    """Una demo interactiva que un prospecto arma en `glomacx.com/demo`.
+
+    El prospecto como tal (nombre, correo, teléfono, empresa, cuándo autorizó
+    sus datos) va a `leads` con `source='gloma_demo'`, para que salga en
+    `/citas` como los demás. Aquí va lo propio de la demo: el bot que se le
+    armó, el tipo de empresa, el consentimiento de promociones, el estado de la
+    generación y la transcripción del chat para el seguimiento comercial.
+
+    `public_id` es lo único que viaja al navegador; el `id` serial nunca sale
+    (sería enumerable). `tipo_empresa` es una clave de la lista cerrada de la
+    BITACORA (Sprint 32) y la valida el backend: sin CHECK a propósito, porque
+    la lista va a crecer y cada cambio sería una migración.
+
+    Contiene PII de un prospecto (`empresa`, `tipo_otro`, `transcripcion`,
+    `chat_state` y la IP): nunca se loggea ni se expone fuera del dueño de la
+    demo (regla #1).
+    """
+
+    __tablename__ = "demos"
+
+    id = Column(Integer, primary_key=True)
+    public_id = Column(
+        UUIDPortable(),
+        nullable=False,
+        unique=True,
+        index=True,
+        default=uuid.uuid4,
+        server_default=func.gen_random_uuid(),
+    )
+    # SET NULL en las dos: borrar el lead o el bot (retención, #618) no puede
+    # llevarse la fila, que es el registro de la demo y de su consentimiento.
+    lead_id = Column(
+        Integer, ForeignKey("leads.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    bot_id = Column(
+        Integer, ForeignKey("bots.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    empresa = Column(String(120), nullable=False)       # = leads.agencia
+    tipo_empresa = Column(String(32), nullable=False)
+    tipo_otro = Column(String(80), nullable=True)
+    # Prueba de la autorización de tratamiento de datos (Ley 1581). Sin
+    # default: la pone el endpoint en el momento en que el prospecto acepta.
+    acepta_contacto_at = Column(DateTime, nullable=False)
+    # Qué texto de autorización exacto se le mostró (ej. 'demo-2026-10'): sin
+    # esto, la fecha no prueba a qué dijo que sí (Decreto 1377/2013). Sin
+    # default a propósito: lo escribe siempre el endpoint.
+    consent_version = Column(String(32), nullable=False)
+    acepta_promociones = Column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+    acepta_promociones_at = Column(DateTime, nullable=True)
+    estado = Column(
+        String(16), nullable=False,
+        default=DEMO_ESTADO_GENERANDO, server_default=DEMO_ESTADO_GENERANDO,
+    )
+    origen_productos = Column(String(16), nullable=True)
+    mensaje_sugerido = Column(String(500), nullable=True)
+    # Se sube en la base, no en Python, para que el tope aguante concurrencia:
+    #   UPDATE demos SET turnos = turnos + 1
+    #   WHERE id = :id AND turnos < :max RETURNING turnos
+    turnos = Column(Integer, nullable=False, default=0, server_default="0")
+    # Estado del motor (el `next_state` de llm_engine), guardado del lado del
+    # servidor: si viajara en un token, reenviar uno viejo reiniciaba los turnos.
+    chat_state = Column(JSONB, nullable=True)
+    # Versión legible para ventas:
+    # [{"rol": "usuario"|"bot", "texto": "...", "at": "<iso>"}, ...]
+    transcripcion = Column(JSONB, nullable=False, default=list, server_default="[]")
+    ip_address = Column(String(64), nullable=True)
+    user_agent = Column(String(512), nullable=True)
+    created_at = Column(
+        DateTime, default=datetime.utcnow, server_default=func.now(), nullable=False,
+        index=True,
+    )
+    updated_at = Column(
+        DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+        server_default=func.now(),
+        nullable=False,
+    )
+    lista_at = Column(DateTime, nullable=True)
+    # Sprint 32 #626: seguimiento comercial para el panel del admin. Los
+    # contadores se suben en la base (`SET x = x + 1 ... WHERE x < :techo`),
+    # igual que `turnos`; el techo de 100 lo pone el backend, no un CHECK.
+    # Las fechas «primer_*» se escriben una sola vez (COALESCE).
+    clics_whatsapp = Column(Integer, nullable=False, default=0, server_default="0")
+    aperturas_llamada = Column(Integer, nullable=False, default=0, server_default="0")
+    primer_clic_whatsapp_at = Column(DateTime, nullable=True)
+    primer_apertura_llamada_at = Column(DateTime, nullable=True)
+    llamada_agendada_at = Column(DateTime, nullable=True)
+    # Cuándo la conversación llegó al traspaso a asesor.
+    traspaso_at = Column(DateTime, nullable=True)
+
+    __table_args__ = (
+        CheckConstraint(
+            "estado IN ('generando','lista','error')", name="ck_demos_estado"
+        ),
+        CheckConstraint("clics_whatsapp >= 0", name="ck_demos_clics_whatsapp"),
+        CheckConstraint("aperturas_llamada >= 0", name="ck_demos_aperturas_llamada"),
+        CheckConstraint(
+            "origen_productos IS NULL OR origen_productos IN ('modelo','respaldo')",
+            name="ck_demos_origen_productos",
+        ),
+        CheckConstraint("turnos >= 0", name="ck_demos_turnos"),
+        # El campo libre solo existe con «Otro»: así no entra texto al prompt
+        # por un tipo de la lista.
+        CheckConstraint(
+            "tipo_otro IS NULL OR tipo_empresa = 'otro'", name="ck_demos_tipo_otro"
+        ),
+        # Si aceptó promociones tiene que quedar cuándo: es la prueba.
+        CheckConstraint(
+            "NOT acepta_promociones OR acepta_promociones_at IS NOT NULL",
+            name="ck_demos_promociones_at",
+        ),
+        # Tope de demos por IP y por día:
+        #   WHERE ip_address = :ip AND created_at >= :desde
+        Index("ix_demos_ip_created", "ip_address", "created_at"),
+    )
+
+    lead = relationship("Lead")
+    bot = relationship("Bot")
+
+    def __repr__(self) -> str:  # PII fuera de los logs (regla de seguridad #1)
+        return (
+            f"<Demo id={self.id} estado={self.estado} "
+            f"tipo_empresa={self.tipo_empresa} turnos={self.turnos} "
+            f"empresa=<REDACTED> tipo_otro=<REDACTED> "
+            f"transcripcion=<REDACTED> chat_state=<REDACTED>>"
+        )
+
+    __str__ = __repr__
 
 
 # ===== Sprint 13: Contactos + Grupos =====

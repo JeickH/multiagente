@@ -30,6 +30,9 @@ const MODULOS_INTERNOS = [
   // siendo la bandeja de la cuenta propia y no cambia.
   { name: 'Conversaciones', path: '/conversaciones', icon: '👁️', access: '/api/supervision/access' },
   { name: 'Citas', path: '/citas', icon: '📅', access: '/api/citas/access' },
+  // Sprint 32 #630: quiénes armaron una demo en glomacx.com/demo. «Demos web» y
+  // no «Demos»: en /citas ya existe «Demos agendadas» (las reuniones de Lía).
+  { name: 'Demos web', path: '/demos', icon: '🧪', access: '/api/admin/demos/access' },
   { name: 'Instagram', path: '/instagram', icon: '📸', access: '/api/instagram/access' },
   // Sprint "Ayuda a Cali": panel de la cuenta `recuperatumascota@gmail.com`.
   // No es de Gloma sino de esa cuenta, y su `/access` lo resuelve así.

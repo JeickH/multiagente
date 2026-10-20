@@ -53,13 +53,15 @@ import os
 import re
 import time
 import unicodedata
+from contextvars import ContextVar
 from datetime import date, datetime, timedelta, timezone
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Sequence
 
 from . import (
-    productos, productos_bot, recortes_turno, senales, shopify_client, tarifario,
+    calendario_demo, productos, productos_bot, recortes_turno, senales,
+    shopify_client, tarifario,
 )
 from .crypto import encrypt_secret
 from .messaging.base import MARCADOR_NOTA_DE_VOZ
@@ -851,6 +853,10 @@ def _system_prompt(
         "próximo 18 de diciembre, no al del año pasado. Nunca supongas un año "
         "anterior al de hoy."
     )
+    if cfg.get("demo"):
+        # Demo pública (#619, QA #615): el calendario va hecho. El modelo
+        # calculaba mal el día de la semana en 9 de 12 conversaciones.
+        parts.append(calendario_demo.bloque(_hoy))
     if cfg.get("menu_meses"):
         # Bot 3: cambia con la fecha, igual que el bloque de arriba.
         menu = _bloque_menu_meses(cfg)
@@ -927,15 +933,15 @@ def _system_prompt(
         # prefijo queda por encima del mínimo cacheable. La decisión se mide,
         # no se supone: ver `productos_bot.ficha_en_el_prefijo`.
         sin_ficha = "\n\n".join(partes)
-        partes.insert(
-            1,
-            productos_bot.bloque_indice(
-                ctx_productos,
-                con_ficha=productos_bot.ficha_en_el_prefijo(
-                    ctx_productos, sin_ficha
-                ),
-            ),
+        indice = productos_bot.bloque_indice(
+            ctx_productos,
+            con_ficha=productos_bot.ficha_en_el_prefijo(ctx_productos, sin_ficha),
         )
+        if cfg.get("demo"):
+            # Demo (#619): las fichas ya viajan en las instrucciones; el pie
+            # no manda a abrirlas antes de cada mención.
+            indice = indice.replace(productos_bot._PIE_VARIOS, _PIE_INDICE_DEMO)
+        partes.insert(1, indice)
     if cola_aparte:
         return "\n\n".join(partes) + _COLA_SIN_CACHE + "\n\n".join(cola_aparte)
     return "\n\n".join(partes)
@@ -3130,7 +3136,9 @@ def _postproceso_variante(
             logger.info("llm_engine: presentación repetida quitada (bot=%s)", bot_id)
 
     # 2 — #8: el nombre se pregunta una sola vez en toda la conversación.
-    if cfg.get("nombre_una_vez"):
+    # También en la demo pública (#619): el bot de demo lo preguntaba hasta 7
+    # veces a un visitante que no lo daba.
+    if cfg.get("nombre_una_vez") or cfg.get("demo"):
         ya_pedido = _nombre_ya_pedido(cfg, history)
 
         def _fabrica():
@@ -3557,7 +3565,10 @@ def _tools_for(
         # fuentes de precios para el mismo turno, y elegiría por su cuenta.
         # Sin productos asignados, `ctx_productos` es None y el bot mantiene
         # exactamente las herramientas de hoy.
-        tools.extend(productos_bot.tools(ctx_productos, prefijo=system))
+        declaradas = productos_bot.tools(ctx_productos, prefijo=system)
+        if cfg.get("demo"):
+            declaradas = _tools_productos_demo(declaradas)
+        tools.extend(declaradas)
     elif cfg.get("tarifario"):
         tools.append(
             {
@@ -4121,6 +4132,1326 @@ def _viola_contacto(
             if not any(_mismo_telefono(dicho, permitido) for permitido in ok):
                 return True
     return False
+
+
+# ---------------------------------------------------------------------------
+# Guardarraíl de la demo pública (Sprint 32, #608 M4)
+# ---------------------------------------------------------------------------
+#
+# El bot de una demo (`llm_config.demo`) atiende a un desconocido en
+# glomacx.com/demo en nombre de una empresa inventada a partir de un
+# formulario. No tiene NINGUNA herramienta que le entregue un contacto, así que
+# cualquier teléfono, correo, @usuario, URL o dominio que escriba y que el
+# visitante no haya escrito antes es inventado — o inyectado por el nombre de la
+# empresa. Los guardarraíles de arriba no se activan para este bot (miran
+# `mascotas` y `venta`), por eso tiene el suyo. Solo corre con el flag.
+
+#: Dominios sin protocolo ni `www` ("agenciaxyz.com"). Mismo criterio que
+#: `services/demo_bot._DOMINIO_RE`, que valida la salida de la generación.
+_DOMINIO_DEMO_RE = re.compile(
+    r"\b[\w-]+\.(?:com|co|net|org|io|travel|tours|info|app|me|store|shop|"
+    r"site|online|biz|tv|xyz)\b",
+    re.IGNORECASE,
+)
+#: Correos y @usuarios: cualquier `@` pegado a una palabra.
+_ARROBA_DEMO_RE = re.compile(r"[\w.+-]*@[\w.-]+")
+#: Cifras de plata: `$1.250.000`, `1.250.000`, `$ 450.000`. Se quitan antes de
+#: buscar teléfonos: el detector de teléfonos lee `1.250.000` como un número de
+#: 7 dígitos, y un bot que cotiza no puede caerse por decir el precio.
+_CIFRA_DE_PLATA_RE = re.compile(r"\$\s*\d[\d.,]*|\b\d{1,3}(?:[.,]\d{3})+(?:,\d+)?\b")
+
+_CORRECCION_CONTACTO_DEMO = (
+    "ALTO: acabas de escribir un teléfono, un correo, un @usuario, un enlace o "
+    "una dirección web que el cliente no te dio. No tienes ningún dato de "
+    "contacto del negocio ni puedes inventar uno. Ese mensaje NO se le envió. "
+    "Vuelve a responder lo mismo SIN ningún teléfono, correo, enlace ni "
+    "dirección web. Si el cliente pide un contacto, dile que una persona del "
+    "equipo sigue con él cuando confirme la reserva."
+)
+_TEXTO_CONTACTO_DEMO = (
+    "Ese dato te lo comparte directamente una persona del equipo cuando "
+    "confirmemos tu reserva 😊 ¿Seguimos con lo que estabas buscando?"
+)
+
+
+def _contactos_en_texto_demo(texto: str) -> tuple:
+    """`(teléfonos en dígitos, otros)`: lo que en un texto sirve para contactar.
+
+    `otros` son correos, @usuarios, URLs y dominios en minúsculas y sin la
+    puntuación final."""
+    texto = texto or ""
+    telefonos = _digitos_de_telefonos(_CIFRA_DE_PLATA_RE.sub(" ", texto))
+    otros = [
+        m.lower().rstrip(".,;:!?)")
+        for patron in (_URL_EN_TEXTO_RE, _ARROBA_DEMO_RE, _DOMINIO_DEMO_RE)
+        for m in patron.findall(texto)
+        if m.strip(".,;:!?@")
+    ]
+    return telefonos, otros
+
+
+def _viola_contacto_demo(
+    cfg: Dict[str, Any],
+    textos_de_la_ronda: List[str],
+    textos_del_visitante: List[str],
+) -> bool:
+    """¿El bot de demo escribió un contacto que el visitante no escribió?
+
+    Lo que el visitante dio sí se le puede repetir (confirmarle su correo, el
+    dominio de su página): se compara por dígitos para teléfonos y por
+    contención en minúsculas para lo demás.
+    """
+    if not cfg.get("demo") or not textos_de_la_ronda:
+        return False
+    visitante = "\n".join(t or "" for t in textos_del_visitante)
+    visitante_bajo = visitante.lower()
+    tels_ok = _digitos_de_telefonos(_CIFRA_DE_PLATA_RE.sub(" ", visitante))
+    for texto in textos_de_la_ronda:
+        telefonos, otros = _contactos_en_texto_demo(texto)
+        for dicho in telefonos:
+            if not any(_mismo_telefono(dicho, ok) for ok in tels_ok):
+                return True
+        for dicho in otros:
+            if dicho not in visitante_bajo:
+                return True
+    return False
+
+
+def _contacto_demo_a_texto_fijo(
+    actions: List[Dict[str, Any]],
+    acciones_previas: int,
+    say_texts: List[str],
+    textos_previos: int,
+) -> None:
+    """Segunda vez en el mismo turno: los textos de la ronda se cambian por uno
+    fijo sin datos de contacto. Lo que no es texto (un `handoff`, un `end`) se
+    conserva: si el bot estaba escalando, el traspaso sigue en pie."""
+    actions[acciones_previas:] = [
+        a for a in actions[acciones_previas:] if a.get("type") != "say"
+    ]
+    actions.insert(
+        acciones_previas, {"type": "say", "payload": {"text": _TEXTO_CONTACTO_DEMO}}
+    )
+    say_texts[textos_previos:] = [_TEXTO_CONTACTO_DEMO]
+
+
+# ---------------------------------------------------------------------------
+# Demo pública: herramientas, narración y pregunta repetida (#619, QA #615)
+# ---------------------------------------------------------------------------
+#
+# Todo lo de esta sección corre SOLO con `llm_config.demo`.
+
+_PIE_INDICE_DEMO = (
+    "Las fichas de cada producto están en «Fichas de los productos». Los "
+    "precios NO están en esta lista ni en tu memoria — salen de "
+    "`consultar_precios`."
+)
+_DESC_ABRIR_DEMO = (
+    "Abre un producto y te devuelve su ficha: qué es, qué incluye y sus "
+    "condiciones. Lo que no esté en la ficha no lo afirmes ni lo inventes. No "
+    "devuelve precios — para eso está `consultar_precios`."
+)
+_NOTA_PRECIO_DEMO = (
+    "Es el mismo precio todos los meses del año: dalo de una vez, sin esperar "
+    "la fecha. La fecha solo hace falta para reservar. La disponibilidad no la "
+    "sabes: la confirma el equipo al reservar."
+)
+_FECHAS_NO_DISPONIBLE_DEMO = (
+    "Esta herramienta no está disponible. No afirmes disponibilidad ni cupos: "
+    "la disponibilidad la confirma el equipo al reservar. Para el precio usa "
+    "`consultar_precios`."
+)
+_PERIODOS_RE = re.compile(r"^Períodos con disponibilidad:.*$\n?", re.MULTILINE)
+
+
+def _tools_productos_demo(declaradas: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Las del catálogo para un bot de demo: sin `fechas_disponibles` (con un
+    precio plano no aporta nada y su «Octubre: todo el mes» se leía como
+    disponibilidad) y con la descripción de `abrir_producto` sin hablar de
+    disponibilidad."""
+    salida = []
+    for t in declaradas:
+        if t.get("name") == productos_bot.FECHAS:
+            continue
+        if t.get("name") == productos_bot.ABRIR:
+            t = {**t, "description": _DESC_ABRIR_DEMO}
+        salida.append(t)
+    return salida
+
+
+def _ejecutar_producto_demo(db, ctx, name: str, tool_input: Dict[str, Any]) -> str:
+    """`productos_bot.ejecutar` con los ajustes de la demo.
+
+    * `consultar_precios` sin mes, fecha ni presupuesto consulta el mes en
+      curso: el precio es el mismo todo el año y la capa, sin período, contesta
+      «no entendí para qué fecha» — el bot no daba la cifra (QA #615).
+    * `abrir_producto` sin la línea «Períodos con disponibilidad».
+    * `fechas_disponibles` (no se declara; puede venir de un historial) no
+      devuelve ningún calendario.
+    """
+    if name == productos_bot.FECHAS:
+        return _FECHAS_NO_DISPONIBLE_DEMO
+    if name == productos_bot.PRECIOS:
+        entrada = dict(tool_input or {})
+        if not any(str(entrada.get(k) or "").strip() for k in ("mes", "fecha", "presupuesto")):
+            entrada["mes"] = productos.nombre_mes(ctx.hoy.month)
+        texto = productos_bot.ejecutar(db, ctx, name, entrada)
+        return f"{texto}\n{_NOTA_PRECIO_DEMO}"
+    texto = productos_bot.ejecutar(db, ctx, name, tool_input)
+    if name == productos_bot.ABRIR:
+        texto = _PERIODOS_RE.sub("", texto).rstrip()
+    return texto
+
+
+#: «Déjame abrir el producto…», «Déjame verificar la disponibilidad…»,
+#: «Necesito revisar…», «Primero déjame darte el precio.», «Un momento», «Te
+#: paso el precio para que veas…»: el modelo anuncia la herramienta en la ronda
+#: que la llama y el visitante recibe una burbuja de más que suena a robot. Se
+#: recorta desde el verbo (con el «Primero»/«Ahora» de adelante) hasta el fin de
+#: la frase. Nunca se recorta una frase con plata (podría llevarse el precio) ni
+#: una que sigue después de dos puntos («Déjame contarte: incluye…»), y
+#: «pasarte con» queda fuera: es el aviso de un traspaso. No se usa
+#: `recortes_turno.sin_narracion` a propósito: también quita «Tienes razón…»,
+#: que la plantilla de la demo usa.
+_SIN_CIFRAS = r"[^.!?\n:]*(?:[.!?…]+|(?=\n)|$)"
+_NARRACION_DEMO_RE = re.compile(
+    r"(?:(?:primero|ahora|antes)\s*,?\s+)?"
+    r"(?:(?:d[eé]jame|perm[ií]teme|voy\s+a|vamos\s+a|necesito|tengo\s+que)\s+"
+    r"(?:\w+\s+){0,2}?"
+    r"(?:abrir|consultar|revisar|verificar|mirar|buscar|chequear|traer|ver|mostrar|"
+    r"dar|contar|pasar(?!\w*\s+con\b))\w*\b"
+    + _SIN_CIFRAS
+    + r"|(?:dame|espera(?:me)?|aguarda)\s+un\s+(?:momento|segundo|momentico)\b"
+    + _SIN_CIFRAS
+    + r"|(?<![\w])un\s+(?:momento|segundo|momentico)\s*(?:,?\s*por\s+favor)?\s*[.!…]*"
+    r"(?=\s|$)(?!\s*(?:especial|[úu]nico|inolvidable|m[áa]gico|perfecto|de\b|para\b|que\b|en\b))"
+    r"|te\s+(?:paso|comparto|env[íi]o)\s+(?:el|los)\s+precios?\s+para\s+que\s+"
+    r"(?:veas|mires|revises)\b" + _SIN_CIFRAS + r")",
+    re.IGNORECASE,
+)
+#: Lo que queda colgando al final de un renglón cuando la narración iba pegada
+#: con un conector («…del 20 al 23? Y déjame consultar…» → «… Y»).
+_COLGANTE_DEMO_RE = re.compile(
+    r"(?:\s+(?:y|e|pero|entonces|mientras|primero|ahora))+\s*[,:;]?\s*$|[,:;]\s*$",
+    re.IGNORECASE,
+)
+#: Lo que el modelo escribe al rehacer un mensaje tras una corrección y que el
+#: cliente no tiene por qué leer (QA #620 #4: «Tienes razón, me disculpo. Aquí
+#: va de nuevo:»). Complementa a `recortes_turno.sin_disculpa_inicial`.
+#: Frases que la plantilla prohíbe y el modelo igual escribe (re-prueba #621:
+#: «Pero estoy acá para ayudarte con lo que necesites.»). Se va la frase.
+_FRASE_PROHIBIDA_DEMO_RE = re.compile(
+    r"estoy\s+(?:aqu[ií]|ac[aá])\s+para\s+(?:ayudarte|servirte)"
+    r"|no\s+dudes\s+en\s+escribirme|espero\s+haber\s+resuelto",
+    re.IGNORECASE,
+)
+_EXCELENTE_INICIAL_RE = re.compile(r"^\s*¡?\s*excelente\s*(?:pregunta)?\s*[!.,]*\s*", re.IGNORECASE)
+
+
+_FRASE_PROHIBIDA_COMPLETA_RE = re.compile(
+    r"(?:(?<=\s)(?:pero|y)\s+)?(?:" + _FRASE_PROHIBIDA_DEMO_RE.pattern
+    + r")[^.!?¿\n]*[.!?…]*\s*",
+    re.IGNORECASE,
+)
+#: Conector que quedó solo delante de una pregunta tras un recorte (QA #622:
+#: «De momento ¿Vamos entonces?»).
+_CONECTOR_ANTES_DE_PREGUNTA_RE = re.compile(
+    r"(^|[.!?…\n]\s*)(?:de\s+momento|por\s+ahora|mientras\s+tanto|pero|y|entonces"
+    r"|por\s+(?:aqu[ií]|ac[aá]))\s*,?\s*(?=¿)",
+    re.IGNORECASE,
+)
+#: «según la ficha», «como dice la ficha»: nunca al cliente (QA #622).
+_SEGUN_LA_FICHA_RE = re.compile(
+    r"(?:,\s*)?\b(?:seg[uú]n|de\s+acuerdo\s+(?:con|a)|como\s+(?:dice|indica))\s+(?:la|nuestra)\s+"
+    r"ficha\b\s*,?\s*",
+    re.IGNORECASE,
+)
+#: «Pero primero, déjame darte el precio: el X está en…»: la narración hasta
+#: los dos puntos se va y lo que sigue se queda (QA #622).
+_NARRACION_HASTA_DOS_PUNTOS_RE = re.compile(
+    r"(?:(?:pero|y)\s+)?(?:(?:primero|ahora|antes)\s*,?\s+)?"
+    r"(?:d[eé]jame|perm[ií]teme|te\s+cuento\s+primero)\s+(?:\w+\s+){0,3}?"
+    r"(?:dar|contar|pasar|mostrar|compartir|decir)\w*\b[^.!?\n:]{0,40}:\s*",
+    re.IGNORECASE,
+)
+
+
+def _con_mayuscula_tras_recorte(original: str, limpio: str) -> str:
+    """Tras un recorte, la letra que quedó al comienzo de una frase va en
+    mayúscula («… reservar. el *Plan*» → «… reservar. El *Plan*»)."""
+    if limpio == original:
+        return limpio
+    return re.sub(
+        r"(^|[.!?…]\s+|\n\s*)([¿¡*]*)([a-záéíóúñ])",
+        lambda m: m.group(1) + m.group(2) + m.group(3).upper(),
+        limpio,
+    )
+
+
+def _sin_frases_prohibidas_demo(texto: str) -> str:
+    """Desde la frase prohibida (con su «Pero» de adelante) hasta su punto (o
+    hasta la pregunta que sigue); «según la ficha»; la narración que termina
+    en dos puntos; y el conector que quede colgando delante de una pregunta."""
+    original = texto or ""
+    limpio = _FRASE_PROHIBIDA_COMPLETA_RE.sub("", original)
+    limpio = _SEGUN_LA_FICHA_RE.sub("", limpio)
+    limpio = _NARRACION_HASTA_DOS_PUNTOS_RE.sub("", limpio)
+    limpio = _CONECTOR_ANTES_DE_PREGUNTA_RE.sub(lambda m: m.group(1), limpio)
+    limpio = re.sub(r"[ \t]{2,}", " ", limpio)
+    limpio = _con_mayuscula_tras_recorte(original, limpio)
+    limpio = _EXCELENTE_INICIAL_RE.sub("", limpio).strip()
+    if limpio and limpio != (texto or "").strip() and limpio[:1].islower():
+        limpio = limpio[:1].upper() + limpio[1:]
+    return re.sub(r"\n{3,}", "\n\n", limpio)
+
+
+#: Voseo y «vosotros» → tuteo y «ustedes» (QA #622: «os llama», «preferís»,
+#: «Decime»). La plantilla lo prohíbe y el modelo igual lo escribe; aquí se
+#: corrigen las formas más comunes, palabra por palabra.
+_VOSEO_DEMO = {
+    "decime": "dime", "contame": "cuéntame", "mirá": "mira", "fijate": "fíjate",
+    "avisame": "avísame", "escribime": "escríbeme", "preguntame": "pregúntame",
+    "preferís": "prefieres", "querés": "quieres", "podés": "puedes",
+    "tenés": "tienes", "sabés": "sabes", "sos": "eres", "pensás": "piensas",
+    "necesitás": "necesitas", "buscás": "buscas", "venís": "vienes",
+    "viajás": "viajas", "llegás": "llegas", "estás seguro vos": "estás seguro",
+    "con vos": "contigo", "para vos": "para ti", "a vos": "a ti", "vos": "tú",
+    "queréis": "quieren", "tenéis": "tienen", "podéis": "pueden", "sois": "son",
+    "estáis": "están", "vais": "van", "habéis": "han", "preferís vosotros": "prefieren",
+    "vosotros": "ustedes", "vosotras": "ustedes", "vuestro": "su", "vuestra": "su",
+    "vuestros": "sus", "vuestras": "sus", "os": "les",
+}
+_VOSEO_DEMO_RE = re.compile(
+    r"(?<![\wáéíóúñ])(" + "|".join(
+        re.escape(k) for k in sorted(_VOSEO_DEMO, key=len, reverse=True)
+    ) + r")(?![\wáéíóúñ])",
+    re.IGNORECASE,
+)
+
+
+def sin_voseo_demo(texto: str) -> str:
+    def _cambiar(m: "re.Match") -> str:
+        nuevo = _VOSEO_DEMO[m.group(1).lower()]
+        return nuevo[:1].upper() + nuevo[1:] if m.group(1)[:1].isupper() else nuevo
+    return _VOSEO_DEMO_RE.sub(_cambiar, texto or "")
+
+
+_REHECHO_INICIAL_RE = re.compile(
+    r"^\s*(?:aqu[ií]\s+va\s+(?:de\s+nuevo|otra\s+vez|corregido)|de\s+nuevo|"
+    r"otra\s+vez)\s*[:.,!]+\s*",
+    re.IGNORECASE,
+)
+
+
+def sin_narracion_demo(texto: str) -> str:
+    original = texto or ""
+    limpio = _NARRACION_DEMO_RE.sub(
+        lambda m: m.group(0) if _MONTO_EN_TEXTO_RE.search(m.group(0)) else "", original
+    )
+    if limpio == original:
+        return original.strip()
+    limpio = re.sub(r"[ \t]{2,}", " ", limpio)
+    limpio = "\n".join(
+        _COLGANTE_DEMO_RE.sub("", l.rstrip()) for l in limpio.split("\n")
+    )
+    limpio = re.sub(r"\n{3,}", "\n\n", limpio).strip()
+    # Lo que quedó sin una letra ni un número («🙏») no es un mensaje.
+    return limpio if re.search(r"\w", limpio) else ""
+
+
+def _sin_frase_colgante(texto: str) -> str:
+    """Tras quitar una pregunta: lo que queda terminando en «:» o «,»
+    («Volvamos a la camioneta:», «Entonces,») es el arranque de la pregunta que
+    se fue, y se va con ella. Después, los conectores sueltos."""
+    texto = (texto or "").rstrip()
+    lineas = texto.split("\n")
+    ultima = lineas[-1].rstrip()
+    if ultima.endswith((":", ",")):
+        frases = _frases(ultima)
+        # La última frase es la que quedó a medias (sin su signo de cierre).
+        resto = "".join(frases[:-1]) if len(frases) > 1 else ""
+        lineas[-1] = resto.rstrip()
+    texto = "\n".join(lineas).rstrip()
+    texto = _COLGANTE_DEMO_RE.sub("", texto).strip()
+    return re.sub(r"\n{3,}", "\n\n", texto)
+
+
+_PREGUNTA_RE = re.compile(r"¿[^¿?]*\?")
+_PALABRA_VACIA = frozenset({
+    "el", "la", "los", "las", "lo", "de", "del", "en", "y", "o", "a", "un", "una",
+    "que", "te", "se", "me", "tu", "su", "es", "al", "con", "por", "para",
+})
+
+
+def _claves_pregunta(pregunta: str) -> set:
+    plano = "".join(
+        c for c in unicodedata.normalize("NFKD", pregunta.lower())
+        if not unicodedata.combining(c)
+    )
+    return {
+        w[:-1] if len(w) > 3 and w.endswith("s") else w
+        for w in re.findall(r"[a-z0-9]+", plano)
+        if w not in _PALABRA_VACIA
+    }
+
+
+def misma_pregunta(a: str, b: str) -> bool:
+    """¿Dos preguntas piden lo mismo? Por palabras con contenido, sin tildes ni
+    plurales: «¿Para qué fecha exacta en diciembre lo estás pensando?» y
+    «¿para qué fechas exactas en diciembre lo estás pensando?» son la misma."""
+    ca, cb = _claves_pregunta(a), _claves_pregunta(b)
+    if min(len(ca), len(cb)) < 2:
+        return ca == cb and bool(ca)
+    return len(ca & cb) / min(len(ca), len(cb)) >= 0.8
+
+
+_DIA_RE = r"(lunes|martes|mi[eé]rcoles|jueves|viernes|s[aá]bado|domingo)"
+_MES_RE_DEMO = (
+    r"(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|setiembre|"
+    r"octubre|noviembre|diciembre)"
+)
+_DIA_FECHA_RE = re.compile(
+    # QA #622: también «el próximo martes es 22 de octubre».
+    r"\b" + _DIA_RE + r"(\s+(?:(?:es|ser[íi]a|cae|ser[áa])\s+)?(?:el\s+)?)(\d{1,2})"
+    r"(\s+de\s+|\s+)" + _MES_RE_DEMO
+    + r"\b(?:(\s+de\s+)(\d{4}))?",
+    re.IGNORECASE,
+)
+#: «sábado 15 a martes 17 de noviembre», «viernes 23 y sábado 24 de octubre»:
+#: el primer día del rango no trae el mes; se toma el del final.
+_DIA_RANGO_RE = re.compile(
+    r"\b" + _DIA_RE + r"(\s+)(\d{1,2})"
+    r"(?=\s*(?:,|y|e|a|al|hasta|–|-)\s*(?:el\s+)?(?:" + _DIA_RE[1:-1] + r")?\s*"
+    r"(\d{1,2})\s+de\s+" + _MES_RE_DEMO + r"\b)",
+    re.IGNORECASE,
+)
+#: «el 14 de noviembre es un viernes» / «cae un domingo»: el día afirmado.
+_FECHA_ES_DIA_RE = re.compile(
+    r"\b(\d{1,2})\s+de\s+" + _MES_RE_DEMO + r"(?:\s+de\s+(\d{4}))?"
+    r"(\s+(?:es|cae|ser[áa]|ser[ií]a|queda)\s+(?:un|el|en)\s+)" + _DIA_RE + r"\b",
+    re.IGNORECASE,
+)
+_NUM_MES = {
+    "enero": 1, "febrero": 2, "marzo": 3, "abril": 4, "mayo": 5, "junio": 6,
+    "julio": 7, "agosto": 8, "septiembre": 9, "setiembre": 9, "octubre": 10,
+    "noviembre": 11, "diciembre": 12,
+}
+
+
+def _fecha_proxima(dia: int, mes: int, anio: Optional[int], hoy: date) -> Optional[date]:
+    try:
+        fecha = date(anio or hoy.year, mes, dia)
+        if anio is None and fecha < hoy:
+            fecha = date(hoy.year + 1, mes, dia)
+    except ValueError:
+        return None
+    return fecha
+
+
+def _nombre_dia(fecha: date, como: str) -> str:
+    correcto = calendario_demo.DIAS[fecha.weekday()]
+    return correcto[:1].upper() + correcto[1:] if como[:1].isupper() else correcto
+
+
+def dias_de_semana_corregidos(texto: str, hoy: date) -> str:
+    """«viernes 12 de diciembre» → «sábado 12 de diciembre» si el 12 de
+    diciembre (el próximo, o el del año escrito) es sábado. También el primer
+    día de un rango sin mes («sábado 15 a martes 17 de noviembre») y el día
+    afirmado de una fecha («el 14 de noviembre es un viernes»).
+
+    QA #615/#619/#620: aun con el calendario en el prompt, el modelo nombra mal
+    el día de la semana de las fechas que caen fuera de los 21 días listados.
+    El día se recalcula aquí; la fecha que escribió no se toca."""
+    def _arreglar(m: "re.Match") -> str:
+        fecha = _fecha_proxima(
+            int(m.group(3)), _NUM_MES[m.group(5).lower()],
+            int(m.group(7)) if m.group(7) else None, hoy,
+        )
+        if fecha is None:
+            return m.group(0)
+        return _nombre_dia(fecha, m.group(1)) + m.group(0)[len(m.group(1)):]
+
+    def _arreglar_rango(m: "re.Match") -> str:
+        mes = _NUM_MES[m.group(5).lower()]
+        if int(m.group(3)) > int(m.group(4)):
+            mes = 12 if mes == 1 else mes - 1     # «lunes 30 a martes 1 de dic»
+        fecha = _fecha_proxima(int(m.group(3)), mes, None, hoy)
+        if fecha is None:
+            return m.group(0)
+        return _nombre_dia(fecha, m.group(1)) + m.group(2) + m.group(3)
+
+    def _arreglar_es(m: "re.Match") -> str:
+        fecha = _fecha_proxima(
+            int(m.group(1)), _NUM_MES[m.group(2).lower()],
+            int(m.group(3)) if m.group(3) else None, hoy,
+        )
+        if fecha is None:
+            return m.group(0)
+        inicio = m.start(5) - m.start(0)
+        return m.group(0)[:inicio] + _nombre_dia(fecha, m.group(5))
+
+    texto = _DIA_FECHA_RE.sub(_arreglar, texto or "")
+    texto = _DIA_RANGO_RE.sub(_arreglar_rango, texto)
+    return _FECHA_ES_DIA_RE.sub(_arreglar_es, texto)
+
+
+# ---------------------------------------------------------------------------
+# Precios de la demo (#621, QA #620: el bot inventó $1.190.000 con una fila de
+# $890.000 y $420.000 con una de $520.000, sin llamar ninguna herramienta)
+# ---------------------------------------------------------------------------
+#
+# El precio de cada producto de demo es plano (el mismo los 12 meses), así que
+# toda cifra en pesos que escriba el bot tiene que ser uno de esos precios por
+# un entero chico (personas, noches, personas × noches), la suma de cifras así
+# del mismo mensaje, o una cifra que escribió el propio visitante.
+
+_MAX_MULTIPLO_DEMO = 50
+_CORRECCION_PRECIO_DEMO = (
+    "ALTO: escribiste una cifra en pesos que no sale de los precios de los "
+    "productos. Ese mensaje NO se le envió. Usa exactamente los precios de las "
+    "fichas (los de `consultar_precios`, son los mismos todo el año) y, si "
+    "haces una cuenta, multiplica ese precio solo por personas o por noches "
+    "según su unidad, con la operación a la vista. Si la unidad ya incluye las "
+    "noches («por persona, 7 noches»), multiplica solo por personas."
+)
+_TEXTO_PRECIO_DEMO = (
+    "*{producto}*: *{precio} {unidad}* (el mismo precio todo el año). El total "
+    "exacto te lo confirma el equipo al reservar."
+)
+_TEXTO_PRECIO_DEMO_GENERICO = (
+    "Los precios exactos te los confirma el equipo al reservar 😊"
+)
+_NUM_BARE_RE = re.compile(r"(?<![\d$.,])\d{1,3}(?:\.\d{3}){1,3}(?![\d.,]\d)")
+_POR_NOCHES_RE = re.compile(r"[×x*]\s*\d{1,2}\s*noches?\b", re.IGNORECASE)
+_UNIDAD_CON_NOCHES_RE = re.compile(r"\d+\s*noches?", re.IGNORECASE)
+
+
+def precios_demo(ctx_productos: Optional[Any]) -> List[tuple]:
+    """`[(nombre, precio, unidad)]` de los productos del bot, sin repetir."""
+    if ctx_productos is None:
+        return []
+    salida, vistos = [], set()
+    for c in getattr(ctx_productos, "catalogos", ()) or ():
+        for f in c.filas:
+            valores = f.valores or {}
+            precio = valores.get("precio")
+            if isinstance(precio, bool) or not isinstance(precio, (int, float)):
+                continue
+            clave = (c.nombre, int(precio))
+            if clave in vistos:
+                continue
+            vistos.add(clave)
+            salida.append((c.nombre, int(precio), str(valores.get("unidad") or "").strip()))
+    return salida
+
+
+def montos_demo(texto: str) -> List[int]:
+    """Las cifras en pesos de un texto: las de `guardarrail_precio` (`$450.000`,
+    `450 mil`, `1,5 millones`, `450.000 pesos`) y las de miles con punto sin
+    signo («serían 1.780.000»). «3 días / 2 noches» y los años no son plata."""
+    from . import guardarrail_precio
+
+    texto = texto or ""
+    montos = list(guardarrail_precio.extraer_montos(texto))
+    sin_signo = re.sub(r"\$\s?[\d.'’,]+", " ", texto)
+    for m in _NUM_BARE_RE.finditer(sin_signo):
+        valor = int(m.group(0).replace(".", ""))
+        if valor >= 10_000 and valor not in montos:
+            montos.append(valor)
+    return montos
+
+
+def _es_multiplo(monto: int, precios: List[int]) -> bool:
+    return any(p > 0 and monto % p == 0 and 1 <= monto // p <= _MAX_MULTIPLO_DEMO for p in precios)
+
+
+def _monto_valido(monto: int, precios: List[int], del_texto: List[int],
+                  del_visitante: set) -> bool:
+    if monto in del_visitante:
+        return True
+    if _es_multiplo(monto, precios):
+        return True
+    # Dos productos sumados aunque los parciales vengan de mensajes anteriores
+    # («entre la suite y las dos habitaciones llegarían a $2.370.000» =
+    # $420.000 × 3 + $185.000 × 6: re-prueba #621).
+    for p in precios:
+        for k in range(1, _MAX_MULTIPLO_DEMO + 1):
+            resto = monto - k * p
+            if resto <= 0:
+                break
+            if _es_multiplo(resto, precios):
+                return True
+    # La suma de otras cifras válidas del mismo mensaje (dos productos, o
+    # «$900.000 + $450.000 = $1.350.000»).
+    base = [
+        m for m in del_texto if m != monto
+        and any(p > 0 and m % p == 0 and 1 <= m // p <= _MAX_MULTIPLO_DEMO for p in precios)
+    ]
+    for i in range(len(base)):
+        for j in range(i + 1, len(base)):
+            if base[i] + base[j] == monto:
+                return True
+            for k in range(j + 1, len(base)):
+                if base[i] + base[j] + base[k] == monto:
+                    return True
+    return False
+
+
+_PESOS_RE = r"\$\s?\d{1,3}(?:\.\d{3})+"
+#: Una operación escrita: el precio y sus multiplicadores («$250.000 por noche ×
+#: 2 noches × 2 habitaciones»), acotada a un renglón.
+_OPERACION_RE = re.compile(
+    r"(" + _PESOS_RE + r")((?:[^\n×*=()$]{0,30}?(?:×|\*|(?<![a-zA-Záéíóúñ])x)\s*\d{1,3}\b)+)"
+)
+_MULTIPLICADOR_RE = re.compile(r"(?:×|\*|(?<![a-zA-Záéíóúñ])x)\s*(\d{1,3})\b")
+_RESULTADO_DESPUES_RE = re.compile(r"[^\n=$]{0,30}=\s*\**\s*(" + _PESOS_RE + r")")
+_RESULTADO_ANTES_RE = re.compile(r"(" + _PESOS_RE + r")\**[^\n($]{0,40}\(\s*$")
+
+
+def _a_pesos(texto: str) -> int:
+    return int(re.sub(r"\D", "", texto))
+
+
+_MONTO_TOKEN_RE = re.compile(_PESOS_RE)
+_OPERANDO_IZQ_RE = re.compile(r"(\d{1,3}|M)\s*(?:[a-záéíóúüñ]+\s+){0,2}$", re.IGNORECASE)
+_OPERANDO_DER_RE = re.compile(r"\s*(\d{1,3}|M)\b")
+
+
+def _valor_termino(termino: str) -> Optional[int]:
+    """Lo que vale un término de una suma escrita («2 trayectos de ida
+    ($85.000 × 2)», «2 trayectos × 6 personas × $125.000»): el monto por los
+    números que tocan un «×» a cada lado (contados una sola vez). `None` si no
+    trae exactamente un monto."""
+    montos = _MONTO_TOKEN_RE.findall(termino)
+    if len(montos) != 1:
+        return None
+    resto = _MONTO_TOKEN_RE.sub(" M ", termino.replace("*", " ").replace("$", " $"))
+    resto = _MONTO_TOKEN_RE.sub(" M ", resto)
+    factores: Dict[int, int] = {}
+    for signo in re.finditer(r"×|(?<![a-zA-Záéíóúñ])x(?=\s*[\dM])", resto):
+        izq = _OPERANDO_IZQ_RE.search(resto[:signo.start()])
+        if izq and izq.group(1) != "M":
+            factores[izq.start(1)] = int(izq.group(1))
+        der = _OPERANDO_DER_RE.match(resto, signo.end())
+        if der and der.group(1) != "M":
+            factores[der.start(1)] = int(der.group(1))
+    valor = _a_pesos(montos[0])
+    for f in factores.values():
+        valor *= f
+    return valor
+
+
+def _lado_izquierdo(texto: str, igual: int) -> str:
+    """Lo que está a la izquierda de un «=», hasta el comienzo de la cuenta:
+    el renglón, los dos puntos, el fin de la frase anterior o el paréntesis que
+    abre la cuenta (respetando los paréntesis que se cierran adentro)."""
+    profundidad = 0
+    k = igual - 1
+    while k >= 0:
+        c = texto[k]
+        if c == ")":
+            profundidad += 1
+        elif c == "(":
+            if profundidad == 0:
+                break
+            profundidad -= 1
+        elif profundidad == 0 and (c in "\n:" or (c in ".!?" and texto[k + 1:k + 2] == " ")):
+            break
+        k -= 1
+    return texto[k + 1:igual]
+
+
+def operacion_mal_hecha(texto: str) -> bool:
+    """¿Hay una cuenta escrita cuyo resultado no es lo que da la cuenta?
+
+    Re-prueba #621: «$500.000 ($250.000 por noche × 2 noches × 2
+    habitaciones)» — el total es múltiplo de un precio válido, así que el
+    control por múltiplos no lo veía. QA #622: la cuenta se evalúa ENTERA a la
+    izquierda del «=», como suma de productos («2 trayectos de ida ($85.000 ×
+    2) + 2 trayectos de vuelta ($85.000 × 2) = $340.000» está bien).
+    También en el orden «B (A × n)»."""
+    texto = texto or ""
+    for m in re.finditer(r"=\s*\**\s*(" + _PESOS_RE + r")", texto):
+        izquierda = _lado_izquierdo(texto, m.start())
+        if not _MONTO_TOKEN_RE.search(izquierda):
+            continue
+        terminos = [t for t in re.split(r"\+", izquierda) if t.strip()]
+        valores = [_valor_termino(t) for t in terminos]
+        if any(v is None for v in valores):
+            continue            # una cuenta que no se sabe leer no se juzga
+        if sum(valores) != _a_pesos(m.group(1)):
+            return True
+    # «B (A × n)»: el total va antes y la cuenta entre paréntesis, sin «=».
+    for m in _OPERACION_RE.finditer(texto):
+        if _RESULTADO_DESPUES_RE.match(texto, m.end()):
+            continue
+        antes = _RESULTADO_ANTES_RE.search(texto[max(0, m.start() - 60):m.start()])
+        if not antes:
+            continue
+        cierre = texto.find(")", m.end())
+        dentro = texto[m.start():cierre if cierre != -1 else m.end()]
+        if "+" in dentro or "=" in dentro:
+            continue
+        valor = _valor_termino(dentro)
+        if valor is not None and _a_pesos(antes.group(1)) != valor:
+            return True
+    return False
+
+
+_RANGO_NOCHES_RE = re.compile(
+    r"(\d{1,2})(?:\s+de\s+" + _MES_RE_DEMO + r")?\s+(?:a|al|hasta(?:\s+el)?|–|-)\s+"
+    r"(?:el\s+)?(?:(?:" + _DIA_RE[1:-1] + r")\s+)?(\d{1,2})\s+de\s+" + _MES_RE_DEMO
+    + r"\b[^\n.]{0,40}?\b(\d{1,2})\s+noches?\b",
+    re.IGNORECASE,
+)
+
+
+def noches_mal_contadas(texto: str, hoy: Optional[date] = None) -> bool:
+    """¿«del sábado 31 de octubre al lunes 2 de noviembre, que son 3 noches»?
+    (Re-prueba #621: son 2.) Las noches son la diferencia entre las fechas."""
+    return _noches_mal_contadas(texto, hoy) is not None
+
+
+def _noches_mal_contadas(texto: str, hoy: Optional[date] = None) -> Optional[tuple]:
+    """`(inicio, fin, noches correctas)` del primer rango mal contado, o None."""
+    hoy = hoy or datetime.now(_TZ_CO).date()
+    for m in _RANGO_NOCHES_RE.finditer(texto or ""):
+        mes_fin = _NUM_MES[m.group(4).lower()]
+        mes_ini = _NUM_MES[m.group(2).lower()] if m.group(2) else mes_fin
+        fin = _fecha_proxima(int(m.group(3)), mes_fin, None, hoy)
+        if fin is None:
+            continue
+        try:
+            ini = date(fin.year if mes_ini <= mes_fin else fin.year - 1, mes_ini, int(m.group(1)))
+        except ValueError:
+            continue
+        if 0 < (fin - ini).days <= 60 and (fin - ini).days != int(m.group(5)):
+            return ini, fin, (fin - ini).days
+    return None
+
+
+def correccion_precio_demo(textos: List[str]) -> str:
+    """La corrección de precio; si el error es contar mal las noches, dice
+    cuántas son (sin eso el modelo repetía «3 noches» en la segunda ronda)."""
+    for texto in textos:
+        mal = _noches_mal_contadas(texto)
+        if mal is not None:
+            ini, fin, n = mal
+            return (
+                f"{_CORRECCION_PRECIO_DEMO} Además contaste mal las noches: del "
+                f"{ini.day} de {_MESES_ES[ini.month - 1]} al {fin.day} de "
+                f"{_MESES_ES[fin.month - 1]} son {n} noches (las noches son los "
+                "días menos uno). Rehaz la cuenta con ese número."
+            )
+    return _CORRECCION_PRECIO_DEMO
+
+
+def _viola_precio_demo(
+    cfg: Dict[str, Any],
+    textos_de_la_ronda: List[str],
+    precios: List[tuple],
+    textos_del_visitante: List[str],
+) -> bool:
+    """¿Alguna cifra en pesos del bot no sale de los precios del catálogo?
+
+    También cuenta como error multiplicar por noches un precio cuya unidad ya
+    incluye las noches («$280.000 por persona, 7 noches» × 7 noches: QA #620)."""
+    if not cfg.get("demo") or not precios or not textos_de_la_ronda:
+        return False
+    valores = [p for _, p, _ in precios]
+    del_visitante = {m for t in textos_del_visitante for m in montos_demo(t)}
+    for texto in textos_de_la_ronda:
+        montos = montos_demo(texto)
+        for monto in montos:
+            if not _monto_valido(monto, valores, montos, del_visitante):
+                return True
+        if operacion_mal_hecha(texto) or noches_mal_contadas(texto):
+            return True
+        if _POR_NOCHES_RE.search(texto or ""):
+            for _, precio, unidad in precios:
+                if _UNIDAD_CON_NOCHES_RE.search(unidad) and precio in montos:
+                    return True
+    return False
+
+
+def _plano_demo(texto: str) -> str:
+    return re.sub(r"\s+", " ", "".join(
+        c for c in unicodedata.normalize("NFKD", (texto or "").lower())
+        if not unicodedata.combining(c)
+    ))
+
+
+def _producto_mencionado(precios: List[tuple], textos: List[str]) -> Optional[tuple]:
+    """El producto que nombran los textos, por nombre (o por sus dos primeras
+    palabras con contenido)."""
+    planos = [_plano_demo(t) for t in textos if t]
+    for nombre, precio, unidad in precios:
+        n = _plano_demo(nombre)
+        palabras = [w for w in re.findall(r"[a-z0-9]+", n) if len(w) > 3][:2]
+        for p in planos:
+            if n in p or (palabras and all(w in p for w in palabras)):
+                return nombre, precio, unidad
+    return None
+
+
+def _precio_demo_a_texto_fijo(
+    actions: List[Dict[str, Any]], acciones_previas: int,
+    say_texts: List[str], textos_previos: int,
+    precios: List[tuple], user_input: Optional[str],
+    anteriores: Optional[List[str]] = None,
+) -> None:
+    """Segunda vez: los textos de la ronda se cambian por el precio unitario
+    correcto del producto del que se habla (o por pedir la cotización al
+    equipo). Lo que no es texto (un `handoff`) se conserva."""
+    producto = _producto_mencionado(
+        precios, list(say_texts[textos_previos:]) + [user_input or ""]
+    ) or _producto_mencionado(precios, list(reversed(anteriores or [])))
+    if producto is not None:
+        nombre, precio, unidad = producto
+        texto = _TEXTO_PRECIO_DEMO.format(
+            producto=nombre, precio=_pesos(precio), unidad=unidad
+        ).replace("  ", " ")
+    else:
+        texto = _TEXTO_PRECIO_DEMO_GENERICO
+    actions[acciones_previas:] = [
+        a for a in actions[acciones_previas:] if a.get("type") != "say"
+    ]
+    actions.insert(acciones_previas, {"type": "say", "payload": {"text": texto}})
+    say_texts[textos_previos:] = [texto]
+
+
+_TEXTO_TRASPASO_DEMO = (
+    "Te paso con una persona del equipo para que siga contigo 🙌"
+)
+_MAX_RESUMEN_DEMO = 160
+_GLOMA_RE = re.compile(r"\bgloma\b", re.IGNORECASE)
+
+
+_TOTAL_EN_TEXTO_RE = re.compile(
+    r"total[^$\n]{0,30}?(" + _PESOS_RE + r")|(" + _PESOS_RE + r")\**\s*(?:en\s+)?total",
+    re.IGNORECASE,
+)
+
+
+def _recortar_resumen(resumen: str) -> str:
+    """Hasta `_MAX_RESUMEN_DEMO` caracteres, por frase si se puede y si no por
+    palabra (QA #622: el corte a mitad dejó «…doble.. Le paso»), y sin la
+    puntuación final: la pone quien concatena."""
+    resumen = re.sub(r"\s+", " ", resumen or "").strip()
+    if len(resumen) > _MAX_RESUMEN_DEMO:
+        corte = resumen[:_MAX_RESUMEN_DEMO]
+        fin_de_frase = max(corte.rfind(". "), corte.rfind("; "))
+        if fin_de_frase >= 60:
+            resumen = corte[:fin_de_frase]
+        else:
+            resumen = corte.rsplit(" ", 1)[0]
+    return resumen.rstrip(" .,;:-–")
+
+
+def total_cotizado(history: List[Dict[str, str]]) -> Optional[int]:
+    """El último total que el bot cotizó en la conversación («Total:
+    $1.605.000», «*$340.000 en total*»), del mensaje más reciente que lo diga."""
+    for m in reversed(history or []):
+        if m.get("role") != "assistant":
+            continue
+        encontrados = _TOTAL_EN_TEXTO_RE.findall(m.get("content") or "")
+        if encontrados:
+            a, b = encontrados[-1]
+            return _a_pesos(a or b)
+    return None
+
+
+def _traspaso_con_texto_demo(
+    cfg: Dict[str, Any],
+    tools_called: List[Dict[str, Any]],
+    textos_visitante: List[str],
+    precios: Optional[List[tuple]] = None,
+    history: Optional[List[Dict[str, str]]] = None,
+) -> str:
+    """El aviso de un traspaso que el modelo hizo sin escribir nada (QA #619:
+    2 de 4 reservas cerraron con solo la llamada a `escalar_a_asesor`). Con un
+    `resumen` de reserva (trae fechas o cantidades) se le confirma lo que pidió;
+    si no, el aviso genérico. El resumen lo escribió el modelo: va recortado y
+    pasa por los guardarraíles de contactos, disponibilidad y precios, y no
+    puede nombrar a Gloma (#619 B-n1)."""
+    resumen = next(
+        (
+            str((t.get("input") or {}).get("resumen") or "")
+            for t in reversed(tools_called)
+            if t.get("tool") == "escalar_a_asesor"
+        ),
+        "",
+    )
+    resumen = _recortar_resumen(resumen)
+    if (
+        resumen
+        and re.search(r"\d", resumen)
+        and not _GLOMA_RE.search(resumen)
+        and not _viola_contacto_demo(cfg, [resumen], textos_visitante)
+        and not _viola_disponibilidad_demo(cfg, [resumen])
+        and not _viola_precio_demo(cfg, [resumen], precios or [], textos_visitante)
+    ):
+        # QA #622: 4 cierres salieron sin la cifra. Si la conversación cotizó un
+        # total válido y el resumen no trae plata, va al final.
+        cola = ""
+        total = total_cotizado(history or [])
+        if total and "$" not in resumen:
+            linea = f"Total: {_pesos(total)}"
+            if not _viola_precio_demo(cfg, [linea], precios or [], textos_visitante):
+                cola = f". Total: *{_pesos(total)}*"
+        return (
+            f"Listo 🙌 Te confirmo: {resumen}{cola}. Le paso tu reserva a una "
+            "persona del equipo para que confirme la disponibilidad y te ayude "
+            "con el pago."
+        )
+    return _TEXTO_TRASPASO_DEMO
+
+
+_NOMBRE_COMPLETO_RE = re.compile(r"nombre\s+completo", re.IGNORECASE)
+
+
+def _sin_pedir_nombre_completo(texto: str) -> str:
+    """El texto sin las frases que piden el nombre completo, ni la pregunta
+    suelta que las seguía («Necesito tu nombre completo. ¿Cuál es?»: re-prueba
+    #621 dejó un «¿Cuál es?» solo)."""
+    salida = []
+    for linea in (texto or "").split("\n"):
+        quedan, quito = [], False
+        for f in _frases(linea):
+            if _NOMBRE_COMPLETO_RE.search(f):
+                quito = True
+                continue
+            if quito and "?" in f and len(_claves_pregunta(f)) < 3:
+                continue
+            quito = False
+            quedan.append(f)
+        salida.append("".join(quedan))
+    return _sin_frase_colgante("\n".join(salida))
+
+
+_NOMBRES_ACOMPANANTES_RE = re.compile(
+    r"nombres?\s+(?:completos?\s+)?(?:de\s+)?(?:(?:los|las|tus|sus)\s+)?"
+    r"(?:otr[oa]s|acompañantes|dem[aá]s|viajeros|pasajeros|huéspedes|invitados|"
+    r"adultos|personas|parejas|ustedes|todos|cada\s+(?:uno|persona|viajero)|\d+\s+\w+|"
+    r"(?:dos|tres|cuatro|cinco|seis)\s+\w+)",
+    re.IGNORECASE,
+)
+
+
+_CORTE_DE_IDEA_RE = re.compile(
+    r"(?<=[.!?…])\s+|(?<=[\U0001F300-\U0001FAFF\u2600-\u27BF])\s+(?=[A-ZÁÉÍÓÚÑ¿¡])"
+)
+
+
+def _sin_nombres_de_acompanantes(texto: str) -> str:
+    """Sin las frases que piden los nombres de los acompañantes (QA #631: «los
+    nombres completos de los otros 3 adultos», dos turnos seguidos, sin
+    escalar). La plantilla ya lo prohíbe; aquí se cumple."""
+    if not _NOMBRES_ACOMPANANTES_RE.search(texto or ""):
+        return texto or ""
+    salida = []
+    for linea in (texto or "").split("\n"):
+        # Frases por signo y también por emoji («Perfecto, Mariana 🙌 Necesito…»).
+        piezas = _CORTE_DE_IDEA_RE.split(linea)
+        salida.append(" ".join(
+            p.strip() for p in piezas if p.strip() and not _NOMBRES_ACOMPANANTES_RE.search(p)
+        ))
+    return _sin_frase_colgante("\n".join(salida))
+
+
+def _normalizado_demo(texto: str) -> str:
+    return re.sub(r"\s+", " ", _plano_demo((texto or "").replace("*", ""))).strip()
+
+
+def _sin_burbujas_repetidas(actions: List[Dict[str, Any]]) -> bool:
+    """QA #631: tras una corrección el modelo rehace el mensaje ENTERO, incluido
+    lo que ya había dicho en la ronda que llamó la herramienta, y el cliente
+    recibía dos burbujas con el mismo saludo. Si el texto de una burbuja ya
+    está completo dentro de otra del mismo turno, sobra."""
+    says = [a for a in actions if a.get("type") == "say"]
+    quitar = set()
+    for i, a in enumerate(says):
+        na = _normalizado_demo(a["payload"].get("text") or "")
+        if not na:
+            continue
+        for j, b in enumerate(says):
+            if i == j or j in quitar:
+                continue
+            nb = _normalizado_demo(b["payload"].get("text") or "")
+            if na in nb and (len(na) < len(nb) or i < j):
+                quitar.add(i)
+                break
+    if not quitar:
+        return False
+    ids = {id(says[i]) for i in quitar}
+    actions[:] = [a for a in actions if id(a) not in ids]
+    return True
+
+
+#: «mañana» pegado a un día que no es mañana (QA #631, hoy 17: «llegan mañana
+#: en la madrugada del 24»). No toca «la mañana» / «de la mañana» (la franja).
+_MANANA_SUELTO_RE = re.compile(r"(?<![\wáéíóúñ])(?<!la\s)(?<!esta\s)mañana\b\s*", re.IGNORECASE)
+_DIA_DEL_MES_RE = re.compile(
+    r"\b(?:el|del|al|día)\s+(\d{1,2})\b|\b(\d{1,2})\s+de\s+" + _MES_RE_DEMO, re.IGNORECASE
+)
+
+
+def sin_manana_equivocado(texto: str, hoy: date) -> str:
+    manana = hoy + timedelta(days=1)
+    salida = []
+    for linea in (texto or "").split("\n"):
+        frases = []
+        for f in _frases(linea):
+            dias = [int(a or b) for a, b, *_ in _DIA_DEL_MES_RE.findall(f)]
+            if dias and manana.day not in dias and _MANANA_SUELTO_RE.search(f):
+                f = _MANANA_SUELTO_RE.sub("", f)
+            frases.append(f)
+        salida.append("".join(frases))
+    return "\n".join(salida)
+
+
+#: Reserva completa en el mensaje del cliente: intención + nombre completo +
+#: personas + fecha (QA #631: con todo eso el bot pedía los nombres de los
+#: acompañantes en vez de pasar la reserva).
+_INTENCION_RESERVA_RE = re.compile(
+    r"\b(?:l[oa]\s+quiero|l[oa]s?\s+queremos|quiero\s+reservar|queremos\s+reservar|"
+    r"reserv(?:o|amos|emos|alo|álo|ármelo|amelo|alo)|resérv\w+|apárt\w+|apart(?:a|á)melo|"
+    r"lo\s+tomo|lo\s+tomamos|dale,?\s+(?:l[oa]\s+)?reserv\w*)\b",
+    re.IGNORECASE,
+)
+_NOMBRE_COMPLETO_DICHO_RE = re.compile(
+    r"\b(?i:soy|me\s+llamo|mi\s+nombre\s+es)\s+"
+    r"([A-ZÁÉÍÓÚÑ][\wáéíóúñ]+(?:\s+(?:de\s+)?[A-ZÁÉÍÓÚÑ][\wáéíóúñ]+){1,3})"
+)
+_PERSONAS_DICHAS_RE = re.compile(
+    r"\b(?:somos|seríamos|seriamos|para)\s+(\d{1,3})\b|\b(\d{1,3})\s+"
+    r"(?:personas|adultos|pasajeros|invitados|viajeros|huéspedes)\b",
+    re.IGNORECASE,
+)
+_FECHA_DICHA_RE = re.compile(
+    r"\b(\d{1,2})\s+de\s+" + _MES_RE_DEMO + r"\b(?:\s+de\s+\d{4})?"
+    # «… y nos vamos el 23», «al 23 de noviembre»: la salida va con la llegada.
+    r"(?:\s*,?\s*(?:y\s+)?(?:nos\s+vamos|salimos|regresamos|volvemos|hasta|al|a)\s+"
+    r"(?:el\s+)?\d{1,2}(?:\s+de\s+(?:enero|febrero|marzo|abril|mayo|junio|julio|agosto|"
+    r"septiembre|setiembre|octubre|noviembre|diciembre))?\b)?",
+    re.IGNORECASE,
+)
+
+
+def reserva_completa_demo(mensaje: str) -> Optional[Dict[str, str]]:
+    """`{nombre, personas, fecha}` si el mensaje trae todo para pasar la
+    reserva, o None."""
+    mensaje = mensaje or ""
+    if not _INTENCION_RESERVA_RE.search(mensaje):
+        return None
+    nombre = _NOMBRE_COMPLETO_DICHO_RE.search(mensaje)
+    personas = _PERSONAS_DICHAS_RE.search(mensaje)
+    fecha = _FECHA_DICHA_RE.search(mensaje)
+    if not (nombre and personas and fecha):
+        return None
+    return {
+        "nombre": nombre.group(1).strip(),
+        "personas": personas.group(1) or personas.group(2),
+        "fecha": fecha.group(0).strip(),
+    }
+
+
+def _traspaso_forzado_demo(
+    actions: List[Dict[str, Any]],
+    say_texts: List[str],
+    tools_called: List[Dict[str, Any]],
+    cfg: Dict[str, Any],
+    datos: Dict[str, str],
+    history: List[Dict[str, str]],
+    precios: List[tuple],
+    textos_visitante: List[str],
+) -> None:
+    """El turno no escaló con la reserva completa: se escala aquí, con lo que
+    dijo el cliente (sus propias palabras) y el total si se cotizó."""
+    primer = datos["nombre"].split()[0]
+    cola = ""
+    total = total_cotizado(history)
+    if total:
+        linea = f"Total: {_pesos(total)}"
+        if not _viola_precio_demo(cfg, [linea], precios, textos_visitante):
+            cola = f". Total: *{_pesos(total)}*"
+    texto = (
+        f"Listo, {primer} 🙌 Te confirmo: {datos['nombre']}, {datos['personas']} "
+        f"personas, {datos['fecha']}{cola}. Le paso tu reserva a una persona del "
+        "equipo para que confirme la disponibilidad y te ayude con el pago."
+    )
+    actions[:] = [a for a in actions if a.get("type") not in ("say", "end")]
+    actions.append({"type": "say", "payload": {"text": texto}})
+    actions.append({"type": "handoff", "payload": {
+        "assignee": cfg.get("assignee") or "",
+        "text": "",
+        "motivo": "reserva con nombre, fecha y personas (motor, demo)",
+        "resumen": f"{datos['nombre']}, {datos['personas']} personas, {datos['fecha']}",
+    }})
+    say_texts[:] = [texto]
+    tools_called.append({
+        "tool": "escalar_a_asesor",
+        "input": {"motivo": "reserva completa (demo)"},
+        "resultado": "traspaso por reserva completa (motor, demo)",
+    })
+
+
+def _postproceso_demo(
+    actions: List[Dict[str, Any]],
+    say_texts: List[str],
+    history: List[Dict[str, str]],
+    bot_id: Any,
+    *,
+    cfg: Optional[Dict[str, Any]] = None,
+    tools_called: Optional[List[Dict[str, Any]]] = None,
+    textos_visitante: Optional[List[str]] = None,
+    precios: Optional[List[tuple]] = None,
+) -> None:
+    """Los recortes del bot de demo, sobre el turno ya armado (antes de que el
+    historial se aplane, así `chat_state` guarda el texto limpio).
+
+    1. Narración de herramientas, disculpas de una corrección y días de la
+       semana (ver `_NARRACION_DEMO_RE`, `dias_de_semana_corregidos`).
+    2. La pregunta con la que cerró el mensaje anterior no se repite al cierre
+       de este (QA #615). Si quitarla deja la burbuja sin nada, se queda.
+    3. El nombre completo se pide como máximo una vez cada dos turnos (QA
+       #620: tres turnos seguidos pidiéndolo en 4 conversaciones).
+    4. Un traspaso nunca sale mudo.
+    """
+    hoy = datetime.now(_TZ_CO).date()
+    for accion in actions:
+        if accion.get("type") != "say":
+            continue
+        texto = recortes_turno.sin_disculpa_inicial(accion["payload"].get("text") or "")
+        texto = sin_voseo_demo(_sin_frases_prohibidas_demo(_REHECHO_INICIAL_RE.sub("", texto)))
+        texto = _sin_nombres_de_acompanantes(texto)
+        texto = sin_manana_equivocado(texto, hoy)
+        accion["payload"]["text"] = dias_de_semana_corregidos(sin_narracion_demo(texto), hoy)
+    actions[:] = [
+        a for a in actions
+        if a.get("type") != "say" or (a.get("payload") or {}).get("text")
+    ]
+    if _sin_burbujas_repetidas(actions):
+        logger.info("llm_engine: burbuja repetida tras una corrección quitada (demo, bot=%s)", bot_id)
+
+    # 2a. Dos burbujas del mismo turno cerrando con la misma pregunta: queda
+    # la de la última.
+    says = [a for a in actions if a.get("type") == "say"]
+    if len(says) > 1:
+        finales = _PREGUNTA_RE.findall(says[-1]["payload"]["text"])
+        if finales:
+            for accion in says[:-1]:
+                texto = accion["payload"]["text"]
+                cambio = False
+                for q in _PREGUNTA_RE.findall(texto):
+                    if misma_pregunta(q, finales[-1]):
+                        texto = texto.replace(q, "", 1)
+                        cambio = True
+                if cambio:
+                    texto = _sin_frase_colgante(texto)
+                accion["payload"]["text"] = texto if re.search(r"\w", texto) else ""
+            actions[:] = [
+                a for a in actions
+                if a.get("type") != "say" or (a.get("payload") or {}).get("text")
+            ]
+
+    traspaso = any(a.get("type") == "handoff" for a in actions)
+    previa = next(
+        (m.get("content") or "" for m in reversed(history) if m.get("role") == "assistant"),
+        "",
+    )
+    if not traspaso:
+        anteriores = _PREGUNTA_RE.findall(previa)
+        says = [a for a in actions if a.get("type") == "say"]
+        if anteriores and says:
+            ultima = says[-1]
+            texto = ultima["payload"]["text"]
+            propias = _PREGUNTA_RE.findall(texto)
+            if propias and misma_pregunta(propias[-1], anteriores[-1]):
+                corte = texto.rfind(propias[-1])
+                resto = _sin_frase_colgante(texto[:corte])
+                palabras = re.findall(r"[0-9a-záéíóúüñ]+", resto.lower())
+                if len(palabras) >= 4:
+                    ultima["payload"]["text"] = resto
+                    logger.info(
+                        "llm_engine: pregunta repetida quitada (demo, bot=%s)", bot_id
+                    )
+
+        # 3. Nombre completo: si el mensaje anterior ya lo pidió, este no.
+        if _NOMBRE_COMPLETO_RE.search(previa):
+            for accion in [a for a in actions if a.get("type") == "say"]:
+                texto = accion["payload"]["text"]
+                if not _NOMBRE_COMPLETO_RE.search(texto):
+                    continue
+                resto = _sin_pedir_nombre_completo(texto)
+                if len(re.findall(r"[0-9a-záéíóúüñ]+", resto.lower())) >= 4:
+                    accion["payload"]["text"] = resto
+                    logger.info(
+                        "llm_engine: nombre completo no se repite (demo, bot=%s)", bot_id
+                    )
+
+    if traspaso and not any(a.get("type") == "say" for a in actions):
+        texto = _traspaso_con_texto_demo(
+            cfg or {}, tools_called or [], textos_visitante or [], precios, history
+        )
+        corte = next(i for i, a in enumerate(actions) if a.get("type") == "handoff")
+        actions.insert(corte, {"type": "say", "payload": {"text": texto}})
+        logger.info("llm_engine: aviso agregado a un traspaso sin texto (demo, bot=%s)", bot_id)
+    say_texts[:] = [
+        (a.get("payload") or {}).get("text") or ""
+        for a in actions if a.get("type") == "say"
+    ]
+
+
+#: Demo (#619, QA #615: 8 de 14 afirmaban cupo). El bot de demo no tiene de
+#: dónde saber la disponibilidad — ni siquiera la herramienta: sus filas son
+#: un precio por mes —, así que cualquier afirmación («tenemos disponibilidad
+#: para ambos tours», «sí hay cupo») es inventada.
+_CORRECCION_DISPONIBILIDAD_DEMO = (
+    "ALTO: acabas de afirmar disponibilidad o cupos. No lo sabes: la "
+    "disponibilidad la confirma el equipo al reservar. Ese mensaje NO se le "
+    "envió. Vuelve a responder lo mismo sin afirmar ni negar disponibilidad; si "
+    "hace falta, di que el equipo la confirma al reservar."
+)
+_FRASE_DISPONIBILIDAD_DEMO = "La disponibilidad te la confirma el equipo al reservar."
+_CONFIRMA_RE = re.compile(r"confirm", re.IGNORECASE)
+_YA_DICE_QUE_CONFIRMA_RE = re.compile(
+    r"confirm\w*\s+(?:\w+\s+){0,3}equipo|equipo\s+(?:\w+\s+){0,2}confirm", re.IGNORECASE
+)
+#: Lo que el detector compartido (`_AFIRMA_DISPONIBILIDAD_RE`, que también
+#: usa el bot de viajes y por eso NO se toca) no ve y en la demo sí aparece
+#: (QA #620): «tenemos ambos tours disponibles para esas fechas», «disponible
+#: para ese fin de semana», y «debería funcionar» / «sin problema» dichos
+#: sobre una fecha.
+_AFIRMA_DISPONIBILIDAD_DEMO_RE = re.compile(
+    r"(?:tenemos|hay|quedan?)\s+(?:\w+\s+){0,3}disponibles?\b"
+    r"|disponibles?\s+(?:para|ese|esa|esos|esas|el|la|los|las)\b"
+    # QA #622: «Claro, disponemos de espacios.», «contamos con cupo».
+    r"|dispon(?:emos|go)\s+de\s+(?:\w+\s+){0,2}(?:espacio|cupo|lugar|habitaci|mesa|cama|plaza|veh[ií]cul|carro|puesto)\w*"
+    r"|contamos\s+con\s+(?:\w+\s+){0,2}(?:espacio|cupo|lugar|disponibilidad|puesto)\w*"
+    # «ese día generalmente tenemos actividad».
+    r"|(?:generalmente|normalmente|casi\s+siempre|siempre)\s+(?:tenemos|hay|contamos)\b"
+    r"|(?:ese|esa|el|la)\s+(?:d[ií]a|fecha|noche|fin\s+de\s+semana)\s+(?:s[ií]\s+)?(?:tenemos|hay)\b"
+    # «hoy sí podemos», dentro de una frase más larga.
+    r"|(?:hoy|ma[ñn]ana|ese\s+d[ií]a|esa\s+fecha)\s+s[ií]\s+(?:podemos|se\s+puede|hay)\b",
+    re.IGNORECASE,
+)
+_SIN_PROBLEMA_RE = re.compile(
+    r"deber[ií]a\s+(?:funcionar|haber|estar\s+bien|alcanzar)|sin\s+problema"
+    r"|no\s+hay\s+problema|s[ií]\s+se\s+puede|s[ií]\s+podemos"
+    # Re-prueba #632: «el sábado 24 en la madrugada funciona con nosotros»,
+    # «marzo de 2027 también funciona», «lo cubrimos» (dichos de una fecha).
+    r"|(?:tambi[eé]n\s+)?funciona(?:\s+con\s+nosotros|\s+perfecto)?\b|lo\s+cubrimos",
+    re.IGNORECASE,
+)
+#: «Sí podemos» / «sí se puede» como respuesta a «¿hay algo para hoy?»: la
+#: fecha está en la pregunta del cliente, no en la frase del bot (re-prueba
+#: #621). «Sin problema» sigue pidiendo la fecha en la propia frase: es muletilla.
+_SI_SE_PUEDE_RE = re.compile(r"\bs[ií]\s+(?:se\s+puede|podemos)\b", re.IGNORECASE)
+_HABLA_DE_FECHA_RE = re.compile(
+    r"\b(?:" + _DIA_RE[1:-1] + r"|" + _MES_RE_DEMO[1:-1]
+    + r"|fin\s+de\s+semana|puente|fecha|fechas|hoy|ma[ñn]ana|noche\s+del)\b",
+    re.IGNORECASE,
+)
+#: «Disponible de domingo a viernes», «disponible jueves a domingo», «todos
+#: los días»: es una condición de la ficha (qué días se ofrece), no un cupo.
+_HORARIO_DE_FICHA_RE = re.compile(
+    r"disponibles?\s+(?:solo\s+|únicamente\s+|unicamente\s+)?(?:de\s+|los\s+)?"
+    r"(?:(?:" + _DIA_RE[1:-1] + r")s?\s*(?:a|y|al|hasta|–|-)\s*(?:" + _DIA_RE[1:-1]
+    + r")|todos\s+los\s+d[ií]as|fines?\s+de\s+semana|entre\s+semana|24\s*/\s*7"
+    r"|(?:las\s+)?24\s+horas)",
+    re.IGNORECASE,
+)
+
+
+def _en_alguna_ficha(frase: str, inicio: int, fichas: Sequence[str]) -> bool:
+    """¿La afirmación repite una condición textual de la ficha? Se compara el
+    trozo desde «disponib…» (o desde la afirmación) y las dos palabras que
+    siguen, en minúsculas y sin tildes ni asteriscos («disponible 24/7»)."""
+    if not fichas:
+        return False
+    resto = frase[inicio:].replace("*", "")
+    m = re.search(r"disponib\w*", resto, re.IGNORECASE)
+    if m:
+        resto = resto[m.start():]
+    trozo = _plano_demo(" ".join(resto.split()[:3])).strip(" .,;:!?")
+    if len(trozo) < 8:
+        return False
+    return any(trozo in _plano_demo((f or "").replace("*", "")) for f in fichas)
+
+
+def _frases_que_afirman_disponibilidad(
+    texto: str, pregunta_del_cliente: str = "", fichas: Sequence[str] = (),
+) -> List[str]:
+    salida = []
+    cliente_pide_fecha = bool(_HABLA_DE_FECHA_RE.search(pregunta_del_cliente or ""))
+    for frase in _frases(texto or ""):
+        # El horario de la ficha («disponible de martes a domingo») se tapa, no
+        # salva la frase entera: QA #622 tenía «…disponible de martes a domingo,
+        # así que hoy sí podemos» y el «hoy sí podemos» pasaba.
+        buscable = _HORARIO_DE_FICHA_RE.sub(lambda m: " " * len(m.group(0)), frase)
+        afirma = (
+            _AFIRMA_DISPONIBILIDAD_RE.search(buscable)
+            or _AFIRMA_DISPONIBILIDAD_DEMO_RE.search(buscable)
+        )
+        if afirma is None:
+            sin_problema = _SIN_PROBLEMA_RE.search(buscable)
+            if sin_problema is not None and _HABLA_DE_FECHA_RE.search(buscable):
+                afirma = sin_problema
+            elif cliente_pide_fecha:
+                afirma = _SI_SE_PUEDE_RE.search(buscable)
+        if afirma is None:
+            continue
+        if _en_alguna_ficha(frase, afirma.start(), fichas):
+            continue        # copia una condición de la ficha
+        previo = frase[:afirma.start()]
+        if _es_pregunta(frase, afirma.start()) or _CONDICIONAL_RE.search(previo):
+            continue        # preguntar o condicionar no es afirmar
+        confirma = list(_CONFIRMA_RE.finditer(previo))
+        if confirma and not re.search(
+            r"\b(?:pero|sin\s+embargo|aunque)\b", previo[confirma[-1].end():], re.IGNORECASE
+        ):
+            continue        # «el equipo te confirma la disponibilidad para…»
+        salida.append(frase)
+    return salida
+
+
+def _viola_disponibilidad_demo(
+    cfg: Dict[str, Any], textos_de_la_ronda: List[str], pregunta_del_cliente: str = "",
+    fichas: Sequence[str] = (),
+) -> bool:
+    if not cfg.get("demo"):
+        return False
+    return any(
+        _frases_que_afirman_disponibilidad(t, pregunta_del_cliente, fichas)
+        for t in textos_de_la_ronda
+    )
+
+
+def _disponibilidad_demo_a_texto_fijo(
+    actions: List[Dict[str, Any]], acciones_previas: int,
+    say_texts: List[str], textos_previos: int, pregunta_del_cliente: str = "",
+    fichas: Sequence[str] = (),
+) -> None:
+    """Segunda vez: las frases que afirman se quitan y, si el mensaje no dice
+    ya que el equipo confirma, va la frase fija (una sola vez por mensaje)."""
+    for accion in actions[acciones_previas:]:
+        if accion.get("type") != "say":
+            continue
+        texto = accion["payload"].get("text") or ""
+        frases = _frases_que_afirman_disponibilidad(texto, pregunta_del_cliente, fichas)
+        if not frases:
+            continue
+        for frase in frases:
+            texto = texto.replace(frase, " ", 1)
+        texto = re.sub(r"[ \t]{2,}", " ", texto).strip()
+        if not _YA_DICE_QUE_CONFIRMA_RE.search(texto):
+            texto = f"{_FRASE_DISPONIBILIDAD_DEMO} {texto}".strip()
+        accion["payload"]["text"] = texto
+    say_texts[textos_previos:] = [
+        (a.get("payload") or {}).get("text") or ""
+        for a in actions[acciones_previas:] if a.get("type") == "say"
+    ]
 
 
 def _ubicacion_de_relleno(valor: Any) -> Optional[str]:
@@ -5099,6 +6430,8 @@ def _run_tool(
             # llamada anterior). No es un error del turno.
             return _fallback_de_producto(cfg, name, tool_input), False
         try:
+            if cfg.get("demo"):
+                return _ejecutar_producto_demo(db, ctx_productos, name, tool_input), False
             return productos_bot.ejecutar(db, ctx_productos, name, tool_input), False
         except Exception:
             # Regla #6: el detalle completo sólo server-side. Y el fallback
@@ -5537,6 +6870,30 @@ def _bedrock_client():
     )
 
 
+#: ¿El turno en curso es de un bot de demo? Lo marca `advance` y lo lee
+#: `_invoke_model` para elegir cliente, sin cambiarle la firma (los tests de
+#: todo el motor la parchean con 4 argumentos posicionales).
+_TURNO_DEMO: ContextVar[bool] = ContextVar("turno_demo", default=False)
+
+
+@lru_cache(maxsize=1)
+def _bedrock_client_demo():
+    """Cliente propio de los turnos de la demo pública (#616 M2).
+
+    El compartido usa los defaults de botocore (60 s de lectura y varios
+    reintentos): un Bedrock lento con 4 turnos de demo en curso dejaría al
+    único proceso esperando minutos. Mismos timeouts que la generación."""
+    import boto3
+    from botocore.config import Config
+
+    region = os.getenv("BEDROCK_REGION", "sa-east-1")
+    return boto3.client(
+        "bedrock-runtime",
+        region_name=region,
+        config=Config(connect_timeout=5, read_timeout=25, retries={"max_attempts": 2}),
+    )
+
+
 def _bloques_system(system: str) -> List[Dict[str, Any]]:
     """El `system` como bloques de la API. Lo de siempre: uno solo, con
     `cache_control`. Con la cola del bot 3 (`_COLA_SIN_CACHE`): el estable con
@@ -5575,7 +6932,8 @@ def _invoke_model(
         "messages": messages,
         "tools": tools,
     }
-    resp = _bedrock_client().invoke_model(
+    cliente = _bedrock_client_demo() if _TURNO_DEMO.get() else _bedrock_client()
+    resp = cliente.invoke_model(
         modelId=model_id, body=json.dumps(body, ensure_ascii=False)
     )
     data = json.loads(resp["body"].read())
@@ -5805,6 +7163,7 @@ def advance(
     user_input = _primer_mensaje_de_promocion(cfg, state, user_input)
     actions: List[Dict[str, Any]] = []
     t0 = time.monotonic()
+    marca_demo = _TURNO_DEMO.set(bool(cfg.get("demo")))
     try:
         result = _advance_inner(bot, cfg, state, user_input, actions, t0)
     except Exception:
@@ -5840,6 +7199,8 @@ def advance(
                 "failsafe": True,
             },
         }
+    finally:
+        _TURNO_DEMO.reset(marca_demo)
     # Log estructurado SIN contenido del mensaje (reglas #1/#6): solo metadatos.
     tel = result.get("telemetry") or {}
     logger.info(
@@ -6068,6 +7429,19 @@ def _turno(
     sin_modelo = traspaso_previo is not None or bool(regreso)
     # Bot 3 (1b): ¿la última ronda terminó en una corrección sin respuesta?
     correccion_pendiente = False
+    # Demo pública (Sprint 32): lo que escribió el visitante es lo único que el
+    # bot puede repetir como contacto, y la corrección se da una sola vez.
+    textos_visitante_demo: List[str] = (
+        [m.get("content") or "" for m in history if m.get("role") == "user"]
+        + [user_input or ""]
+    ) if cfg.get("demo") else []
+    contacto_demo_corregido = False
+    disp_demo_corregida = False
+    precio_demo_corregido = False
+    precios_del_demo: List[tuple] = precios_demo(ctx_productos) if cfg.get("demo") else []
+    fichas_del_demo: List[str] = [
+        c.instrucciones or "" for c in getattr(ctx_productos, "catalogos", ()) or ()
+    ] if cfg.get("demo") else []
     for _ in range(0 if sin_modelo else _MAX_TOOL_ROUNDS):
         # Cómo estaba el turno antes de esta ronda: si una corrección nueva la
         # deshace, el cierre que haya hecho una herramienta también se deshace.
@@ -6098,7 +7472,9 @@ def _turno(
                 text = _con_reemplazos(
                     _to_whatsapp_format((block.get("text") or "").strip()), cfg
                 )
-                if text and correcciones and cfg.get("correcciones_silenciosas"):
+                if text and correcciones and (
+                    cfg.get("correcciones_silenciosas") or cfg.get("demo")
+                ):
                     # Bot 2: la ronda que sigue a una corrección no arranca
                     # disculpándose con alguien que no vio nada.
                     text = recortes_turno.sin_disculpa_inicial(text)
@@ -6179,7 +7555,73 @@ def _turno(
         # un teléfono sin haberlo pedido a `entregar_contacto`, se descarta lo
         # que dijo en esta ronda y se le exige que use la herramienta.
         correccion = None
-        if correcciones < _MAX_CORRECCIONES:
+        viola_demo = bool(cfg.get("demo")) and _viola_contacto_demo(
+            cfg, say_texts[textos_previos:], textos_visitante_demo
+        )
+        viola_disp_demo = (
+            not viola_demo
+            and _viola_disponibilidad_demo(
+                cfg, say_texts[textos_previos:], user_input or "", fichas_del_demo
+            )
+        )
+        # #621 (QA #620): precios inventados. Va primero entre los de la demo
+        # después del de contactos: una cifra equivocada es lo más caro.
+        viola_precio_demo = (
+            not viola_demo
+            and _viola_precio_demo(
+                cfg, say_texts[textos_previos:], precios_del_demo, textos_visitante_demo
+            )
+        )
+        if viola_precio_demo:
+            viola_disp_demo = False
+        if viola_demo and not contacto_demo_corregido and correcciones < _MAX_CORRECCIONES:
+            # Demo: una corrección. Deshace también el cierre de la ronda,
+            # como las del bot 2: el texto que acompañaba al cierre se descarta.
+            contacto_demo_corregido = True
+            correccion, motivo = _CORRECCION_CONTACTO_DEMO, "contacto inventado (demo)"
+            finished, escalated_to = finished_previo, escalado_previo
+            _anular_cierres(tools_called, tools_previas)
+        elif viola_demo:
+            # Se repitió: sale un texto fijo sin datos de contacto.
+            _contacto_demo_a_texto_fijo(
+                actions, acciones_previas, say_texts, textos_previos
+            )
+            logger.warning(
+                "llm_engine: contacto inventado (demo) tras la corrección; "
+                "texto fijo (bot=%s)", getattr(bot, "id", "?"),
+            )
+        elif viola_precio_demo and not precio_demo_corregido and correcciones < _MAX_CORRECCIONES:
+            precio_demo_corregido = True
+            correccion = correccion_precio_demo(say_texts[textos_previos:])
+            motivo = "precio inventado (demo)"
+            finished, escalated_to = finished_previo, escalado_previo
+            _anular_cierres(tools_called, tools_previas)
+        elif viola_precio_demo:
+            _precio_demo_a_texto_fijo(
+                actions, acciones_previas, say_texts, textos_previos,
+                precios_del_demo, user_input,
+                # Si el mensaje no nombra el producto, el de la conversación.
+                [m.get("content") or "" for m in history][-4:],
+            )
+            logger.warning(
+                "llm_engine: precio inventado (demo) tras la corrección; texto "
+                "fijo (bot=%s)", getattr(bot, "id", "?"),
+            )
+        elif viola_disp_demo and not disp_demo_corregida and correcciones < _MAX_CORRECCIONES:
+            disp_demo_corregida = True
+            correccion, motivo = _CORRECCION_DISPONIBILIDAD_DEMO, "disponibilidad afirmada (demo)"
+            finished, escalated_to = finished_previo, escalado_previo
+            _anular_cierres(tools_called, tools_previas)
+        elif viola_disp_demo:
+            _disponibilidad_demo_a_texto_fijo(
+                actions, acciones_previas, say_texts, textos_previos, user_input or "",
+                fichas_del_demo,
+            )
+            logger.warning(
+                "llm_engine: disponibilidad afirmada (demo) tras la corrección; "
+                "frase fija (bot=%s)", getattr(bot, "id", "?"),
+            )
+        elif correcciones < _MAX_CORRECCIONES:
             if _viola_contacto(
                 cfg, say_texts[textos_previos:], tools_called, telefonos_ok
             ):
@@ -6309,7 +7751,7 @@ def _turno(
             # Lo que `registrar_intencion` anotó en la ronda descartada se va
             # con ella (auditoría B4): el modelo lo vuelve a anotar si aplica.
             del intenciones[intenciones_previas:]
-            if cfg.get("correcciones_silenciosas"):
+            if cfg.get("correcciones_silenciosas") or cfg.get("demo"):
                 correccion = correccion + _SIN_DISCULPAS
             logger.warning(
                 "llm_engine: %s bloqueado (bot=%s, corrección %s)",
@@ -6493,6 +7935,23 @@ def _turno(
         finished=finished,
         escalated_to=escalated_to,
     )
+
+    if cfg.get("demo"):
+        _postproceso_demo(
+            actions, say_texts, history, getattr(bot, "id", "?"),
+            cfg=cfg, tools_called=tools_called, textos_visitante=textos_visitante_demo,
+            precios=precios_del_demo,
+        )
+        datos_reserva = None if finished else reserva_completa_demo(user_input or "")
+        if datos_reserva is not None:
+            _traspaso_forzado_demo(
+                actions, say_texts, tools_called, cfg, datos_reserva, history,
+                precios_del_demo, textos_visitante_demo,
+            )
+            finished = True
+            escalated_to = cfg.get("assignee") or "(por turno)"
+            logger.info("llm_engine: reserva completa sin traspaso → asesor (demo, bot=%s)",
+                        getattr(bot, "id", "?"))
 
     # Historial aplanado: texto del asistente + marcas de medios enviados.
     assistant_summary = "\n\n".join(say_texts)

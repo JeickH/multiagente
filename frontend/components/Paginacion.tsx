@@ -24,6 +24,8 @@ type Props = {
   cargando?: boolean;
   /** Cómo se llama lo que se está paginando, para el texto. */
   etiqueta?: string;
+  /** Opciones de «por página» si el endpoint tiene otro techo (p. ej. `/admin/demos`, 100). */
+  opciones?: number[];
 };
 
 export default function Paginacion({
@@ -34,6 +36,7 @@ export default function Paginacion({
   onPorPagina,
   cargando = false,
   etiqueta = 'conversaciones',
+  opciones = OPCIONES_POR_PAGINA,
 }: Props) {
   const paginas = Math.max(1, Math.ceil(total / porPagina));
   const desde = total === 0 ? 0 : (pagina - 1) * porPagina + 1;
@@ -65,7 +68,7 @@ export default function Paginacion({
             disabled={cargando}
             className="ml-1 border rounded-lg px-2 py-1 text-sm bg-white border-gloma-rose-soft text-gloma-brown"
           >
-            {OPCIONES_POR_PAGINA.map((n) => (
+            {opciones.map((n) => (
               <option key={n} value={n}>
                 {n}
               </option>
