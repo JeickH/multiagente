@@ -9466,7 +9466,7 @@ vínculos).
 | 639 | Auditoría de seguridad del borrado | seguridad | ✅ APTO (1 medio a corregir antes del deploy) |
 | 640 | QA en local del ciclo completo de limpieza | qa | ✅ APTO |
 | 642 | Arreglos antes del deploy: mínimo de 6 h, simulación por defecto, candado `channels`, **tick fail-closed** | dev-plataforma | ✅ suite 3896 (normal y tipo CI) |
-| 641 | Deploy (migración + imagen) | deploy-aws | ⏳ confirmar con el CEO |
+| 641 | Deploy (migración + imagen) | deploy-aws | ✅ task-def 109, Amplify job 196 |
 
 **#637**: `ultima_actividad_at` **sin DEFAULT** (un `DEFAULT now()` pondría la
 hora de la migración a todas las filas viejas) y rellenada con el máximo de
@@ -9530,3 +9530,17 @@ mínima de 6 h en el servicio y el script; el script **simula por defecto**
 `borraria`); el UPDATE de turnos exige bot vivo; candado `channels == "demo"`;
 lote 1–1.000. Restos cosméticos: el `TICK_URL` de la Lambda apunta a
 `api.glomabeauty.com` (funciona, sin redirect).
+
+**Deploy #641 (21-oct, autorizado por el CEO)**: task-def **109** (imagen
+`:limpieza-aa9a9e4`, desde worktree limpio; única env nueva
+`DEMO_BOT_RETENCION_HORAS=48`; la 108 tenía 23 `DEMO_*`, no 26). Migración antes
+y después del update-service (4 columnas; relleno de 4 filas; `--verificar` OK).
+La Lambda siguió en `tick ok status=200` cada minuto; **el tick sin llave ya
+responde 403** (también por `api.glomabeauty.com` y con llave falsa).
+Simulación en RDS: 0 candidatas (las 4 demos tienen menos de 48 h; con
+`--horas 6` las 4 pasan todos los candados). Primera limpieza real del tick:
+`candidatas=0`. Las 4 demos cumplen 48 h el 22-oct ~20:00 hora Colombia.
+Push `27dd55a..aa9a9e4`: publicó también la landing de la otra sesión
+(`32b62d7`, `27dd55a`); Amplify job **196** SUCCEED (el webhook funcionó).
+Rollback del backend: `update-service … multiagente-backend:108` (vuelve a
+abrir el tick). Resto cosmético: `TICK_URL` de la Lambda en `api.glomabeauty.com`.
