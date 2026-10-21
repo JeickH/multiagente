@@ -183,7 +183,16 @@ MAX_UNIDAD = 60
 MAX_MENSAJE = 160
 
 N_PRODUCTOS = 3
-MAX_CONCURRENTES = 2
+def _env_entero(nombre: str, defecto: int, minimo: int, maximo: int) -> int:
+    try:
+        return max(minimo, min(int(os.getenv(nombre, "") or defecto), maximo))
+    except ValueError:
+        return defecto
+
+
+#: Generaciones simultáneas contra Bedrock y cuántas pueden esperar un cupo.
+#: Por env desde #635 (modo convención); se leen al arrancar el proceso.
+MAX_CONCURRENTES = _env_entero("DEMO_GENERACIONES_SIMULTANEAS", 2, 1, 16)
 
 ORIGEN_MODELO = "modelo"
 ORIGEN_RESPALDO = "respaldo"
@@ -672,7 +681,7 @@ _SEMAFORO = threading.BoundedSemaphore(MAX_CONCURRENTES)
 #: Cuántas generaciones pueden estar esperando un cupo a la vez (#619 B-n1 de
 #: seguridad, ronda #621). Sin tope, una ráfaga dejaría decenas de hilos del
 #: único proceso dormidos 12 s cada uno; por encima, respaldo inmediato.
-MAX_EN_ESPERA = 4
+MAX_EN_ESPERA = _env_entero("DEMO_GENERACIONES_EN_ESPERA", 4, 0, 64)
 _EN_ESPERA = 0
 _EN_ESPERA_LOCK = threading.Lock()
 

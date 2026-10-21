@@ -106,7 +106,9 @@ router = APIRouter(
 # Configuración (todo por env, leído en cada request salvo los semáforos)
 # ---------------------------------------------------------------------------
 
-CONSENT_VERSION = "demo-2026-10"
+#: Sube cada vez que cambia el texto de /privacidad que acepta el prospecto
+#: (#635: el texto nombra Cal.com y AWS Bedrock).
+CONSENT_VERSION = "demo-2026-10b"
 LEAD_SOURCE = "gloma_demo"
 TOKEN_TTL_SEGUNDOS = 6 * 3600
 GENERANDO_VENCE_SEGUNDOS = 60
@@ -793,13 +795,18 @@ def generar_en_fondo(demo_id: int) -> None:
         demo = db.query(models.Demo).filter(models.Demo.id == demo_id).first()
         if demo is None or demo.estado != models.DEMO_ESTADO_GENERANDO:
             return
+        empresa, tipo, tipo_otro = demo.empresa, demo.tipo_empresa, demo.tipo_otro
+        # #635: la conexión vuelve al pool mientras Bedrock genera (hasta ~30 s
+        # con la espera del semáforo). Una ráfaga de 20 demos agotó el pool.
+        db.rollback()
         try:
-            contenido = demo_bot.generar_contenido(
-                demo.empresa, demo.tipo_empresa, demo.tipo_otro
-            )
+            contenido = demo_bot.generar_contenido(empresa, tipo, tipo_otro)
         except Exception:  # noqa: BLE001 — la demo nunca se cae por la generación
             logger.exception("demo: generar_contenido falló id=%s", demo_id)
-            contenido = demo_bot.respaldo(None, demo.tipo_empresa, motivo="excepcion")
+            contenido = demo_bot.respaldo(None, tipo, motivo="excepcion")
+        demo = db.query(models.Demo).filter(models.Demo.id == demo_id).first()
+        if demo is None or demo.estado != models.DEMO_ESTADO_GENERANDO:
+            return
         _resolver(db, demo, contenido, t0)
     except Exception:  # noqa: BLE001
         logger.exception("demo: tarea de fondo falló id=%s", demo_id)
@@ -857,6 +864,23 @@ def estado(
 # ---------------------------------------------------------------------------
 
 _SEM_TURNOS = threading.BoundedSemaphore(_env_int("DEMO_TURNOS_SIMULTANEOS", 4))
+
+
+def _espera_turno_s() -> float:
+    """Cuánto espera un turno por un cupo antes de «muy solicitada» (#635).
+    0 = no espera (el comportamiento de siempre). En la ráfaga de 20 chats a la
+    vez, sin espera 26 de 60 turnos salían «muy solicitada»."""
+    try:
+        return max(0.0, min(float(os.getenv("DEMO_TURNO_ESPERA_S", "0") or 0), 20.0))
+    except ValueError:
+        return 0.0
+
+
+def _tomar_cupo_de_turno() -> bool:
+    espera = _espera_turno_s()
+    if espera <= 0:
+        return _SEM_TURNOS.acquire(blocking=False)
+    return _SEM_TURNOS.acquire(timeout=espera)
 _RATE_TURNOS = ratelimit.SlidingWindow(
     por_ip=_env_int("DEMO_TURNOS_IP_HORA", 60),
     global_=_env_int("DEMO_TURNOS_GLOBAL_HORA", 200),
@@ -946,7 +970,7 @@ def chat(
             return _solo_texto(TEXTO_MUY_SOLICITADA)
         _EN_CURSO.add(demo.id)
     try:
-        if not _SEM_TURNOS.acquire(blocking=False):
+        if not _tomar_cupo_de_turno():
             logger.warning("demo chat: semáforo de turnos lleno id=%s", demo.id)
             return _solo_texto(TEXTO_MUY_SOLICITADA)
         try:
@@ -972,10 +996,17 @@ def _turno(db: Session, demo: models.Demo, bot: models.Bot, mensaje: str) -> Cha
         return _solo_texto(TEXTO_FIN_TURNOS, finished=True)
 
     previo = _historial(demo.chat_state)
+    # #635: el turno no retiene una conexión de la base mientras habla con
+    # Bedrock (hasta 25 s): el bot queda suelto de la sesión con lo ya cargado y
+    # la transacción se cierra. Con 10 turnos a la vez el pool se agotaba.
+    demo_id = demo.id
+    db.refresh(bot)          # el commit del contador lo dejó expirado
+    db.expunge(bot)
+    db.rollback()
     result = llm_engine.advance(bot, {"history": previo} if previo else None, mensaje)
     llm_engine.record_decision(
         db, bot, _telemetria_sin_texto(result.get("telemetry")),
-        source="demo", chat_ref=f"demo-{demo.id}",
+        source="demo", chat_ref=f"demo-{demo_id}",
     )
 
     actions: List[ChatAction] = []

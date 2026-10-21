@@ -247,7 +247,7 @@ def test_flujo_feliz_iniciar_estado_chat(client, db, cuenta_demos):
     demo = _demo_de(db, demo_id)
     assert demo.estado == "lista"
     assert demo.origen_productos == "modelo"
-    assert demo.consent_version == "demo-2026-10"
+    assert demo.consent_version == "demo-2026-10b"
     assert demo.acepta_promociones is False and demo.acepta_promociones_at is None
     bot = db.query(models.Bot).get(demo.bot_id)
     assert bot.user_id == cuenta_demos.owner.id and bot.team_id == cuenta_demos.team.id

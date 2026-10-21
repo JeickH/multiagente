@@ -6874,15 +6874,46 @@ def _bedrock_client():
 #: `_invoke_model` para elegir cliente, sin cambiarle la firma (los tests de
 #: todo el motor la parchean con 4 argumentos posicionales).
 _TURNO_DEMO: ContextVar[bool] = ContextVar("turno_demo", default=False)
+#: Plazo (monotónico) del turno de demo en curso. Los reintentos y el modelo de
+#: respaldo de `_invoke_con_respaldo` (main, 2747cf4) viven dentro de él: una
+#: demo en una convención no puede quedarse 60 s esperando.
+_PLAZO_DEMO: ContextVar[Optional[float]] = ContextVar("plazo_demo", default=None)
 
 
-@lru_cache(maxsize=1)
-def _bedrock_client_demo():
+def _env_float(nombre: str, defecto: float, minimo: float, maximo: float) -> float:
+    try:
+        return max(minimo, min(float(os.getenv(nombre, "") or defecto), maximo))
+    except ValueError:
+        return defecto
+
+
+def _env_entero(nombre: str, defecto: int, minimo: int, maximo: int) -> int:
+    try:
+        return max(minimo, min(int(os.getenv(nombre, "") or defecto), maximo))
+    except ValueError:
+        return defecto
+
+
+def presupuesto_turno_demo() -> float:
+    """Segundos máximos de un turno de demo, con reintentos y respaldo."""
+    return _env_float("DEMO_TURNO_PRESUPUESTO_S", 25.0, 8.0, 55.0)
+
+
+def _read_timeout_demo() -> float:
+    return _env_float("DEMO_LLM_READ_TIMEOUT_S", 15.0, 3.0, 50.0)
+
+
+_MINIMO_PARA_INTENTAR_S = 4.0     # por debajo, otro intento no alcanza a responder
+
+
+@lru_cache(maxsize=16)
+def _bedrock_client_demo(read_timeout: int = 15):
     """Cliente propio de los turnos de la demo pública (#616 M2).
 
-    El compartido usa los defaults de botocore (60 s de lectura y varios
-    reintentos): un Bedrock lento con 4 turnos de demo en curso dejaría al
-    único proceso esperando minutos. Mismos timeouts que la generación."""
+    Sin reintentos de botocore (como el compartido desde 2747cf4): los hace
+    `_invoke_con_respaldo`, dentro del plazo del turno. El `read_timeout` es el
+    que queda del plazo, redondeado a segundos (un cliente por valor, cacheado).
+    """
     import boto3
     from botocore.config import Config
 
@@ -6890,8 +6921,22 @@ def _bedrock_client_demo():
     return boto3.client(
         "bedrock-runtime",
         region_name=region,
-        config=Config(connect_timeout=5, read_timeout=25, retries={"max_attempts": 2}),
+        config=Config(
+            connect_timeout=3,
+            read_timeout=read_timeout,
+            retries={"total_max_attempts": 1, "mode": "standard"},
+        ),
     )
+
+
+def _cliente_demo_para_el_plazo():
+    """El cliente de demo con el `read_timeout` que cabe en lo que queda del
+    turno (nunca más que `DEMO_LLM_READ_TIMEOUT_S`, nunca menos de 3 s)."""
+    plazo = _PLAZO_DEMO.get()
+    limite = _read_timeout_demo()
+    if plazo is not None:
+        limite = min(limite, plazo - time.monotonic())
+    return _bedrock_client_demo(int(max(3.0, limite)))
 
 
 def _bloques_system(system: str) -> List[Dict[str, Any]]:
@@ -6932,7 +6977,7 @@ def _invoke_model(
         "messages": messages,
         "tools": tools,
     }
-    cliente = _bedrock_client_demo() if _TURNO_DEMO.get() else _bedrock_client()
+    cliente = _cliente_demo_para_el_plazo() if _TURNO_DEMO.get() else _bedrock_client()
     resp = cliente.invoke_model(
         modelId=model_id, body=json.dumps(body, ensure_ascii=False)
     )
@@ -6996,15 +7041,31 @@ def _invoke_con_respaldo(
     Es por ronda y no por turno a propósito: las herramientas de las rondas
     anteriores ya corrieron (precios consultados, medios enviados) y repetir el
     turno entero las duplicaría."""
-    planes = [(model_id, _INTENTOS_MODELO)]
-    if fallback_model_id and fallback_model_id != model_id:
-        planes.append((fallback_model_id, _INTENTOS_RESPALDO))
+    plazo = _PLAZO_DEMO.get() if _TURNO_DEMO.get() else None
+    if plazo is not None:
+        # Demo (#635): menos intentos y pausas cortas, todo dentro del plazo
+        # del turno. El respaldo SÍ se usa: en una convención es mejor una
+        # respuesta de Sonnet que la disculpa técnica.
+        intentos_modelo = _env_entero("DEMO_LLM_INTENTOS_MODELO", 2, 1, 3)
+        intentos_respaldo = _env_entero("DEMO_LLM_INTENTOS_RESPALDO", 1, 0, 2)
+        pausas = (0.5, 1.0)
+    else:
+        intentos_modelo, intentos_respaldo, pausas = (
+            _INTENTOS_MODELO, _INTENTOS_RESPALDO, _PAUSAS_REINTENTO
+        )
+    planes = [(model_id, intentos_modelo)]
+    if fallback_model_id and fallback_model_id != model_id and intentos_respaldo:
+        planes.append((fallback_model_id, intentos_respaldo))
 
     ultimo: Optional[Exception] = None
     for modelo, intentos in planes:
         for intento in range(intentos):
-            if intento:
-                time.sleep(_PAUSAS_REINTENTO[min(intento, len(_PAUSAS_REINTENTO)) - 1])
+            pausa = pausas[min(intento, len(pausas)) - 1] if intento else 0.0
+            if plazo is not None and plazo - time.monotonic() - pausa < _MINIMO_PARA_INTENTAR_S:
+                logger.warning("llm_plazo_demo agotado model=%s intento=%s", modelo, intento + 1)
+                break
+            if pausa:
+                time.sleep(pausa)
             try:
                 return _invoke_model(modelo, system, messages, tools), modelo
             except Exception as exc:
@@ -7022,7 +7083,9 @@ def _invoke_con_respaldo(
             logger.warning(
                 "llm_respaldo model=%s falló; pasa a %s", model_id, fallback_model_id
             )
-    assert ultimo is not None
+    if ultimo is None:
+        # Solo en la demo: el plazo se acabó antes de poder intentar.
+        raise TimeoutError("plazo del turno de demo agotado")
     raise ultimo
 
 
@@ -7164,6 +7227,9 @@ def advance(
     actions: List[Dict[str, Any]] = []
     t0 = time.monotonic()
     marca_demo = _TURNO_DEMO.set(bool(cfg.get("demo")))
+    marca_plazo = _PLAZO_DEMO.set(
+        time.monotonic() + presupuesto_turno_demo() if cfg.get("demo") else None
+    )
     try:
         result = _advance_inner(bot, cfg, state, user_input, actions, t0)
     except Exception:
@@ -7201,6 +7267,7 @@ def advance(
         }
     finally:
         _TURNO_DEMO.reset(marca_demo)
+        _PLAZO_DEMO.reset(marca_plazo)
     # Log estructurado SIN contenido del mensaje (reglas #1/#6): solo metadatos.
     tel = result.get("telemetry") or {}
     logger.info(
@@ -7326,7 +7393,9 @@ def _turno(
     system = _system_prompt(bot, cfg, history, user_text, ctx_productos)
     tools = _tools_for(cfg, ctx_productos, system)
     model_id = cfg.get("model_id") or _env_model_id()
-    fallback_model_id = cfg.get("fallback_model_id") or _env_fallback_model_id()
+    fallback_model_id = cfg.get("fallback_model_id") or (
+        os.getenv("DEMO_CHAT_FALLBACK_MODEL_ID") if cfg.get("demo") else None
+    ) or _env_fallback_model_id()
 
     # Mensajes de trabajo del turno (el historial persistido queda aplanado).
     working: List[Dict[str, Any]] = [

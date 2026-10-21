@@ -17,6 +17,23 @@ Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="Multiagente API", version="1.0.0")
 
+
+@app.on_event("startup")
+async def _hilos_del_threadpool() -> None:
+    """Hilos para los endpoints síncronos (#635). Por defecto los 40 de anyio;
+    en modo convención se suben con `APP_HILOS` para que las demos (que esperan
+    a Bedrock en un hilo) no dejen sin hilos a los webhooks de los clientes."""
+    import os
+
+    import anyio.to_thread
+
+    try:
+        hilos = int(os.getenv("APP_HILOS", "") or 0)
+    except ValueError:
+        hilos = 0
+    if hilos > 0:
+        anyio.to_thread.current_default_thread_limiter().total_tokens = min(hilos, 200)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],

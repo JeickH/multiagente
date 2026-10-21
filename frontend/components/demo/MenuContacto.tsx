@@ -154,7 +154,8 @@ export default function MenuContacto({ acciones }: { acciones: AccionesAgendar }
             </span>
             <span>
               <span className="block font-semibold">{T.whatsapp}</span>
-              <span className="block text-xs text-gloma-ink-muted">Por WhatsApp, en otra pestaña</span>
+              {/* Que abre otra pestaña lo dice el `aria-label`; el texto visible queda corto (#636). */}
+              <span className="block text-xs text-gloma-ink-muted">Por WhatsApp</span>
             </span>
           </a>
         </div>

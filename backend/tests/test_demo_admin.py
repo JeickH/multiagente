@@ -459,7 +459,7 @@ def test_detalle(admin, db):
     assert all(p["precio_cop"] > 0 and p["unidad_precio"] and p["ficha"] for p in d["productos"])
     assert set(d["productos"][0]) == {"nombre", "resumen", "ficha", "precio_cop", "unidad_precio"}
     # Consentimiento.
-    assert d["acepto_contacto_at"] and d["consent_version"] == "demo-2026-10"
+    assert d["acepto_contacto_at"] and d["consent_version"] == router_demo.CONSENT_VERSION == "demo-2026-10b"
     assert d["acepta_promociones_at"] is None
     assert [m["rol"] for m in d["transcripcion"]] == ["usuario", "bot"]
     for prohibido in ("chat_state", "ip_address", "user_agent", "history"):

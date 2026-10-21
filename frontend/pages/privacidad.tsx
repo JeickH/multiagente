@@ -7,6 +7,11 @@ import Image from 'next/image';
  * usuario autoriza, para contacto, marketing, promociones y novedades, sin
  * nombrar razón social ni NIT.
  *
+ * Actualización del 2026-10-20 (#636, aprobada por el CEO): se agregan las
+ * secciones de la demo de `/demo` (finalidad, datos, encargados con
+ * transmisión internacional, conservación y derechos). Lo que ya decía la
+ * página no cambia. El formulario de la demo también la enlaza.
+ *
  * La enlaza el formulario "Quiero que me contacten" de la landing, que exige
  * aceptarla antes de enviar (el backend guarda cuándo se aceptó en
  * `leads.acepto_privacidad_at`). Es pública: vive en el allowlist del
@@ -22,6 +27,7 @@ const BRAND = {
 };
 
 const VIGENCIA = '27 de septiembre de 2026';
+const ACTUALIZACION = '20 de octubre de 2026';
 
 const SECCIONES: { titulo: string; parrafos: string[] }[] = [
   {
@@ -41,6 +47,45 @@ const SECCIONES: { titulo: string; parrafos: string[] }[] = [
     titulo: 'Tus derechos',
     parrafos: [
       'Puedes conocer, actualizar o rectificar tus datos, y revocar esta autorización o pedir que dejemos de enviarte comunicaciones en cualquier momento, escribiendo a contacto@glomacx.com.',
+    ],
+  },
+  // --- Demo de glomacx.com/demo (#636) ---
+  {
+    titulo: 'Si armas una demo en glomacx.com/demo',
+    parrafos: [
+      'Al marcar la casilla «Acepto que Gloma me contacte sobre esta demo» autorizas el tratamiento de los datos que se explican en esta sección. La casilla de promociones y novedades es aparte y no es obligatoria.',
+    ],
+  },
+  {
+    titulo: 'Qué datos usamos en la demo',
+    parrafos: [
+      'Tu nombre, el nombre y el tipo de tu empresa, tu teléfono y tu correo electrónico. También guardamos la conversación que tengas con el agente de demostración y registramos si haces clic en «Agendar una llamada» o en «Hablar con un asesor».',
+    ],
+  },
+  {
+    titulo: 'Para qué los usamos en la demo',
+    parrafos: [
+      'Con el nombre y el tipo de tu empresa creamos una demostración personalizada del agente de IA, con productos de ejemplo. Con tu teléfono y tu correo te contactamos para hablar de esa demostración.',
+      'Solo te enviamos promociones y novedades de Gloma si marcaste esa casilla. Si no la marcaste, usamos tus datos únicamente para el seguimiento de tu demo.',
+    ],
+  },
+  {
+    titulo: 'Quién más trata tus datos en la demo',
+    parrafos: [
+      'Amazon Web Services aloja la plataforma y, a través de Amazon Bedrock, ejecuta el modelo de IA que responde en la demo. Ese tratamiento puede hacerse en servidores fuera de Colombia, así que tus datos pueden transmitirse a otros países. Amazon Web Services actúa como encargado: trata los datos por cuenta de Gloma y para prestar este servicio. Al aceptar esta autorización, autorizas también esa transmisión internacional.',
+      'Cal.com gestiona el calendario para agendar una llamada con Gloma. Solo recibe datos si abres «Agendar una llamada»: en ese caso le llegan tu nombre y tu correo, si ya los habías escrito en el formulario de la demo, y lo que escribas en su formulario de reserva.',
+    ],
+  },
+  {
+    titulo: 'Cuánto tiempo guardamos los datos de la demo',
+    parrafos: [
+      'Guardamos tus datos y la conversación de la demo para hacerle seguimiento comercial, hasta que nos pidas eliminarlos.',
+    ],
+  },
+  {
+    titulo: 'Tus derechos sobre la demo',
+    parrafos: [
+      'Sobre los datos de la demo tienes los mismos derechos descritos en «Tus derechos». Además, puedes pedirnos que eliminemos tus datos y la conversación. Para cualquiera de estas solicitudes, escribe a contacto@glomacx.com.',
     ],
   },
 ];
@@ -80,7 +125,7 @@ export default function Privacidad() {
             Autorización de tratamiento de datos personales
           </h1>
           <p className="text-sm mb-10" style={{ color: BRAND.textMuted }}>
-            Ley Estatutaria 1581 de 2012 · Decreto 1377 de 2013 · Vigente desde el {VIGENCIA}
+            Ley Estatutaria 1581 de 2012 · Decreto 1377 de 2013 · Vigente desde el {VIGENCIA} · Actualizada el {ACTUALIZACION}
           </p>
           <div className="space-y-8">
             {SECCIONES.map((s) => (

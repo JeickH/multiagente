@@ -231,17 +231,24 @@ def _t2(texto):
 
 
 def test_texto_fijo_de_disponibilidad_no_se_duplica_ni_se_disculpa():
+    # Fecha relativa a hoy (con su día de la semana correcto): con una fija, el
+    # test vencía el día después y el corrector de días la cambiaba (#635).
+    from datetime import timedelta
+
+    from app.services import calendario_demo
+
+    d = llm_engine.datetime.now(llm_engine._TZ_CO).date() + timedelta(days=10)
+    fecha = f"{calendario_demo.DIAS[d.weekday()]} {d.day} de {llm_engine._MESES_ES[d.month - 1]}"
     afirma = _t2("Tenemos disponibilidad para hoy. La disponibilidad exacta la confirma "
-                 "el equipo al reservar. ¿Podrían el domingo 18 de octubre?")
+                 f"el equipo al reservar. ¿Podrían el {fecha}?")
     rehecho = _t2("Tienes razón, me disculpo. Aquí va de nuevo:\n\nTenemos disponibilidad "
                   "para hoy. La disponibilidad exacta la confirma el equipo al reservar. "
-                  "¿Podrían el domingo 18 de octubre?")
+                  f"¿Podrían el {fecha}?")
     with patch.object(llm_engine, "_invoke_model", side_effect=[afirma, rehecho]):
         r = llm_engine.advance(_Bot(DEMO), None, "¿hay para hoy?")
     textos = [a["payload"]["text"] for a in r["actions"] if a["type"] == "say"]
     assert textos == [
-        "La disponibilidad exacta la confirma el equipo al reservar. ¿Podrían el "
-        "domingo 18 de octubre?"
+        f"La disponibilidad exacta la confirma el equipo al reservar. ¿Podrían el {fecha}?"
     ]
 
 

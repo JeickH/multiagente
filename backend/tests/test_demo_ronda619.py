@@ -351,8 +351,10 @@ def test_cliente_demo_con_timeouts_cortos():
         with patch("boto3.client") as mk:
             llm_engine._bedrock_client_demo()
         cfg = mk.call_args.kwargs["config"]
-        assert cfg.connect_timeout == 5 and cfg.read_timeout == 25
-        assert cfg.retries["max_attempts"] == 2
+        # #635: sin reintentos de botocore (los hace `_invoke_con_respaldo`,
+        # dentro del plazo del turno) y el timeout que quede del plazo.
+        assert cfg.connect_timeout == 3 and cfg.read_timeout == 15
+        assert cfg.retries["total_max_attempts"] == 1
     finally:
         llm_engine._bedrock_client_demo.cache_clear()
 
