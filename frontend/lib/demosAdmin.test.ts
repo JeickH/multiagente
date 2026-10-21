@@ -43,6 +43,7 @@ const BASE: ItemDemo = {
   llamada_agendada_at: null,
   interna: false,
   lead_borrado: false,
+  bot_eliminado_at: null,
 };
 const item = (c: Partial<ItemDemo>): ItemDemo => ({ ...BASE, ...c });
 
@@ -180,6 +181,7 @@ describe('hiloConMarcas', () => {
     primer_apertura_llamada_at: null,
     productos: [],
     transcripcion: [],
+    uso_resumen: null,
     ...c,
   });
 

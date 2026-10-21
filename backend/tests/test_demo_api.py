@@ -734,7 +734,7 @@ def test_generando_vencido_se_resuelve_con_el_respaldo(client, db, monkeypatch):
 
     r = client.get(f"/demo/{demo_id}/estado", headers=_h(token))
     assert r.json() == {"estado": "generando", "empresa": "Hotel Brisas del Carmen",
-                        "productos": [], "mensaje_sugerido": None}
+                        "productos": [], "mensaje_sugerido": None, "terminada": False}
 
     demo = _demo_de(db, demo_id)
     demo.created_at = datetime.utcnow() - timedelta(seconds=90)

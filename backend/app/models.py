@@ -850,6 +850,22 @@ class Demo(Base):
     llamada_agendada_at = Column(DateTime, nullable=True)
     # Cuándo la conversación llegó al traspaso a asesor.
     traspaso_at = Column(DateTime, nullable=True)
+    # Sprint 33 #637: limpieza de los bots de demo inactivos.
+    # Última vez que el prospecto hizo algo (crear, turno, evento). Es la base
+    # del umbral de retención. NO es `updated_at`: la limpieza misma escribe
+    # la fila (snapshot, resumen) y eso no es actividad. Sin default a
+    # propósito: un DEFAULT now() en el ADD COLUMN le pondría la hora de la
+    # migración a todas las filas viejas; la migración las rellena con la
+    # mejor estimación y el backend la escribe en las nuevas.
+    ultima_actividad_at = Column(DateTime, nullable=True)
+    # Copia de los productos del bot (ficha, precio, unidad) tomada antes de
+    # borrarlo, para que el panel los siga mostrando. Lista JSON.
+    productos_snapshot = Column(JSONB, nullable=True)
+    # Turnos, tokens y costo estimado sacados de `bot_llm_decisions` antes de
+    # borrar el bot (esa tabla se borra en cascada con él). Objeto JSON.
+    uso_resumen = Column(JSONB, nullable=True)
+    # Cuándo se borró el bot. `bot_id` queda en NULL por la FK (SET NULL).
+    bot_eliminado_at = Column(DateTime, nullable=True)
 
     __table_args__ = (
         CheckConstraint(
@@ -875,6 +891,16 @@ class Demo(Base):
         # Tope de demos por IP y por día:
         #   WHERE ip_address = :ip AND created_at >= :desde
         Index("ix_demos_ip_created", "ip_address", "created_at"),
+        # Limpiador (#637):
+        #   WHERE bot_id IS NOT NULL AND ultima_actividad_at < :umbral
+        # Parcial: solo entran las demos que aún tienen bot. Al borrarlo la
+        # FK pone `bot_id` en NULL y la fila sale del índice, así que su
+        # tamaño es el de los bots vivos, no el de todas las demos históricas.
+        Index(
+            "ix_demos_bot_vivo_actividad",
+            "ultima_actividad_at",
+            postgresql_where=text("bot_id IS NOT NULL"),
+        ),
     )
 
     lead = relationship("Lead")

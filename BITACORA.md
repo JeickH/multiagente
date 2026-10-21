@@ -9430,3 +9430,103 @@ rebasa sobre ese `main` y la imagen del backend se construye desde un árbol lim
    sesión).
 5. RDS: con 2 tasks durante un relevo se llega a ~74 de 78 conexiones; si se
    sube el pool o se agregan tasks, revisar `max_connections` (db.t3.micro = 81).
+
+---
+
+## Sprint 33 — Limpieza de los bots de demo inactivos (21-oct-2026)
+
+**Pedido del CEO**: borrar los bots de demo creados por `/demo` que lleven **2
+días sin uso**, para no llenar la app, pero **conservar los datos del
+prospecto**. (Resuelve la retención de #618: confirmación explícita del CEO
+para borrar, como exige CLAUDE.md.)
+
+Dónde quedan los prospectos (no se tocan): `leads` (`source='gloma_demo'`:
+nombre, correo, teléfono, empresa, autorización) y `demos` (tipo,
+consentimientos, conversación, clics, traspaso). Lo que se borra: el `Bot` de
+la cuenta `demos@glomacx.com` y sus `bot_productos` (+ variantes, filas y
+vínculos).
+
+**Decisiones del PM**
+- Nuevas columnas en `demos`: `ultima_actividad_at` (se actualiza al crear, en
+  cada turno y en cada evento; la base de los 2 días), `productos_snapshot`
+  (JSONB: los 3 productos con ficha, precio y unidad, copiados antes de
+  borrar, para que el panel los siga mostrando), `uso_resumen` (JSONB: turnos,
+  tokens y costo estimado tomados de `bot_llm_decisions`, que se borra en
+  cascada con el bot) y `bot_eliminado_at`.
+- Borrado con doble candado: solo bots de la cuenta dueña de demos, con
+  `llm_config.demo = true` y enlazados a una fila de `demos`; nunca otro bot.
+  Corre solo (dentro del tick ya programado, como máximo una vez por hora), con
+  log sin PII y modo `--simular` para ver qué borraría.
+- Umbral por env (`DEMO_BOT_RETENCION_HORAS`, default 48).
+
+| # | Tarea | Responsable | Estado |
+|---|---|---|---|
+| 637 | Columnas nuevas en `demos` + migración idempotente (local) | experto-bd | ✅ local (199 filas rellenadas; 2.ª corrida 0) |
+| 638 | Servicio de limpieza + `ultima_actividad_at` + panel con snapshot | dev-plataforma | ✅ suite 3868 (normal y tipo CI) |
+| 639 | Auditoría de seguridad del borrado | seguridad | ✅ APTO (1 medio a corregir antes del deploy) |
+| 640 | QA en local del ciclo completo de limpieza | qa | ✅ APTO |
+| 642 | Arreglos antes del deploy: mínimo de 6 h, simulación por defecto, candado `channels`, **tick fail-closed** | dev-plataforma | ✅ suite 3896 (normal y tipo CI) |
+| 641 | Deploy (migración + imagen) | deploy-aws | ⏳ confirmar con el CEO |
+
+**#637**: `ultima_actividad_at` **sin DEFAULT** (un `DEFAULT now()` pondría la
+hora de la migración a todas las filas viejas) y rellenada con el máximo de
+creación, lista, updated_at, clics, traspaso y la última hora de la
+transcripción, con techo en `now()`; índice parcial
+`ix_demos_bot_vivo_actividad … WHERE bot_id IS NOT NULL` (solo bots vivos).
+Inventario de cascadas al borrar un bot: CASCADE `bot_steps`, `bot_sessions`
+(→ `bot_pending_actions`, `intenciones_compra`), `bot_llm_decisions`,
+`bot_producto_bots`, `intenciones_compra`; SET NULL `conversations`,
+`demo_bookings`, `demos`, `mascotas`. **No se borran solos**:
+`bot_recordatorios` (sin FK) y los `bot_productos` del team de demos con sus
+variantes y filas (184 bots locales cuelgan 552 variantes y 6.624 filas). En el
+deploy, **correr la migración otra vez después del update-service** (las demos
+creadas en el intervalo quedan con NULL y nunca se limpiarían).
+
+**#638**: `services/limpieza_demos.py` con el orden seguro de #637 (fila de
+`demos` con `FOR UPDATE` y re-chequeo de inactividad, candados del bot, snapshot
+y `uso_resumen` por modelo con costo estimado, recordatorios del bot, bot,
+productos sin otros vínculos), lote de 200, `ultima_actividad_at` NULL nunca se
+limpia. El tick (`/internal/bot-scheduler/tick`) la lanza ≤1/h como
+BackgroundTask; script `scripts/limpiar_demos.py [--simular] [--horas N]`.
+Estado/chat de una demo con bot borrado → `terminada: true` / «Esta
+demostración ya terminó», sin llamar al modelo. Panel: «Bot eliminado el …»,
+productos del snapshot y consumo. Prueba local: 141 bots borrados en 1,8 s;
+`leads` 206 → 206, `demos` 199 → 199, cero huérfanos, segunda corrida sin
+candidatos. 24 tests nuevos; suite **3868**.
+
+**Auditoría #639: APTO PARA MERGE.** Ningún camino borra un bot que no sea de
+demo (dueño + team + `demo is True` + enlace en `demos`, que solo escribe
+`materializar()`); `leads` no se toca; concurrencia cubierta con `FOR UPDATE` y
+re-chequeo; tick con la misma autenticación y sin parámetros del request.
+**M1 (antes del deploy)**: `--horas 0` o negativo borraría el bot de todas las
+demos vivas → mínimo de 6 h (el TTL del token) en el servicio y error explícito
+en el script. Bajos: simulación por defecto en run-task (`LIMPIEZA_EJECUTAR=1`
+para borrar), carrera inversa turno/limpieza en el UPDATE de turnos, comprobar
+`channels == "demo"`, acotar `--lote` a 1–1.000. **En el deploy: correr primero
+la simulación en RDS y revisar conteos antes de dejar que el tick borre.**
+
+**QA #640: APTO.** Ciclo completo con 3 demos nuevas: solo se borró la
+inactiva; las que tuvieron un turno o un clic reciente no; snapshot idéntico,
+`uso_resumen` exacto contra `bot_llm_decisions` (costo US$ 0,01736 recalculado
+igual), estado/chat «terminada», panel correcto, cero huérfanos, md5 de los 11
+bots de otras cuentas idéntico antes y después.
+
+**Hallazgo de QA confirmado por el PM en producción (21-oct)**:
+`POST https://api.glomacx.com/internal/bot-scheduler/tick` responde **200 sin
+llave**. El endpoint usa `_require_internal_secret`, que lee `INTERNAL_SECRET`;
+la task-def 108 solo tiene `INTERNAL_API_KEY`, y sin la variable deja pasar.
+**Es previo a este sprint** (incumple la regla 5, fail-closed), pero con la
+limpieza enganchada cualquiera podría dispararla. La prueba del PM ejecutó un
+tick normal (lo mismo que la Lambda hace cada minuto). Se corrige en #642
+pasando a `_require_internal_key`, previa verificación de que la Lambda lee el
+mismo parámetro de SSM.
+
+**#642**: el tick pasa a `_require_internal_key` (`hmac.compare_digest`; en
+producción sin llave → 403). Verificado antes, solo leyendo: la Lambda lee
+`SECRET_PARAM=/multiagente/prod/INTERNAL_API_KEY`, el mismo parámetro de SSM
+que la task-def 108, y manda ambos headers; `APP_ENV=production`. Retención
+mínima de 6 h en el servicio y el script; el script **simula por defecto**
+(`--ejecutar` o `LIMPIEZA_EJECUTAR=1` para borrar; en simulación reporta
+`borraria`); el UPDATE de turnos exige bot vivo; candado `channels == "demo"`;
+lote 1–1.000. Restos cosméticos: el `TICK_URL` de la Lambda apunta a
+`api.glomabeauty.com` (funciona, sin redirect).

@@ -50,6 +50,25 @@ DECISIONES
       (COUNT/SUM con FILTER sobre esas columnas) recorre solo las filas de ese
       rango, que el tope global por día mantiene en cientos. Un índice por
       contador además se tocaría en cada clic sin que ninguna consulta lo use.
+    · #637 (Sprint 33, 21-oct): limpieza de los bots de demo inactivos.
+      Cuatro columnas NULL y sin default: `ultima_actividad_at`,
+      `productos_snapshot` (JSONB), `uso_resumen` (JSONB) y
+      `bot_eliminado_at`. `ultima_actividad_at` va SIN default a propósito:
+      `DEFAULT now()` en un ADD COLUMN se evalúa una vez y le pone la hora de
+      la migración a todas las filas viejas (y entonces el relleno, que solo
+      toca NULLs, no haría nada). Las filas existentes se rellenan con la
+      mejor estimación (ver `RELLENO_ACTIVIDAD`), solo donde está en NULL: la
+      segunda corrida no toca nada, y correrla de nuevo DESPUÉS del deploy
+      rellena las demos que el backend viejo haya creado entre la migración y
+      el despliegue (esas no se limpian mientras sigan en NULL: `NULL < x` no
+      es verdadero, así que el limpiador falla hacia conservar).
+      Índice PARCIAL `ix_demos_bot_vivo_actividad (ultima_actividad_at)
+      WHERE bot_id IS NOT NULL` para la consulta del limpiador: al borrar el
+      bot la FK deja `bot_id` en NULL y la fila sale del índice, así que pesa
+      lo que pesan los bots vivos (decenas) y no las demos históricas, que
+      crecen sin techo. Mismo nombre y predicado en `models.py`.
+      Sin CHECK sobre la forma del JSON (`jsonb_typeof`): la suite corre en
+      SQLite, que no tiene esa función, y el CHECK de `models.py` la rompería.
 
 No borra ni reescribe datos. Correrla dos veces no cambia nada la segunda.
 
@@ -124,6 +143,11 @@ COLUMNAS: dict[str, tuple[str, str, bool, str | None]] = {
     "primer_apertura_llamada_at": (*_TS, False, None),
     "llamada_agendada_at": (*_TS, False, None),
     "traspaso_at": (*_TS, False, None),
+    # #637: limpieza de los bots de demo inactivos.
+    "ultima_actividad_at": (*_TS, False, None),
+    "productos_snapshot": ("JSONB", "jsonb", False, None),
+    "uso_resumen": ("JSONB", "jsonb", False, None),
+    "bot_eliminado_at": (*_TS, False, None),
 }
 
 CHECKS: dict[str, str] = {
@@ -145,14 +169,59 @@ FKS: dict[str, tuple[str, str]] = {
     "demos_bot_id_fkey": ("bot_id", "bots"),
 }
 
-# nombre → (columnas, único)
-INDICES: dict[str, tuple[str, bool]] = {
-    "ix_demos_public_id": ("public_id", True),
-    "ix_demos_lead_id": ("lead_id", False),
-    "ix_demos_bot_id": ("bot_id", False),
-    "ix_demos_created_at": ("created_at", False),
-    "ix_demos_ip_created": ("ip_address, created_at", False),
+# nombre → (columnas, único, predicado WHERE si es parcial)
+INDICES: dict[str, tuple[str, bool, str | None]] = {
+    "ix_demos_public_id": ("public_id", True, None),
+    "ix_demos_lead_id": ("lead_id", False, None),
+    "ix_demos_bot_id": ("bot_id", False, None),
+    "ix_demos_created_at": ("created_at", False, None),
+    "ix_demos_ip_created": ("ip_address, created_at", False, None),
+    # #637: el limpiador. Parcial: solo las demos que aún tienen bot.
+    "ix_demos_bot_vivo_actividad": ("ultima_actividad_at", False, "bot_id IS NOT NULL"),
 }
+
+# #637: mejor estimación de la última actividad de una demo existente. Es el
+# máximo de todo lo que el prospecto pudo haber hecho:
+#   · created_at (siempre está) y lista_at (el bot quedó listo);
+#   · el `at` más reciente de `transcripcion` (cada turno escribe dos entradas
+#     con la hora UTC en ISO). Solo se toman los que parecen fecha, para que
+#     una entrada rara no tumbe la migración con un error de cast;
+#   · las fechas de los eventos (#626). Son la PRIMERA vez de cada uno (se
+#     escriben con COALESCE), así que un clic posterior no queda; por eso
+#     también entra
+#   · updated_at, que hoy es confiable: solo lo mueven la creación, el «lista»
+#     o «error» de la generación y cada turno (ORM con `onupdate`); ningún
+#     panel ni script reescribe demos. Los eventos no lo tocan (SQL directo),
+#     y eso es lo que lo deja abajo de la verdad, nunca arriba. OJO: desde
+#     #637 la limpieza sí escribe la fila (snapshot, resumen), así que este
+#     relleno vale UNA vez; por eso solo toca NULLs.
+# GREATEST ignora NULLs. El techo `now()` en UTC (las fechas de esta tabla son
+# UTC sin zona) evita que una hora corrida al futuro deje un bot vivo para
+# siempre. El resultado nunca es NULL porque `created_at` es NOT NULL.
+RELLENO_ACTIVIDAD = """
+UPDATE demos d SET ultima_actividad_at = LEAST(
+    GREATEST(
+        d.created_at, d.lista_at, d.updated_at,
+        d.primer_clic_whatsapp_at, d.primer_apertura_llamada_at,
+        d.llamada_agendada_at, d.traspaso_at,
+        (SELECT MAX((e->>'at')::timestamp)
+           FROM jsonb_array_elements(
+                CASE WHEN jsonb_typeof(d.transcripcion) = 'array'
+                     THEN d.transcripcion ELSE '[]'::jsonb END) AS e
+          WHERE jsonb_typeof(e) = 'object'
+            AND e->>'at' ~ '^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])[T ]([01][0-9]|2[0-3]):[0-5][0-9](:[0-5][0-9](\\.[0-9]+)?)?$')
+    ),
+    (now() AT TIME ZONE 'UTC')
+)
+WHERE d.ultima_actividad_at IS NULL
+"""
+
+
+def _normalizar_pred(expr: str | None) -> str:
+    """`(bot_id IS NOT NULL)` → `bot_id is not null`."""
+    if not expr:
+        return ""
+    return " ".join(expr.replace("(", " ").replace(")", " ").split()).lower()
 
 
 def _def_columna(nombre: str) -> str:
@@ -266,10 +335,12 @@ def aplicar(engine) -> None:
         for h in hechos:
             print(f"  + {h}")
         print(f"  ✓ columnas/defaults/CHECK/FK en su sitio ({len(hechos)} agregados o reparados)")
-        for nombre, (cols, unico) in INDICES.items():
+        rellenas = conn.execute(text(RELLENO_ACTIVIDAD)).rowcount
+        print(f"  ✓ ultima_actividad_at rellenada en {rellenas} fila(s)")
+        for nombre, (cols, unico, donde) in INDICES.items():
             conn.execute(text(
                 f"CREATE {'UNIQUE ' if unico else ''}INDEX IF NOT EXISTS "
-                f"{nombre} ON demos ({cols})"
+                f"{nombre} ON demos ({cols})" + (f" WHERE {donde}" if donde else "")
             ))
         print(f"  ✓ {len(INDICES)} índices")
 
@@ -310,23 +381,42 @@ def verificar(engine) -> int:
             elif fk[1] != "n" or fk[2] != ref:
                 mal.append(f"{nombre}: ON DELETE={fk[1]!r} → {fk[2]}, se esperaba SET NULL → {ref}")
 
-        idx = dict(conn.execute(text(
-            "SELECT c.relname, i.indisunique FROM pg_index i "
-            "JOIN pg_class c ON c.oid = i.indexrelid "
-            "WHERE i.indrelid = to_regclass('public.demos')"
-        )).fetchall())
-        for nombre, (_, unico) in INDICES.items():
+        idx = {
+            n: (u, p) for n, u, p in conn.execute(text(
+                "SELECT c.relname, i.indisunique, pg_get_expr(i.indpred, i.indrelid) "
+                "FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid "
+                "WHERE i.indrelid = to_regclass('public.demos')"
+            ))
+        }
+        for nombre, (_, unico, donde) in INDICES.items():
             if nombre not in idx:
                 mal.append(f"falta el índice {nombre}")
-            elif idx[nombre] != unico:
-                mal.append(f"{nombre}: único={idx[nombre]}, se esperaba {unico}")
+                continue
+            if idx[nombre][0] != unico:
+                mal.append(f"{nombre}: único={idx[nombre][0]}, se esperaba {unico}")
+            if _normalizar_pred(idx[nombre][1]) != _normalizar_pred(donde):
+                mal.append(
+                    f"{nombre}: WHERE {idx[nombre][1] or '(ninguno)'}, "
+                    f"se esperaba {donde or '(ninguno)'}"
+                )
         filas = conn.execute(text("SELECT COUNT(*) FROM demos")).scalar()
+        sin_actividad = conn.execute(text(
+            "SELECT COUNT(*) FROM demos WHERE ultima_actividad_at IS NULL"
+        )).scalar() if "ultima_actividad_at" in cols else 0
 
     if mal:
         print("ERROR: la tabla demos no quedó como dice este script:")
         for m in mal:
             print(f"   - {m}")
         return 1
+    if sin_actividad:
+        # No es error: pasa entre la migración y el deploy, mientras el backend
+        # viejo crea demos sin escribirla. Esas no se limpian; correr la
+        # migración otra vez después del deploy las rellena.
+        print(
+            f"AVISO: {sin_actividad} demo(s) con ultima_actividad_at en NULL; "
+            "vuelve a correr la migración (sin --verificar) después del deploy."
+        )
     n_def = sum(1 for c in COLUMNAS.values() if c[3])
     print(
         f"OK: demos verificada ({len(esperadas)} columnas, {n_def} defaults, "

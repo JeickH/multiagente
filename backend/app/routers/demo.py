@@ -161,6 +161,9 @@ TEXTO_CIERRE_DEMO = (
     "Hasta aquí llega esta demostración 🙌 En tu cuenta, la conversación "
     "seguiría hasta cerrar la reserva con tu equipo."
 )
+TEXTO_DEMO_TERMINADA = (
+    "Esta demostración ya terminó 🙌 Si quieres, arma una nueva en glomacx.com/demo."
+)
 TEXTO_FIN_TURNOS = (
     "Hasta aquí llega esta demostración 🙌 ¡Gracias por probarla!"
 )
@@ -354,6 +357,9 @@ class EstadoOut(BaseModel):
     empresa: str
     productos: List[ProductoOut] = []
     mensaje_sugerido: Optional[str] = None
+    #: #638: el bot de esta demo ya se borró por inactividad. La demo se ve
+    #: (productos del snapshot) pero el chat responde que terminó.
+    terminada: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -658,6 +664,7 @@ def iniciar(
         consent_version=CONSENT_VERSION,
         acepta_promociones=payload.acepta_promociones,
         acepta_promociones_at=ahora if payload.acepta_promociones else None,
+        ultima_actividad_at=ahora,
         estado=models.DEMO_ESTADO_GENERANDO,
         ip_address=ip,
         user_agent=ua,
@@ -854,7 +861,14 @@ def estado(
 
     out = EstadoOut(estado=demo.estado, empresa=demo.empresa)
     if demo.estado == models.DEMO_ESTADO_LISTA:
-        out.productos = _productos_de(db, demo.bot_id)
+        if demo.bot_id is None and demo.bot_eliminado_at is not None:
+            out.terminada = True
+            out.productos = [
+                ProductoOut(nombre=str(p.get("nombre") or ""), resumen=str(p.get("resumen") or ""))
+                for p in (demo.productos_snapshot or []) if isinstance(p, dict)
+            ]
+        else:
+            out.productos = _productos_de(db, demo.bot_id)
         out.mensaje_sugerido = demo.mensaje_sugerido
     return out
 
@@ -934,6 +948,9 @@ def chat(
     db: Session = Depends(get_db),
 ):
     demo = _demo_autorizada(db, demo_id, x_demo_token)
+    if demo.bot_id is None and demo.bot_eliminado_at is not None:
+        # #638: el bot se borró por inactividad; la demo terminó (no un 500).
+        return _solo_texto(TEXTO_DEMO_TERMINADA, finished=True)
     if demo.estado != models.DEMO_ESTADO_LISTA or demo.bot_id is None:
         raise HTTPException(status_code=409, detail="La demo aún se está preparando")
     mensaje = payload.message
@@ -986,13 +1003,25 @@ def _turno(db: Session, demo: models.Demo, bot: models.Bot, mensaje: str) -> Cha
     maximo = _tope("DEMO_MAX_TURNOS")
     turnos = db.execute(
         text(
-            "UPDATE demos SET turnos = turnos + 1 "
-            "WHERE id = :id AND turnos < :max RETURNING turnos"
+            "UPDATE demos SET turnos = turnos + 1, ultima_actividad_at = :ahora "
+            "WHERE id = :id AND turnos < :max "
+            # #642 (B2): con el bot vivo. Si la limpieza tiene la fila tomada,
+            # este UPDATE la espera y, al soltarla, ya no la encuentra: nunca
+            # se llama al modelo con un bot que se acaba de borrar.
+            "AND bot_eliminado_at IS NULL AND bot_id IS NOT NULL "
+            "RETURNING turnos"
         ),
-        {"id": demo.id, "max": maximo},
+        {"id": demo.id, "max": maximo, "ahora": datetime.utcnow()},
     ).scalar()
     db.commit()
     if turnos is None:
+        fila = db.execute(
+            text("SELECT bot_id, bot_eliminado_at FROM demos WHERE id = :id"),
+            {"id": demo.id},
+        ).first()
+        db.rollback()
+        if fila is None or fila[0] is None or fila[1] is not None:
+            return _solo_texto(TEXTO_DEMO_TERMINADA, finished=True)
         return _solo_texto(TEXTO_FIN_TURNOS, finished=True)
 
     previo = _historial(demo.chat_state)
@@ -1098,18 +1127,21 @@ class EventoIn(BaseModel):
 _SQL_EVENTO = {
     "whatsapp": (
         "UPDATE demos SET clics_whatsapp = LEAST(clics_whatsapp + 1, :techo), "
-        "primer_clic_whatsapp_at = COALESCE(primer_clic_whatsapp_at, :ahora) "
+        "primer_clic_whatsapp_at = COALESCE(primer_clic_whatsapp_at, :ahora), "
+        "ultima_actividad_at = :ahora "
         "WHERE id = :id"
     ),
     "llamada_abierta": (
         "UPDATE demos SET aperturas_llamada = LEAST(aperturas_llamada + 1, :techo), "
-        "primer_apertura_llamada_at = COALESCE(primer_apertura_llamada_at, :ahora) "
+        "primer_apertura_llamada_at = COALESCE(primer_apertura_llamada_at, :ahora), "
+        "ultima_actividad_at = :ahora "
         "WHERE id = :id"
     ),
     # Solo si antes abrió el agendador (#629): un «agendada» sin apertura es
     # un evento fabricado. Lo reporta el navegador y no dispara nada de negocio.
     "llamada_agendada": (
-        "UPDATE demos SET llamada_agendada_at = COALESCE(llamada_agendada_at, :ahora) "
+        "UPDATE demos SET llamada_agendada_at = COALESCE(llamada_agendada_at, :ahora), "
+        "ultima_actividad_at = :ahora "
         "WHERE id = :id AND aperturas_llamada > 0"
     ),
 }

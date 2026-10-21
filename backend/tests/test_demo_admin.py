@@ -345,7 +345,7 @@ def test_lista_resumen_y_campos(admin, db):
         "public_id", "created_at", "nombre", "empresa", "tipo_empresa",
         "tipo_empresa_label", "telefono", "correo", "acepta_promociones", "estado",
         "origen_productos", "turnos", "traspaso_at", "clics_whatsapp",
-        "aperturas_llamada", "llamada_agendada_at", "tipo_otro", "interna", "lead_borrado",
+        "aperturas_llamada", "llamada_agendada_at", "tipo_otro", "interna", "lead_borrado", "bot_eliminado_at",
     }
     assert item["tipo_otro"] == "Avistamiento de aves"
     assert item["interna"] is False and item["lead_borrado"] is False
@@ -592,3 +592,80 @@ def test_por_estado(admin, db, monkeypatch):
     assert r["resumen"]["por_estado"] == {"modelo": 1, "respaldo": 1, "generando": 0, "error": 1}
     assert [i["public_id"] for i in client.get("/admin/demos?estado=error",
             headers=token(GLOMA_EMAIL)).json()["items"]] == [ids[2]]
+
+
+# ---------------------------------------------------------------------------
+# #638: la demo cuyo bot ya se borró por inactividad
+# ---------------------------------------------------------------------------
+
+def test_ultima_actividad_al_crear_en_cada_turno_y_en_cada_evento(client, db):
+    demo_id, token = _demo_lista(client)
+    creada = _demo_de(db, demo_id).ultima_actividad_at
+    assert creada is not None
+    with patch.object(llm_engine, "_invoke_model", ModeloFalso([])):
+        client.post(f"/demo/{demo_id}/chat", headers=_h(token), json={"message": "hola"})
+    tras_turno = _demo_de(db, demo_id).ultima_actividad_at
+    assert tras_turno >= creada
+    db.query(models.Demo).update({models.Demo.ultima_actividad_at: datetime(2020, 1, 1)})
+    db.commit()
+    assert _evento(client, demo_id, token, "whatsapp").status_code == 204
+    assert _demo_de(db, demo_id).ultima_actividad_at > datetime(2020, 1, 2)
+
+
+def test_demo_con_bot_borrado(admin, db):
+    from app.services import limpieza_demos
+
+    client, token = admin
+    demo_id, demo_token = _demo_lista(client)
+    with patch.object(llm_engine, "_invoke_model", ModeloFalso([])):
+        client.post(f"/demo/{demo_id}/chat", headers=_h(demo_token), json={"message": "hola"})
+    antes = client.get(f"/admin/demos/{demo_id}", headers=token(GLOMA_EMAIL)).json()
+    assert antes["bot_eliminado_at"] is None and antes["uso_resumen"] is None
+    leads = db.query(models.Lead).count()
+
+    r = limpieza_demos.limpiar_bots_demo_inactivos(db, ahora=datetime.utcnow() + timedelta(days=3))
+    assert len(r.borradas) == 1
+    assert db.query(models.Lead).count() == leads
+
+    # El prospecto (con el token aún vigente) ve la demo terminada, no un 500.
+    e = client.get(f"/demo/{demo_id}/estado", headers=_h(demo_token))
+    assert e.status_code == 200
+    assert e.json()["terminada"] is True and e.json()["estado"] == "lista"
+    assert [p["nombre"] for p in e.json()["productos"]] == [p["nombre"] for p in antes["productos"]]
+    modelo = ModeloFalso([])
+    with patch.object(llm_engine, "_invoke_model", modelo):
+        c = client.post(f"/demo/{demo_id}/chat", headers=_h(demo_token), json={"message": "sigo"})
+    assert c.status_code == 200 and c.json()["finished"] is True
+    assert "terminó" in c.json()["actions"][0]["text"] and modelo.llamadas == 0
+    assert _evento(client, demo_id, demo_token, "whatsapp").status_code == 204
+
+    # El panel: productos desde la copia, la fecha del borrado y el consumo.
+    d = client.get(f"/admin/demos/{demo_id}", headers=token(GLOMA_EMAIL)).json()
+    assert d["productos"] == antes["productos"]
+    assert d["bot_eliminado_at"] and d["uso_resumen"]["turnos"] == 1
+    assert d["uso_resumen"]["decisiones"] >= 1 and d["uso_resumen"]["tokens_in"] > 0
+    assert d["transcripcion"] == antes["transcripcion"]
+    fila = next(i for i in client.get("/admin/demos", headers=token(GLOMA_EMAIL)).json()["items"]
+                if i["public_id"] == demo_id)
+    assert fila["bot_eliminado_at"]
+
+
+def test_turno_con_el_bot_borrado_en_medio_no_llama_al_modelo(client, db, monkeypatch):
+    """#642 (B2): si la limpieza borra el bot entre la lectura de la demo y el
+    UPDATE del contador, el turno no avanza ni llama al modelo."""
+    demo_id, demo_token = _demo_lista(client)
+    original = router_demo._turno
+
+    def _borrado_justo_antes(sesion, demo, bot, mensaje):
+        sesion.execute(models.Demo.__table__.update()
+                       .where(models.Demo.id == demo.id)
+                       .values(bot_eliminado_at=datetime.utcnow()))
+        sesion.commit()
+        return original(sesion, demo, bot, mensaje)
+    monkeypatch.setattr(router_demo, "_turno", _borrado_justo_antes)
+    modelo = ModeloFalso([])
+    with patch.object(llm_engine, "_invoke_model", modelo):
+        r = client.post(f"/demo/{demo_id}/chat", headers=_h(demo_token), json={"message": "hola"})
+    assert r.status_code == 200 and r.json()["finished"] is True
+    assert r.json()["actions"][0]["text"] == router_demo.TEXTO_DEMO_TERMINADA
+    assert modelo.llamadas == 0 and _demo_de(db, demo_id).turnos == 0

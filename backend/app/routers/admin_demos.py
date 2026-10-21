@@ -171,6 +171,11 @@ class DemoAdminItemOut(BaseModel):
     )
     interna: bool
     lead_borrado: bool
+    bot_eliminado_at: Optional[datetime] = Field(
+        default=None,
+        description="Cuándo se borró el bot por inactividad (#638). Los datos del "
+                    "prospecto se conservan; los productos salen del snapshot.",
+    )
 
 
 class DemoAdminListaOut(BaseModel):
@@ -195,6 +200,41 @@ class MensajeTranscripcionOut(BaseModel):
     at: Optional[str] = None
 
 
+class UsoModeloOut(BaseModel):
+    modelo: Optional[str] = None
+    decisiones: int = 0
+    rondas: int = 0
+    tokens_in: int = 0
+    tokens_out: int = 0
+    cache_read: int = 0
+    cache_write: int = 0
+    sin_tokens: int = 0
+    costo_usd_estimado: Optional[float] = None
+
+
+class UsoResumenOut(BaseModel):
+    """Consumo del bot, copiado antes de borrarlo (#638). Solo existe en las
+    demos con el bot ya eliminado."""
+
+    turnos: int = 0
+    decisiones: int = 0
+    rondas: int = 0
+    tokens_in: int = 0
+    tokens_out: int = 0
+    cache_read: int = 0
+    cache_write: int = 0
+    sin_tokens: int = 0
+    failsafe: int = 0
+    escalados: int = 0
+    modelos: List[str] = []
+    por_modelo: List[UsoModeloOut] = []
+    latencia_ms_promedio: Optional[int] = None
+    primera_decision_at: Optional[str] = None
+    ultima_decision_at: Optional[str] = None
+    costo_usd_estimado: Optional[float] = None
+    nota_costo: Optional[str] = None
+
+
 class DemoAdminDetalleOut(DemoAdminItemOut):
     """El detalle, con teléfono y correo completos y el consentimiento."""
 
@@ -206,6 +246,7 @@ class DemoAdminDetalleOut(DemoAdminItemOut):
     primer_apertura_llamada_at: Optional[datetime] = None
     productos: List[ProductoDemoOut]
     transcripcion: List[MensajeTranscripcionOut]
+    uso_resumen: Optional[UsoResumenOut] = None
 
 
 # ---------------------------------------------------------------------------
@@ -317,6 +358,7 @@ def _item(demo: models.Demo, lead: Optional[models.Lead], *, completo: bool) -> 
         "llamada_agendada_at": demo.llamada_agendada_at,
         "interna": interna,
         "lead_borrado": lead is None,
+        "bot_eliminado_at": demo.bot_eliminado_at,
     }
 
 
@@ -485,6 +527,37 @@ def _productos(db: Session, bot_id: Optional[int]) -> List[ProductoDemoOut]:
     return salida
 
 
+def _productos_del_detalle(db: Session, demo: models.Demo) -> List[ProductoDemoOut]:
+    """Del bot si todavía existe; si se borró por inactividad (#638), del
+    snapshot que se copió antes de borrarlo."""
+    if demo.bot_id is not None:
+        return _productos(db, demo.bot_id)
+    salida = []
+    for p in demo.productos_snapshot or []:
+        if not isinstance(p, dict):
+            continue
+        precio = p.get("precio_cop")
+        salida.append(ProductoDemoOut(
+            nombre=str(p.get("nombre") or ""),
+            resumen=p.get("resumen"),
+            ficha=p.get("ficha"),
+            precio_cop=int(precio) if isinstance(precio, (int, float)) and not isinstance(precio, bool) else None,
+            unidad_precio=p.get("unidad_precio"),
+        ))
+    return salida
+
+
+def _uso(demo: models.Demo) -> Optional[UsoResumenOut]:
+    if not isinstance(demo.uso_resumen, dict):
+        return None
+    try:
+        return UsoResumenOut(**{k: v for k, v in demo.uso_resumen.items()
+                                if k in UsoResumenOut.model_fields})
+    except Exception:  # noqa: BLE001 — un JSON raro no tumba el detalle
+        logger.warning("admin_demos: uso_resumen ilegible demo_id=%s", demo.id)
+        return None
+
+
 def _transcripcion(demo: models.Demo) -> List[MensajeTranscripcionOut]:
     salida = []
     for m in demo.transcripcion or []:
@@ -528,6 +601,7 @@ def detalle_demo(
         lista_at=demo.lista_at,
         primer_clic_whatsapp_at=demo.primer_clic_whatsapp_at,
         primer_apertura_llamada_at=demo.primer_apertura_llamada_at,
-        productos=_productos(db, demo.bot_id),
+        productos=_productos_del_detalle(db, demo),
         transcripcion=_transcripcion(demo),
+        uso_resumen=_uso(demo),
     )

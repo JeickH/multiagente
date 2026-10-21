@@ -438,6 +438,23 @@ function PestanaDatos({ d, onCopiar }: { d: Detalle; onCopiar: (correo: string) 
               pena escribirle.
             </p>
           )}
+          {d.bot_eliminado_at && (
+            <div className="text-xs text-gloma-brown-light bg-gloma-cream border border-gloma-rose-soft rounded-lg px-3 py-2 mb-3">
+              <p>
+                Bot eliminado el {fechaHoraCorta(d.bot_eliminado_at, '—')} (los datos del prospecto se conservan). Estos son los
+                productos que tenía.
+              </p>
+              {d.uso_resumen && (
+                <p className="mt-1">
+                  Consumo: {d.uso_resumen.turnos} mensajes · {d.uso_resumen.decisiones} respuestas del modelo ·{' '}
+                  {(d.uso_resumen.tokens_in + d.uso_resumen.cache_read + d.uso_resumen.cache_write).toLocaleString('es-CO')} tokens de
+                  entrada y {d.uso_resumen.tokens_out.toLocaleString('es-CO')} de salida
+                  {d.uso_resumen.costo_usd_estimado !== null &&
+                    ` · ≈ US$ ${d.uso_resumen.costo_usd_estimado.toLocaleString('es-CO', { maximumFractionDigits: 3 })}`}
+                </p>
+              )}
+            </div>
+          )}
           {d.estado === 'lista' && d.origen_productos === 'respaldo' && (
             <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-3">
               ◐ El modelo no generó productos válidos y la demo usó los genéricos de este tipo de empresa.

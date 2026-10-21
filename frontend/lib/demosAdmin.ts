@@ -61,6 +61,8 @@ export interface ItemDemo {
   llamada_agendada_at: string | null;
   interna: boolean;
   lead_borrado: boolean;
+  /** Cuándo se borró el bot por inactividad (#638); el prospecto y la demo se conservan. */
+  bot_eliminado_at: string | null;
 }
 
 export interface ListaDemos {
@@ -85,6 +87,40 @@ export interface MensajeTranscripcion {
   at: string | null;
 }
 
+export interface UsoModelo {
+  modelo: string | null;
+  decisiones: number;
+  rondas: number;
+  tokens_in: number;
+  tokens_out: number;
+  cache_read: number;
+  cache_write: number;
+  sin_tokens: number;
+  costo_usd_estimado: number | null;
+}
+
+/** Consumo del bot, copiado al borrarlo (#638). Null mientras el bot exista. */
+export interface UsoResumen {
+  turnos: number;
+  decisiones: number;
+  rondas: number;
+  tokens_in: number;
+  tokens_out: number;
+  cache_read: number;
+  cache_write: number;
+  /** Decisiones sin tokens registrados: si hay, el costo estimado se queda corto. */
+  sin_tokens: number;
+  failsafe: number;
+  escalados: number;
+  modelos: string[];
+  por_modelo: UsoModelo[];
+  latencia_ms_promedio: number | null;
+  primera_decision_at: string | null;
+  ultima_decision_at: string | null;
+  costo_usd_estimado: number | null;
+  nota_costo: string | null;
+}
+
 export interface DetalleDemo extends ItemDemo {
   acepto_contacto_at: string | null;
   acepta_promociones_at: string | null;
@@ -92,8 +128,10 @@ export interface DetalleDemo extends ItemDemo {
   lista_at: string | null;
   primer_clic_whatsapp_at: string | null;
   primer_apertura_llamada_at: string | null;
+  /** Del bot vivo o, si ya se borró, de la copia que quedó en la demo. */
   productos: ProductoAdmin[];
   transcripcion: MensajeTranscripcion[];
+  uso_resumen: UsoResumen | null;
 }
 
 // --------------------------------------------------------------------------
