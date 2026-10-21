@@ -58,6 +58,59 @@ export const OPEN_CHAT_EVENT = 'gloma:open-chat';
 
 export type OpenChatDetail = { message?: string };
 
+/**
+ * A dónde lleva «Hablar con un asesor» en toda la landing (2026-10-21, CEO).
+ * Mientras el WhatsApp de Gloma no esté conectado al agente, abre este chat en
+ * la misma página. Cuando quede conectado, se pone en `true` y todos los
+ * botones vuelven al wa.me. El nombre «Lía» no va en ningún botón: el
+ * visitante no sabe quién es.
+ */
+export const ASESOR_POR_WHATSAPP = false;
+
+/** Abre el chat de la página, como si el visitante tocara el botón flotante. */
+export function abrirChatGloma(mensaje?: string) {
+  if (typeof window === 'undefined') return;
+  window.dispatchEvent(
+    new CustomEvent(OPEN_CHAT_EVENT, {
+      detail: mensaje ? { message: mensaje } : undefined,
+    })
+  );
+}
+
+/**
+ * Botón o enlace «Hablar con un asesor». Con `ASESOR_POR_WHATSAPP` apagado es
+ * un botón que abre el chat; encendido, un enlace al wa.me en otra pestaña.
+ */
+export function BotonAsesor({
+  className,
+  style,
+  children,
+}: {
+  className?: string;
+  style?: React.CSSProperties;
+  children: React.ReactNode;
+}) {
+  if (ASESOR_POR_WHATSAPP) {
+    return (
+      <a
+        href={WHATSAPP_URL}
+        target="_blank"
+        rel="noopener noreferrer"
+        aria-label={TEXTOS_AGENDAR.whatsappAria}
+        className={className}
+        style={style}
+      >
+        {children}
+      </a>
+    );
+  }
+  return (
+    <button type="button" onClick={() => abrirChatGloma()} className={className} style={style}>
+      {children}
+    </button>
+  );
+}
+
 const SUGERENCIAS = [
   '¿Qué hace Gloma por mi empresa?',
   '¿Cómo lo conecto a mi WhatsApp?',
@@ -434,17 +487,22 @@ export default function GlomaChatWidget() {
                 >
                   {TEXTOS_AGENDAR.agendar}
                 </button>
-                <a
-                  href={WHATSAPP_URL}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  aria-label={TEXTOS_AGENDAR.whatsappAria}
-                  className="flex items-center justify-center gap-2 w-full py-2.5 rounded-full text-[13px] font-semibold transition-transform hover:-translate-y-0.5"
-                  style={{ backgroundColor: BRAND.whatsapp, color: '#FFFFFF' }}
-                >
-                  <WhatsAppGlyph size={16} />
-                  {TEXTOS_AGENDAR.whatsapp}
-                </a>
+                {/* Dentro del chat, «Hablar con un asesor» solo tiene sentido
+                    cuando lleva al WhatsApp: mientras tanto el asesor es este
+                    mismo chat. */}
+                {ASESOR_POR_WHATSAPP && (
+                  <a
+                    href={WHATSAPP_URL}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    aria-label={TEXTOS_AGENDAR.whatsappAria}
+                    className="flex items-center justify-center gap-2 w-full py-2.5 rounded-full text-[13px] font-semibold transition-transform hover:-translate-y-0.5"
+                    style={{ backgroundColor: BRAND.whatsapp, color: '#FFFFFF' }}
+                  >
+                    <WhatsAppGlyph size={16} />
+                    {TEXTOS_AGENDAR.whatsapp}
+                  </a>
+                )}
               </div>
             )}
           </div>

@@ -3,7 +3,7 @@ import Image from 'next/image';
 import { useEffect, useRef, useState } from 'react';
 
 import { AgendarLlamadaGlobal, abrirAgendarLlamada } from '../components/AgendarLlamadaModal';
-import GlomaChatWidget, { OPEN_CHAT_EVENT } from '../components/GlomaChatWidget';
+import GlomaChatWidget, { BotonAsesor } from '../components/GlomaChatWidget';
 import { TEXTOS_AGENDAR } from '../lib/agendarLlamada';
 import { CHATS_MES_OPCIONES } from '../lib/leads';
 
@@ -204,7 +204,7 @@ const FAQ = [
   },
   {
     q: '¿Puedo probarlo antes de contratar?',
-    a: 'Sí. Lía, la asistente de esta página, funciona con el mismo motor que tendría tu agente: escríbele como lo haría uno de tus clientes. Y antes de salir en vivo, pruebas tu propio agente en el simulador de la plataforma.',
+    a: 'Sí. Toca «Hablar con un asesor»: te responde el asistente de IA de Gloma, que funciona con el mismo motor que tendría tu agente. Escríbele como lo haría uno de tus clientes. Y antes de salir en vivo, pruebas tu propio agente en el simulador de la plataforma.',
   },
 ];
 
@@ -361,32 +361,13 @@ const APP_URL = 'https://app.glomacx.com';
  * no quede pegado al borde superior.
  */
 /**
- * Abre el chat con el bot institucional que vive en `GlomaChatWidget` (#299).
- * El visitante prueba el agente en la misma página: no necesita tener el
- * WhatsApp de Gloma ni salir de la landing.
- *
- * Con `mensaje`, la conversación arranca con esa intención ya dicha (#302):
- * el bot responde a eso de una — p. ej. con las franjas disponibles para la
- * demo — en lugar de empezar por el saludo.
- */
-function abrirChatDelBot(mensaje?: string) {
-  if (typeof window === 'undefined') return;
-  window.dispatchEvent(
-    new CustomEvent(OPEN_CHAT_EVENT, {
-      detail: mensaje ? { message: mensaje } : undefined,
-    })
-  );
-}
-
-/**
  * Llamados a la acción, iguales en toda la página (#625): donde se ofrece
  * agendar, el principal es «Agendar una llamada» (abre el calendario de Cal.com
  * en un modal, sin salir de la página) y el secundario «Hablar con un asesor»
- * (el wa.me de siempre; #634, antes «Escribir por WhatsApp»).
- * Antes «Agenda una demo» le pedía la cita a Lía (#302); Lía sigue a un clic
- * con su propio botón.
+ * (#634), que va por `BotonAsesor`: hoy abre el chat de la página y, cuando el
+ * WhatsApp esté conectado, el wa.me (`ASESOR_POR_WHATSAPP` en el widget).
+ * Desde 2026-10-21 ningún botón dice «Lía»: el visitante no sabe quién es.
  */
-const CTA_LIA = 'Habla con Lía ahora';
 
 function smoothScrollTo(e: React.MouseEvent<HTMLAnchorElement>, id: string) {
   e.preventDefault();
@@ -654,7 +635,7 @@ function InteractiveHeader() {
           }}
         >
           {/* #625: las dos formas de agendar. Principal: el calendario (modal
-              de Cal.com); secundaria: WhatsApp. Lía queda como enlace debajo. */}
+              de Cal.com); secundaria: «Hablar con un asesor» (BotonAsesor). */}
           <button
             type="button"
             onClick={abrirAgendarLlamada}
@@ -663,27 +644,10 @@ function InteractiveHeader() {
           >
             {TEXTOS_AGENDAR.agendar}
           </button>
-          <a
-            href={WHATSAPP_URL}
-            target="_blank"
-            rel="noopener noreferrer"
-            aria-label={TEXTOS_AGENDAR.whatsappAria}
-            className="inline-block px-6 py-3 rounded-full text-sm font-semibold text-center border-2 border-white/80 text-white hover:bg-white/10 transition-colors"
-          >
+          <BotonAsesor className="inline-block px-6 py-3 rounded-full text-sm font-semibold text-center border-2 border-white/80 text-white hover:bg-white/10 transition-colors">
             {TEXTOS_AGENDAR.whatsapp}
-          </a>
+          </BotonAsesor>
         </div>
-        <button
-          type="button"
-          onClick={() => abrirChatDelBot()}
-          className="mt-5 text-sm font-medium text-white/80 hover:text-white underline-offset-4 hover:underline"
-          style={{
-            opacity: inView ? 1 : 0,
-            transition: 'opacity 900ms ease 450ms',
-          }}
-        >
-          o {CTA_LIA.charAt(0).toLowerCase() + CTA_LIA.slice(1)} →
-        </button>
       </div>
     </header>
   );
@@ -1294,15 +1258,11 @@ function FaqSection() {
         </div>
         <Reveal className="text-center mt-10">
           <p className="text-base mb-4" style={{ color: BRAND.textMuted }}>
-            ¿Tienes otra pregunta? Lía te responde ahora mismo.
+            ¿Tienes otra pregunta?
           </p>
-          <button
-            type="button"
-            onClick={() => abrirChatDelBot()}
-            className="px-6 py-3 rounded-full text-sm font-semibold border-2 border-white/80 text-white hover:bg-white/10 transition-colors"
-          >
-            {CTA_LIA}
-          </button>
+          <BotonAsesor className="px-6 py-3 rounded-full text-sm font-semibold border-2 border-white/80 text-white hover:bg-white/10 transition-colors">
+            {TEXTOS_AGENDAR.whatsapp}
+          </BotonAsesor>
         </Reveal>
       </div>
     </section>
@@ -1695,15 +1655,9 @@ function PreciosSection() {
             >
               {TEXTOS_AGENDAR.agendar}
             </button>
-            <a
-              href={WHATSAPP_URL}
-              target="_blank"
-              rel="noopener noreferrer"
-            aria-label={TEXTOS_AGENDAR.whatsappAria}
-              className="px-6 py-3 rounded-full text-sm font-semibold border-2 border-white/80 text-white hover:bg-white/10 transition-colors"
-            >
+            <BotonAsesor className="px-6 py-3 rounded-full text-sm font-semibold border-2 border-white/80 text-white hover:bg-white/10 transition-colors">
               {TEXTOS_AGENDAR.whatsapp}
-            </a>
+            </BotonAsesor>
           </div>
         </Reveal>
       </div>
@@ -2035,15 +1989,7 @@ export default function GlomaLanding() {
                 Cuéntanos de tu agencia y te mostramos cómo se vería el agente con tus destinos y tarifas reales.
               </p>
               {/* Un solo paso principal en el cierre (2026-10-20): el formulario
-                  de al lado. Lía queda como enlace discreto, igual que en el
-                  hero (#299: el visitante prueba el agente aquí mismo). */}
-              <button
-                type="button"
-                onClick={() => abrirChatDelBot()}
-                className="text-sm font-medium text-white/75 hover:text-white underline-offset-4 hover:underline"
-              >
-                o {CTA_LIA.charAt(0).toLowerCase() + CTA_LIA.slice(1)} →
-              </button>
+                  de al lado. Sin enlace a Lía (2026-10-21, CEO). */}
             </Reveal>
 
             <Reveal delay={120}>
@@ -2160,15 +2106,9 @@ export default function GlomaLanding() {
             >
               {TEXTOS_AGENDAR.agendar}
             </button>
-            <a
-              href={WHATSAPP_URL}
-              target="_blank"
-              rel="noopener noreferrer"
-            aria-label={TEXTOS_AGENDAR.whatsappAria}
-              className="px-4 py-3 rounded-full text-sm font-semibold border border-white/70 text-white"
-            >
+            <BotonAsesor className="px-4 py-3 rounded-full text-sm font-semibold border border-white/70 text-white">
               {TEXTOS_AGENDAR.whatsappCorto}
-            </a>
+            </BotonAsesor>
           </div>
         </div>
 
