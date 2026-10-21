@@ -9312,3 +9312,32 @@ desplegada por la otra sesión) se construyó sobre `2747cf4`. Verificado dentro
 `llm_engine.py` tiene el mismo sha256 que el del commit `82aa614` e incluye
 `_invoke_con_respaldo`. Los bots 12, 21 y 22 volvieron a su modelo por defecto (se quitó
 `model_id` de `llm_config`; verificado en la base). Pendientes 1 y 2 de arriba cerrados.
+
+### 2026-10-20 — Landing y Lía hablan a agencias de viajes + precios nuevos + destacadas de Instagram
+
+**Pedido del CEO** (sobre la revisión del 16-oct de community-manager y Belfort, que tuvo
+en cuenta la voz del cliente y las métricas orgánicas de Instagram).
+
+**Landing (`frontend/pages/gloma.tsx`, `GlomaChatWidget.tsx`)** — rama
+`feature/landing-turismo-v3`, worktree aparte porque la otra sesión trabaja en
+`wip/demos-publicas` (página /demo) y también toca `gloma.tsx`:
+- Sección "Todo lo que necesitas, sin fricciones" fusionada con "¿Te suena?" (dolores del
+  cliente → qué hace Gloma).
+- Bloque 1 "Responde con tus tarifas, no con precios inventados"; bloque 3 y beneficio con
+  el paso al asesor; quinto bloque de recordatorios a quien dejó de contestar.
+- Precios: "Tu inversión en Gloma"; paquetes 600/2.000/6.000 = COP 760.000 / 2.490.000 /
+  7.190.000 (US$245 / 795 / 2.295); **recomendado = 2.000**. Instalación y campañas sin cambio.
+- "Costo" → "inversión" en lo que paga el cliente; "tarifa de Meta" en lo de terceros.
+- 5 FAQ nuevas, metadatos con "agencias de viajes", cierre "Tú vendes vacaciones. Tómate las tuyas."
+  con un solo paso principal (respeta los CTA de #625/#634).
+
+**Lía (`backend/app/bot_contexts/gloma.md`)**: audiencia turismo en lugar de e-commerce,
+solo WhatsApp, integraciones probadas Google Sheets y Shopify, precios nuevos, "inversión".
+Requiere imagen nueva del backend (el `.md` va en la imagen).
+
+**Instagram**: 6 destacadas nuevas (Para quién · Así responde · Qué hace · Inversión ·
+Cómo empezar · Números) en `ventas/identidad_gloma/redes sociales/destacadas_2026-10/`.
+Las sube el CEO a mano (la API no crea destacadas). "Mascotas" se archiva, no se borra.
+
+**Deploy**: después de que la sesión de demos despliegue y mezcle a `main`; esta rama se
+rebasa sobre ese `main` y la imagen del backend se construye desde un árbol limpio.
