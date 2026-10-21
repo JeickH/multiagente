@@ -9355,3 +9355,78 @@ rebasa sobre ese `main` y la imagen del backend se construye desde un árbol lim
 - Anomalía: **un** tick con 503 a las 01:07:40Z durante el relevo de la task (sin ALB, Cloud Map
   cambia de destino); se repuso solo al minuto siguiente.
 - Gotcha de zsh: `$R:lia-...` se lee como el modificador `:l` y el tag queda mal; usar `"${R}:tag"`.
+
+---
+
+## Sprint 32 — Demo pública en producción (20-oct-2026)
+
+**Estado: DESPLEGADO.** `glomacx.com/demo` y el panel `app.glomacx.com/demos`
+(«Demos web», solo el dueño de la cuenta de Gloma o quien tenga `ver_demos`).
+
+**Lo que entró después de la prueba manual del CEO (17 al 20-oct)**
+- #625–#632: Cal.com en un modal con iframe (sin `embed.js`), «Agendar una
+  llamada» + WhatsApp en la demo y la landing, eventos de clics, columnas de
+  seguimiento en `demos`, panel «Demos web», arreglos del bot (acompañantes,
+  burbuja duplicada, «mañana»). QA y seguridad: APTO.
+- #634 (`7bd2267`): teléfono con selector de país (24, Colombia +57, E.164),
+  «Escribir por WhatsApp» → **«Hablar con un asesor»**, menú de contacto en la
+  cabecera del chat.
+- #635/#636 (`90bb2b9`): la demo usa el modelo de respaldo de main con un plazo
+  por turno de 25 s; todo lo que limitaba la demo pasa a env; la generación y el
+  turno sueltan la conexión a la base mientras esperan a Bedrock (una ráfaga de
+  20 agotaba el pool); `CONSENT_VERSION=demo-2026-10b` y `/privacidad` con la
+  sección de la demo (AWS Bedrock y Cal.com como encargados, transmisión
+  internacional, conservación hasta que pidan eliminar). Suite **3842**.
+- La rama `wip/demos-publicas` se **rebaseó sobre main** (solo chocó
+  `.gitignore`) y main avanzó por fast-forward (respaldo de la rama vieja en
+  `backup/wip-demos-antes-rebase`, local).
+
+**Decisiones del CEO para producción** (ver memoria `demo_publica_sin_topes`)
+- **Sin topes**, sin captcha y sin AWS Budgets: va a convenciones con 500+ demos
+  al día, todos por la misma IP del wifi. Topes en valores de convención por env
+  (`DEMO_MAX_GLOBAL_DIA=5000`, por IP 100000, `DEMO_MAX_TURNOS=40`, 20 turnos y
+  10 generaciones simultáneas, `APP_HILOS=60`, pool 15+15).
+- La task **se queda en 0,25 vCPU** (QA recomendaba 1 vCPU para 20–30 personas a
+  la vez: con mucha gente será más lenta, pero los turnos esperan su cupo).
+- `/privacidad` redactada por el equipo y publicada; el CEO la revisa en
+  producción. Promete eliminar datos a pedido: **hoy se hace a mano**.
+
+**Deploy (#617)**
+- Task-def **107** (imagen `:demos-90bb2b9`, desde worktree limpio) con 26 env
+  nuevas; antes corría la **106** (`primer-mensaje-82aa614`, no la 103 del
+  runbook). Migración en RDS (28 columnas, idempotente) y seed de
+  `demos@glomacx.com` (contraseña inutilizable, user 20, team 11).
+- **Otra sesión desplegó encima** a las 20:06 la **108** (`lia-turismo-74b8f04`),
+  que contiene `90bb2b9` y conserva toda la config de la demo. Rollback solo de
+  la demo: revisión basada en la 108 con `DEMO_MAX_GLOBAL_DIA=0` y
+  `DEMO_MAX_TURNOS_MES=0`; volver a la 106 quitaría también Lía-turismo.
+- API Gateway: mapping `overwrite:header.x-gloma-client-ip =
+  $context.identity.sourceIp` en la integración `tam06u2`; sin ruta ni
+  throttling nuevos. Verificado: con `X-Forwarded-For` y el header falsos, la IP
+  registrada es la real.
+- Amplify: `NEXT_PUBLIC_DEMO_API_URL=https://api.glomacx.com`. El push no
+  disparó el build (webhook 502); job **192** lanzado a mano con `90bb2b9`,
+  SUCCEED. **El push de la otra sesión (`32b62d7`, landing v3 + Lía) tampoco
+  construyó**: su dueño debe lanzar el job.
+- Humo en producción: demo completa en Chrome headless (formulario → slides →
+  chat → cotización correcta → traspaso), Cal.com con nombre y correo
+  prellenados, `glomacx.com/demos` → 404 de marca, `app.glomacx.com/demos` →
+  login. 4 demos y leads de humo `humo.deploy@example.com` (internas, ocultas en
+  el panel por defecto).
+
+**Pendientes del CEO**
+1. **Cuota de Bedrock**: Haiku 4.5 y Sonnet 4.5 están en **50 invocaciones por
+   minuto** (el default de AWS es 10.000, pero esta cuenta tiene 50 aplicado y
+   la API no deja pedir menos que el default). Abrir caso en Support Center →
+   Service limit increase → Bedrock, sa-east-1: «Global cross-region model
+   inference requests per minute for Anthropic Claude Haiku 4.5 (L-E5084BBA) y
+   Claude Sonnet 4.5 V1 (L-DB84CE56): 50 → 500». Tokens por minuto 5M → 10M ya
+   solicitados (`04a8932c…`, `1e94bd27…`, PENDING).
+2. Color de marca #4DB6AC en el panel de Cal.com y una reserva de prueba para
+   confirmar el conteo de «llamada agendada».
+3. #618: retención de los bots de demo y aviso a ventas por demo nueva.
+4. Usuario de prueba local `qa.demos630@example.com` (borrar o no) y si se rota
+   la contraseña de `gloma@glomabeauty.com` (QA la imprimió en la salida de una
+   sesión).
+5. RDS: con 2 tasks durante un relevo se llega a ~74 de 78 conexiones; si se
+   sube el pool o se agregan tasks, revisar `max_connections` (db.t3.micro = 81).
