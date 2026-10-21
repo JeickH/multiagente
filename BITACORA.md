@@ -9341,3 +9341,17 @@ Las sube el CEO a mano (la API no crea destacadas). "Mascotas" se archiva, no se
 
 **Deploy**: después de que la sesión de demos despliegue y mezcle a `main`; esta rama se
 rebasa sobre ese `main` y la imagen del backend se construye desde un árbol limpio.
+
+**Deploy del backend (deploy-aws, 2026-10-21 01:07Z)** — solo contenido (`gloma.md`), autorizado por el CEO:
+- Imagen `multiagente-backend:lia-turismo-74b8f04` (digest `sha256:9fe02beb…7311`), construida
+  `--platform linux/amd64` desde `git archive 74b8f04` (árbol limpio, no el worktree).
+- Task-def **`multiagente-backend:108`** = copia exacta de la 107 cambiando solo la imagen.
+  Rollback: `update-service --task-definition multiagente-backend:107` (imagen `:demos-90bb2b9`).
+- `services-stable` OK, 1 task en marcha y rollout `COMPLETED`.
+- Verificación: el sha256 de `gloma.md` en la imagen coincide con el de `git show 74b8f04:...`
+  (no hubo `execute-command` porque falta el Session Manager plugin en el Mac); `POST /landing/chat`
+  "¿cuánto cuesta?" responde con COP 760.000 / 2.490.000 / 7.190.000 y "inversión";
+  `/openapi.json` y `/docs` dan 200 (el backend **no** tiene `/health`); el tick vuelve a 200 cada minuto desde 01:08Z.
+- Anomalía: **un** tick con 503 a las 01:07:40Z durante el relevo de la task (sin ALB, Cloud Map
+  cambia de destino); se repuso solo al minuto siguiente.
+- Gotcha de zsh: `$R:lia-...` se lee como el modificador `:l` y el tag queda mal; usar `"${R}:tag"`.
