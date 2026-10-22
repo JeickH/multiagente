@@ -45,11 +45,13 @@ tallas talulah/
 /demo_viajes/
 # `marketing/` guarda material crudo (piezas, briefs) que no va a git. La
 # excepción es el publicador de Instagram: es código sin secretos —las
-# credenciales viven en SSM— y necesita historia y respaldo.
+# credenciales viven en SSM— y necesita historia y respaldo. También la
+# propuesta comercial: lleva solo precios públicos y su PDF sale en la landing.
 # Nota: hay que desexcluir el directorio padre (`marketing/*`) porque git no
 # desciende a un directorio excluido.
 marketing/*
 !marketing/instagram/
+!marketing/propuesta_comercial/
 
 BITACORA_*
 
