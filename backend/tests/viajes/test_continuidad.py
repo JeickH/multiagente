@@ -323,7 +323,9 @@ class TestCuandoSeCierraElBotSeCalla:
         conv, _ = entra_mensaje(db_session, team, "Hola")
         antes = len(salientes(db_session, conv))
 
-        conv, _ = entra_mensaje(db_session, team, "No gracias ya te dije que yo les escribo")
+        # Despedida sin ambigüedad: «yo les escribo» ya cuenta como aplazamiento
+        # y no cierra (CEO, 2026-10-21).
+        conv, _ = entra_mensaje(db_session, team, "No gracias, que estés muy bien")
 
         assert len(salientes(db_session, conv)) == antes, "escribió pese a `no_responder`"
         assert conv.status == "closed"

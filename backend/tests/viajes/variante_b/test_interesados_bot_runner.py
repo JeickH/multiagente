@@ -78,8 +78,9 @@ def enviados(db, conv):
 # ---------------------------------------------------------------------------
 
 class TestSinFlags:
-    def test_el_bot_1_no_registra_ni_cambia_el_runtime(self, db, motor):
-        ag = crear_agencia(db, sufijo="SF1", cfg=json.loads(json.dumps(LLM_CONFIG)))
+    def test_sin_el_flag_no_registra_ni_cambia_el_runtime(self, db, motor):
+        # El bot 1 tiene el flag desde el 2026-10-21: se prueba un bot sin él.
+        ag = crear_agencia(db, sufijo="SF1", cfg=json.loads(json.dumps({k: v for k, v in LLM_CONFIG.items() if k not in ("intencion_compra", "no_cerrar_aplazadas")})))
         conv = conversacion(db, ag["team"])
         motor.turno(intenciones=[{"tipo": "reservar", "resumen": "quiere reservar"}])
         motor.turno()
@@ -91,7 +92,7 @@ class TestSinFlags:
             assert set(rt) == LLAVES_RUNTIME_BOT1
 
     def test_sin_flag_no_se_consulta_la_tabla(self, db, motor, monkeypatch):
-        ag = crear_agencia(db, sufijo="SF2", cfg=json.loads(json.dumps(LLM_CONFIG)))
+        ag = crear_agencia(db, sufijo="SF2", cfg=json.loads(json.dumps({k: v for k, v in LLM_CONFIG.items() if k not in ("intencion_compra", "no_cerrar_aplazadas")})))
         conv = conversacion(db, ag["team"])
 
         def prohibido(*a, **k):  # pragma: no cover - si se llama, falla

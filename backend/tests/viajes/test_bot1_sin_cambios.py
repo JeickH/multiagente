@@ -1191,8 +1191,13 @@ def test_el_fixture_cubre_lo_pactado():
 def test_la_config_del_bot1_no_trae_flags_de_la_variante_b():
     from app.data.bot_viajes import LLM_CONFIG
 
-    presentes = [f for f in FLAGS_BOT2 if f in LLM_CONFIG]
+    # Las dos que el CEO pidió también para el bot 1 (2026-10-21): «lo pienso»
+    # no cierra y queda en Interesados.
+    PEDIDAS_PARA_EL_BOT1 = {"no_cerrar_aplazadas", "intencion_compra"}
+    presentes = [f for f in FLAGS_BOT2 if f in LLM_CONFIG and f not in PEDIDAS_PARA_EL_BOT1]
     assert not presentes, f"flags de la variante B en el bot 1: {presentes}"
+    assert LLM_CONFIG["no_cerrar_aplazadas"] is True
+    assert LLM_CONFIG["intencion_compra"] == {"horas_para_interesado": 6}
     # Tampoco escondidas dentro del seguimiento (#28 usa `plantilla` ahí).
     for etapa in (LLM_CONFIG.get("seguimiento") or {}).get("recordatorios") or []:
         assert "plantilla" not in etapa, etapa

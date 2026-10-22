@@ -64,7 +64,7 @@ def test_el_orden_es_siempre_el_de_los_tipos():
     assert ic.detectar("somos 2 y quiero reservar, cuánto es el anticipo") == [
         "anticipo", "reservar", "datos",
     ]
-    assert ic.TIPOS == ("anticipo", "reservar", "fecha_concreta", "datos")
+    assert ic.TIPOS == ("anticipo", "reservar", "fecha_concreta", "datos", "lo_pensara")
 
 
 class TestTextoSeguro:

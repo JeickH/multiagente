@@ -728,6 +728,7 @@ _ETIQUETA_TIPO = {
     "reservar": "pidió reservar",
     "fecha_concreta": "preguntó por una fecha concreta",
     "datos": "dejó sus datos",
+    "lo_pensara": "dijo que lo va a pensar",
 }
 
 

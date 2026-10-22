@@ -205,6 +205,7 @@ export const SENALES: Record<string, { icono: string; texto: string }> = {
   reservar: { icono: '✅', texto: 'Pidió reservar' },
   fecha_concreta: { icono: '📅', texto: 'Preguntó por una fecha' },
   datos: { icono: '📝', texto: 'Dejó sus datos' },
+  lo_pensara: { icono: '🤔', texto: 'Lo va a pensar' },
   // El wireframe lo llamó así; el contrato final dice `datos`. Se aceptan los dos.
   datos_entregados: { icono: '📝', texto: 'Dejó sus datos' },
 };

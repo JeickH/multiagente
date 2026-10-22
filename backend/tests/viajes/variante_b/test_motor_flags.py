@@ -689,7 +689,11 @@ class TestIntencionCompra:
 
     def test_la_herramienta_solo_existe_con_el_flag(self):
         assert "registrar_intencion" in self._nombres(Bot(intencion_compra=INTENCION))
-        assert "registrar_intencion" not in self._nombres(Bot())
+        sin = Bot()
+        cfg = json.loads(sin.llm_config)
+        cfg.pop("intencion_compra", None)      # el bot 1 lo tiene desde el 2026-10-21
+        sin.llm_config = json.dumps(cfg)
+        assert "registrar_intencion" not in self._nombres(sin)
 
     def test_la_descripcion_dice_cuando_usarla(self):
         cfg = llm_engine.config_de(Bot(intencion_compra=INTENCION))
@@ -738,5 +742,9 @@ class TestIntencionCompra:
         assert len(salida["telemetry"]["intenciones"][0]["resumen"]) == 300
 
     def test_sin_flag_no_hay_clave_en_la_telemetria(self):
-        salida, _ = jugar(Bot(), [resp(texto("Hola"))])
+        sin = Bot()
+        cfg = json.loads(sin.llm_config)
+        cfg.pop("intencion_compra", None)      # el bot 1 lo tiene desde el 2026-10-21
+        sin.llm_config = json.dumps(cfg)
+        salida, _ = jugar(sin, [resp(texto("Hola"))])
         assert "intenciones" not in salida["telemetry"]

@@ -29,7 +29,10 @@ import re
 import unicodedata
 from typing import List, Optional
 
-TIPOS = ("anticipo", "reservar", "fecha_concreta", "datos")
+#: `lo_pensara` (CEO, 2026-10-21): «lo consulto y te aviso» no es despedida,
+#: es alguien que sigue en la compra y la asesora tiene que verlo. Sale de la
+#: misma señal que impide cerrar esas conversaciones (`senales.es_aplazamiento`).
+TIPOS = ("anticipo", "reservar", "fecha_concreta", "datos", "lo_pensara")
 
 #: Largo máximo del fragmento que se guarda (columna `fragmento`).
 MAX_FRAGMENTO = 160
@@ -126,6 +129,12 @@ def detectar(texto_cliente: Optional[str]) -> List[str]:
         return []
     encontrados: List[str] = []
     for tipo in TIPOS:
+        if tipo == "lo_pensara":
+            from . import senales  # import tardío: senales no depende de este módulo
+
+            if senales.es_aplazamiento(texto_cliente or ""):
+                encontrados.append(tipo)
+            continue
         for patron in _COMPILADOS[tipo]:
             if any(
                 not _NEGACION_ANTES.search(texto[: m.start()])

@@ -122,7 +122,8 @@ class TestAislamiento:
         assert conv.assigned_to == "bot"
 
     def test_habilitado_y_puede_tomar_salen_del_servidor(self, db, Sesion, ag):
-        sin_flag = crear_agencia(db, sufijo="NF", cfg=json.loads(json.dumps(LLM_CONFIG)))
+        # Desde el 2026-10-21 el bot 1 también tiene el flag: se arma uno sin él.
+        sin_flag = crear_agencia(db, sufijo="NF", cfg=json.loads(json.dumps({k: v for k, v in LLM_CONFIG.items() if k not in ("intencion_compra", "no_cerrar_aplazadas")})))
         sin_permiso = crear_agencia(db, sufijo="NP", permiso_responder=False)
 
         r = _cliente(Sesion, ag["asesora"]).get("/agendamientos/interesados").json()

@@ -91,14 +91,19 @@ ESTADO = {"history": [
 ]}
 
 
+#: Las dos que el CEO pidió también para el bot 1 (2026-10-21).
+PEDIDAS_PARA_EL_BOT1 = {"no_cerrar_aplazadas", "intencion_compra"}
+
+
 @pytest.mark.parametrize("config", [bot_viajes.LLM_CONFIG, bot_natulce.LLM_CONFIG])
 def test_las_configs_versionadas_no_traen_flags_del_bot_2(config):
-    assert not set(config) & set(FLAGS_DEL_BOT_2)
+    assert not (set(config) & set(FLAGS_DEL_BOT_2)) - PEDIDAS_PARA_EL_BOT1
 
 
 def test_las_herramientas_son_las_de_siempre():
+    """Desde el 2026-10-21 el bot 1 registra intención de compra (Interesados)."""
     nombres = [t["name"] for t in llm_engine._tools_for(llm_engine.config_de(Bot1()))]
-    assert "registrar_intencion" not in nombres
+    assert "registrar_intencion" in nombres
 
 
 def test_el_prompt_del_primer_turno_no_trae_el_bloque_de_apertura():
@@ -172,5 +177,5 @@ def test_la_telemetria_tiene_las_claves_de_siempre():
         "user_input", "bookings", "pedidos", "camino", "tools", "reply_preview",
         "model_id", "rounds", "latency_ms", "finished", "escalated_to",
         "failsafe", "fuente_datos", "tokens_in", "tokens_out", "cache_read",
-        "cache_write",
+        "cache_write", "intenciones",   # Interesados, desde el 2026-10-21
     }

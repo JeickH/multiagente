@@ -191,3 +191,14 @@ def pytest_report_header(config: pytest.Config) -> list[str]:
         f"pruebas con costo: {costo}",
         f"pruebas contra Postgres: {postgres}",
     ]
+
+
+@pytest.fixture(autouse=True)
+def _sin_horario_de_silencio(monkeypatch):
+    """La suite corre a cualquier hora: el horario de silencio de los
+    recordatorios (11 p.m.–5 a.m. de Colombia) se apaga para que ninguna prueba
+    dependa del reloj. `tests/viajes/test_recordatorios_silencio.py` lo prende
+    con una hora fija."""
+    from app.services import silencio
+
+    monkeypatch.setattr(silencio, "ACTIVO", False)

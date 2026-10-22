@@ -13,7 +13,7 @@ from __future__ import annotations
 import json
 import logging
 import re
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Optional
 
 from sqlalchemy.orm import Session
@@ -28,6 +28,8 @@ from . import (
     meta_whatsapp,
     pausa,
     pedidos_sheet,
+    silencio,
+    tarifario,
     transcripcion,
 )
 from .messaging.base import MARCADOR_NOTA_DE_VOZ
@@ -161,6 +163,61 @@ def _dentro_de_la_franja(cuando: datetime, hora_min: int, hora_max: int) -> date
     return local - _TZ_CO.utcoffset(None)
 
 
+def _texto_de_promocion(
+    db: Session, conversation: models.Conversation, texto: str, ultimo: bool
+) -> str:
+    """El recordatorio corregido para una conversación de una promoción.
+
+    Los textos fijos hablan de «anticipo», y una promoción cuya salida es en
+    menos de 5 días se paga completa (CEO, 2026-10-21). En esas conversaciones
+    —las que llegaron por la pauta o en las que el bot ofreció la promoción—
+    el recordatorio que nombra el anticipo se cambia por uno de la promoción.
+    Cualquier otro texto, o cualquier otra conversación, sale igual.
+    """
+    if "anticipo" not in (texto or "").lower():
+        return texto
+    hoy = tarifario.hoy_colombia()
+    promos = tarifario.promociones_vigentes(hoy)
+    if not promos:
+        return texto
+    primero = (
+        db.query(models.Message.content)
+        .filter(models.Message.conversation_id == conversation.id,
+                models.Message.direction == "inbound")
+        .order_by(models.Message.id).first()
+    )
+    promo = tarifario.promocion_mencionada(primero[0] if primero else "", hoy)
+    if promo is None:
+        for p in promos:
+            ofrecida = (
+                db.query(models.Message.id)
+                .filter(models.Message.conversation_id == conversation.id,
+                        models.Message.direction == "outbound",
+                        models.Message.content.ilike(f"%{p['nombre']}%"))
+                .first()
+            )
+            if ofrecida:
+                promo = p
+                break
+    if promo is None:
+        return texto
+    try:
+        dias = (date.fromisoformat(str(promo["inicio"])) - hoy).days
+    except (KeyError, ValueError):
+        return texto
+    if dias >= 5:
+        return texto       # todavía se aparta con anticipo
+    nombre = promo["nombre"]
+    if ultimo:
+        fecha = str(promo.get("fecha") or "").strip()
+        return (f"Última razón por hoy 🌴 El *{nombre}* es del {fecha}. Si te animas, "
+                "me escribes y lo dejamos listo 🙌" if fecha else
+                f"Última razón por hoy 🌴 Si te animas con el *{nombre}*, me escribes y "
+                "lo dejamos listo 🙌")
+    return (f"¡Hola de nuevo! 👋 ¿Seguimos con tu cupo para el *{nombre}*? 🙌 👇\n"
+            "1️⃣ Sí, quiero reservar ✅\n2️⃣ Tengo una pregunta 🤔")
+
+
 def _programar(
     db: Session,
     session: models.BotSession,
@@ -186,6 +243,9 @@ def _programar(
     cuando = datetime.utcnow() + timedelta(minutes=max(1, minutos))
     if franja:
         cuando = _dentro_de_la_franja(cuando, int(franja[0]), int(franja[1]))
+    if action_type == models.BOT_PENDING_ACTION_SEGUIMIENTO:
+        # Ningún recordatorio al cliente entre las 11 p.m. y las 5 a.m.
+        cuando = silencio.fuera_del_silencio(cuando)
     pa = models.BotPendingAction(
         session_id=session.id,
         scheduled_at=cuando,
@@ -1523,6 +1583,15 @@ def _procesar_silencio(db: Session, pa: models.BotPendingAction) -> None:
     # asesor que recibe el chat frío.
     etapas = llm_engine.recordatorios_de(seguimiento, db=db, bot=bot)
 
+    if pa.action_type == models.BOT_PENDING_ACTION_SEGUIMIENTO and silencio.en_silencio(silencio.ahora()):
+        # Candado del horario de silencio: lo que venza entre las 11 p.m. y las
+        # 5 a.m. (agendado antes de esta regla, o con el tick atrasado) no sale:
+        # se corre a las 5:00 a.m., con su misma etapa.
+        pa.scheduled_at = silencio.fuera_del_silencio(silencio.ahora())
+        db.commit()
+        logger.info("bot_runner: recordatorio corrido por el horario de silencio conv=%s", conversation.id)
+        return
+
     if pa.action_type == models.BOT_PENDING_ACTION_SEGUIMIENTO:
         # Cadena de reenganches (Sprint 27). Con un solo recordatorio
         # configurado esto se comporta igual que antes; con tres, cada uno
@@ -1543,6 +1612,9 @@ def _procesar_silencio(db: Session, pa: models.BotPendingAction) -> None:
             texto = _texto_con_contexto(
                 db, conversation, bot, cfg_bot, seguimiento, etapas[etapa]
             ) or texto
+        # Conversación de una promoción que ya se paga completa: el texto que
+        # nombra el anticipo sale corregido.
+        texto = _texto_de_promocion(db, conversation, texto, ultimo=etapa == len(etapas) - 1)
         omitido = _condicion_cumplida(db, conversation, etapas[etapa].get("omitir_si"))
         if omitido:
             # A quien ya cumplió lo que se le estaba pidiendo (comprar, dejar

@@ -162,6 +162,11 @@ LLM_CONFIG = {
     "media": MEDIA,
     "caminos": CAMINOS,
     "tarifario": "covenas",   # habilita la herramienta `consultar_tarifario`
+    # «Lo pienso y te aviso» no cierra la conversación: queda abierta, con sus
+    # recordatorios, y aparece en Interesados para la asesora (CEO,
+    # 2026-10-21). Los bots 2 y 3 ya lo tenían; mismos valores que ellos.
+    "no_cerrar_aplazadas": True,
+    "intencion_compra": {"horas_para_interesado": 6},
     # ── Continuidad de la conversación (#377) ───────────────────────────────
     # Los tres flags viven aquí y no en el motor: `llm_engine.py` lo comparten
     # el bot de mascotas y el institucional, y una regla global les cambiaría

@@ -68,7 +68,12 @@ class TestBanderas:
         assert set(FLAGS_VARIANTE) == set(ESPERADAS) | {
             "promo_inexistente", "intencion_compra", "aviso_en_traspaso"
         }
+        # Dos el CEO las pidió también para el bot 1 (2026-10-21), con el mismo valor.
+        pedidas = {"no_cerrar_aplazadas", "intencion_compra"}
         for clave in FLAGS_VARIANTE:
+            if clave in pedidas:
+                assert LLM_CONFIG[clave] == FLAGS_VARIANTE[clave], clave
+                continue
             assert clave not in LLM_CONFIG, f"{clave} no puede estar en el bot 1"
 
     def test_hereda_todo_lo_demas_del_bot_1(self):
