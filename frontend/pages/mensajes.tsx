@@ -123,8 +123,13 @@ type TeamMe = {
   };
 };
 
+// Etiqueta que pone el bot cuando deja una venta lista para que el asesor la
+// cierre (datos + formas de pago enviados). Debe coincidir con la del backend.
+const ETIQUETA_LISTO = 'listo para reservar';
+
 const FILTERS = [
   { key: 'todas', label: 'Todas' },
+  { key: 'listos', label: '🟢 Listo para reservar' },
   { key: 'open', label: 'Abierto' },
   { key: 'pending', label: 'Pendiente' },
   { key: 'closed', label: 'Cerrado' },
@@ -420,7 +425,8 @@ export default function Mensajes() {
       limite: String(porPagina),
       pagina: String(pagina),
     });
-    if (filter !== 'todas') params.set('estado', filter);
+    if (filter === 'listos') params.set('etiqueta', ETIQUETA_LISTO);
+    else if (filter !== 'todas') params.set('estado', filter);
     if (searchAplicado) params.set('busqueda', searchAplicado);
 
     const load = () =>
@@ -828,7 +834,7 @@ export default function Mensajes() {
             </div>
             <input
               type="text"
-              placeholder="Buscar..."
+              placeholder="Buscar por nombre o teléfono"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:border-gloma-rose"
@@ -933,14 +939,24 @@ export default function Mensajes() {
                           un chip vacío se lee como un dato que falta. Va en
                           ámbar, el mismo tono que la nota interna, porque las
                           dos dicen "esto lo escribió el sistema, míralo". */}
-                      {c.etiqueta && (
+                      {c.etiqueta === ETIQUETA_LISTO ? (
+                        /* El bot ya pidió los datos y mandó las formas de
+                           pago: solo falta que el asesor confirme. En verde y
+                           con peso, para que salte a la vista en la lista. */
+                        <span
+                          title="El cliente ya dio sus datos y recibió las formas de pago: falta confirmar la reserva"
+                          className="inline-block mt-1 ml-1 px-2 py-0.5 text-[10px] font-semibold rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300"
+                        >
+                          🟢 Listo para reservar
+                        </span>
+                      ) : c.etiqueta ? (
                         <span
                           title={`Etiqueta: ${c.etiqueta}`}
                           className="inline-block mt-1 ml-1 px-2 py-0.5 text-[10px] rounded-full bg-amber-50 text-amber-700 border border-amber-200"
                         >
                           🏷️ {c.etiqueta}
                         </span>
-                      )}
+                      ) : null}
                     </div>
                   </button>
                 );

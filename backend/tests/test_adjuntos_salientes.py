@@ -850,7 +850,7 @@ class TestLaBandejaNoSeRompe:
         """`getattr(c, "etiqueta", None)`: la columna la agrega otra migración y
         la bandeja tiene que seguir sirviendo mientras tanto."""
         salida = mensajes.list_conversations(
-            estado=None, busqueda=None, limite=20, pagina=1,
+            estado=None, busqueda=None, etiqueta=None, limite=20, pagina=1,
             db=db_session, member=equipo,
         )
         assert [c.id for c in salida.conversaciones] == [conversacion.id]

@@ -46,8 +46,8 @@ def v(texto, resultados=None):
 
 C06 = f"""Para el *18 al 21 de diciembre* en *Amor de Dios* tenemos dos opciones ✨
 
-1️⃣ *Plan estándar* (2 noches / 3 días): *{P(ESTANDAR['multiple'])} c/u* → *{P(2 * ESTANDAR['multiple'])} total*
-2️⃣ *Obsequio a Barú* (3 noches / 4 días): *{P(BARU['multiple'])} c/u* → *{P(2 * BARU['multiple'])} total*
+1️⃣ *Plan estándar* (2 noches / 3 días): *{P(ESTANDAR['doble'])} c/u* → *{P(2 * ESTANDAR['doble'])} total*
+2️⃣ *Obsequio a Barú* (3 noches / 4 días): *{P(BARU['doble'])} c/u* → *{P(2 * BARU['doble'])} total*
 
 ¿Cuál prefieres? 👇
 
@@ -70,8 +70,15 @@ def test_las_variantes_salen_del_resultado():
 
 
 def test_caso_c06_pasa():
+    """Dos personas, en doble (desde el 2026-10-21 la múltiple es para 3 o más)."""
     assert v(C06) is None
     assert v(C06, [DIC]) is None
+
+
+def test_dos_personas_en_multiple_ya_no_pasa():
+    msg = (f"Para el 18 al 21 de diciembre en Amor de Dios, para 2 personas: "
+           f"{P(ESTANDAR['multiple'])} c/u → {P(2 * ESTANDAR['multiple'])} total")
+    assert v(msg) is not None
 
 
 def test_caso_c06_en_prosa_pasa():

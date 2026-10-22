@@ -3,7 +3,8 @@
   "_generado_por": "backend/scripts/generar_tarifario_covenas.py",
   "vigencia": "Temporada julio 2026 – enero 2027. Regenerar con el Excel de la próxima temporada.",
   "_cambios_a_mano": [
-    "2026-10-19 (CEO): la salida OCTUBRE 23 AL 26 es el «Simulacro decembrino» y vale $489.000 por persona en los tres hoteles y en cualquier acomodación. No viene del Excel: si se regenera este archivo antes de esa fecha, hay que volver a ponerlo. Lo que incluye de más vive en app/data/promociones_covenas.json."
+    "2026-10-19 (CEO): la salida OCTUBRE 23 AL 26 es el «Simulacro decembrino»: $489.000 por persona en múltiple en los tres hoteles. No viene del Excel: si se regenera este archivo antes de esa fecha, hay que volver a ponerlo. Lo que incluye de más vive en app/data/promociones_covenas.json.",
+    "2026-10-21 (CEO): la doble del Simulacro es $537.900 (múltiple + 10 %, como la cotizan las asesoras)."
   ],
   "notas": [
     "Los valores son POR PERSONA y en pesos colombianos.",
@@ -560,7 +561,7 @@
       "inicio": "2026-10-23",
       "fecha": "OCTUBRE 23 AL 26",
       "multiple": 489000,
-      "doble": 489000,
+      "doble": 537900,
       "noches": 2,
       "dias": 3,
       "plan": "Simulacro decembrino"
@@ -573,7 +574,7 @@
       "inicio": "2026-10-23",
       "fecha": "OCTUBRE 23 AL 26",
       "multiple": 489000,
-      "doble": 489000,
+      "doble": 537900,
       "noches": 2,
       "dias": 3,
       "plan": "Simulacro decembrino"

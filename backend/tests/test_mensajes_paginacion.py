@@ -88,6 +88,7 @@ def _conversacion(db, team_id, *, i, estado="open", nombre=None, mensajes=2):
 def _listar(db, member, **kw):
     kw.setdefault("estado", None)
     kw.setdefault("busqueda", None)
+    kw.setdefault("etiqueta", None)
     kw.setdefault("limite", 20)
     kw.setdefault("pagina", 1)
     return mensajes.list_conversations(db=db, member=member, **kw)

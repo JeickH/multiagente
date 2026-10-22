@@ -29,10 +29,11 @@ GUION = instrucciones_c()
 
 #: Bloques que cierran con opciones numeradas.
 CON_OPCIONES = ("/bienvenida_regreso", "/fechas", "/hotel", "/personas",
-                "/cotizacion", "/apartar", "/pago", "/duda", "/cliente")
+                "/cotizacion", "/apartar", "/duda", "/cliente")
 #: Bloques que el motor deja cerrar sin opciones (`_SIN_OPCIONES_RE`, traspaso,
 #: despedida).
-SIN_OPCIONES = ("/reserva", "/transferencia", "/pago_seguimiento", "/asesor", "/despedida")
+#: /pago va sin opciones desde el 2026-10-21: ahí el bot entrega al asesor.
+SIN_OPCIONES = ("/reserva", "/pago", "/asesor", "/despedida")
 
 
 def _seccion(titulo: str, nivel: str = "##") -> str:
@@ -119,7 +120,7 @@ class TestBienvenida:
 
 
 class TestBiblioteca:
-    @pytest.mark.parametrize("nombre", CON_OPCIONES + SIN_OPCIONES + ("/bienvenida", "/transferencia", "/lo_consulto"))
+    @pytest.mark.parametrize("nombre", CON_OPCIONES + SIN_OPCIONES + ("/bienvenida", "/lo_consulto"))
     def test_el_bloque_existe(self, nombre):
         assert _bloque(nombre).strip()
 
@@ -133,7 +134,7 @@ class TestBiblioteca:
         for linea in mensaje.splitlines():
             assert len(re.findall(r"\d️⃣", linea)) <= 1, linea
 
-    @pytest.mark.parametrize("nombre", ("/reserva", "/transferencia", "/pago_seguimiento"))
+    @pytest.mark.parametrize("nombre", ("/reserva", "/pago"))
     def test_los_que_van_sin_opciones_caen_en_la_excepcion_del_motor(self, nombre):
         assert llm_engine._SIN_OPCIONES_RE.search(_plantilla(nombre)), nombre
 
@@ -149,10 +150,13 @@ class TestBiblioteca:
         for nombre in ("/bienvenida", "/fechas", "/hotel", "/personas", "/cotizacion", "/apartar"):
             assert not re.search(r"(?i)nombre", _plantilla(nombre)), nombre
 
-    def test_el_pago_no_traspasa(self):
+    def test_el_pago_entrega_al_asesor(self):
+        """CEO, 2026-10-21: el bot llega hasta los datos y las formas de pago;
+        el comprobante y la confirmación son del asesor."""
         cuerpo = _bloque("/pago")
-        assert "no pasas a un asesor" in cuerpo
-        assert '`tipo: "datos"`' in cuerpo and "`medios_pago`" in cuerpo
+        assert "`listo_para_reservar`" in cuerpo and "Ahí termina tu parte" in cuerpo
+        assert '`tipo: "datos"`' in cuerpo
+        assert "/transferencia" not in GUION and "/pago_seguimiento" not in GUION
 
     def test_el_anticipo_sale_del_sistema(self):
         cuerpo = _bloque("/apartar")
@@ -250,7 +254,7 @@ class TestAjustesDelAnalisis:
 
     def test_la_oficina_como_senal_de_confianza_en_el_pago(self):
         pago = _plantilla("/pago")
-        assert "Bosque Plaza" in pago and "3️⃣ En la oficina" in pago
+        assert "Bosque Plaza" in pago
         assert "Oficina y confianza" in _seccion("Preguntas frecuentes")
 
     def test_la_llamada_se_ofrece_sin_discutir(self):
@@ -291,12 +295,15 @@ class TestAjustesQABedrock:
 
     def test_el_pago_manda_medios_en_el_mismo_bloque(self):
         cuerpo = _bloque("/pago")
-        assert "mandas la imagen `medios_pago`**" in " ".join(cuerpo.split())
-        assert "**en este mismo turno" in " ".join(cuerpo.split())
+        assert "El sistema le envía la imagen de formas de pago" in " ".join(cuerpo.split())
+        assert "en este mismo turno" in " ".join(cuerpo.split())
         assert "**Lo que ya te dio no se vuelve a pedir ni a confirmar**" in cuerpo
 
-    def test_cotizacion_con_las_dos_acomodaciones(self):
-        assert "**Siempre las dos acomodaciones**" in _bloque("/cotizacion")
+    def test_cotizacion_segun_cuantos_viajan(self):
+        """La múltiple es para 3 o más del mismo grupo (CEO, 2026-10-21)."""
+        cotizacion = _bloque("/cotizacion")
+        assert "**3 o más personas** (las dos acomodaciones)" in cotizacion
+        assert "**1 o 2 personas** (solo doble)" in cotizacion
 
     def test_ninos_solo_de_la_consulta_y_con_opciones(self):
         personas = _bloque("/personas")

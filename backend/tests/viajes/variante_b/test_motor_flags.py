@@ -596,7 +596,8 @@ class TestCargosNinos:
             resp(texto("Te cuento 🌴")),
         ], mensaje="¿octubre?")
         resultado = mock.call_args_list[1].args[2][-1]["content"][0]["content"]
-        assert resultado == f"Tarifario de prueba\n{LINEA_EXTRAS}"
+        notas = llm_engine._notas_de_precios("Tarifario de prueba")
+        assert resultado == f"Tarifario de prueba\n{notas}\n{LINEA_EXTRAS}"
 
     def test_sin_flag_no(self):
         resultado = self._resultado_que_vio_el_modelo(Bot())

@@ -863,6 +863,9 @@ def _system_prompt(
         if menu:
             parts.append(menu)
     # Después del menú de meses, porque le dice al bot 3 cuándo no mostrarlo.
+    reglas = _bloque_reglas_agencia(cfg)
+    if reglas:
+        parts.append(reglas)
     promociones = _bloque_promociones(cfg, ctx_productos)
     if promociones:
         parts.append(promociones)
@@ -890,7 +893,10 @@ def _system_prompt(
         "te ayudo de una?». Nunca adivines qué decía el audio ni sigas como si "
         "no hubiera llegado nada. Se arregla con que te escriba, así que la "
         "conversación sigue contigo; si insiste con otra nota de voz, vuelve a "
-        "pedírselo con paciencia y otras palabras."
+        "pedírselo con paciencia y otras palabras. Si el turno empieza con "
+        "«🎤 (nota de voz):», el sistema ya te pasó el audio a texto: respóndelo "
+        "normal, sin mencionar que era un audio (la transcripción puede traer "
+        "errores; si algo no se entiende, pregúntalo)."
     )
     continuidad = _bloque_continuidad(cfg)
     if continuidad:
@@ -1296,7 +1302,7 @@ def _falta_pedir_el_nombre(
         return False            # no es el primer mensaje
     if finished or not say_texts:
         return False            # se despidió, o no escribió nada (no_responder)
-    if any(t.get("tool") in ("escalar_a_asesor", "registrar_nombre")
+    if any(t.get("tool") in ("escalar_a_asesor", "registrar_nombre", "listo_para_reservar")
            for t in tools_called):
         # Escalando, quien pregunta es el asesor; y si acaba de registrarlo, ya
         # se presentó en este mismo turno.
@@ -1454,7 +1460,7 @@ _MOTIVO_PRECIO_A_ASESOR = (
 #: Las herramientas que cierran el turno. Si una corrección nueva (precio,
 #: cierre aplazado) se dispara en la ronda en que el modelo llamó una de
 #: estas, el cierre se anula — ver `_anular_cierres`.
-_CIERRES = ("finalizar_conversacion", "no_responder", "escalar_a_asesor")
+_CIERRES = ("finalizar_conversacion", "no_responder", "escalar_a_asesor", "listo_para_reservar")
 _SUFIJO_ANULADA = ":anulada"
 
 _TEXTO_PROMO_DEFAULT = (
@@ -1499,6 +1505,14 @@ def _bloque_anticipo(cfg: Dict[str, Any]) -> str:
     saldo = str(datos.get("saldo_texto") or "").strip()
     if saldo:
         lineas.append(saldo[:1].upper() + saldo[1:].rstrip(".") + ".")
+    if cfg.get("tarifario"):
+        # QA 2026-10-21: con solo el 30 % aquí, el bot 2 ofrecía anticipo para
+        # el Simulacro, que salía en dos días.
+        lineas.append(
+            "Excepción: una salida que la consulta de precios marca con «PAGO "
+            "TOTAL» (sale muy pronto) no tiene anticipo: se paga completa al "
+            "reservar."
+        )
     return "## Anticipo y saldo (datos del sistema)\n" + "\n".join(f"- {l}" for l in lineas)
 
 
@@ -1969,6 +1983,211 @@ def _bloque_menu_meses(cfg: Dict[str, Any]) -> str:
     )
 
 
+#: Etiqueta de la bandeja para las conversaciones que el bot dejó listas para
+#: reservar. El frontend la pinta en verde y la pone de primera.
+ETIQUETA_LISTO_PARA_RESERVAR = "listo para reservar"
+_TITULO_LISTO_PARA_RESERVAR = "🟢 *Listo para reservar*"
+_TEXTO_CIERRE = (
+    "¡Listo, recibí tus datos! ✅ Te dejo las formas de pago 👇 Cuando hagas la "
+    "transferencia, mándame el *comprobante* por aquí 📎 y un compañero te "
+    "confirma la reserva {cuando} ✨"
+)
+
+_TOOL_LISTO_PARA_RESERVAR: Dict[str, Any] = {
+    "name": "listo_para_reservar",
+    "description": (
+        "Úsala cuando la persona ya te mandó sus datos para reservar y en ESTE "
+        "mismo turno ya le escribiste cuánto debe pagar ahora (el anticipo, o el "
+        "total si la consulta marcó la salida con «PAGO TOTAL») y que haga la "
+        "transferencia y "
+        "mande el comprobante por este chat. El sistema le envía la imagen de "
+        "formas de pago, pasa la conversación a un asesor y la marca como «Listo "
+        "para reservar». Después de esto no sigues vendiendo: el comprobante y la "
+        "confirmación de la reserva son del asesor."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "resumen": {
+                "type": "string",
+                "description": (
+                    "Una línea para el asesor: salida (fechas), hotel, cuántas "
+                    "personas (adultos y niños con edades), acomodación, valor "
+                    "total y valor a pagar ahora. Solo lo que salió en la "
+                    "conversación; no inventes."
+                ),
+            },
+            "datos": {
+                "type": "string",
+                "description": (
+                    "Los datos de reserva tal como los escribió la persona "
+                    "(nombre completo, cédula y fecha de nacimiento de cada "
+                    "viajero, correo del titular). Copia literal; si falta "
+                    "alguno, no lo completes."
+                ),
+            },
+        },
+        "required": ["resumen"],
+    },
+}
+
+
+def _listo_para_reservar(
+    cfg: Dict[str, Any],
+    tool_input: Dict[str, Any],
+    actions: List[Dict[str, Any]],
+    sent_media_log: List[str],
+    ctx_productos: Optional[Any],
+) -> tuple:
+    """El cierre del bot: formas de pago + asesor + marca en la bandeja.
+
+    Si el modelo llamó la herramienta sin escribir nada (pasó en la QA del
+    2026-10-21 con los bots 2 y 3), el texto del cierre lo pone el sistema: la
+    persona acaba de dar su cédula y tiene que saber qué sigue.
+    """
+    if not any(
+        a.get("type") == "say" and ((a.get("payload") or {}).get("text") or "").strip()
+        for a in actions
+    ):
+        actions.append({"type": "say", "payload": {"text": _TEXTO_CIERRE.format(
+            cuando=_cuando(cfg))}})
+    catalogo = _media_catalog(cfg, ctx_productos)
+    medio = catalogo.get("medios_pago")
+    if isinstance(medio, dict) and medio.get("url") and not any(
+        (a.get("payload") or {}).get("url") == medio["url"] for a in actions
+    ):
+        actions.append({"type": "say_media", "payload": {
+            "caption": "", "media_type": medio.get("media_type", "image"),
+            "url": medio["url"],
+        }})
+        sent_media_log.append("medios_pago")
+    resumen = str(tool_input.get("resumen") or "").strip()[:500]
+    datos = str(tool_input.get("datos") or "").strip()[:1200]
+    actions.append({"type": "handoff", "payload": {
+        "assignee": cfg.get("assignee") or "",
+        "text": "",
+        "titulo": _TITULO_LISTO_PARA_RESERVAR,
+        "etiqueta": ETIQUETA_LISTO_PARA_RESERVAR,
+        "motivo": "datos de reserva recibidos: confirmar la reserva al recibir el comprobante",
+        "resumen": resumen + (f"\nDatos: {datos}" if datos else ""),
+    }})
+    return (
+        "listo: le envié la imagen de formas de pago y la conversación pasó a un "
+        "asesor, marcada como «Listo para reservar». No escribas nada más en este "
+        "turno."
+    ), True
+
+
+def _notas_de_precios(resultado: str) -> str:
+    """Lo que acompaña SIEMPRE a un resultado de precios de Arranquemos Pues.
+
+    - La acomodación: la múltiple es solo para 3 o más personas del mismo grupo.
+    - El pago total: una salida que sale en menos de 5 días no se aparta con
+      anticipo (lo que hacen las asesoras, CEO 2026-10-21).
+    Las fechas se leen de las filas del tarifario que aparecen en el resultado.
+    """
+    lineas = [
+        "ACOMODACIÓN: la tarifa MÚLTIPLE es solo para 3 o más personas del "
+        "mismo grupo o familia (no se mezclan reservas). Para 2 personas cotiza "
+        "la DOBLE, y una persona sola también paga la DOBLE. A 1 o 2 personas "
+        "nunca les cotices múltiple."
+    ]
+    hoy = tarifario.hoy_colombia()
+    plano = (resultado or "").upper()
+    vistas = set()
+    for plan in (tarifario._datos() or {}).get("planes", []):
+        try:
+            inicio = date.fromisoformat(plan["inicio"])
+        except (KeyError, ValueError):
+            continue
+        dias = (inicio - hoy).days
+        etiqueta = str(plan.get("fecha") or "")
+        if 0 <= dias < 5 and etiqueta and etiqueta.upper() in plano and etiqueta not in vistas:
+            vistas.add(etiqueta)
+            lineas.append(
+                f"PAGO TOTAL: la salida {etiqueta} ya está muy cerca. Quien la "
+                "reserve paga el valor TOTAL de una vez, no un anticipo. Si lo "
+                "explicas, di «como la salida es muy pronto», sin contar días."
+            )
+    return "\n".join(lineas)
+
+
+#: «En noviembre las salidas publicadas son hasta el 30», «esa fecha no la
+#: tenemos»: el bot negando una salida. Pasó con el 30 nov–3 dic, que sí existe
+#: (conv. 1173, 2026-10-19). Se compara sin tildes.
+_SALIDA_NEGADA_RE = re.compile(
+    r"\bno\s+(?:la\s+|lo\s+)?(?:tenemos|hay|existe|esta|aparece|manejamos)\b"
+    r"[^.\n]{0,50}\b(?:publicad|salida|fecha)"
+    r"|\bpublicadas?\s+(?:son|llegan|van)\s+hasta\b"
+    r"|\b(?:esa|esta)\s+(?:fecha|salida)\s+no\s+(?:la\s+)?(?:tenemos|hay|existe|esta)",
+    re.IGNORECASE,
+)
+
+_CORRECCION_SALIDA_NEGADA = (
+    "ALTO: le dijiste que una salida no existe o no está publicada sin haberla "
+    "consultado con su fecha exacta. Ese mensaje NO se le envió. Llama "
+    "`consultar_tarifario` con fecha=AAAA-MM-DD (el día en que arranca la salida "
+    "que pidió la persona) y responde con lo que devuelva."
+)
+
+
+def _viola_salida_negada(
+    cfg: Dict[str, Any], textos: List[str], tools_called: List[Dict[str, Any]]
+) -> bool:
+    if not cfg.get("tarifario") or not textos:
+        return False
+    if any(
+        (t.get("tool") or "") in ("consultar_tarifario", productos_bot.PRECIOS)
+        and str((t.get("input") or {}).get("fecha") or "").strip()
+        for t in tools_called
+    ):
+        return False
+    return any(_SALIDA_NEGADA_RE.search(senales.normalizar(t or "")) for t in textos)
+
+
+def _bloque_reglas_agencia(cfg: Dict[str, Any]) -> str:
+    """Reglas comunes de los tres bots de Arranquemos Pues (CEO, 2026-10-21),
+    sacadas de cómo venden las asesoras. Van en el prefijo estable."""
+    if not cfg.get("tarifario"):
+        return ""
+    return (
+        "## Reglas de la agencia (datos del sistema)\n"
+        "Mandan sobre cualquier otra instrucción que diga distinto.\n"
+        "- **Acomodación.** La múltiple es solo para 3 o más personas del mismo "
+        "grupo o familia; no se mezclan personas de reservas distintas. Dos "
+        "personas van en doble, y una persona sola paga la tarifa doble. Antes "
+        "de dar un total, sabe cuántas viajan; a 1 o 2 personas nunca les "
+        "cotices múltiple.\n"
+        "- **Desde dónde salimos.** Solo desde Medellín, Estación Universidad – "
+        "Calle Carabobo. No hay salidas ni recogidas en otras ciudades ni en el "
+        "camino. Si preguntan, dilo claro en una línea y sigue con la venta; no "
+        "pases a un asesor por esto.\n"
+        "- **Cupo.** Siempre hay cupo.\n"
+        "- **Pago.** Se aparta con el anticipo y el saldo se paga 8 días antes "
+        "de la salida. Si la herramienta de precios marca una salida con «PAGO "
+        "TOTAL» (sale muy pronto), se paga el total al reservar.\n"
+        "- **Precio sin mes.** Si preguntan el precio sin decir mes, consulta el "
+        "mes de la próxima salida (o la promoción vigente) y da ese valor; no "
+        "contestes solo «¿para qué mes?».\n"
+        "- **Fecha concreta.** Si la persona nombra una fecha («30 de noviembre "
+        "al 3 de diciembre»), consulta con fecha=AAAA-MM-DD antes de decir que "
+        "no existe.\n"
+        "- **Cierre.** Cuando quiera reservar, pídele en un solo mensaje el "
+        "nombre completo, la cédula y la fecha de nacimiento de cada viajero, y "
+        "el correo del titular. Cuando los mande, en ese mismo turno: escríbele "
+        "el valor a pagar ahora y que haga la transferencia y mande el "
+        "comprobante por aquí, que un compañero le confirma la reserva; y llama "
+        "`listo_para_reservar`. Tú no recibes comprobantes ni confirmas "
+        "reservas.\n"
+        "- **Preguntas frecuentes.** El día antes de la salida se crea un grupo "
+        "de WhatsApp con la hora exacta, el guía y las placas del bus. Si piden "
+        "un puesto en el bus (adelante, por salud), se deja la observación a "
+        "logística, sin prometerlo. El tour a las Islas de San Bernardo tiene "
+        "costo adicional: se puede tomar allá con el guía o pagarlo de una vez; "
+        "el valor lo confirma un asesor."
+    )
+
+
 def _bloque_promociones(cfg: Dict[str, Any], ctx_productos: Optional[Any]) -> str:
     """Las promociones vigentes del tarifario (`promociones_covenas.json`).
 
@@ -1995,8 +2214,8 @@ def _bloque_promociones(cfg: Dict[str, Any], ctx_productos: Optional[Any]) -> st
         pauta = str(promo.get("mensaje_pauta") or "").strip()
         lineas = [
             f"Es la salida del *{fecha}* ({inicio}). Vale lo mismo en los tres "
-            "hoteles (Amor de Dios, Bohíos y Piedra Mar) y en cualquier "
-            f"acomodación. La cifra y la duración NO están aquí: salen de "
+            "hoteles (Amor de Dios, Bohíos y Piedra Mar); la doble cuesta más que "
+            f"la múltiple. Las cifras y la duración NO están aquí: salen de "
             f"`{herramienta}` con fecha={inicio}. Llámala antes de decir "
             "cualquier precio de esta salida."
         ]
@@ -2015,9 +2234,22 @@ def _bloque_promociones(cfg: Dict[str, Any], ctx_productos: Optional[Any]) -> st
         lineas.append(
             f"{llegada} viene por ESTA salida: no le preguntes para qué mes ni le "
             f"muestres el menú de meses. Preséntale el *{nombre}* —la fecha, lo "
-            "que trae de más y el precio que te dé la herramienta— y sigue como "
-            "siempre: hotel, cuántas personas viajan y la reserva."
+            "que trae de más y el precio que te dé la herramienta— y cierra ese "
+            "primer mensaje con una sola pregunta fácil: «¿Cuántas personas "
+            "viajan?». Después sigue como siempre: hotel, acomodación y reserva."
         )
+        for nota in promo.get("notas") or []:
+            if str(nota).strip():
+                lineas.append(str(nota).strip())
+        try:
+            faltan = (date.fromisoformat(inicio) - tarifario.hoy_colombia()).days
+        except ValueError:
+            faltan = None
+        if faltan is not None and 0 <= faltan < 5:
+            lineas.append(
+                f"El {nombre} ya sale muy pronto: se paga completo al reservar, sin "
+                "anticipo. No ofrezcas apartarlo con el 30 %."
+            )
         lineas.append(
             "Si esa fecha no le sirve, sigue el flujo normal con las otras "
             f"salidas, y aclárale que lo del {nombre} es solo de esta salida."
@@ -2592,7 +2824,7 @@ def _viola_promesa(
         return False
     if any(a.get("type") == "handoff" for a in actions):
         return False
-    if any(t.get("tool") == "escalar_a_asesor" for t in tools_called):
+    if any(t.get("tool") in ("escalar_a_asesor", "listo_para_reservar") for t in tools_called):
         return False
     return any(
         recortes_turno.promete_respuesta_de_otro(t, etapa=etapa) for t in textos_de_la_ronda
@@ -3198,7 +3430,13 @@ def _postproceso_variante(
     # pedía «número de celular» a alguien que escribe por WhatsApp). Lo que el
     # modelo haya escrito con forma de aviso de horario se quita.
     ausencia = _ausencia(cfg)
-    if ausencia and any(a.get("type") == "handoff" for a in actions):
+    # El cierre «listo para reservar» no lleva el aviso de ausencia: el aviso le
+    # pide los datos a quien acaba de darlos. El cuándo ya va en su texto.
+    if ausencia and any(
+        a.get("type") == "handoff"
+        and (a.get("payload") or {}).get("etiqueta") != ETIQUETA_LISTO_PARA_RESERVAR
+        for a in actions
+    ):
         if not any(ausencia in t for t in say_texts):
             for accion in [a for a in actions if a.get("type") == "say"]:
                 original = accion["payload"].get("text") or ""
@@ -3756,6 +3994,11 @@ def _tools_for(
                 },
             }
         )
+    if cfg.get("tarifario"):
+        # Cierre de los bots de Arranquemos Pues (CEO, 2026-10-21): el bot vende
+        # hasta los datos y las formas de pago; el comprobante y la confirmación
+        # son del asesor.
+        tools.append(_TOOL_LISTO_PARA_RESERVAR)
     return tools
 
 
@@ -6507,6 +6750,9 @@ def _run_tool(
             "pague nos envíe el comprobante por este chat para despachar."
         ), False
 
+    if name == "listo_para_reservar" and cfg.get("tarifario"):
+        return _listo_para_reservar(cfg, tool_input, actions, sent_media_log, ctx_productos)
+
     if name == "escalar_a_asesor":
         actions.append(
             {
@@ -6701,6 +6947,8 @@ def _classify_camino(
         return "ficha_mascota"
     if "descargar_listado" in tool_names:
         return "descarga_listado"
+    if "listo_para_reservar" in tool_names:
+        return "listo_para_reservar"
     if "escalar_a_asesor" in tool_names:
         return "escalar_a_asesor"
     if "consultar_tarifario" in tool_names:
@@ -7573,6 +7821,12 @@ def _turno(
                     db=db, ctx_productos=ctx_productos, fallbacks=fallbacks,
                     intenciones=intenciones,
                 )
+                if cfg.get("tarifario") and name in (
+                    "consultar_tarifario", productos_bot.PRECIOS
+                ):
+                    # Acomodación y pago total (CEO, 2026-10-21): antes de la
+                    # línea de extras, que va siempre al final.
+                    result_text = f"{result_text}\n{_notas_de_precios(result_text)}"
                 if cfg.get("cargos_ninos") and name in (
                     "consultar_tarifario", productos_bot.PRECIOS
                 ):
@@ -7607,7 +7861,14 @@ def _turno(
                 # caracteres del registro de arriba.
                 if name in ("consultar_tarifario", productos_bot.PRECIOS):
                     duraciones_ok.append(result_text)
-                if name == "escalar_a_asesor":
+                if name == "listo_para_reservar":
+                    # El texto de cierre que puso el sistema también va al
+                    # historial (y lo ven los guardarraíles).
+                    for accion in actions:
+                        texto_cierre = (accion.get("payload") or {}).get("text") or ""
+                        if accion.get("type") == "say" and texto_cierre and texto_cierre not in say_texts:
+                            say_texts.append(texto_cierre)
+                if name in ("escalar_a_asesor", "listo_para_reservar"):
                     # Vacío significa "lo decide el turno del team al entregar";
                     # el asesor concreto lo resuelve `bot_runner`.
                     escalated_to = cfg.get("assignee") or "(por turno)"
@@ -7723,6 +7984,15 @@ def _turno(
                         "consultar_tarifario", productos_bot.PRECIOS
                     ) if ctx_productos is not None else _CORRECCION_DISPONIBILIDAD,
                     "disponibilidad sin consultar",
+                )
+            elif _viola_salida_negada(
+                cfg, say_texts[textos_previos:], tools_called
+            ):
+                correccion, motivo = (
+                    _CORRECCION_SALIDA_NEGADA.replace(
+                        "consultar_tarifario", productos_bot.PRECIOS
+                    ) if ctx_productos is not None else _CORRECCION_SALIDA_NEGADA,
+                    "salida negada sin consultar su fecha",
                 )
             # Las dos de abajo son del bot 2 y sólo existen con su flag. A
             # diferencia de las de arriba, deshacen también el cierre de la

@@ -26,7 +26,10 @@ def list_conversations(
         None, description="open | pending | closed. Vacío = todas."
     ),
     busqueda: Optional[str] = Query(
-        None, description="nombre o número del contacto"
+        None, description="nombre o número del contacto (cualquier formato)"
+    ),
+    etiqueta: Optional[str] = Query(
+        None, max_length=60, description="solo las conversaciones con esta etiqueta"
     ),
     limite: int = Query(
         20, ge=1, le=crud.MAX_CONVERSACIONES_POR_PAGINA,
@@ -50,6 +53,7 @@ def list_conversations(
         member.team_id,
         estado=estado,
         busqueda=busqueda,
+        etiqueta=etiqueta,
         limite=limite,
         offset=(pagina - 1) * limite,
     )

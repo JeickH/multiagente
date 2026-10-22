@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
@@ -19,6 +20,7 @@ from sqlalchemy.orm import Session
 
 from .. import crud, models
 from . import (
+    adjuntos,
     agendamientos,
     bot_engine,
     llm_engine,
@@ -26,7 +28,9 @@ from . import (
     meta_whatsapp,
     pausa,
     pedidos_sheet,
+    transcripcion,
 )
+from .messaging.base import MARCADOR_NOTA_DE_VOZ
 
 logger = logging.getLogger(__name__)
 
@@ -809,6 +813,11 @@ def run_turn(
         # siempre no cambia (lo vigila el golden del bot 1).
         if primer_mensaje and not user_input and cfg.get("tarifario"):
             runtime["primer_mensaje"] = str(primer_mensaje)[:2000]
+        # Nota de voz → texto (Transcribe). Sin transcripción, el turno es el
+        # de siempre.
+        transcrita = _transcribir_nota_de_voz(db, conversation, user_input)
+        if transcrita:
+            user_input = transcrita
         result = llm_engine.advance(bot, state, user_input, runtime=runtime)
         # #255: registrar la decisión del turno (camino, tools, latencia) en
         # bot_llm_decisions. Nunca rompe el turno (record_decision es defensivo).
@@ -963,9 +972,18 @@ def run_turn(
                     conversation.id,
                 )
                 continue
+            # El cierre del bot de viajes («listo para reservar») marca la
+            # conversación para que el asesor la vea de primera en la bandeja.
+            etiqueta = str(payload.get("etiqueta") or "").strip()[:60]
+            if etiqueta:
+                conversation.etiqueta = etiqueta
+                db.add(conversation)
             db.commit()
             db.refresh(conversation)
-            _nota_de_handoff(db, conversation, payload)
+            _nota_de_handoff(
+                db, conversation, payload,
+                titulo=str(payload.get("titulo") or "").strip() or _TITULO_NOTA,
+            )
             text = payload.get("text", "")
             if text and text.strip():
                 _send_text(db, conversation, bot, meta_account, text)
@@ -998,6 +1016,61 @@ def run_turn(
                 franja=(primera["hora_min"], primera["hora_max"]),
             )
     return session
+
+
+#: Cómo le llega al bot una nota de voz que sí se pudo transcribir.
+PREFIJO_NOTA_DE_VOZ_TRANSCRITA = "🎤 (nota de voz):"
+_URL_ADJUNTO_RE = re.compile(r"/mensajes/adjunto/(\d+)/([0-9a-f]{32})/([\w.-]{1,80})\s*$")
+
+
+def _transcribir_nota_de_voz(
+    db: Session, conversation: models.Conversation, user_input: Optional[str]
+) -> Optional[str]:
+    """Si el turno es una nota de voz, su texto (o None).
+
+    El bot recibe solo el marcador `[nota de voz]`; la URL del audio quedó en
+    el mensaje guardado. Se toma el último audio entrante de la conversación,
+    se transcribe y la transcripción queda como nota interna para el asesor.
+    Cualquier problema → None, y el turno sigue como siempre («no puedo
+    escuchar audios»).
+    """
+    if not transcripcion.habilitada():
+        return None
+    if (user_input or "").strip() != MARCADOR_NOTA_DE_VOZ:
+        return None
+    msg = (
+        db.query(models.Message)
+        .filter(
+            models.Message.conversation_id == conversation.id,
+            models.Message.direction == "inbound",
+        )
+        .order_by(models.Message.id.desc())
+        .first()
+    )
+    contenido = (msg.content or "") if msg is not None else ""
+    if not contenido.startswith(MARCADOR_NOTA_DE_VOZ):
+        return None
+    m = _URL_ADJUNTO_RE.search(contenido)
+    bucket = adjuntos._bucket()
+    if not m or not bucket or int(m.group(1)) != int(conversation.team_id):
+        return None
+    formato = transcripcion.formato_de(m.group(3))
+    if not formato:
+        return None
+    key = adjuntos.key_de(int(m.group(1)), m.group(2), m.group(3))
+    texto = transcripcion.transcribir(f"s3://{bucket}/{key}", formato)
+    if not texto:
+        return None
+    texto = " ".join(texto.split())[:1500]
+    try:
+        crud.add_message(
+            db, conversation, direction="outbound",
+            content=f"🎤 *Transcripción de la nota de voz*\n{texto}",
+            message_type="nota_interna", status="sent",
+        )
+    except Exception:
+        logger.exception("bot_runner: no se pudo guardar la transcripción conv=%s", conversation.id)
+    return f"{PREFIJO_NOTA_DE_VOZ_TRANSCRITA} {texto}"
 
 
 #: Encabezado por defecto de la nota interna. El abandono manda el suyo.

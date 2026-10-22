@@ -66,9 +66,11 @@ def test_la_salida_de_cada_promocion_existe_y_lleva_su_nombre():
         assert hoteles == {"amor_de_dios", "bohios", "piedra_mar"}
 
 
-def test_el_simulacro_vale_lo_mismo_en_los_tres_hoteles_y_las_dos_acomodaciones():
+def test_el_simulacro_vale_lo_mismo_en_los_tres_hoteles():
+    """Múltiple $489.000 en los tres; la doble, +10 % como la cotizan las
+    asesoras (CEO, 2026-10-21)."""
     filas = [p for p in tarifario._datos()["planes"] if p["inicio"] == "2026-10-23"]
-    assert {(p["multiple"], p["doble"]) for p in filas} == {(489000, 489000)}
+    assert {(p["multiple"], p["doble"]) for p in filas} == {(489000, 537900)}
     assert {(p["noches"], p["dias"]) for p in filas} == {(2, 3)}
 
 
@@ -241,13 +243,16 @@ def _resultado_octubre():
 
 def test_el_resultado_de_la_herramienta_nombra_la_promocion():
     resultado = _resultado_octubre()
-    assert resultado.count("OCTUBRE 23 AL 26 — múltiple $489.000 · doble $489.000") == 2
+    assert resultado.count("OCTUBRE 23 AL 26 — múltiple $489.000 · doble $537.900") == 2
     assert "Simulacro decembrino" in resultado
 
 
 @pytest.mark.parametrize("texto,pasa", [
     ("El *Simulacro decembrino* en Piedra Mar vale $489.000 por persona.", True),
-    ("Para 2 personas en Amor de Dios serían $978.000.", True),
+    ("Para 2 personas en Amor de Dios serían $1.075.800.", True),
+    # Dos personas no van en múltiple (CEO, 2026-10-21): 2 × $489.000 no se vende.
+    ("Para 2 personas en Amor de Dios serían $978.000.", False),
+    ("Para 3 personas en múltiple serían $1.467.000.", True),
     ("El Simulacro decembrino en Amor de Dios queda en $459.000 por persona.", False),
 ])
 def test_guardarrail_con_la_fila_del_simulacro(texto, pasa):

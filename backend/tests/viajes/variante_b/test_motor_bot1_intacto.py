@@ -156,8 +156,12 @@ def test_consultar_tarifario_no_agrega_la_linea_de_ninos_ni_guarda_precios():
     ]) as mock:
         salida = llm_engine.advance(Bot1(), None, "¿octubre?", runtime={})
     resultado = mock.call_args_list[1].args[2][-1]["content"][0]["content"]
-    assert resultado == tarifario.consultar(LLM_CONFIG, hotel="", mes="octubre",
-                                            fecha="", presupuesto="")
+    consulta = tarifario.consultar(LLM_CONFIG, hotel="", mes="octubre",
+                                   fecha="", presupuesto="")
+    # Desde el 2026-10-21 los tres bots reciben las notas de acomodación y
+    # pago total (pedido del CEO); la línea de niños sigue siendo solo del 2.
+    assert resultado == f"{consulta}\n{llm_engine._notas_de_precios(consulta)}"
+    assert "NIÑOS" not in resultado
     assert set(salida["next_state"]) == {"history"}
     assert dichos(salida) == ["Son $549.000 en doble"]
 

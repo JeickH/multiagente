@@ -63,6 +63,10 @@ __all__ = ["viola_precio", "extraer_montos", "filas_de_resultados"]
 _TOLERANCIA = 1_000
 #: Personas por cotización (el plan es de grupo; más allá se escala).
 _MAX_PERSONAS = 15
+#: La acomodación múltiple es para 3 o más personas del mismo grupo; 1 o 2
+#: personas pagan la doble (regla de la agencia, CEO 2026-10-21). Un total en
+#: múltiple para 2 personas («2 × $489.000») es un precio que no se vende.
+_MIN_MULTIPLE = 3
 #: Niños por cotización.
 _MAX_NINOS = 4
 #: Debajo de esto no es una tarifa del plan.
@@ -436,26 +440,38 @@ def _validos_de(filas: Sequence[Fila], acomodaciones: Set[str],
     """Derivados de las filas en la(s) acomodación(es) indicada(s)."""
     ambas = not acomodaciones or acomodaciones >= {"doble", "multiple"}
     bases: Set[int] = set()
+    #: Dos adultos en múltiple solo con al menos un niño: la habitación queda
+    #: con 3 o más personas de la misma familia, que es la regla.
+    con_nino: Set[int] = set()
     v = _Validos()
     for f in filas:
         precios = []
         if ambas or "multiple" in acomodaciones:
-            precios.append(f.multiple)
+            precios.append((f.multiple, _MIN_MULTIPLE))
         if ambas or "doble" in acomodaciones:
-            precios.append(f.doble)
-        for p in precios:
-            for n in range(1, _MAX_PERSONAS + 1):
+            precios.append((f.doble, 1))
+        for p, desde in precios:
+            # El precio por persona siempre vale; el total en múltiple solo
+            # desde 3 personas: 1 o 2 van en doble (regla de la agencia).
+            bases.add(p)
+            for n in range(desde, _MAX_PERSONAS + 1):
                 bases.add(n * p)
+            if desde > 2:
+                con_nino.add(2 * p)
         # «La doble cuesta $46.000 más»: la frase puede nombrar una sola
         # acomodación y aun así hablar de la diferencia entre las dos.
         dif = f.doble - f.multiple
         v.diferencias |= {n * dif for n in range(1, _MAX_PERSONAS + 1)}
         if ambas:
             # Grupo mixto en la misma salida: n1 en múltiple + n2 en doble.
-            for n1 in range(1, _MAX_PERSONAS):
+            for n1 in range(_MIN_MULTIPLE, _MAX_PERSONAS):
                 for n2 in range(1, _MAX_PERSONAS - n1 + 1):
                     bases.add(n1 * f.multiple + n2 * f.doble)
     v.agregar(bases, ninos, pct)
+    if any(ninos):
+        # Con niños en la frase, el subtotal de los 2 adultos («$918.000 +
+        # $195.000») también es legítimo.
+        v.agregar(con_nino, ninos, pct)
     return v.cerrar()
 
 

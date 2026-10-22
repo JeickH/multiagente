@@ -115,11 +115,12 @@ class TestNombre:
         """Ni como mal ejemplo: citarla la vuelve a meter en el prompt."""
         assert not re.search(r"(?i)con qui[eé]n tengo el gusto", GUION)
 
-    def test_se_pide_al_reservar_con_la_frase_de_la_reserva(self):
-        assert "«¿A nombre de quién aparto el cupo?»" in _seccion("El nombre")
+    def test_se_pide_al_reservar_con_los_datos_de_la_reserva(self):
+        """Desde el 2026-10-21 se piden los datos de cada viajero (CEO)."""
+        assert "junto con los demás datos" in _seccion("El nombre")
         reserva = GUION.split("### Reserva", 1)[1]
-        assert "¿A nombre de quién aparto el cupo?" in reserva
-        assert "nombre completo" in reserva
+        assert "de **cada viajero**" in reserva
+        assert "nombre completo" in reserva and "fecha de nacimiento" in reserva
 
     def test_el_nombre_nunca_bloquea_una_cotizacion(self):
         assert "El nombre nunca bloquea una cotización" in _seccion("El nombre")
@@ -249,7 +250,8 @@ class TestAjustesDelQA:
         assert "En ese mismo turno le escribes a la persona" in herramientas
         reserva = GUION.split("### Reserva", 1)[1]
         assert "le escribes en ese mismo turno" in reserva
-        assert "confirma el cupo y el pago" in reserva
+        assert "le confirme la reserva" in reserva
+        assert "`listo_para_reservar`" in reserva
 
     def test_no_narra_la_consulta(self):
         assert "Tampoco narres lo que vas a hacer" in _seccion("Tono y estilo")

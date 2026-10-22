@@ -3,10 +3,13 @@ import re
 from datetime import datetime
 from typing import Optional, Dict, List, Tuple
 from sqlalchemy.orm import Session
-from sqlalchemy import desc, func, or_
+from sqlalchemy import and_, case, desc, func, or_
 from passlib.context import CryptContext
 
 from . import models, schemas
+
+#: Igual a `llm_engine.ETIQUETA_LISTO_PARA_RESERVAR` (crud no importa el motor).
+ETIQUETA_LISTO_PARA_RESERVAR = "listo para reservar"
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
@@ -435,6 +438,7 @@ def list_conversations(
     *,
     estado: Optional[str] = None,
     busqueda: Optional[str] = None,
+    etiqueta: Optional[str] = None,
     limite: int = MAX_CONVERSACIONES_POR_PAGINA,
     offset: int = 0,
 ) -> Tuple[List[models.Conversation], int]:
@@ -454,21 +458,48 @@ def list_conversations(
     )
     if estado:
         consulta = consulta.filter(models.Conversation.status == estado)
+    if etiqueta and etiqueta.strip():
+        consulta = consulta.filter(models.Conversation.etiqueta == etiqueta.strip())
+        if etiqueta.strip() == ETIQUETA_LISTO_PARA_RESERVAR:
+            # Cerrada = el asesor ya la atendió; deja de ser pendiente de reservar.
+            consulta = consulta.filter(models.Conversation.status != "closed")
     if busqueda and busqueda.strip():
         aguja = f"%{busqueda.strip().lower()}%"
         # El número entra por `contact_wa_id`; el nombre puede ser NULL, y
         # `lower(NULL) LIKE ...` es NULL, así que sin el OR una conversación sin
         # nombre nunca aparecería al buscar por su número.
-        consulta = consulta.filter(or_(
+        condiciones = [
             func.lower(models.Conversation.contact_name).like(aguja),
             func.lower(models.Conversation.contact_wa_id).like(aguja),
-        ))
+        ]
+        # El asesor escribe el número como lo tiene: «313 714 0232»,
+        # «+57 313-714-0232», «(313) 7140232». `contact_wa_id` se guarda solo
+        # con dígitos y con el 57, así que se compara por los dígitos. Desde 7
+        # dígitos, para que un «2026» en el nombre no se vuelva búsqueda por
+        # número.
+        digitos = re.sub(r"\D", "", busqueda)
+        if len(digitos) >= 7:
+            condiciones.append(models.Conversation.contact_wa_id.like(f"%{digitos}%"))
+            if digitos.startswith("57") and len(digitos) > 10:
+                condiciones.append(
+                    models.Conversation.contact_wa_id.like(f"%{digitos[2:]}%")
+                )
+        consulta = consulta.filter(or_(*condiciones))
 
     total = consulta.with_entities(
         func.count(models.Conversation.id)
     ).scalar() or 0
+    # Las «Listo para reservar» que siguen abiertas van de primeras: son
+    # clientes que ya dieron sus datos y esperan que les confirmen la reserva.
+    listas = case(
+        (and_(
+            models.Conversation.etiqueta == ETIQUETA_LISTO_PARA_RESERVAR,
+            models.Conversation.status != "closed",
+        ), 0),
+        else_=1,
+    )
     convs = (
-        consulta.order_by(desc(models.Conversation.last_message_at))
+        consulta.order_by(listas, desc(models.Conversation.last_message_at))
         .limit(limite)
         .offset(offset)
         .all()
