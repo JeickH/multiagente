@@ -247,6 +247,10 @@ class DemoAdminDetalleOut(DemoAdminItemOut):
     productos: List[ProductoDemoOut]
     transcripcion: List[MensajeTranscripcionOut]
     uso_resumen: Optional[UsoResumenOut] = None
+    # #644: el correo automático de la promoción. Estado `enviado|omitido|error`
+    # o null (no se intentó: envío apagado o demo anterior).
+    correo_promo_enviado_at: Optional[datetime] = None
+    correo_promo_estado: Optional[str] = None
 
 
 # ---------------------------------------------------------------------------
@@ -604,4 +608,6 @@ def detalle_demo(
         productos=_productos_del_detalle(db, demo),
         transcripcion=_transcripcion(demo),
         uso_resumen=_uso(demo),
+        correo_promo_enviado_at=demo.correo_promo_enviado_at,
+        correo_promo_estado=demo.correo_promo_estado,
     )

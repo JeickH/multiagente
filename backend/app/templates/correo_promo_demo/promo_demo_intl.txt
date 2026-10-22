@@ -1,0 +1,39 @@
+{{nombre}}, ganaste hasta USD 2.700 en servicios de Gloma.
+
+Gracias por hacer la demo de Gloma con {{empresa}}. Esta es la promoción que te ganaste:
+
+50 % de descuento en la instalación.
+Pagas USD 375 en lugar de USD 750.
+
+35 % de descuento en tus primeros 3 paquetes de conversaciones.
+Así queda cada paquete con tu 35 %:
+- 600 conversaciones: USD 245 -> USD 159,25
+- 2.000 conversaciones (el recomendado): USD 795 -> USD 516,75
+- 6.000 conversaciones: USD 2.295 -> USD 1.491,75
+
+Valores en dólares (USD), con lo que cobra Meta por WhatsApp incluido, como están publicados en glomacx.com. Las conversaciones que no uses no se vencen: pasan al mes siguiente.
+
+
+Para tener un agente que responda cuando tú no estás
+
+- Responde lo que te preguntan todos los días con tus tarifas, itinerarios y políticas. No inventa precios ni cupos.
+- Les vuelve a escribir a los interesados que dejaron de contestar.
+- Cuando el viajero pide una persona o está listo para cerrar, le pasa la conversación a tu asesor con todo el historial.
+
+
+Para aplicarla, habla con nosotros
+
+En la llamada miramos cuántos chats recibe {{empresa}} al mes, cuántos terminan en venta y cuánto vale en promedio un plan. Con esos tres números hacemos juntos la cuenta de lo que te ahorras y del paquete que te sirve.
+
+Agendar una llamada:
+https://app.cal.com/gloma/hablemos-de-gloma
+
+Hablar con un asesor por WhatsApp:
+https://wa.me/573150764000?text=Hola%2C%20recib%C3%AD%20por%20correo%20la%20promoci%C3%B3n%20de%20la%20demo%20y%20quiero%20hablar%20con%20un%20asesor
+
+El equipo de Gloma
+
+--
+Gloma · https://glomacx.com · contacto@glomacx.com
+Recibes este correo porque registraste la demo de Gloma en glomacx.com/demo y aceptaste que te contactáramos sobre ella.
+Si no quieres recibir más correos de Gloma, responde a contacto@glomacx.com y te sacamos de la lista.

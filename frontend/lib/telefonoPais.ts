@@ -124,3 +124,34 @@ function validarTotal(pais: PaisTelefono, digitos: string): ResultadoTelefono {
   if (digitos.length < 8 || digitos.length > 15 || digitos.startsWith('0')) return { e164: null, error: 'total', pais };
   return { e164: `+${digitos}`, error: null, pais };
 }
+
+/**
+ * `+573001234567` → «+57 300 123 4567», para mostrarlo (#643). Separa el
+ * indicativo según el país elegido (o el que escribió en «Otro») y agrupa el
+ * número nacional para que se lea fácil. Si no reconoce el indicativo, lo
+ * deja en un solo bloque detrás del «+».
+ */
+export function formatearE164(e164: string, isoPais: string, indicativoOtro = ''): string {
+  const digitos = (e164 || '').replace(/\D/g, '');
+  if (!digitos) return '';
+  const pais = paisPorIso(isoPais);
+  const candidatos = [pais.iso === PAIS_OTRO ? indicativoOtro.replace(/\D/g, '') : pais.indicativo];
+  // Si pegó otro indicativo con «+», se busca entre los de la lista.
+  PAISES_TELEFONO.forEach((p) => p.indicativo && candidatos.push(p.indicativo));
+  const cc = candidatos.find((c) => c && digitos.startsWith(c) && digitos.length - c.length >= 4);
+  if (!cc) return `+${digitos}`;
+  return `+${cc} ${agrupar(digitos.slice(cc.length))}`;
+}
+
+function agrupar(n: string): string {
+  if (n.length === 10) return `${n.slice(0, 3)} ${n.slice(3, 6)} ${n.slice(6)}`;
+  if (n.length === 11) return `${n.slice(0, 2)} ${n.slice(2, 7)} ${n.slice(7)}`;
+  if (n.length === 9) return `${n.slice(0, 3)} ${n.slice(3, 6)} ${n.slice(6)}`;
+  if (n.length === 8) return `${n.slice(0, 4)} ${n.slice(4)}`;
+  return n.replace(/(\d{3})(?=\d)/g, '$1 ');
+}
+
+/** ¿El número registrado es de Colombia? (define el monto del premio). */
+export function esTelefonoColombia(e164: string | null | undefined): boolean {
+  return /^\+57\d{10}$/.test(e164 || '');
+}

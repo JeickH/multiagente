@@ -9,6 +9,7 @@ import {
   cuando,
   diaColombia,
   enlaceWhatsappProspecto,
+  estadoCorreoPromo,
   errorDeRango,
   estadoVisible,
   formatoCop,
@@ -151,10 +152,28 @@ describe('formatos', () => {
 });
 
 describe('enlaceWhatsappProspecto', () => {
-  it('celular colombiano sin indicativo → 57; saludo solo con el primer nombre', () => {
-    const url = enlaceWhatsappProspecto('300 000 0001', 'Laura Gómez');
+  const texto = (url: string | null) => decodeURIComponent((url as string).split('text=')[1]);
+
+  it('Colombia (+57): mensaje de la promoción en pesos, con primer nombre y empresa', () => {
+    const url = enlaceWhatsappProspecto('+57 300 000 0001', 'Laura Gómez', 'Posada El Colibrí');
     expect(url?.startsWith('https://wa.me/573000000001?text=')).toBe(true);
-    expect(decodeURIComponent((url as string).split('text=')[1])).toBe('Hola, Laura. Te escribo de Gloma por la demo que armaste.');
+    expect(texto(url)).toBe(
+      'Hola, Laura. Te escribo de Gloma por la demo que armaste para Posada El Colibrí: te ganaste hasta $8.700.000 COP en servicios (50 % de descuento en la instalación y 35 % en tus primeros 3 paquetes de conversaciones). ¿Agendamos una llamada para aplicarla?',
+    );
+    // Celular colombiano guardado sin indicativo: también es Colombia.
+    expect(texto(enlaceWhatsappProspecto('300 000 0001', 'Laura', 'X'))).toMatch(/hasta \$8\.700\.000 COP/);
+  });
+
+  it('otro país: la misma promoción en dólares', () => {
+    const url = enlaceWhatsappProspecto('+52 55 1234 5678', 'Ana Ruiz', 'Viajes Sol');
+    expect(url).toMatch(/^https:\/\/wa\.me\/525512345678\?/);
+    expect(texto(url)).toBe(
+      'Hola, Ana. Te escribo de Gloma por la demo que armaste para Viajes Sol: te ganaste hasta USD 2.700 en servicios (50 % de descuento en la instalación y 35 % en tus primeros 3 paquetes de conversaciones). ¿Agendamos una llamada para aplicarla?',
+    );
+  });
+
+  it('sin nombre ni empresa el saludo queda bien', () => {
+    expect(texto(enlaceWhatsappProspecto('+573000000001', null, null))).toMatch(/^Hola\. Te escribo de Gloma por la demo que armaste: te ganaste/);
   });
 
   it('respeta el indicativo y rechaza números imposibles', () => {
@@ -163,8 +182,8 @@ describe('enlaceWhatsappProspecto', () => {
     expect(enlaceWhatsappProspecto(null, 'Ana')).toBeNull();
   });
 
-  it('un nombre con caracteres raros no cambia el destino', () => {
-    const u = new URL(enlaceWhatsappProspecto('3000000001', 'A&b?x=1#y') as string);
+  it('un nombre o empresa con caracteres raros no cambia el destino', () => {
+    const u = new URL(enlaceWhatsappProspecto('3000000001', 'A&b?x=1#y', 'E&co=1#z') as string);
     expect(u.host).toBe('wa.me');
     expect([...u.searchParams.keys()]).toEqual(['text']);
   });
@@ -207,5 +226,20 @@ describe('hiloConMarcas', () => {
       '[Clic en «Hablar con un asesor» (WhatsApp) (2 veces)]',
       '[Agendó una llamada (reportada por el navegador)]',
     ]);
+  });
+});
+
+describe('estadoCorreoPromo (#645)', () => {
+  it('sin los campos del backend no afirma nada', () => {
+    expect(estadoCorreoPromo({})).toBeNull();
+  });
+
+  it('enviado, no enviado y error', () => {
+    const ok = estadoCorreoPromo({ correo_promo_enviado_at: '2026-10-21T20:00:00', correo_promo_estado: 'enviado' });
+    expect(ok?.tono).toBe('ok');
+    expect(ok?.texto).toMatch(/^Enviado el /);
+    expect(estadoCorreoPromo({ correo_promo_enviado_at: null, correo_promo_estado: null })).toEqual({ texto: 'No enviado', tono: 'pendiente' });
+    expect(estadoCorreoPromo({ correo_promo_enviado_at: null, correo_promo_estado: 'pendiente' })?.tono).toBe('pendiente');
+    expect(estadoCorreoPromo({ correo_promo_enviado_at: null, correo_promo_estado: 'error' })).toEqual({ texto: 'Error al enviar', tono: 'error' });
   });
 });

@@ -866,6 +866,13 @@ class Demo(Base):
     uso_resumen = Column(JSONB, nullable=True)
     # Cuándo se borró el bot. `bot_id` queda en NULL por la FK (SET NULL).
     bot_eliminado_at = Column(DateTime, nullable=True)
+    # #644: correo automático de la promoción al iniciar la demo. NULL = no
+    # se intentó (envío apagado). `omitido` = no tocaba (ya recibió uno en los
+    # últimos 30 días, techo diario o fuera de la lista de prueba); `error` =
+    # SES lo rechazó. El message id es el de SES (para rastrear rebotes).
+    correo_promo_enviado_at = Column(DateTime, nullable=True)
+    correo_promo_estado = Column(String(16), nullable=True)
+    correo_promo_message_id = Column(String(100), nullable=True)
 
     __table_args__ = (
         CheckConstraint(
@@ -887,6 +894,10 @@ class Demo(Base):
         CheckConstraint(
             "NOT acepta_promociones OR acepta_promociones_at IS NOT NULL",
             name="ck_demos_promociones_at",
+        ),
+        CheckConstraint(
+            "correo_promo_estado IS NULL OR correo_promo_estado IN ('enviado','omitido','error')",
+            name="ck_demos_correo_promo_estado",
         ),
         # Tope de demos por IP y por día:
         #   WHERE ip_address = :ip AND created_at >= :desde

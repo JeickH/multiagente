@@ -311,6 +311,26 @@ export const DEMO_UI = {
     boton: 'Hacer una demo nueva',
   },
   cargando: 'Recuperando tu demo…',
+  /**
+   * Pantalla de premio entre el formulario y las slides (#643, solo local
+   * hasta que el CEO la apruebe). Los montos se cambian aquí. El monto de
+   * Colombia aplica si el teléfono registrado es +57; si no, el de USD. No
+   * agregar condiciones, vigencias ni letra pequeña que el CEO no haya dado.
+   */
+  premio: {
+    /** Usa `{nombre}` (primer nombre). */
+    eyebrow: '¡Felicitaciones, {nombre}!',
+    titulo: 'Ganaste una promoción especial',
+    prefijoMonto: 'hasta',
+    montoColombia: '$8.700.000 COP',
+    montoExterior: 'USD 2.700',
+    sufijoMonto: 'en servicios de Gloma',
+    envio: 'Te la enviamos a tu correo y a tu WhatsApp:',
+    correo: 'Correo',
+    whatsapp: 'WhatsApp',
+    mientras: 'Mientras tanto, seguimos armando tu agente de IA.',
+    boton: 'Continuar con la demo',
+  },
   /** Texto prellenado del WhatsApp de Gloma («Hablar con un asesor»). */
   agendar: {
     despuesDeLaDemo: 'Hola, acabo de probar la demo de {empresa} y quiero agendar una llamada',

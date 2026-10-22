@@ -28,12 +28,14 @@ import DemoChat from '../components/demo/DemoChat';
 import DemoForm, { type AlertaFormulario, type DatosFormulario } from '../components/demo/DemoForm';
 import DemoIntro from '../components/demo/DemoIntro';
 import DemoNoDisponible from '../components/demo/DemoNoDisponible';
+import DemoPremio from '../components/demo/DemoPremio';
 import DemoSlides from '../components/demo/DemoSlides';
 import AgendarLlamadaModal from '../components/AgendarLlamadaModal';
 import type { AccionesAgendar } from '../components/demo/CtaAgendar';
 import Turnstile, { TURNSTILE_ACTIVO } from '../components/demo/Turnstile';
 import { DEMO_UI, TIPO_OTRO } from '../lib/demo_copy';
 import { telefonoE164 } from '../lib/demoFormulario';
+import { esTelefonoColombia, formatearE164 } from '../lib/telefonoPais';
 import {
   DemoApiError,
   borrarDemo,
@@ -50,7 +52,9 @@ import {
   type ProductoDemo,
 } from '../lib/demoApi';
 
-type Etapa = 'formulario' | 'cargando' | 'slides' | 'chat' | 'no_disponible';
+// `premio` (#643) va entre el formulario y las slides, una sola vez. No se
+// guarda en `gloma_demo` (que ya dice «slides»): al recargar no vuelve.
+type Etapa = 'formulario' | 'premio' | 'cargando' | 'slides' | 'chat' | 'no_disponible';
 
 interface Generacion {
   estado: EstadoGeneracion;
@@ -87,6 +91,8 @@ export default function DemoPage() {
   const [animarListo, setAnimarListo] = useState(false);
   const [chatInicial, setChatInicial] = useState<ChatGuardado | undefined>(undefined);
   const [noDisponibleEnChat, setNoDisponibleEnChat] = useState(false);
+  /** Lo que muestra la pantalla de premio; solo en memoria (no va a sessionStorage). */
+  const [premio, setPremio] = useState<{ correo: string; telefono: string; colombia: boolean } | null>(null);
 
   const [enviando, setEnviando] = useState(false);
   const [alerta, setAlerta] = useState<AlertaFormulario>(null);
@@ -199,7 +205,19 @@ export default function DemoPage() {
         setAnimarListo(false);
         setChatInicial(undefined);
         setNoDisponibleEnChat(false);
-        setEtapa('slides');
+        // La pantalla de premio sale solo desde el formulario; un reintento
+        // desde las slides (error al armar el bot) vuelve directo a ellas.
+        if (etapaRef.current === 'formulario') {
+          const e164 = cuerpo.telefono;
+          setPremio({
+            correo: cuerpo.correo,
+            telefono: formatearE164(e164, datos.telefono_pais, datos.telefono_indicativo),
+            colombia: esTelefonoColombia(e164),
+          });
+          setEtapa('premio');
+        } else {
+          setEtapa('slides');
+        }
       } catch (e) {
         const status = e instanceof DemoApiError ? e.status : 0;
         if (status === 429) setAlerta('tope');
@@ -225,7 +243,7 @@ export default function DemoPage() {
   // Sondeo de GET /demo/{id}/estado
   // ------------------------------------------------------------------
   const consultando =
-    demo !== null && gen.estado === 'generando' && (etapa === 'cargando' || etapa === 'slides');
+    demo !== null && gen.estado === 'generando' && (etapa === 'cargando' || etapa === 'premio' || etapa === 'slides');
 
   useEffect(() => {
     if (!consultando || !demo) return;
@@ -333,7 +351,7 @@ export default function DemoPage() {
   // ------------------------------------------------------------------
   // Render
   // ------------------------------------------------------------------
-  const conFormulario = etapa === 'formulario' || etapa === 'slides';
+  const conFormulario = etapa === 'formulario' || etapa === 'premio' || etapa === 'slides';
 
   return (
     <>
@@ -584,7 +602,7 @@ export default function DemoPage() {
 
       <div className="demo-root min-h-[100dvh] text-gloma-ink-text" style={{ background: FONDO }}>
         {conFormulario && (
-          <div className="relative min-h-[100dvh] overflow-hidden" inert={etapa === 'slides'} aria-hidden={etapa === 'slides' ? true : undefined}>
+          <div className="relative min-h-[100dvh] overflow-hidden" inert={etapa !== 'formulario'} aria-hidden={etapa !== 'formulario' ? true : undefined}>
             {/* La ventanilla del logo en contorno, como el hero de gloma.tsx. */}
             <svg
               className="absolute inset-0 w-full h-full pointer-events-none"
@@ -625,6 +643,16 @@ export default function DemoPage() {
               />
             </main>
           </div>
+        )}
+
+        {etapa === 'premio' && demo && premio && (
+          <DemoPremio
+            nombre={demo.nombre}
+            correo={premio.correo}
+            telefono={premio.telefono}
+            colombia={premio.colombia}
+            onContinuar={() => setEtapa('slides')}
+          />
         )}
 
         {etapa === 'slides' && demo && (

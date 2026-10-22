@@ -12,6 +12,7 @@
  * filtros tocan solo `items`/`total`. Las fechas llegan en UTC sin zona: todo
  * se formatea con `lib/fechas.ts`.
  */
+import { DEMO_UI } from './demo_copy';
 import { ZONA_CO, aInstante, fechaHoraCorta, horaCorta } from './fechas';
 
 // --------------------------------------------------------------------------
@@ -122,6 +123,12 @@ export interface UsoResumen {
 }
 
 export interface DetalleDemo extends ItemDemo {
+  /**
+   * Correo automático de la promoción (#645). Opcionales: el front tolera que
+   * el backend todavía no los mande.
+   */
+  correo_promo_enviado_at?: string | null;
+  correo_promo_estado?: string | null;
   acepto_contacto_at: string | null;
   acepta_promociones_at: string | null;
   consent_version: string | null;
@@ -321,21 +328,56 @@ export function primerNombre(nombre: string | null | undefined): string {
 }
 
 /**
- * wa.me al prospecto (solo en el detalle, junto al consentimiento). El texto
- * lleva solo el saludo y el primer nombre: nada de productos ni de la
- * conversación. Un número de 10 dígitos que empieza por 3 es un celular de
- * Colombia sin indicativo; se le antepone 57. Si no quedan 7-15 dígitos,
- * `null` (no se ofrece el botón).
+ * Mensaje de WhatsApp de la promoción que gana el prospecto al armar la demo
+ * (#645; el equipo lo manda a mano desde el detalle). El monto sale de los
+ * mismos textos de la pantalla de premio (`DEMO_UI.premio`): COP si el
+ * teléfono es de Colombia (+57), USD si es de otro país.
  */
-export function enlaceWhatsappProspecto(telefono: string | null | undefined, nombre: string | null | undefined): string | null {
+export function mensajePromoWhatsapp(nombre: string | null | undefined, empresa: string | null | undefined, colombia: boolean): string {
+  const pila = primerNombre(nombre);
+  const saludo = pila ? `Hola, ${pila}.` : 'Hola.';
+  const monto = `${DEMO_UI.premio.prefijoMonto} ${colombia ? DEMO_UI.premio.montoColombia : DEMO_UI.premio.montoExterior}`;
+  const demo = (empresa || '').trim() ? `la demo que armaste para ${(empresa || '').trim()}` : 'la demo que armaste';
+  return (
+    `${saludo} Te escribo de Gloma por ${demo}: te ganaste ${monto} en servicios ` +
+    '(50 % de descuento en la instalación y 35 % en tus primeros 3 paquetes de conversaciones). ' +
+    '¿Agendamos una llamada para aplicarla?'
+  );
+}
+
+/**
+ * wa.me al prospecto (solo en el detalle, junto al consentimiento) con el
+ * mensaje de la promoción. Nada de productos ni de la conversación. Un número
+ * de 10 dígitos que empieza por 3 es un celular de Colombia sin indicativo; se
+ * le antepone 57. Si no quedan 7-15 dígitos, `null` (no se ofrece el botón).
+ */
+export function enlaceWhatsappProspecto(
+  telefono: string | null | undefined,
+  nombre: string | null | undefined,
+  empresa?: string | null,
+): string | null {
   let digitos = (telefono || '').replace(/\D/g, '');
   if (digitos.length === 10 && digitos.startsWith('3')) digitos = `57${digitos}`;
   if (digitos.length < 7 || digitos.length > 15) return null;
-  const pila = primerNombre(nombre);
-  const texto = pila
-    ? `Hola, ${pila}. Te escribo de Gloma por la demo que armaste.`
-    : 'Hola. Te escribo de Gloma por la demo que armaste.';
+  const colombia = digitos.length === 12 && digitos.startsWith('57');
+  const texto = mensajePromoWhatsapp(nombre, empresa, colombia);
   return `https://wa.me/${digitos}?text=${encodeURIComponent(texto)}`;
+}
+
+/**
+ * Estado del correo automático de la promoción (#645), o `null` si el backend
+ * todavía no manda esos campos (no se afirma nada que no se sabe).
+ */
+export function estadoCorreoPromo(
+  d: Pick<DetalleDemo, 'correo_promo_enviado_at' | 'correo_promo_estado'>,
+): { texto: string; tono: 'ok' | 'pendiente' | 'error' } | null {
+  if (d.correo_promo_enviado_at === undefined && d.correo_promo_estado === undefined) return null;
+  if (d.correo_promo_enviado_at) {
+    return { texto: `Enviado el ${fechaHoraCorta(d.correo_promo_enviado_at)}`, tono: 'ok' };
+  }
+  const estado = (d.correo_promo_estado || '').toLowerCase();
+  if (estado.includes('error') || estado.includes('fall')) return { texto: 'Error al enviar', tono: 'error' };
+  return { texto: 'No enviado', tono: 'pendiente' };
 }
 
 // --------------------------------------------------------------------------

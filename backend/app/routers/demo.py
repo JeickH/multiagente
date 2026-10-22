@@ -72,7 +72,7 @@ from sqlalchemy.orm import Session
 from .. import models
 from ..database import SessionLocal
 from ..dependencies import get_db
-from ..services import demo_bot, llm_engine, productos, ratelimit
+from ..services import correo_promo, demo_bot, llm_engine, productos, ratelimit
 from .landing import ChatAction, ChatIn, ChatOut
 
 logger = logging.getLogger(__name__)
@@ -675,7 +675,18 @@ def iniciar(
     logger.info("demo creada id=%s tipo=%s lead=%s", demo.id, demo.tipo_empresa, lead.id)
 
     background.add_task(generar_en_fondo, demo.id)
+    # #644: el correo de la promoción, DESPUÉS de la generación (las tareas
+    # corren en orden y el bot listo es lo que el prospecto está esperando;
+    # el correo puede llegar unos segundos después). Solo con lead y demo ya
+    # creados: el honeypot y los topes salen antes de llegar aquí.
+    if correo_promo.activo():
+        background.add_task(correo_promo_en_fondo, demo.id)
     return IniciarOut(demo_id=str(demo.public_id), token=emitir_token(demo.public_id))
+
+
+def correo_promo_en_fondo(demo_id: int) -> None:
+    """Tarea de fondo: su propia sesión, nunca levanta (#644)."""
+    correo_promo.enviar_promo_de_demo(demo_id, nueva_sesion=_nueva_sesion)
 
 
 # ---------------------------------------------------------------------------

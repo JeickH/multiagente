@@ -69,6 +69,14 @@ DECISIONES
       crecen sin techo. Mismo nombre y predicado en `models.py`.
       Sin CHECK sobre la forma del JSON (`jsonb_typeof`): la suite corre en
       SQLite, que no tiene esa función, y el CHECK de `models.py` la rompería.
+    · #644 (21-oct): correo automático de la promoción al iniciar la demo.
+      Tres columnas NULL y sin default — `correo_promo_enviado_at`,
+      `correo_promo_estado` (VARCHAR 16) y `correo_promo_message_id`
+      (VARCHAR 100) — y el CHECK `ck_demos_correo_promo_estado`
+      (`enviado|omitido|error` o NULL). Las filas viejas quedan en NULL (=
+      nunca se intentó), que es la verdad: no se rellena nada. Sin índice
+      nuevo: «1 por correo cada 30 días» une con `leads` por su índice de
+      `email`, y el techo diario cuenta sobre `created_at` (indexado).
 
 No borra ni reescribe datos. Correrla dos veces no cambia nada la segunda.
 
@@ -148,6 +156,10 @@ COLUMNAS: dict[str, tuple[str, str, bool, str | None]] = {
     "productos_snapshot": ("JSONB", "jsonb", False, None),
     "uso_resumen": ("JSONB", "jsonb", False, None),
     "bot_eliminado_at": (*_TS, False, None),
+    # #644: correo automático de la promoción.
+    "correo_promo_enviado_at": (*_TS, False, None),
+    "correo_promo_estado": ("VARCHAR(16)", "character varying(16)", False, None),
+    "correo_promo_message_id": ("VARCHAR(100)", "character varying(100)", False, None),
 }
 
 CHECKS: dict[str, str] = {
@@ -160,6 +172,8 @@ CHECKS: dict[str, str] = {
         "NOT acepta_promociones OR acepta_promociones_at IS NOT NULL",
     "ck_demos_clics_whatsapp": "clics_whatsapp >= 0",
     "ck_demos_aperturas_llamada": "aperturas_llamada >= 0",
+    "ck_demos_correo_promo_estado":
+        "correo_promo_estado IS NULL OR correo_promo_estado IN ('enviado','omitido','error')",
 }
 
 # nombre → (columna, tabla referida). ON DELETE SET NULL: borrar el lead o el

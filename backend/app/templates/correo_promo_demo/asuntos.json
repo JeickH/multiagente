@@ -1,0 +1,11 @@
+{
+  "_nota": "Copiado de ventas/correo_promo_demo/asuntos.txt (#644). Placeholders {{nombre}} y {{empresa}}.",
+  "co": {
+    "asunto": "{{nombre}}, tu promoción de Gloma: hasta $8.700.000 COP",
+    "preheader": "50 % menos en la instalación y 35 % menos en tus primeros 3 paquetes de conversaciones."
+  },
+  "intl": {
+    "asunto": "{{nombre}}, tu promoción de Gloma: hasta USD 2.700",
+    "preheader": "50 % menos en la instalación y 35 % menos en tus primeros 3 paquetes de conversaciones."
+  }
+}

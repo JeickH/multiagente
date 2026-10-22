@@ -13,7 +13,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { inicialesEmpresa, telefonoE164, validarCampo, FORMULARIO_VACIO } from './demoFormulario';
-import { normalizarTelefono } from './telefonoPais';
+import { esTelefonoColombia, formatearE164, normalizarTelefono } from './telefonoPais';
 import { DEMO_UI } from './demo_copy';
 import { CLAVE_DEMO, borrarDemo, enlaceWhatsapp, guardarDemo, leerDemoGuardada, type DemoGuardada } from './demoApi';
 
@@ -200,5 +200,23 @@ describe('normalizarTelefono (E.164)', () => {
   it('telefonoE164 usa los campos del formulario', () => {
     expect(telefonoE164({ telefono: '300 123 4567', telefono_pais: 'CO', telefono_indicativo: '' })).toBe('+573001234567');
     expect(telefonoE164({ telefono: '123', telefono_pais: 'CO', telefono_indicativo: '' })).toBeNull();
+  });
+});
+
+describe('premio (#643): formato del teléfono y monto por país', () => {
+  it('formatea E.164 con el indicativo separado', () => {
+    expect(formatearE164('+573001234567', 'CO')).toBe('+57 300 123 4567');
+    expect(formatearE164('+525512345678', 'MX')).toBe('+52 551 234 5678');
+    expect(formatearE164('+5511912345678', 'BR')).toBe('+55 11 91234 5678');
+    expect(formatearE164('+34612345678', 'ES')).toBe('+34 612 345 678');
+    expect(formatearE164('+351912345678', 'OTRO', '351')).toBe('+351 912 345 678');
+    // Con Colombia elegida pero un «+52» pegado: se reconoce el indicativo de México.
+    expect(formatearE164('+525512345678', 'CO')).toBe('+52 551 234 5678');
+  });
+
+  it('el monto en pesos solo si el teléfono es +57', () => {
+    expect(esTelefonoColombia('+573001234567')).toBe(true);
+    expect(esTelefonoColombia('+525512345678')).toBe(false);
+    expect(esTelefonoColombia(null)).toBe(false);
   });
 });

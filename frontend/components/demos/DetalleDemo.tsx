@@ -20,6 +20,7 @@ import { ApiError, authedFetch } from '../../lib/api';
 import {
   cuando,
   enlaceWhatsappProspecto,
+  estadoCorreoPromo,
   formatoCop,
   hiloConMarcas,
   primerNombre,
@@ -291,7 +292,8 @@ export default function DetalleDemo({
 }
 
 function PestanaDatos({ d, onCopiar }: { d: Detalle; onCopiar: (correo: string) => void }) {
-  const wa = d.lead_borrado ? null : enlaceWhatsappProspecto(d.telefono, d.nombre);
+  const wa = d.lead_borrado ? null : enlaceWhatsappProspecto(d.telefono, d.nombre, d.empresa);
+  const correoPromo = estadoCorreoPromo(d);
   const primerMensaje = d.transcripcion.find((m) => m.rol === 'usuario');
 
   const prospecto = d.lead_borrado ? (
@@ -338,6 +340,24 @@ function PestanaDatos({ d, onCopiar }: { d: Detalle; onCopiar: (correo: string) 
             <span className="text-gloma-brown-light">No aceptó</span>
           )}
         </dd>
+              {correoPromo && (
+          <>
+            <dt className="text-gloma-brown-light">Correo de promoción</dt>
+            <dd
+              className={
+                correoPromo.tono === 'ok'
+                  ? 'text-gloma-brown font-medium'
+                  : correoPromo.tono === 'error'
+                    ? 'text-red-700 font-medium'
+                    : 'text-gloma-brown-light'
+              }
+            >
+              {correoPromo.tono === 'ok' && <span aria-hidden="true">✓ </span>}
+              {correoPromo.tono === 'error' && <span aria-hidden="true">⚠ </span>}
+              {correoPromo.texto}
+            </dd>
+          </>
+        )}
       </dl>
       <div className="flex flex-wrap gap-2 mt-4">
         {wa ? (
