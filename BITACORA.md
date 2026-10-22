@@ -9544,3 +9544,51 @@ Push `27dd55a..aa9a9e4`: publicó también la landing de la otra sesión
 (`32b62d7`, `27dd55a`); Amplify job **196** SUCCEED (el webhook funcionó).
 Rollback del backend: `update-service … multiagente-backend:108` (vuelve a
 abrir el tick). Resto cosmético: `TICK_URL` de la Lambda en `api.glomabeauty.com`.
+
+---
+
+## Sprint 34 — Pantalla de premio y correo automático de la promoción (21–22 oct 2026)
+
+**Pedido del CEO**: al iniciar la demo, una pantalla llamativa con la promoción
+ganada (hasta **$8.700.000 COP** si el teléfono es +57, hasta **USD 2.700** si es
+de otro país) y el correo de la promoción (**50 % en la instalación y 35 % en los
+primeros 3 paquetes de conversaciones**) a cada persona que registra la demo. El
+CEO eligió **correo automático + WhatsApp manual** desde el panel `/demos`.
+
+- **#643/#645 (front)**: `DemoPremio.tsx` antes de las slides (el bot se sigue
+  armando), montos en `DEMO_UI.premio`; panel con el estado del correo y WhatsApp
+  al prospecto prellenado con la promoción.
+- **#644 (back)**: `services/correo_promo.py` por **Amazon SES us-east-1**
+  (excepción documentada a sa-east-1: ahí está verificado `glomacx.com`) desde
+  `contacto@glomacx.com`, versión COP/USD por el teléfono, `List-Unsubscribe`;
+  plantillas en `backend/app/templates/correo_promo_demo/` (fuente en
+  `ventas/correo_promo_demo/build_correo.py`). Columnas `correo_promo_*` en
+  `demos`. Las cifras cuadran: el máximo real es 8.749.500 COP / USD 2.784,75.
+- **Auditoría #646: NO APTO para encender** (A1 Alto: el nombre y la empresa del
+  visitante llegaban al asunto y al cuerpo de un correo firmado con DKIM de
+  `glomacx.com` → phishing a terceros). **#647** lo cerró: lista blanca de nombre
+  y empresa; MX del destinatario (dnspython, sin MX o DNS caído → no se envía),
+  desechables, 200/hora, 2.000/día, 1 por dirección cada 30 días (advisory lock),
+  cortacircuitos tras 20 errores en 24 h; `CONSENT_VERSION=demo-2026-10c` y
+  `/privacidad` con el envío único de la promoción y la lista de exclusión; bajas
+  con `scripts/baja_correo_promo.py` (lista de supresión de **toda** la cuenta SES).
+  **#648: APTO para encender.**
+- **Deploy #649**: task-def **112** (`:premio-correo-f139a03`, migración de 3
+  columnas), IAM inline `ses-promo-demo` (`ses:SendEmail` solo con remitente
+  `contacto@`), SNS `gloma-ses-reputacion` + alarmas de rebotes (≥2 %) y quejas
+  (≥0,05 %) en us-east-1, Amplify job 200. El agente no pudo encender el correo:
+  el sistema de permisos exigió la autorización directa del CEO.
+- **Encendido (22-oct, autorizado por el CEO en su sesión)**: task-def **113** con
+  el correo solo hacia el CEO → demo de humo 6 `enviado` (version co); task-def
+  **114** abierto a todos → demo de humo 7 con `@example.com` → `omitido
+  motivo=sin_mx` (el filtro actúa sin enviar). Tick en 200, 0 errores.
+
+**Pendientes**
+- **El CEO confirma la suscripción SNS** desde el buzón `contacto@glomacx.com`
+  (sigue `PendingConfirmation`; sin eso las alarmas no avisan a nadie).
+- Procedimiento de apagado, rearme y bajas: `entregables/runbook_deploy_demo.md` §7.
+- Follow-ups de seguridad: alinear `llm_engine._DOMINIO_DEMO_RE` con el TLD
+  genérico (medir falsos positivos antes); vigilar `origen=respaldo` por el
+  detector de dominios nuevo.
+- Las demos creadas mientras el correo estuvo apagado (entre la 112 y la 113) no
+  recibieron el correo y no se reenvían.
