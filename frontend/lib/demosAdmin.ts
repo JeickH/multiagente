@@ -333,11 +333,37 @@ export function primerNombre(nombre: string | null | undefined): string {
  * mismos textos de la pantalla de premio (`DEMO_UI.premio`): COP si el
  * teléfono es de Colombia (+57), USD si es de otro país.
  */
-export function mensajePromoWhatsapp(nombre: string | null | undefined, empresa: string | null | undefined, colombia: boolean): string {
+/**
+ * Lista blanca del primer nombre (#646 B3), la misma del correo de la
+ * promoción en el backend: `^[^\W\d_][^\W\d_'’-]{0,29}$` en Python, que con
+ * Unicode es «de 1 a 30 letras». En JavaScript `\W` solo conoce ASCII (dejaría
+ * fuera «Lucía»), así que se escribe con `\p{L}` (y `\p{M}` para tildes
+ * compuestas). Va con `new RegExp(…, 'u')` porque el `tsconfig` apunta a ES2017
+ * y no acepta `\p{…}` en una expresión literal.
+ */
+const NOMBRE_SEGURO = new RegExp("^\\p{L}[\\p{L}\\p{M}]{0,29}$", 'u');
+
+/** Empresa con algo que parezca un enlace, un correo, una plantilla o un número largo. */
+const EMPRESA_RIESGOSA = /[./:@\\{}]|\d{5,}/;
+
+/** Primer nombre si pasa la lista blanca; si no, `''` (y el saludo queda «Hola.»). */
+export function nombreSeguro(nombre: string | null | undefined): string {
   const pila = primerNombre(nombre);
+  return NOMBRE_SEGURO.test(pila) ? pila : '';
+}
+
+/** La empresa tal cual, o «tu empresa» si trae `. / : @ \ { }` o 5+ dígitos seguidos. */
+export function empresaSegura(empresa: string | null | undefined): string {
+  const e = (empresa || '').trim();
+  if (!e || EMPRESA_RIESGOSA.test(e)) return 'tu empresa';
+  return e;
+}
+
+export function mensajePromoWhatsapp(nombre: string | null | undefined, empresa: string | null | undefined, colombia: boolean): string {
+  const pila = nombreSeguro(nombre);
   const saludo = pila ? `Hola, ${pila}.` : 'Hola.';
   const monto = `${DEMO_UI.premio.prefijoMonto} ${colombia ? DEMO_UI.premio.montoColombia : DEMO_UI.premio.montoExterior}`;
-  const demo = (empresa || '').trim() ? `la demo que armaste para ${(empresa || '').trim()}` : 'la demo que armaste';
+  const demo = `la demo que armaste para ${empresaSegura(empresa)}`;
   return (
     `${saludo} Te escribo de Gloma por ${demo}: te ganaste ${monto} en servicios ` +
     '(50 % de descuento en la instalación y 35 % en tus primeros 3 paquetes de conversaciones). ' +

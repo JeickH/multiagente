@@ -8,8 +8,10 @@ import {
   cumpleEtapa,
   cuando,
   diaColombia,
+  empresaSegura,
   enlaceWhatsappProspecto,
   estadoCorreoPromo,
+  nombreSeguro,
   errorDeRango,
   estadoVisible,
   formatoCop,
@@ -173,7 +175,27 @@ describe('enlaceWhatsappProspecto', () => {
   });
 
   it('sin nombre ni empresa el saludo queda bien', () => {
-    expect(texto(enlaceWhatsappProspecto('+573000000001', null, null))).toMatch(/^Hola\. Te escribo de Gloma por la demo que armaste: te ganaste/);
+    expect(texto(enlaceWhatsappProspecto('+573000000001', null, null))).toMatch(/^Hola\. Te escribo de Gloma por la demo que armaste para tu empresa: te ganaste/);
+  });
+
+  it('B3: el nombre pasa por la lista blanca del correo (1 a 30 letras)', () => {
+    expect(nombreSeguro('Lucía Gómez')).toBe('Lucía');
+    expect(nombreSeguro('Ñandú')).toBe('Ñandú');
+    expect(nombreSeguro('Ana-María')).toBe('');
+    expect(nombreSeguro("O'Neil")).toBe('');
+    expect(nombreSeguro('R2D2')).toBe('');
+    expect(nombreSeguro('http://evil.example')).toBe('');
+    expect(nombreSeguro('x'.repeat(31))).toBe('');
+    expect(texto(enlaceWhatsappProspecto('+573000000001', 'www.evil.example', 'Hotel'))).toMatch(/^Hola\. Te escribo/);
+  });
+
+  it('B3: empresa con enlace, correo, plantilla o número largo → «tu empresa»', () => {
+    expect(empresaSegura('Posada El Colibrí')).toBe('Posada El Colibrí');
+    expect(empresaSegura('Hotel 2026')).toBe('Hotel 2026');
+    for (const e of ['www.evil.com', 'https://x', 'ventas@x', 'C:\\temp', '{{promo}}', 'Llama al 3001234567', '']) {
+      expect(empresaSegura(e)).toBe('tu empresa');
+    }
+    expect(texto(enlaceWhatsappProspecto('+573000000001', 'Ana', 'escribe a ventas@evil.com'))).toMatch(/para tu empresa: te ganaste/);
   });
 
   it('respeta el indicativo y rechaza números imposibles', () => {

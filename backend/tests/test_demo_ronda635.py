@@ -250,7 +250,7 @@ def test_topes_por_env(monkeypatch):
 # ---------------------------------------------------------------------------
 
 def test_consent_version():
-    assert router_demo.CONSENT_VERSION == "demo-2026-10b"
+    assert router_demo.CONSENT_VERSION == "demo-2026-10c"          # #647
 
 
 # ---------------------------------------------------------------------------

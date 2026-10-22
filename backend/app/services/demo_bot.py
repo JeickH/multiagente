@@ -270,13 +270,14 @@ class ContenidoDemo:
 # Detectores (reutilizan los del motor)
 # ---------------------------------------------------------------------------
 
-#: Dominios sin `http` ni `www` ("agenciaxyz.com", "reservas.co"). El detector
-#: de URLs del motor solo ve los que empiezan con protocolo o `www.`.
-_DOMINIO_RE = re.compile(
-    r"\b[\w-]+\.(?:com|co|net|org|io|travel|tours|info|app|me|store|shop|"
-    r"site|online|biz|tv|xyz)\b",
-    re.IGNORECASE,
-)
+#: Dominios sin `http` ni `www` ("agenciaxyz.com", "reservas.co", "evil.ru").
+#: El detector de URLs del motor solo ve los que empiezan con protocolo o
+#: `www.`. #647: TLD genérico (2+ letras) en vez de una lista cerrada, que
+#: dejaba pasar `.ru`, `.ly`, `.cc`… Una sigla con puntos («S.A.S.», «a.m.»)
+#: no cae: después de cada punto viene UNA letra. Lo que sí cae es una palabra
+#: pegada a otra por un punto sin espacio («noches.Incluye»): en la empresa se
+#: le pide al visitante que la corrija, en la generación sale el respaldo.
+_DOMINIO_RE = re.compile(r"\b[\w-]+\.[a-z]{2,}\b", re.IGNORECASE)
 
 
 def _plano(texto: str) -> str:

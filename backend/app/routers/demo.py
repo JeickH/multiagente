@@ -107,8 +107,10 @@ router = APIRouter(
 # ---------------------------------------------------------------------------
 
 #: Sube cada vez que cambia el texto de /privacidad que acepta el prospecto
-#: (#635: el texto nombra Cal.com y AWS Bedrock).
-CONSENT_VERSION = "demo-2026-10b"
+#: (#635: el texto nombra Cal.com y AWS Bedrock; #647: avisa que se envía una
+#: sola vez por correo la promoción ganada — el correo solo sale a demos con
+#: una versión de `correo_promo.VERSIONES_CON_CORREO`).
+CONSENT_VERSION = "demo-2026-10c"
 LEAD_SOURCE = "gloma_demo"
 TOKEN_TTL_SEGUNDOS = 6 * 3600
 GENERANDO_VENCE_SEGUNDOS = 60

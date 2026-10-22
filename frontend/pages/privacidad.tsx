@@ -7,6 +7,9 @@ import Image from 'next/image';
  * usuario autoriza, para contacto, marketing, promociones y novedades, sin
  * nombrar razón social ni NIT.
  *
+ * Actualización del 2026-10-22 (#647, auditoría #646): el correo único con la
+ * promoción ganada al iniciar la demo y la lista de exclusión de correos.
+ *
  * Actualización del 2026-10-20 (#636, aprobada por el CEO): se agregan las
  * secciones de la demo de `/demo` (finalidad, datos, encargados con
  * transmisión internacional, conservación y derechos). Lo que ya decía la
@@ -27,7 +30,7 @@ const BRAND = {
 };
 
 const VIGENCIA = '27 de septiembre de 2026';
-const ACTUALIZACION = '20 de octubre de 2026';
+const ACTUALIZACION = '22 de octubre de 2026';
 
 const SECCIONES: { titulo: string; parrafos: string[] }[] = [
   {
@@ -66,7 +69,8 @@ const SECCIONES: { titulo: string; parrafos: string[] }[] = [
     titulo: 'Para qué los usamos en la demo',
     parrafos: [
       'Con el nombre y el tipo de tu empresa creamos una demostración personalizada del agente de IA, con productos de ejemplo. Con tu teléfono y tu correo te contactamos para hablar de esa demostración.',
-      'Solo te enviamos promociones y novedades de Gloma si marcaste esa casilla. Si no la marcaste, usamos tus datos únicamente para el seguimiento de tu demo.',
+      'Al iniciar la demo te enviamos una sola vez, por correo, la promoción que ganaste.',
+      'Fuera de ese correo, solo te enviamos otras promociones y novedades de Gloma si marcaste la casilla aparte. Si no la marcaste, usamos tus datos únicamente para el seguimiento de tu demo.',
     ],
   },
   {
@@ -86,6 +90,7 @@ const SECCIONES: { titulo: string; parrafos: string[] }[] = [
     titulo: 'Tus derechos sobre la demo',
     parrafos: [
       'Sobre los datos de la demo tienes los mismos derechos descritos en «Tus derechos». Además, puedes pedirnos que eliminemos tus datos y la conversación. Para cualquiera de estas solicitudes, escribe a contacto@glomacx.com.',
+      'Si no quieres recibir más correos de Gloma, pídelo respondiendo o escribiendo a contacto@glomacx.com. Quedarás en nuestra lista de exclusión.',
     ],
   },
 ];

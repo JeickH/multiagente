@@ -30,3 +30,7 @@ openpyxl>=3.1,<4
 # Sin esto el backend arranca igual, pero cada foto se guarda tal como llega
 # del celular — hasta 8 MB.
 Pillow>=10.0,<12
+# #647: el correo de la promoción de la demo valida que el dominio del
+# destinatario tenga MX antes de enviar (`services/correo_promo`). Ya llegaba
+# como dependencia de `email-validator`, pero el código lo importa directo.
+dnspython>=2.6,<3
