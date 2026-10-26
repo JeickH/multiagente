@@ -1,0 +1,443 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Gloma · Propuesta comercial · Opción C Clara y cercana</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&family=Syne:wght@700;800&display=swap" rel="stylesheet">
+<style>
+  /* Opción C · Clara y cercana: fondo Soft Mint, tono de conversación, cada página responde
+     una pregunta de un dueño de agencia. Sobre fondo claro, el acento de texto es Deep Forest;
+     el Algorithmic Mint va solo en rellenos (subrayados, chips, burbujas). */
+  :root {
+    --forest: #004D40;
+    --black: #101817;
+    --mint-soft: #E0F2F1;
+    --mint: #4DB6AC;
+    --golden: #F5C24B;
+    --ink: #101817;
+    --muted: rgba(16,24,23,0.74);
+    --dim: rgba(16,24,23,0.55);
+    --line: rgba(0,77,64,0.14);
+    --white: #FFFFFF;
+  }
+  @page { size: A4; margin: 0; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { background: var(--mint-soft); }
+  body {
+    font-family: Inter, system-ui, sans-serif; color: var(--ink);
+    -webkit-print-color-adjust: exact; print-color-adjust: exact;
+  }
+  section.page {
+    width: 210mm; height: 297mm; overflow: hidden; position: relative;
+    page-break-after: always; break-after: page;
+    background: var(--mint-soft); padding: 15mm 17mm 13mm;
+    display: flex; flex-direction: column;
+  }
+  section.page:last-of-type { page-break-after: auto; break-after: auto; }
+  h1, h2, h3, .num { font-family: Syne, system-ui, sans-serif; }
+
+  .head { display: flex; justify-content: space-between; align-items: center; }
+  .marca { background: var(--forest); border-radius: 999px; padding: 2mm 5mm 2mm 3mm; display: flex; align-items: center; gap: 2.5mm; color: #fff; font-size: 7.5pt; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; }
+  .marca img { height: 8mm; }
+  .pag { font-size: 8pt; color: var(--dim); }
+
+  /* La pregunta del dueño, como burbuja de chat */
+  .pregunta { align-self: flex-end; margin-top: 10mm; max-width: 150mm; background: var(--forest); color: #fff; border-radius: 7mm 7mm 1.5mm 7mm; padding: 5mm 7mm; }
+  .pregunta .quien { font-size: 7pt; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: rgba(255,255,255,0.65); }
+  .pregunta h2 { font-weight: 800; font-size: 23pt; line-height: 1.08; margin-top: 1mm; }
+  .respuesta { margin-top: 6mm; max-width: 160mm; }
+  .respuesta .quien { font-size: 7pt; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--forest); }
+  .respuesta p.lead { font-size: 11.5pt; line-height: 1.55; color: var(--ink); margin-top: 1.5mm; }
+  .sub { text-decoration: underline; text-decoration-color: var(--mint); text-decoration-thickness: 1mm; text-underline-offset: 1mm; }
+  .foot { margin-top: auto; display: flex; justify-content: space-between; font-size: 7.5pt; color: var(--dim); padding-top: 4mm; border-top: 1px solid var(--line); }
+  .small { font-size: 7.8pt; line-height: 1.5; color: var(--dim); }
+  .card { background: var(--white); border-radius: 6.3mm; }
+
+  /* Portada */
+  .cover { padding: 0; }
+  .cover .banda { background: var(--forest); color: #fff; padding: 16mm 17mm 14mm; border-radius: 0 0 10mm 10mm; }
+  .cover .banda img { width: 26mm; }
+  .cover h1 { font-weight: 800; font-size: 27pt; line-height: 1.08; margin-top: 12mm; }
+  .cover .banda p { font-size: 11.5pt; font-weight: 300; line-height: 1.55; color: rgba(255,255,255,0.86); margin-top: 5mm; max-width: 140mm; }
+  .indice { padding: 9mm 17mm 0; display: grid; gap: 2.6mm; }
+  .indice .t { font-size: 7.5pt; font-weight: 600; letter-spacing: .14em; text-transform: uppercase; color: var(--forest); margin-bottom: 1mm; }
+  .indice div.b { justify-self: end; background: var(--white); border-radius: 5mm 5mm 1.2mm 5mm; padding: 2.4mm 5mm; font-size: 10.5pt; display: flex; gap: 6mm; align-items: baseline; box-shadow: 0 .4mm 0 rgba(0,77,64,0.08); }
+  .indice div.b span { font-size: 7.5pt; color: var(--dim); }
+  .cover .foot { margin: auto 17mm 13mm; }
+
+  /* ¿Esto es para mí? */
+  .chat { margin-top: 7mm; display: grid; gap: 4.5mm; }
+  .msg { max-width: 118mm; }
+  .msg .in { background: var(--white); border-radius: 1.5mm 6mm 6mm 6mm; padding: 4mm 5.5mm; }
+  .msg .in q { font-family: Syne, system-ui, sans-serif; font-weight: 700; font-size: 12.5pt; quotes: "«" "»"; color: var(--ink); }
+  .msg .in small { display: block; font-size: 7pt; color: var(--dim); margin-top: 1mm; }
+  .msg .out { margin: 2mm 0 0 18mm; background: var(--mint); border-radius: 6mm 1.5mm 6mm 6mm; padding: 3.5mm 5.5mm; font-size: 9.5pt; line-height: 1.5; color: var(--ink); }
+  .msg .out b { font-weight: 600; }
+  .cierre-chat { margin-top: 7mm; font-family: Syne, system-ui, sans-serif; font-weight: 700; font-size: 13pt; color: var(--forest); }
+
+  /* Qué hace */
+  .hace { margin-top: 6mm; display: grid; grid-template-columns: 1fr 1fr; gap: 4mm; }
+  .hace .card { padding: 4.5mm 5.5mm; }
+  .hace h3 { font-weight: 700; font-size: 10.5pt; color: var(--forest); }
+  .hace p { font-size: 8.8pt; line-height: 1.5; color: var(--muted); margin-top: 1mm; }
+  .nohace { margin-top: 5mm; border: 1.3px solid rgba(0,77,64,0.28); border-radius: 6.3mm; padding: 5mm 6mm; }
+  .nohace h3 { font-weight: 700; font-size: 11pt; color: var(--ink); }
+  .nohace ul { margin-top: 2mm; display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 4mm; }
+  .nohace li { list-style: none; font-size: 8.6pt; line-height: 1.45; color: var(--muted); }
+  .nohace li b { display: block; color: var(--ink); font-weight: 600; margin-bottom: .6mm; }
+  .tablero { margin-top: 5mm; }
+  .tablero img { width: 100%; height: 40mm; object-fit: cover; object-position: 0 0; border-radius: 5mm; display: block; }
+  .tablero p { font-size: 7.2pt; color: var(--dim); margin-top: 1.5mm; }
+
+  /* Tabla incluye */
+  .tabla { margin-top: 5mm; padding: 5mm 6mm 4mm; }
+  table.inc { width: 100%; border-collapse: collapse; font-size: 8.4pt; }
+  table.inc th { font-size: 6.2pt; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--dim); text-align: center; width: 25mm; padding-bottom: 2mm; vertical-align: bottom; }
+  table.inc th:first-child { width: auto; }
+  table.inc th b { display: block; font-family: Syne, system-ui, sans-serif; font-weight: 800; font-size: 10.5pt; letter-spacing: 0; color: var(--forest); }
+  table.inc th.rec b { color: var(--ink); background: var(--golden); border-radius: 999px; display: inline-block; padding: .4mm 3mm; margin-bottom: .6mm; }
+  table.inc td { padding: 1.2mm 0; border-bottom: 1px solid var(--line); }
+  table.inc td.c { text-align: center; color: var(--forest); font-weight: 600; }
+  table.inc td.c.rec { background: rgba(245,194,75,0.14); }
+  table.inc tr.g td { padding-top: 2.8mm; font-family: Syne, system-ui, sans-serif; font-weight: 700; font-size: 9.5pt; color: var(--forest); border-bottom: 1.3px solid rgba(0,77,64,0.3); }
+
+  /* Qué hago yo */
+  .reparto { margin-top: 7mm; display: grid; grid-template-columns: 1fr 1.3fr; gap: 5mm; }
+  .reparto > div { padding: 6mm; border-radius: 6.3mm; }
+  .reparto .tu { background: var(--white); }
+  .reparto .nos { background: var(--forest); color: #fff; }
+  .reparto h3 { font-weight: 700; font-size: 12pt; margin-bottom: 3mm; }
+  .reparto .tu h3 { color: var(--forest); }
+  .reparto li { list-style: none; font-size: 9.4pt; line-height: 1.45; padding: 2.2mm 0 2.2mm 7mm; position: relative; border-top: 1px solid var(--line); }
+  .reparto .nos li { border-top-color: rgba(255,255,255,0.14); }
+  .reparto li:first-child { border-top: 0; }
+  .reparto li::before { content: "✓"; position: absolute; left: 0; top: 2.2mm; width: 4.4mm; height: 4.4mm; border-radius: 50%; background: var(--mint); color: var(--ink); font-size: 6.5pt; font-weight: 600; text-align: center; line-height: 4.4mm; }
+  .cuando { margin-top: 6mm; padding: 5mm 6mm; }
+  .cuando h3 { font-weight: 700; font-size: 11pt; color: var(--forest); }
+  .cuando p { font-size: 9pt; line-height: 1.55; color: var(--muted); margin-top: 1.5mm; }
+  .pasos { display: grid; grid-template-columns: repeat(4, 1fr); gap: 3mm; margin-top: 4mm; }
+  .pasos div { border-top: 1mm solid var(--mint); padding-top: 2.5mm; font-size: 8pt; line-height: 1.4; color: var(--muted); }
+  .pasos b { display: block; font-family: Syne, system-ui, sans-serif; font-weight: 700; font-size: 9pt; color: var(--ink); margin-bottom: .6mm; }
+  .pasos i { font-style: normal; display: inline-block; margin-top: 1.5mm; font-size: 7pt; font-weight: 600; background: var(--mint-soft); color: var(--forest); border-radius: 999px; padding: .5mm 2.4mm; }
+
+  /* Inversión */
+  .chips { display: flex; gap: 2.5mm; margin-top: 4mm; }
+  .chip { font-size: 7.8pt; font-weight: 600; color: var(--ink); background: var(--mint); border-radius: 999px; padding: 1.2mm 3.6mm; }
+  .cobros { margin-top: 5mm; display: grid; gap: 4mm; }
+  .cobro { padding: 5mm 6mm; }
+  .cobro .fila { display: grid; grid-template-columns: 1fr auto; gap: 5mm; align-items: center; }
+  .cobro .n { font-size: 7pt; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--forest); }
+  .cobro h3 { font-weight: 700; font-size: 12pt; color: var(--ink); margin: .8mm 0 1.2mm; }
+  .cobro p { font-size: 8.6pt; line-height: 1.5; color: var(--muted); }
+  .cobro .num { font-weight: 800; font-size: 17pt; color: var(--forest); text-align: right; white-space: nowrap; }
+  .cobro .usd { font-size: 8pt; color: var(--dim); text-align: right; margin-top: .6mm; }
+  .paqs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 3mm; margin-top: 4mm; }
+  .paq { background: var(--mint-soft); border-radius: 4.2mm; padding: 3.5mm 4mm; position: relative; }
+  .paq.rec { background: #fff; border: 1.6px solid var(--golden); }
+  .paq .badge { position: absolute; top: -2.4mm; right: 3mm; background: var(--golden); font-size: 6pt; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; padding: .6mm 2.4mm; border-radius: 999px; }
+  .paq .c { font-family: Syne, system-ui, sans-serif; font-weight: 800; font-size: 12pt; }
+  .paq .c small { font-family: Inter, system-ui, sans-serif; font-weight: 400; font-size: 7pt; color: var(--dim); }
+  .paq .p { font-family: Syne, system-ui, sans-serif; font-weight: 700; font-size: 10.5pt; color: var(--forest); margin-top: 1.4mm; white-space: nowrap; }
+  .paq .u { font-size: 7pt; color: var(--dim); }
+  .ejc { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 3mm; margin-top: 4mm; }
+  .ejc div { background: var(--mint-soft); border-radius: 3.5mm; padding: 2.8mm 3.4mm; font-size: 7.8pt; line-height: 1.4; color: var(--muted); }
+  .ejc b { display: block; font-family: Syne, system-ui, sans-serif; font-weight: 700; font-size: 9pt; color: var(--ink); }
+
+  /* Retorno */
+  .cifras { margin-top: 6mm; display: grid; grid-template-columns: 1fr 1fr; gap: 4mm; }
+  .cifra { padding: 6mm; }
+  .cifra .num { font-weight: 800; font-size: 34pt; line-height: 1; color: var(--forest); white-space: nowrap; }
+  .cifra .num small { font-size: 14pt; }
+  .cifra p { font-size: 9.2pt; line-height: 1.4; color: var(--muted); margin-top: 2mm; }
+  .cifra.sm { padding: 4mm 6mm; }
+  .cifra.sm .num { font-size: 15pt; color: var(--ink); }
+  .cifra.sm p { margin-top: .6mm; font-size: 8pt; }
+  .ejer { margin-top: 5mm; padding: 6mm 7mm; position: relative; border: 1.6px dashed rgba(0,77,64,0.4); border-radius: 6.3mm; }
+  .ejer h3 { font-weight: 700; font-size: 13pt; color: var(--forest); }
+  .ejer .tag { position: absolute; top: 6mm; right: 7mm; font-size: 6.5pt; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; background: var(--golden); color: var(--ink); border-radius: 999px; padding: .8mm 3mm; }
+  .cuenta { display: grid; grid-template-columns: 1fr auto 1fr auto 1fr auto 1.15fr; gap: 3mm; align-items: end; margin-top: 5mm; }
+  .cuenta .b { height: 12mm; background: #fff; border-radius: 3mm; border-bottom: 1.6px solid var(--forest); position: relative; }
+  .cuenta .b span { position: absolute; bottom: -5.5mm; left: 0; font-size: 7pt; color: var(--dim); white-space: nowrap; }
+  .cuenta .op { font-family: Syne, system-ui, sans-serif; font-weight: 800; font-size: 14pt; color: var(--forest); padding-bottom: 2mm; }
+  .ejer p { font-size: 8.8pt; line-height: 1.55; color: var(--muted); margin-top: 9mm; }
+
+  /* Garantía + datos */
+  .gar { margin-top: 5mm; padding: 6mm 7mm; background: var(--forest); color: #fff; border-radius: 6.3mm; }
+  .gar .big { font-family: Syne, system-ui, sans-serif; font-weight: 800; font-size: 19pt; line-height: 1.12; }
+  .gar p { font-size: 9.2pt; line-height: 1.55; color: rgba(255,255,255,0.86); margin-top: 2.5mm; }
+  .gar .chips .chip { background: var(--mint); }
+  .seg { margin-top: 4mm; display: grid; grid-template-columns: 1fr 1fr; gap: 3mm; }
+  .seg .card { padding: 4mm 5mm; }
+  .seg h3 { font-weight: 700; font-size: 10pt; color: var(--forest); }
+  .seg p { font-size: 8.4pt; line-height: 1.45; color: var(--muted); margin-top: .8mm; }
+
+  /* Cierre */
+  .llamada { margin-top: 6mm; padding: 6mm 7mm; }
+  .llamada .paso { display: grid; grid-template-columns: 10mm 1fr; gap: 2mm; padding: 2.6mm 0; border-top: 1px solid var(--line); }
+  .llamada .paso:first-of-type { border-top: 0; }
+  .llamada .num { font-weight: 800; font-size: 14pt; color: var(--forest); }
+  .llamada p { font-size: 10pt; line-height: 1.45; }
+  .llamada p span { display: block; font-size: 8.8pt; color: var(--muted); }
+  .cta { display: inline-block; margin-top: 4mm; background: var(--forest); color: #fff; font-weight: 600; font-size: 10.5pt; padding: 3.2mm 8mm; border-radius: 999px; text-decoration: none; }
+  .contacto { margin-top: 6mm; display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 3mm; }
+  .contacto .card { padding: 4.5mm 5mm; }
+  .contacto span { font-size: 6.8pt; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--dim); }
+  .contacto a { display: block; font-family: Syne, system-ui, sans-serif; font-weight: 700; font-size: 10pt; color: var(--forest); text-decoration: none; margin-top: 1mm; white-space: nowrap; }
+  .prueba { margin-top: 5mm; background: var(--mint); border-radius: 6mm 1.5mm 6mm 6mm; padding: 4.5mm 6mm; font-size: 9.6pt; line-height: 1.5; }
+  .ultimo { margin-top: 8mm; font-family: Syne, system-ui, sans-serif; font-weight: 800; font-size: 17pt; line-height: 1.15; color: var(--forest); max-width: 150mm; }
+</style>
+</head>
+<body>
+
+<!-- 1 · Portada -->
+<section class="page cover">
+  <div class="banda">
+    <img src="../../frontend/public/gloma/logo_blancotrans.png" alt="Gloma">
+    <h1>Lo que quieres saber antes de poner un agente en tu WhatsApp.</h1>
+    <p>Las preguntas que nos hace un dueño de agencia antes de decidir, respondidas una por una. Con precios, tiempos y lo que te toca a ti.</p>
+  </div>
+  <div class="indice">
+    <p class="t">En esta propuesta</p>
+    <div class="b">¿Esto es para mí? <span>2</span></div>
+    <div class="b">¿Qué hace Gloma, exactamente? <span>3</span></div>
+    <div class="b">¿Qué incluye? <span>4</span></div>
+    <div class="b">¿Qué tengo que hacer yo? <span>5</span></div>
+    <div class="b">¿Cuánto invierto? <span>6</span></div>
+    <div class="b">¿Cuándo lo recupero? <span>7</span></div>
+    <div class="b">¿Y si algo no funciona? ¿Mis datos están seguros? <span>8</span></div>
+    <div class="b">¿Cómo empezamos? <span>9</span></div>
+  </div>
+  <div class="foot"><span>Propuesta comercial · glomacx.com</span><span>Precios vigentes a octubre de 2026</span></div>
+</section>
+
+<!-- 2 · ¿Esto es para mí? -->
+<section class="page">
+  <div class="head"><span class="marca"><img src="../../frontend/public/gloma/logo_blancotrans.png" alt="Gloma">Propuesta comercial</span><span class="pag">2 / 9</span></div>
+  <div class="pregunta"><span class="quien">Tú</span><h2>¿Esto es para mí?</h2></div>
+  <div class="respuesta"><span class="quien">Gloma</span><p class="lead">Si alguna de estas frases te suena, sí. Son las que más nos repiten los empresarios cuando hablamos de su WhatsApp.</p></div>
+  <div class="chat">
+    <div class="msg"><div class="in"><q>No hay quien responda el WhatsApp</q><small>Un empresario</small></div><div class="out">El agente atiende a tus viajeros cuando tu equipo no está, y cotiza con tus tarifas.</div></div>
+    <div class="msg"><div class="in"><q>Si no estoy yo, no funciona el negocio</q><small>Un empresario</small></div><div class="out">El agente sabe cómo vende tu agencia, y lo que pide criterio se lo pasa a tu asesor.</div></div>
+    <div class="msg"><div class="in"><q>Me preguntan constantemente</q><small>Un empresario</small></div><div class="out">Destinos, fechas, qué incluye el plan: esas preguntas las responde el agente con la información de tu agencia.</div></div>
+    <div class="msg"><div class="in"><q>Los interesados que abandonaron</q><small>Un empresario</small></div><div class="out">Les escribe de nuevo y, si no responden, se los pasa a tu asesor para que los llame.</div></div>
+  </div>
+  <div class="foot"><span>glomacx.com</span><span>¿Esto es para mí?</span></div>
+</section>
+
+<!-- 3 · ¿Qué hace Gloma? -->
+<section class="page">
+  <div class="head"><span class="marca"><img src="../../frontend/public/gloma/logo_blancotrans.png" alt="Gloma">Propuesta comercial</span><span class="pag">3 / 9</span></div>
+  <div class="pregunta"><span class="quien">Tú</span><h2>¿Qué hace Gloma, exactamente?</h2></div>
+  <div class="respuesta"><span class="quien">Gloma</span><p class="lead">Pone un <span class="sub">agente de IA en el WhatsApp de tu agencia</span>. Lo instalamos con tu catálogo, tus tarifarios, tus políticas y los mensajes con los que ya vende tu equipo, y en cada conversación busca en tu catálogo por nombre o por presupuesto.</p></div>
+  <div class="hace">
+    <div class="card"><h3>Atiende a toda hora</h3><p>Responde tu WhatsApp de día y de noche, por mensaje escrito, con el tono de tu marca.</p></div>
+    <div class="card"><h3>Cotiza con tus tarifas</h3><p>Si le falta un dato, le pasa la conversación a una persona de tu equipo.</p></div>
+    <div class="card"><h3>Le pasa el cliente a tu asesor</h3><p>Cuando pide una persona, cuando el caso es delicado o cuando está listo para cerrar. Con todo el historial.</p></div>
+    <div class="card"><h3>Le vuelve a escribir a quien se fue</h3><p>Hasta 3 veces en 24 horas. Si no vuelve, queda en la lista de llamadas de un asesor.</p></div>
+    <div class="card"><h3>Toma pedidos y reservas</h3><p>Los datos que da el cliente quedan en la plataforma y en el Google Sheets de tu equipo.</p></div>
+    <div class="card"><h3>Te da una plataforma</h3><p>Bandeja de mensajes, campañas por WhatsApp, simulador para probar y tablero de resultados.</p></div>
+  </div>
+  <div class="nohace">
+    <h3>Y para que no haya sorpresas</h3>
+    <ul>
+      <li><b>No inventa</b>Ni precios, ni cupos, ni promociones: responde solo con la información que nos das.</li>
+      <li><b>No atiende llamadas</b>Las llamadas siguen llegando a tu equipo; el agente trabaja por mensaje escrito.</li>
+      <li><b>No reemplaza a tu asesor</b>Cerrar la venta sigue siendo de tu asesor, que recibe al cliente con todo el historial.</li>
+    </ul>
+  </div>
+  <div class="tablero">
+    <img src="../../frontend/public/gloma/preview_dashboard_demo.png" alt="Tablero de resultados con datos de ejemplo">
+    <p>El tablero de la plataforma: ventas, abandonos y en qué paso se va la gente. Datos de ejemplo.</p>
+  </div>
+  <div class="foot"><span>glomacx.com</span><span>¿Qué hace Gloma?</span></div>
+</section>
+
+<!-- 4 · ¿Qué incluye? -->
+<section class="page">
+  <div class="head"><span class="marca"><img src="../../frontend/public/gloma/logo_blancotrans.png" alt="Gloma">Propuesta comercial</span><span class="pag">4 / 9</span></div>
+  <div class="pregunta" style="margin-top:7mm"><span class="quien">Tú</span><h2>¿Qué incluye?</h2></div>
+  <div class="respuesta" style="margin-top:4mm"><span class="quien">Gloma</span><p class="lead"><b>Todos los paquetes incluyen</b> todas las funciones. Lo único que cambia es cuántas conversaciones traes.</p></div>
+  <div class="card tabla">
+  <table class="inc">
+    <thead><tr><th></th><th><b>600</b>conversaciones</th><th class="rec"><b>2.000</b>conversaciones</th><th><b>6.000</b>conversaciones</th></tr></thead>
+    <tbody>
+      <tr class="g"><td colspan="4">Vende y atiende</td></tr>
+      <tr><td>Atiende tu WhatsApp de día y de noche</td><td class="c">✓</td><td class="c rec">✓</td><td class="c">✓</td></tr>
+      <tr><td>Busca en tu catálogo de planes o productos</td><td class="c">✓</td><td class="c rec">✓</td><td class="c">✓</td></tr>
+      <tr><td>Cotiza con tus tarifas</td><td class="c">✓</td><td class="c rec">✓</td><td class="c">✓</td></tr>
+      <tr><td>Toma los datos del pedido o la reserva y los deja en tu Google Sheets</td><td class="c">✓</td><td class="c rec">✓</td><td class="c">✓</td></tr>
+      <tr><td>Comparte tus formas de pago o tu link de pago</td><td class="c">✓</td><td class="c rec">✓</td><td class="c">✓</td></tr>
+      <tr><td>Con Shopify, consulta si un pedido ya está pagado</td><td class="c">✓</td><td class="c rec">✓</td><td class="c">✓</td></tr>
+      <tr><td>Consulta qué planes o productos tienes en tu catálogo</td><td class="c">✓</td><td class="c rec">✓</td><td class="c">✓</td></tr>
+      <tr><td>Le vuelve a escribir a quien dejó de contestar</td><td class="c">✓</td><td class="c rec">✓</td><td class="c">✓</td></tr>
+      <tr><td>Le pasa el cliente a tu asesor con todo el historial</td><td class="c">✓</td><td class="c rec">✓</td><td class="c">✓</td></tr>
+      <tr class="g"><td colspan="4">Asistentes</td></tr>
+      <tr><td>Asistente de ventas y servicio al cliente</td><td class="c">✓</td><td class="c rec">✓</td><td class="c">✓</td></tr>
+      <tr><td>Agenda citas y llamadas con tu equipo</td><td class="c">✓</td><td class="c rec">✓</td><td class="c">✓</td></tr>
+      <tr class="g"><td colspan="4">Tu plataforma</td></tr>
+      <tr><td>Bandeja de mensajes para tu equipo</td><td class="c">✓</td><td class="c rec">✓</td><td class="c">✓</td></tr>
+      <tr><td>Campañas por WhatsApp</td><td class="c">✓</td><td class="c rec">✓</td><td class="c">✓</td></tr>
+      <tr><td>Tus contactos entran desde Excel</td><td class="c">✓</td><td class="c rec">✓</td><td class="c">✓</td></tr>
+      <tr><td>Simulador para probar tu agente antes de salir</td><td class="c">✓</td><td class="c rec">✓</td><td class="c">✓</td></tr>
+      <tr><td>Tablero con tus ventas y abandonos</td><td class="c">✓</td><td class="c rec">✓</td><td class="c">✓</td></tr>
+      <tr class="g"><td colspan="4">Acompañamiento</td></tr>
+      <tr><td>Instalación hecha por nuestro equipo</td><td class="c">✓</td><td class="c rec">✓</td><td class="c">✓</td></tr>
+      <tr><td>Ajustes durante los primeros 10 días</td><td class="c">✓</td><td class="c rec">✓</td><td class="c">✓</td></tr>
+      <tr><td>Garantía de que todo queda funcionando como quieres</td><td class="c">✓</td><td class="c rec">✓</td><td class="c">✓</td></tr>
+      <tr><td>Soporte 24/7</td><td class="c">✓</td><td class="c rec">✓</td><td class="c">✓</td></tr>
+      <tr><td>Mantenimiento y actualizaciones incluidos</td><td class="c">✓</td><td class="c rec">✓</td><td class="c">✓</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <div class="foot"><span>glomacx.com</span><span>Las campañas se pagan por mensaje enviado (página 6)</span></div>
+</section>
+
+<!-- 5 · ¿Qué tengo que hacer yo? -->
+<section class="page">
+  <div class="head"><span class="marca"><img src="../../frontend/public/gloma/logo_blancotrans.png" alt="Gloma">Propuesta comercial</span><span class="pag">5 / 9</span></div>
+  <div class="pregunta"><span class="quien">Tú</span><h2>¿Qué tengo que hacer yo? No sé de tecnología.</h2></div>
+  <div class="respuesta"><span class="quien">Gloma</span><p class="lead"><span class="sub">No necesitas saber de tecnología.</span> Tu parte es contarnos cómo vende tu agencia. La técnica corre por nuestra cuenta.</p></div>
+  <div class="reparto">
+    <div class="tu">
+      <h3>Lo que haces tú</h3>
+      <ul>
+        <li>Una reunión para contarnos cómo vendes</li>
+        <li>Nos compartes tus tarifas, itinerarios y políticas</li>
+        <li>Nos das acceso a tu WhatsApp de empresa. Te guiamos paso a paso</li>
+        <li>Pruebas tu agente en el simulador y nos das el visto bueno</li>
+      </ul>
+    </div>
+    <div class="nos">
+      <h3>Lo que hacemos nosotros</h3>
+      <ul>
+        <li>Configuramos el agente con tus destinos, tarifas y el tono de tu marca</li>
+        <li>Lo entrenamos con los mensajes y guiones que ya usa tu equipo</li>
+        <li>Conectamos tu número de WhatsApp</li>
+        <li>Cargamos tus contactos desde tu Excel</li>
+        <li>Lo probamos contigo antes de que hable con el primer cliente</li>
+        <li>Ajustamos los detalles durante los primeros 10 días</li>
+        <li>Lo mantenemos al día, con soporte 24/7</li>
+      </ul>
+    </div>
+  </div>
+  <div class="card cuando">
+    <h3>¿Y cuánto se demora?</h3>
+    <p>Depende de cuánta información tengamos de tu operación y de la conexión de tu número con Meta, que depende de tus accesos. Lo estimamos contigo en la llamada. El camino es este:</p>
+    <div class="pasos">
+      <div><b>Entrenamos a tu nuevo asesor</b>Con tus guiones, mensajes y proceso de venta.</div>
+      <div><b>Activamos tu cuenta y tu WhatsApp</b>Nuestro equipo instala tu WhatsApp.</div>
+      <div><b>Arranca la operación</b>El agente empieza a atender.<br><i>10 días de ajuste</i></div>
+      <div><b>Soporte y mejora continua</b>Con los reportes de desempeño.<br><i>Soporte 24/7</i></div>
+    </div>
+  </div>
+  <div class="foot"><span>glomacx.com</span><span>¿Qué tengo que hacer yo?</span></div>
+</section>
+
+<!-- 6 · ¿Cuánto invierto? -->
+<section class="page">
+  <div class="head"><span class="marca"><img src="../../frontend/public/gloma/logo_blancotrans.png" alt="Gloma">Propuesta comercial</span><span class="pag">6 / 9</span></div>
+  <div class="pregunta" style="margin-top:8mm"><span class="quien">Tú</span><h2>¿Cuánto invierto?</h2></div>
+  <div class="respuesta" style="margin-top:4mm"><span class="quien">Gloma</span><p class="lead">La instalación es una inversión única. Después, el agente funciona con un paquete de conversaciones que recargas cuando se acaba, y las campañas se cobran por mensaje enviado.</p>
+    <div class="chips"><span class="chip">✓ IVA incluido</span><span class="chip">✓ Tarifa de Meta incluida</span><span class="chip">✓ Sin mensualidad</span></div>
+  </div>
+  <div class="cobros">
+    <div class="card cobro"><div class="fila">
+      <div><span class="n">01 · Inversión única, al empezar</span><h3>Instalación</h3><p>Configuramos el agente con tus destinos, tarifas y el tono de tu marca, conectamos tu número de WhatsApp y lo probamos contigo antes de que hable con el primer cliente.</p></div>
+      <div><div class="num">2.400.000 COP</div><div class="usd">750 USD · una sola vez</div></div>
+    </div></div>
+    <div class="card cobro">
+      <span class="n">02 · Funciona con paquetes de conversaciones que recargas</span><h3>Agente de servicio al cliente y ventas</h3>
+      <p>Una conversación es un chat con un cliente dentro de una ventana de 24 horas. Compras un paquete y lo recargas cuando se acaba: no es una mensualidad. Las conversaciones que no usas pasan al mes siguiente.</p>
+      <div class="paqs">
+        <div class="paq"><div class="c">600 <small>conversaciones</small></div><div class="p">760.000 COP</div><div class="u">245 USD</div></div>
+        <div class="paq rec"><span class="badge">★ Recomendado</span><div class="c">2.000 <small>conversaciones</small></div><div class="p">2.490.000 COP</div><div class="u">795 USD</div></div>
+        <div class="paq"><div class="c">6.000 <small>conversaciones</small></div><div class="p">7.190.000 COP</div><div class="u">2.295 USD</div></div>
+      </div>
+    </div>
+    <div class="card cobro">
+      <div class="fila">
+        <div><span class="n">03 · Solo cuando envías una campaña</span><h3>Campañas masivas por WhatsApp</h3><p>El cobro es por el primer mensaje, el del envío masivo. Si el cliente te responde, desde ahí es una conversación del agente y se descuenta de tu paquete.</p></div>
+        <div><div class="num">90 COP</div><div class="usd">0,03 USD · por mensaje enviado</div></div>
+      </div>
+      <div class="ejc">
+        <div><b>Envías 1.000 mensajes</b>1.000 × 90 COP = 90.000 COP (30 USD). Inversión de la campaña.</div>
+        <div><b>120 responden</b>Son 120 conversaciones y se descuentan de tu paquete. No se cobran otra vez a 90 COP.</div>
+        <div><b>880 no responden</b>No generan ningún cobro adicional.</div>
+      </div>
+    </div>
+  </div>
+  <p class="small" style="margin-top:3mm">Ejemplo ilustrativo de una campaña a 1.000 contactos. ¿No sabes qué paquete te conviene? Lo calculamos con el volumen de chats de tu agencia.</p>
+  <div class="foot"><span>glomacx.com</span><span>Precios vigentes a octubre de 2026</span></div>
+</section>
+
+<!-- 7 · ¿Cuándo lo recupero? -->
+<section class="page">
+  <div class="head"><span class="marca"><img src="../../frontend/public/gloma/logo_blancotrans.png" alt="Gloma">Propuesta comercial</span><span class="pag">7 / 9</span></div>
+  <div class="pregunta"><span class="quien">Tú</span><h2>¿Y cuándo recupero lo que invierto?</h2></div>
+  <div class="respuesta"><span class="quien">Gloma</span><p class="lead">En promedio, <span class="sub">en 4 meses</span>. Y con hasta un 70 % menos en el costo de atención*.</p></div>
+  <div class="cifras">
+    <div class="card cifra"><div class="num">70&nbsp;<small>%</small></div><p>Hasta un 70 % menos en el costo de atención*</p></div>
+    <div class="card cifra"><div class="num">4&nbsp;<small>meses</small></div><p>de retorno de inversión promedio</p></div>
+    <div class="card cifra sm"><div class="num">+150.000</div><p>mensajes de viajeros gestionados</p></div>
+    <div class="card cifra sm"><div class="num">+10.000</div><p>horas de asesores IA operando</p></div>
+  </div>
+  <div class="ejer">
+    <span class="tag">Ejercicio ilustrativo</span>
+    <h3>Haz el ejercicio con tus números</h3>
+    <div class="cuenta">
+      <div class="b"><span>Chats al mes</span></div><div class="op">×</div>
+      <div class="b"><span>Tu tasa de cierre actual</span></div><div class="op">×</div>
+      <div class="b"><span>Tu ticket promedio</span></div><div class="op">=</div>
+      <div class="b"><span>Lo que vende tu WhatsApp al mes</span></div>
+    </div>
+    <p>Pon al lado de ese resultado tu inversión en Gloma. ¿Y qué tasa de cierre vas a tener? No hay un porcentaje genérico que prometer: el agente arranca con una parecida a la que ya tienes, porque vende con tus mismos mensajes. La medimos en el tablero y desde ahí trabajamos para subirla. En la llamada hacemos esta cuenta contigo.</p>
+  </div>
+  <p class="small" style="margin-top:4mm">* Frente a atender el mismo volumen de chats solo con asesores.</p>
+  <div class="foot"><span>glomacx.com</span><span>¿Cuándo lo recupero?</span></div>
+</section>
+
+<!-- 8 · ¿Y si algo no funciona? ¿Mis datos? -->
+<section class="page">
+  <div class="head"><span class="marca"><img src="../../frontend/public/gloma/logo_blancotrans.png" alt="Gloma">Propuesta comercial</span><span class="pag">8 / 9</span></div>
+  <div class="pregunta" style="margin-top:8mm"><span class="quien">Tú</span><h2>¿Y si algo no funciona?</h2></div>
+  <div class="gar">
+    <div class="big">Queda funcionando como tú quieres.</div>
+    <p>Esa es nuestra garantía. Instalamos el agente, lo probamos contigo y durante los primeros 10 días lo ajustamos con las conversaciones que van llegando. Después sigues con soporte 24/7 y mantenimiento incluido: si algo no responde como esperas, nos escribes por WhatsApp y lo ajustamos.</p>
+    <div class="chips"><span class="chip">Garantía de funcionamiento</span><span class="chip">Soporte 24/7</span><span class="chip">Mantenimiento incluido</span></div>
+  </div>
+  <div class="pregunta" style="margin-top:7mm"><span class="quien">Tú</span><h2>¿Mis datos están seguros?</h2></div>
+  <div class="seg">
+    <div class="card"><h3>Viven en tu propia cuenta</h3><p>Aislada de las demás, en infraestructura de AWS.</p></div>
+    <div class="card"><h3>Credenciales cifradas</h3><p>Los accesos a tu WhatsApp y a tus herramientas se guardan cifrados.</p></div>
+    <div class="card"><h3>Tus chats no entrenan modelos</h3><p>Las conversaciones con tus clientes no se usan para entrenar modelos de IA.</p></div>
+    <div class="card"><h3>Ley 1581</h3><p>El manejo de los datos se alinea con la Ley 1581 de protección de datos.</p></div>
+  </div>
+  <p class="small" style="margin-top:4mm">Tus contactos se importan desde Excel con una plantilla que te damos, y las columnas que ya usas (ciudad, tipo de viajero, etapa) se guardan con cada contacto.</p>
+  <div class="foot"><span>glomacx.com</span><span>Garantía, soporte y tus datos</span></div>
+</section>
+
+<!-- 9 · ¿Cómo empezamos? -->
+<section class="page">
+  <div class="head"><span class="marca"><img src="../../frontend/public/gloma/logo_blancotrans.png" alt="Gloma">Propuesta comercial</span><span class="pag">9 / 9</span></div>
+  <div class="pregunta"><span class="quien">Tú</span><h2>Listo. ¿Cómo empezamos?</h2></div>
+  <div class="respuesta"><span class="quien">Gloma</span><p class="lead">Con una llamada. Agéndala en <span class="sub">glomacx.com</span> o escríbenos por WhatsApp.</p></div>
+  <div class="card llamada">
+    <div class="paso"><span class="num">1</span><p>Vemos cómo vende tu agencia.<span>Tus destinos, tus tarifas y cómo atiende hoy tu equipo.</span></p></div>
+    <div class="paso"><span class="num">2</span><p>Calculamos tu paquete.<span>Con el volumen de chats de tu agencia, y hacemos juntos la cuenta del retorno.</span></p></div>
+    <div class="paso"><span class="num">3</span><p>Estimamos el arranque.<span>Según la información que tengas lista y los accesos de tu número.</span></p></div>
+    <a class="cta" href="https://glomacx.com">Agendar una llamada</a>
+  </div>
+  <div class="contacto">
+    <div class="card"><span>WhatsApp</span><a href="https://wa.me/573150764000">+57 315 076 4000</a></div>
+    <div class="card"><span>Correo</span><a href="mailto:contacto@glomacx.com">contacto@glomacx.com</a></div>
+    <div class="card"><span>Web</span><a href="https://glomacx.com">glomacx.com</a></div>
+  </div>
+  <div class="prueba">¿Quieres probarlo antes de la llamada? Escríbele a nuestro WhatsApp como lo haría uno de tus clientes. Te responde el asistente de IA de Gloma, con el mismo motor que tendría tu agente.</div>
+  <p class="ultimo">La próxima pregunta la hace uno de tus viajeros. Que encuentre respuesta.</p>
+  <div class="foot"><span>Precios vigentes a octubre de 2026. IVA y tarifa de Meta incluidos.</span><span>glomacx.com</span></div>
+</section>
+
+</body>
+</html>
