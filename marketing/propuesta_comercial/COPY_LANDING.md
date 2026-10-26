@@ -1,5 +1,9 @@
 # Copy de la landing: percepción de valor (Fase 1)
 
+> **Reemplazado en buena parte por [`docs/landing-valor/AJUSTES_CEO.md`](../../docs/landing-valor/AJUSTES_CEO.md)
+> (2026-10-26).** Siguen vigentes de aquí: el 70 % con su nota al pie y el bloque de garantía.
+> La tabla de 22 filas y las opciones de «No necesitas saber de tecnología» quedaron descartadas.
+
 > Borrador para revisión del CEO. Rama `feature/landing-valor`. **No se toca `gloma.tsx` hasta
 > que el CEO apruebe este copy.**
 >

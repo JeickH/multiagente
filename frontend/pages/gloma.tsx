@@ -105,40 +105,40 @@ type PreviewSection = {
   contain?: boolean;
 };
 
+/**
+ * «Lo que cambia en tu negocio» (ajustes del CEO, 2026-10-26): cada título dice
+ * qué gana el negocio; la mecánica va una sola vez, abajo. Campañas salió de aquí
+ * y queda solo en Precios. «Tu equipo entra a cerrar, no a saludar» es la única
+ * antítesis de la página: ningún otro título usa esa estructura.
+ */
 const PREVIEW_SECTIONS: PreviewSection[] = [
   {
-    title: 'Cotiza con tus tarifas y tus itinerarios',
-    text: 'Pregunta destino, fechas, cuántos viajan y presupuesto antes de dar un precio. Si le falta un dato, no lo inventa: se lo pasa a tu asesor.',
+    title: 'Quien pregunta cuánto vale recibe el precio en minutos, a cualquier hora',
+    text: 'Pide fechas, cuántos viajan y qué buscan antes de cotizar con tus tarifas. Si le falta un dato, no lo inventa: se lo pasa a tu equipo.',
     image: '/gloma/preview_chat_agente.png',
     reverse: false,
   },
   {
-    title: 'Aumenta ventas con campañas por WhatsApp',
-    text: 'Campañas segmentadas por destino y fecha de viaje: reactiva cotizaciones frías y vende febrero mientras todos venden diciembre.',
-    image: '/gloma/preview5.png',
-    reverse: true,
-  },
-  {
     title: 'Tu equipo entra a cerrar, no a saludar',
-    text: 'Resuelve lo repetitivo y, cuando el viajero pide una persona o está listo para cerrar, le pasa la conversación a tu asesor con todo el historial. Nadie le vuelve a preguntar lo mismo.',
+    text: 'Cuando el cliente está listo o pide una persona, le pasa la conversación a tu equipo o a tu recepción con todo el historial. Nadie le vuelve a preguntar lo mismo.',
     image: '/gloma/preview6.png',
-    reverse: false,
+    reverse: true,
   },
   {
     // La cadena de reenganches de `bot_runner` (Sprint 27): los bots en
     // producción la tienen en 3 (15 min, 5 h y 23 h de silencio; la ventana de
     // 24 h de WhatsApp no deja más). Si no vuelve, el abandono se le asigna a
     // un asesor y, si ya había recibido información, entra a /agendamientos.
-    title: 'Le vuelve a escribir a quien dejó de contestar',
-    text: 'Le escribe hasta 3 veces en las 24 horas siguientes. Si no vuelve, se lo pasa a tu asesor para que lo llame.',
+    title: 'Recupera a los interesados que dejaron de contestar',
+    text: 'Les escribe hasta 3 veces en las 24 horas siguientes. Si no vuelven, quedan en la lista de llamadas de tu asesor.',
     mock: 'recordatorios',
-    reverse: true,
+    reverse: false,
   },
   {
-    title: 'Un tablero que te muestra dónde se pierde cada venta',
-    text: 'Cada cliente recibe un dashboard analítico con el resultado de sus conversaciones: cuántas terminan en venta o en manos de tu equipo, cuántas se abandonan y en qué paso del embudo se va la gente. Con esos datos decidimos qué ajustar.',
+    title: 'Ves cuánta venta se te queda en el aire, y en qué paso',
+    text: 'Un tablero con el resultado de tus conversaciones: cuántas terminan en reserva o en manos de tu equipo, cuántas se quedan a medias y en qué paso se va la gente. Con eso decidimos juntos qué ajustar.',
     image: '/gloma/preview_dashboard_demo.png',
-    reverse: false,
+    reverse: true,
     // Captura del reporte, más ancha que 4:3: se muestra completa para que
     // no se corten las cifras de la derecha.
     contain: true,
@@ -152,12 +152,9 @@ const PREVIEW_SECTIONS: PreviewSection[] = [
  */
 const FAQ = [
   {
+    // [CONFIRMAR CEO] La definición de conversación puede cambiar con los precios nuevos.
     q: '¿Qué cuenta como una conversación?',
     a: 'Un chat con un cliente dentro de una ventana de 24 horas. Si ese mismo cliente vuelve a escribir después de las 24 horas, cuenta como una conversación nueva.',
-  },
-  {
-    q: '¿Los precios incluyen el IVA y lo que cobra Meta?',
-    a: 'Sí. Los precios ya incluyen el IVA y la tarifa de WhatsApp que cobra Meta. No pagas nada aparte por ninguno de los dos.',
   },
   {
     q: '¿Tengo que pagar una mensualidad?',
@@ -165,11 +162,11 @@ const FAQ = [
   },
   {
     q: '¿El agente puede inventar precios o disponibilidad?',
-    a: 'No. Responde solo con la información que nos das (tarifarios, itinerarios, políticas) y tiene prohibido inventar precios, cupos o promociones. Si le falta un dato, pasa la conversación a tu equipo.',
+    a: 'No. Contesta solo con la información que nos das (tarifarios, planes, políticas) y tiene prohibido inventar precios, cupos o promociones. Si le falta un dato, lo dice y le pasa la conversación a tu equipo con todo lo que el cliente ya preguntó. Si tu sistema de reservas no está conectado, contesta con tu tarifario y la confirmación del cupo la hace tu equipo.',
   },
   {
-    q: '¿Qué pasa si el agente no sabe responder algo?',
-    a: 'Lo dice y pasa la conversación a una persona de tu equipo, con todo lo que el cliente ya preguntó, para que no tenga que repetirlo.',
+    q: '¿Qué pasa de noche, cuando un cliente quiere reservar?',
+    a: 'El agente le contesta, le da el precio con tu tarifario y toma sus datos. Cuando el cliente quiere confirmar o pide hablar con alguien, la conversación queda en la bandeja de tu equipo con todo lo que ya habló. Si tienes recepción de turno, la puede tomar desde ahí. A primera hora, tu equipo encuentra la lista de quién quedó esperando.',
   },
   {
     q: '¿Reemplaza a mis asesores?',
@@ -179,120 +176,104 @@ const FAQ = [
     // El motor todavía no transcribe audios: ante una nota de voz el agente
     // pide que se la escriban (`llm_engine`, sección «Notas de voz»).
     q: '¿Atiende llamadas?',
-    a: 'No. Gloma atiende el WhatsApp de tu agencia por mensaje escrito; si un viajero manda una nota de voz, el agente le pide con amabilidad que se lo escriba. Las llamadas siguen llegando a tu equipo.',
-  },
-  {
-    q: '¿Cuánto tarda en estar listo?',
-    a: 'Depende de cuánta información tengamos de tu operación y de la conexión de tu número con Meta, que depende de tus accesos. Lo estimamos en la demo con tu caso. Una vez en marcha, los primeros 10 días son de ajuste.',
-  },
-  {
-    // Garantía (decisión del CEO 2026-10-22): sin plazo en días ni devoluciones.
-    q: '¿Qué pasa después de la instalación?',
-    a: 'Tu agente empieza a atender y durante los primeros 10 días ajustamos los detalles con las conversaciones que van llegando. Después tienes soporte 24/7, mantenimiento incluido y rondas de mejora con lo que muestra tu tablero. Nuestra garantía es que todo quede funcionando como tú quieres: si algo no responde como esperas, nos escribes por WhatsApp y lo ajustamos.',
+    a: 'No. Gloma atiende tu WhatsApp por mensaje escrito; si un viajero manda una nota de voz, el agente le pide con amabilidad que se lo escriba. Las llamadas siguen llegando a tu equipo.',
   },
   {
     q: '¿Qué tasa de cierre voy a tener?',
     a: 'No hay un porcentaje genérico que prometer. El agente arranca con una tasa parecida a la que ya tienes, porque vende con tus mismos mensajes e información; la medimos en el tablero y desde ahí trabajamos para subirla.',
   },
   {
-    q: '¿Se conecta con mi Excel o mi sistema de reservas?',
-    a: 'Tus contactos se importan desde Excel, y los datos que toma el agente llegan a tu Google Sheets. Shopify también funciona. Otros sistemas, como el de reservas, se conectan a la medida: lo definimos en la demo.',
+    q: '¿Cuánto tarda en estar listo?',
+    a: 'Depende de cuánta información tengamos de tu operación y de la conexión de tu número con Meta, que depende de tus accesos. Lo estimamos en la demo con tu caso. Una vez en marcha, los primeros 10 días son de ajuste.',
   },
   {
-    // Importación por Excel de `services/contactos_excel.py`, con plantilla descargable.
-    q: '¿Conservo mis contactos?',
-    a: 'Sí. Se importan desde Excel con una plantilla que te damos, y las columnas que ya usas para clasificarlos (ciudad, tipo de viajero, etapa) se guardan con cada contacto.',
-  },
-  {
-    q: '¿Qué pasa con los datos de mis clientes?',
-    a: 'Viven en tu propia cuenta, aislada de las demás, en infraestructura de AWS. Las credenciales se guardan cifradas y las conversaciones no se usan para entrenar modelos de IA. El manejo se alinea con la Ley 1581 de protección de datos.',
-  },
-  {
-    q: '¿Puedo probarlo antes de contratar?',
-    a: 'Sí. Toca «Hablar con un asesor»: te responde el asistente de IA de Gloma, que funciona con el mismo motor que tendría tu agente. Escríbele como lo haría uno de tus clientes. Y antes de salir en vivo, pruebas tu propio agente en el simulador de la plataforma.',
+    q: '¿Tengo que entregarles mi número principal?',
+    a: 'No. Puedes empezar con otro número de tu negocio, por ejemplo el de recepción. Tus datos viven en tu propia cuenta, aislada de las demás, y tus conversaciones no se usan para entrenar modelos de IA. Antes de salir en vivo pruebas tu agente en el simulador.',
   },
 ];
 
-/** Ruta de arranque de un cliente nuevo (definida por el CEO el 2026-09-27). */
+/**
+ * Ruta de arranque de un cliente nuevo (definida por el CEO el 2026-09-27),
+ * con el reparto «Tú / Nosotros» (ajustes del 2026-10-26). La parte del dueño
+ * cabe en una semana (P1); el tiempo total depende de Meta (ver FAQ).
+ */
 const PASOS_INICIO = [
   {
-    titulo: 'Entrenamos a tu nuevo asesor',
-    texto: 'Recogemos cómo opera tu agencia: guiones, mensajes predefinidos y el proceso de venta que ya usan. Con eso entrenamos al agente para que sea un asesor más de tu equipo, con las mismas reglas y el tono de tu marca.',
+    titulo: 'Nos cuentas cómo vendes',
+    tu: 'Una reunión para contarnos cómo vende tu negocio, y nos compartes tus tarifas, planes y políticas.',
+    nosotros: 'Entrenamos al agente con tus mensajes y guiones, con las reglas y el tono de tu marca.',
     etiqueta: null,
   },
   {
-    titulo: 'Activamos tu cuenta y tu WhatsApp',
-    texto: 'Activamos la cuenta y nuestro equipo instala tu WhatsApp, conectado al canal de comunicación que elija tu empresa.',
+    titulo: 'Conectamos tu WhatsApp',
+    tu: 'Nos das acceso a tu WhatsApp de empresa. Te guiamos paso a paso.',
+    nosotros: 'Activamos tu cuenta, conectamos tu número y cargamos tus contactos desde tu Excel.',
     etiqueta: null,
   },
   {
-    titulo: 'Arranca la operación',
-    texto: 'El agente empieza a atender a tus clientes y durante los primeros 10 días ajustamos los detalles con las conversaciones que van llegando.',
+    titulo: 'Lo pruebas y arranca',
+    tu: 'Lo pruebas en el simulador y nos das el visto bueno.',
+    nosotros: 'Lo encendemos y lo ajustamos contigo los primeros 10 días.',
     etiqueta: '10 días de ajuste',
   },
   {
-    titulo: 'Soporte y mejora continua',
-    texto: 'Después de la instalación tienes soporte 24/7 y rondas constantes de mejora, a partir de los reportes de desempeño del agente.',
+    titulo: 'Sigue mejorando',
+    tu: 'Nos escribes por WhatsApp cuando algo cambie.',
+    nosotros: 'Soporte 24/7, mantenimiento y rondas de mejora con lo que muestra tu tablero.',
     etiqueta: 'Soporte 24/7',
   },
 ];
 
 /**
- * «¿Te suena?»: los dolores con las palabras textuales de la voz del cliente
- * (ventas/content_machine_gloma/voz-del-cliente; en público se atribuyen a "empresarios", no a dueños de agencias) y lo que hace Gloma con cada uno. Reemplaza a «Todo lo que necesitas, sin fricciones» (2026-10-20).
+ * «¿Te suena?»: paráfrasis de lo que cuentan hoteleros y empresarios (no son
+ * citas textuales, por eso van sin comillas) y lo que hace Gloma con cada una.
+ * Ajustes del CEO del 2026-10-26.
  */
 const DOLORES: { icon: IconoNombre; dolor: string; solucion: string }[] = [
   {
     icon: 'horas',
-    dolor: 'No hay quien responda el WhatsApp',
-    solucion: 'El agente atiende a tus viajeros cuando tu equipo no está, y cotiza con tus tarifas.',
-  },
-  {
-    icon: 'escalamiento',
-    dolor: 'Si no estoy yo, no funciona el negocio',
-    solucion: 'El agente sabe cómo vende tu agencia, y lo que pide criterio se lo pasa a tu asesor.',
+    dolor: 'De noche no hay quien conteste el WhatsApp',
+    solucion: 'El agente les contesta a la hora en que tus clientes planean el viaje, y lo que necesita una persona queda en la bandeja de tu equipo con todo el historial.',
   },
   {
     icon: 'mensajes',
-    dolor: 'Me preguntan constantemente',
-    solucion: 'Destinos, fechas, qué incluye el plan: esas preguntas las responde el agente con la información de tu agencia.',
+    dolor: 'Saco una promoción y los mensajes se quedan sin contestar',
+    solucion: 'El agente les contesta a todos los que llegan por tu pauta, al mismo tiempo, y a tu equipo le pasa los que quieren reservar.',
   },
   {
     icon: 'reenganche',
     dolor: 'Los interesados que abandonaron',
-    solucion: 'Les escribe de nuevo y, si no responden, se los pasa a tu asesor para que los llame.',
+    solucion: 'El agente los recupera: les vuelve a escribir y, si no contestan, quedan en la lista de tu asesor para llamarlos.',
+  },
+  {
+    icon: 'medicion',
+    dolor: 'No tengo cómo ver cuántos clientes se me van',
+    solucion: 'Ves cuántas conversaciones terminan en reserva y en qué paso se va la gente.',
   },
 ];
 
 /**
- * Lo que sigue siendo cierto de los beneficios anteriores. Salieron
- * «Conoce tus destinos» y «Escalamiento a agentes humanos»: los cubren las
- * tarjetas de dolores y los bloques de producto. Medición ya no promete
- * «satisfacción» ni «tiempos»: el tablero no los mide.
+ * «Funciona con lo que ya usas» (ajustes del CEO, 2026-10-26). Hoy no hay
+ * ninguna conexión construida con channel managers ni PMS: prohibido nombrarlos,
+ * decir «compatible con», «integrado con», «disponibilidad en tiempo real»,
+ * «sin sobreventas» o dar plazos.
  */
-const FEATURES: { icon: IconoNombre; title: string; text: string }[] = [
+const YA_USAS: { titulo: string; texto: string }[] = [
   {
-    icon: 'personaliza',
-    title: 'Habla como tu mejor asesor',
-    text: 'Configuramos el tono, las respuestas y la forma de vender de tu agencia para que cada mensaje suene a tu equipo.',
+    titulo: 'Listo hoy',
+    // Excel: `services/contactos_excel.py`. Sheets: `services/pedidos_sheet.py`.
+    texto: 'Tus contactos entran desde Excel. Los datos de cada reserva llegan a tu Google Sheets. Si vendes por Shopify, consulta tus pedidos.',
   },
   {
-    // Google Sheets: `services/pedidos_sheet.py`. Excel: `services/contactos_excel.py`.
-    icon: 'integraciones',
-    title: 'Se conecta con tu Excel o Google Sheets',
-    text: 'Tus contactos entran desde Excel y los datos que toma el agente llegan a tu Google Sheets. Shopify también funciona; otros sistemas, a la medida.',
+    titulo: 'Lo conectamos para ti',
+    texto: 'Tu channel manager (el sistema que reparte tus tarifas y tu disponibilidad a las agencias en línea y a tu web), tu software de recepción (PMS), tu motor de reservas o tu CRM. Es un desarrollo a la medida: en la demo revisamos cuál usas y qué se puede conectar.',
   },
   {
-    icon: 'medicion',
-    title: 'Medición y mejora continua',
-    text: 'Un tablero con tus ventas, abandonos y el paso donde se va la gente, para seguir afinando el agente.',
-  },
-  {
-    icon: 'soporte',
-    title: 'Equipo de soporte dedicado',
-    text: 'Un equipo disponible para atender requerimientos, ajustes de flujos y nuevos casos de uso.',
+    titulo: 'Desde el primer día',
+    texto: 'Mientras tanto, el agente contesta con tu tarifario y, cuando el cliente quiere confirmar el cupo, se lo pasa a tu equipo o a tu recepción con toda la conversación.',
   },
 ];
+
 
 /**
  * El 70 % es cifra autorizada por el CEO (2026-10-21) y siempre va con su base
@@ -311,7 +292,7 @@ const STATS = [
     value: 10000,
     prefix: '+',
     suffix: '',
-    label: 'horas de asesores AI operando',
+    label: 'horas de asesores IA en operación',
   },
   {
     icon: 'medicion' as IconoNombre,
@@ -325,79 +306,35 @@ const STATS = [
     value: 4,
     prefix: '',
     suffix: ' meses',
-    label: 'de retorno de inversión promedio',
+    label: 'para recuperar la inversión, en promedio',
   },
 ];
 
 const NOTA_AHORRO = '* Frente a atender el mismo volumen de chats solo con asesores.';
 
 /**
- * «Todos los paquetes incluyen» (copy aprobado en
- * `marketing/propuesta_comercial/COPY_LANDING.md`, 1a). Todas las funciones van
- * en los tres paquetes: por eso la tabla no tiene columna por paquete en el dato.
+ * Lo que traen los tres paquetes (ajustes del CEO, 2026-10-26): reemplaza a la
+ * tabla de 22 filas. Todas las funciones van en los tres; solo cambia cuántas
+ * conversaciones traes.
  */
-const INCLUYE: { grupo: string; filas: string[] }[] = [
-  {
-    grupo: 'Vende y atiende',
-    filas: [
-      'Atiende tu WhatsApp de día y de noche',
-      'Busca en tu catálogo de planes o productos',
-      'Cotiza con tus tarifas',
-      'Toma los datos del pedido o la reserva y los deja en tu Google Sheets',
-      'Comparte tus formas de pago o tu link de pago',
-      'Con Shopify, consulta si un pedido ya está pagado',
-      'Consulta qué planes o productos tienes en tu catálogo',
-      'Le vuelve a escribir a quien dejó de contestar',
-      'Le pasa el cliente a tu asesor con todo el historial',
-    ],
-  },
-  {
-    grupo: 'Asistentes',
-    filas: ['Asistente de ventas y servicio al cliente', 'Agenda citas y llamadas con tu equipo'],
-  },
-  {
-    grupo: 'Tu plataforma',
-    filas: [
-      'Bandeja de mensajes para tu equipo',
-      'Campañas por WhatsApp',
-      'Tus contactos entran desde Excel',
-      'Simulador para probar tu agente antes de salir',
-      'Tablero con tus ventas y abandonos',
-    ],
-  },
-  {
-    grupo: 'Acompañamiento',
-    filas: [
-      'Instalación hecha por nuestro equipo',
-      'Ajustes durante los primeros 10 días',
-      'Garantía de que todo queda funcionando como quieres',
-      'Soporte 24/7',
-      'Mantenimiento y actualizaciones incluidos',
-    ],
-  },
+const INCLUYE = [
+  'Contesta tu WhatsApp a cualquier hora, con tus tarifas',
+  'Recupera a los interesados que dejaron de contestar',
+  'Tu equipo recibe al cliente listo para reservar, con toda la conversación',
+  'El cliente recibe tus formas de pago y la reserva queda en tu Google Sheets',
+  'Agenda la llamada con tu asesor cuando el cliente la pide',
+  'Ves cuánta venta se te queda en el aire',
+  'Bandeja para tu equipo y campañas a tus contactos',
+  'Instalación, 10 días de ajuste, soporte 24/7 y mantenimiento',
 ];
 
-/** «No necesitas saber de tecnología» (COPY_LANDING.md, 1b, opción 1). */
-const REPARTO = {
-  tu: [
-    'Una reunión para contarnos cómo vendes',
-    'Nos compartes tus tarifas, itinerarios y políticas',
-    'Nos das acceso a tu WhatsApp de empresa. Te guiamos paso a paso',
-    'Pruebas tu agente en el simulador y nos das el visto bueno',
-  ],
-  nosotros: [
-    'Configuramos el agente con tus destinos, tarifas y el tono de tu marca',
-    'Lo entrenamos con los mensajes y guiones que ya usa tu equipo',
-    'Conectamos tu número de WhatsApp',
-    'Cargamos tus contactos desde tu Excel',
-    'Lo probamos contigo antes de que hable con el primer cliente',
-    'Ajustamos los detalles durante los primeros 10 días',
-    'Lo mantenemos al día, con soporte 24/7',
-  ],
-};
-
-/** La propuesta elegida por el CEO, publicada con `exportar_pdf.sh --publicar`. */
+/**
+ * La propuesta elegida por el CEO, publicada con `exportar_pdf.sh --publicar`.
+ * Pendiente (CEO, 2026-10-26): los precios van a cambiar. Mientras sea `false`
+ * no se muestra el botón de descarga ni el enlace del footer.
+ */
 const PROPUESTA_PDF = '/gloma/propuesta-comercial-gloma.pdf';
+const PROPUESTA_PUBLICADA = false;
 
 /**
  * Precios públicos (definidos por el CEO el 2026-09-27; alza del ~20% el 2026-09-29;
@@ -426,16 +363,16 @@ const EJEMPLO_CAMPANA = { enviados: 1_000, responden: 120 };
 const EJEMPLO_ACUMULADO = { paquete: 600, usadas: 450 };
 
 const WHATSAPP_URL =
-  'https://wa.me/573150764000?text=Hola%20Gloma%2C%20tengo%20una%20agencia%20de%20viajes%20y%20quiero%20ver%20una%20demo';
+  `https://wa.me/573150764000?text=${encodeURIComponent('Hola Gloma, vengo de la página y quiero ver una demo para mi negocio de turismo')}`;
 
 const INSTAGRAM_URL = 'https://www.instagram.com/gloma_app/';
 
 /** Imagen y URL canónica para la vista previa al compartir el enlace. */
 const SITE_URL = 'https://glomacx.com';
 const OG_IMAGE = `${SITE_URL}/gloma/og_gloma.png`;
-const SITE_TITLE = 'Gloma | Agente de IA en WhatsApp para agencias de viajes';
+const SITE_TITLE = 'Gloma | Agente de IA en WhatsApp para agencias de viajes y hoteles';
 const SITE_DESCRIPTION =
-  'Un agente de IA atiende el WhatsApp de tu agencia de viajes con tus tarifas y le pasa a tu asesor al viajero listo para cerrar.';
+  'Un agente de IA contesta el WhatsApp de tu agencia de viajes o tu hotel con tus tarifas y le pasa a tu equipo al cliente listo para reservar.';
 
 /** La plataforma vive en su propio subdominio (#303). */
 const APP_URL = 'https://app.glomacx.com';
@@ -696,7 +633,11 @@ function InteractiveHeader() {
             transition: 'opacity 900ms ease, transform 900ms cubic-bezier(.22,.61,.36,1)',
           }}
         >
-          {/* Opción 01 de la segunda ronda de titulares, elegida por el CEO (2026-09-27). */}
+          {/* Opción 01 de la segunda ronda de titulares, elegida por el CEO (2026-09-27).
+              [CONFIRMAR CEO] Candidatos del 2026-10-26, sin aplicar todavía:
+              «¿Quién contesta tu WhatsApp después de las 7 de la noche?» ·
+              «Tus clientes escriben de noche. Tu WhatsApp les contesta.» ·
+              «Que ningún interesado se quede sin respuesta.» */}
           Un asesor más en tu equipo.{' '}
           <span className="block" style={{ color: BRAND.mint }}>Uno que no duerme.</span>
         </h1>
@@ -709,8 +650,8 @@ function InteractiveHeader() {
             transition: 'opacity 900ms ease 150ms, transform 900ms cubic-bezier(.22,.61,.36,1) 150ms',
           }}
         >
-          Atiende tu WhatsApp de día y de noche con tus tarifas, y le pasa a tu equipo los
-          clientes listos para cerrar.
+          Un agente de IA contesta tu WhatsApp con tus tarifas y le pasa a tu equipo, o a tu
+          recepción, al cliente listo para reservar. Para agencias de viajes y hoteles.
         </p>
         <div
           className="mt-10 flex flex-col sm:flex-row gap-3"
@@ -892,7 +833,7 @@ function ContactForm({
           {/* Calificación: con la agencia y el volumen de chats se llega a la
               demo con el paquete ya calculado. */}
           <label className="block text-sm font-medium mb-2" style={{ color: BRAND.textMuted }}>
-            Agencia
+            Agencia u hotel
           </label>
           <input
             type="text"
@@ -900,7 +841,7 @@ function ContactForm({
             maxLength={120}
             value={form.agencia}
             onChange={(e) => setForm({ ...form, agencia: e.target.value })}
-            placeholder="Nombre de tu agencia"
+            placeholder="Nombre de tu agencia u hotel"
             disabled={isSending}
             className="gloma-input w-full px-4 py-3 border rounded-xl text-sm mb-5 focus:outline-none transition-colors disabled:opacity-60"
             style={{
@@ -1209,8 +1150,9 @@ function StatsSection() {
 const TEXTO_CLARO_MUTED = 'rgba(16,24,23,0.72)';
 
 /**
- * Ruta de 4 pasos: horizontal en escritorio (una línea une los nodos) y
- * vertical en móvil (la línea baja por la izquierda).
+ * «No necesitas saber de tecnología»: fusión de «Cómo empezar» con el reparto
+ * tú / nosotros (ajustes del CEO, 2026-10-26). Ruta de 4 pasos: horizontal en
+ * escritorio (una línea une los nodos) y vertical en móvil.
  */
 function ComoEmpezarSection() {
   return (
@@ -1233,10 +1175,10 @@ function ComoEmpezarSection() {
             className="text-3xl md:text-5xl leading-tight mb-5"
             style={{ fontFamily: 'Syne, system-ui, sans-serif', fontWeight: 700, color: BRAND.bgBase }}
           >
-            ¿Cómo empiezas a usar Gloma?
+            No necesitas saber de tecnología
           </h2>
           <p className="text-base md:text-lg" style={{ color: TEXTO_CLARO_MUTED }}>
-            Tu equipo nos cuenta cómo vende. Del resto nos encargamos nosotros.
+            Arrancar es rápido: tu parte cabe en una semana. Del resto nos encargamos nosotros.
           </p>
         </Reveal>
 
@@ -1254,7 +1196,7 @@ function ComoEmpezarSection() {
           />
           {PASOS_INICIO.map((paso, i) => (
             <li key={paso.titulo} className="relative">
-              <Reveal delay={i * 120} className="flex md:flex-col md:items-center gap-5 md:gap-0 md:text-center">
+              <Reveal delay={i * 120} className="flex md:flex-col md:items-center gap-5 md:gap-0">
                 <span
                   className="relative z-10 w-12 h-12 shrink-0 rounded-full flex items-center justify-center text-base tabular-nums md:mb-6"
                   style={{
@@ -1267,23 +1209,39 @@ function ComoEmpezarSection() {
                 >
                   {String(i + 1).padStart(2, '0')}
                 </span>
-                <div>
+                <div className="w-full">
                   <h3
-                    className="text-lg md:text-xl mb-2 leading-snug"
+                    className="text-lg md:text-xl mb-3 leading-snug md:text-center"
                     style={{ fontFamily: 'Syne, system-ui, sans-serif', fontWeight: 700, color: BRAND.bgBase }}
                   >
                     {paso.titulo}
                   </h3>
-                  <p className="text-sm leading-relaxed" style={{ color: TEXTO_CLARO_MUTED }}>
-                    {paso.texto}
-                  </p>
+                  <div
+                    className="rounded-2xl p-4 text-sm leading-relaxed space-y-3"
+                    style={{ backgroundColor: '#FFFFFF', border: '1px solid rgba(0,77,64,0.15)' }}
+                  >
+                    <p style={{ color: BRAND.bgBase }}>
+                      <span className="block text-xs font-semibold uppercase tracking-wide mb-1" style={{ color: BRAND.forest }}>
+                        Tú
+                      </span>
+                      {paso.tu}
+                    </p>
+                    <p className="pt-3" style={{ color: TEXTO_CLARO_MUTED, borderTop: '1px solid rgba(0,77,64,0.12)' }}>
+                      <span className="block text-xs font-semibold uppercase tracking-wide mb-1" style={{ color: BRAND.forest }}>
+                        Nosotros
+                      </span>
+                      {paso.nosotros}
+                    </p>
+                  </div>
                   {paso.etiqueta && (
-                    <span
-                      className="inline-block mt-4 px-3 py-1 rounded-full text-xs font-semibold"
-                      style={{ backgroundColor: 'rgba(0,77,64,0.08)', color: BRAND.forest, border: '1px solid rgba(0,77,64,0.2)' }}
-                    >
-                      {paso.etiqueta}
-                    </span>
+                    <div className="md:text-center">
+                      <span
+                        className="inline-block mt-4 px-3 py-1 rounded-full text-xs font-semibold"
+                        style={{ backgroundColor: 'rgba(0,77,64,0.08)', color: BRAND.forest, border: '1px solid rgba(0,77,64,0.2)' }}
+                      >
+                        {paso.etiqueta}
+                      </span>
+                    </div>
                   )}
                 </div>
               </Reveal>
@@ -1291,67 +1249,64 @@ function ComoEmpezarSection() {
           ))}
         </ol>
 
-        {/* Quién hace qué: la ruta de arriba dice cuándo; esto, el reparto del trabajo. */}
-        <Reveal className="mt-16 md:mt-24 max-w-5xl mx-auto">
-          <div className="text-center mb-8 md:mb-10">
-            <h3
-              className="text-2xl md:text-4xl leading-tight mb-3"
-              style={{ fontFamily: 'Syne, system-ui, sans-serif', fontWeight: 700, color: BRAND.bgBase }}
-            >
-              No necesitas saber de tecnología
-            </h3>
-            <p className="text-base md:text-lg" style={{ color: TEXTO_CLARO_MUTED }}>
-              Tu parte es contarnos cómo vende tu agencia. La técnica corre por nuestra cuenta.
-            </p>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-[2fr_3fr] gap-4 md:gap-6 items-start">
-            {[
-              { titulo: 'Lo que haces tú', items: REPARTO.tu, oscuro: false },
-              { titulo: 'Lo que hacemos nosotros', items: REPARTO.nosotros, oscuro: true },
-            ].map((col) => (
+        <Reveal className="text-center mt-12">
+          <button
+            type="button"
+            onClick={abrirAgendarLlamada}
+            className="px-6 py-3 rounded-full text-sm font-semibold transition-opacity hover:opacity-90"
+            style={{ backgroundColor: BRAND.forest, color: '#FFFFFF' }}
+          >
+            {TEXTOS_AGENDAR.agendar}
+          </button>
+        </Reveal>
+      </div>
+    </section>
+  );
+}
+
+// --- Funciona con lo que ya usas -------------------------------------------
+
+function YaUsasSection() {
+  return (
+    <section
+      aria-labelledby="ya-usas-titulo"
+      className="py-20 md:py-28"
+      style={{ backgroundColor: BRAND.bgAlt, fontFamily: 'Inter, system-ui, sans-serif' }}
+    >
+      <div className="max-w-6xl mx-auto px-6 md:px-10">
+        <Reveal className="text-center max-w-2xl mx-auto mb-12 md:mb-16">
+          <h2
+            id="ya-usas-titulo"
+            className="text-3xl md:text-5xl leading-tight mb-5"
+            style={{ fontFamily: 'Syne, system-ui, sans-serif', fontWeight: 700, color: BRAND.text }}
+          >
+            Funciona con lo que ya usas
+          </h2>
+          <p className="text-base md:text-lg" style={{ color: BRAND.textMuted }}>
+            Tu agente trabaja con tus tarifas desde el primer día, y lo conectamos con el sistema
+            donde ya llevas tus reservas.
+          </p>
+        </Reveal>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-5 md:gap-6">
+          {YA_USAS.map((c, i) => (
+            <Reveal key={c.titulo} delay={i * 80}>
               <div
-                key={col.titulo}
-                className="rounded-3xl p-6 md:p-8"
-                style={
-                  col.oscuro
-                    ? { backgroundColor: BRAND.forest, color: '#FFFFFF' }
-                    : { backgroundColor: '#FFFFFF', border: '1px solid rgba(0,77,64,0.15)' }
-                }
+                className="gloma-card p-6 md:p-8 rounded-3xl h-full transition-all"
+                style={{ backgroundColor: BRAND.cardBg, border: `1px solid ${BRAND.cardBorder}` }}
               >
                 <p
-                  className="text-lg md:text-xl mb-5"
-                  style={{
-                    fontFamily: 'Syne, system-ui, sans-serif',
-                    fontWeight: 700,
-                    color: col.oscuro ? '#FFFFFF' : BRAND.forest,
-                  }}
+                  className="text-xl mb-3"
+                  style={{ fontFamily: 'Syne, system-ui, sans-serif', fontWeight: 700, color: BRAND.mint }}
                 >
-                  {col.titulo}
+                  {c.titulo}
                 </p>
-                <ul className="space-y-3">
-                  {col.items.map((it) => (
-                    <li key={it} className="flex gap-3 text-sm md:text-base leading-snug">
-                      <span aria-hidden="true" style={{ color: col.oscuro ? BRAND.mint : BRAND.forest }}>
-                        ✓
-                      </span>
-                      <span style={{ color: col.oscuro ? 'rgba(255,255,255,0.9)' : BRAND.bgBase }}>{it}</span>
-                    </li>
-                  ))}
-                </ul>
+                <p className="text-base leading-relaxed" style={{ color: BRAND.textMuted }}>
+                  {c.texto}
+                </p>
               </div>
-            ))}
-          </div>
-          <div className="text-center mt-8">
-            <button
-              type="button"
-              onClick={abrirAgendarLlamada}
-              className="px-6 py-3 rounded-full text-sm font-semibold transition-opacity hover:opacity-90"
-              style={{ backgroundColor: BRAND.forest, color: '#FFFFFF' }}
-            >
-              {TEXTOS_AGENDAR.agendar}
-            </button>
-          </div>
-        </Reveal>
+            </Reveal>
+          ))}
+        </div>
       </div>
     </section>
   );
@@ -1515,101 +1470,24 @@ function Flecha() {
   );
 }
 
-/**
- * «Todos los paquetes incluyen»: tabla con una columna por paquete en
- * escritorio; en móvil, una sola lista con ✓ (las tres columnas serían iguales).
- */
-function TablaIncluye() {
-  const paquetes = PRECIOS.paquetes;
+/** Lo que traen los tres paquetes: una lista, 2 columnas en escritorio. */
+function ListaIncluye() {
   return (
-    <div
-      className="rounded-3xl p-6 md:p-10"
-      style={{ backgroundColor: BRAND.cardBg, border: `1px solid ${BRAND.cardBorder}` }}
-    >
-      <h3
-        className="text-2xl md:text-3xl leading-tight mb-2"
-        style={{ fontFamily: 'Syne, system-ui, sans-serif', fontWeight: 700, color: BRAND.text }}
-      >
-        Todos los paquetes incluyen
-      </h3>
-      <p className="text-base mb-6 md:mb-8" style={{ color: BRAND.textMuted }}>
-        Todas las funciones vienen en todos los paquetes. Lo único que cambia es cuántas
+    <div className="mt-8 rounded-2xl p-5 md:p-6" style={{ backgroundColor: BRAND.mintSoft, border: `1px solid ${BRAND.cardBorderHover}` }}>
+      <p className="text-base md:text-lg mb-4" style={{ color: BRAND.text }}>
+        <strong>Los tres paquetes traen todo.</strong> Lo único que cambia es cuántas
         conversaciones traes.
       </p>
-
-      {/* Escritorio */}
-      <table className="hidden md:table w-full text-sm">
-        <thead>
-          <tr>
-            <th className="text-left font-normal pb-3" style={{ color: BRAND.textDim }}>
-              <span className="sr-only">Función</span>
-            </th>
-            {paquetes.map((p) => (
-              <th
-                key={p.conversaciones}
-                scope="col"
-                className="pb-3 px-2 w-32 text-center font-semibold"
-                style={{ color: p.recomendado ? BRAND.golden : BRAND.text }}
-              >
-                {formatNumber(p.conversaciones)}
-                <span className="block text-xs font-normal" style={{ color: BRAND.textDim }}>
-                  conversaciones
-                </span>
-              </th>
-            ))}
-          </tr>
-        </thead>
-        {INCLUYE.map((g) => (
-          <tbody key={g.grupo}>
-            <tr>
-              <th
-                colSpan={paquetes.length + 1}
-                scope="colgroup"
-                className="text-left pt-6 pb-2 text-xs font-semibold uppercase tracking-wide"
-                style={{ color: BRAND.mint }}
-              >
-                {g.grupo}
-              </th>
-            </tr>
-            {g.filas.map((f) => (
-              <tr key={f} style={{ borderTop: `1px solid ${BRAND.cardBorder}` }}>
-                <th scope="row" className="text-left font-normal py-3 pr-4" style={{ color: BRAND.text }}>
-                  {f}
-                </th>
-                {paquetes.map((p) => (
-                  <td key={p.conversaciones} className="text-center py-3" style={{ color: BRAND.mint }}>
-                    <span aria-label="Incluido">✓</span>
-                  </td>
-                ))}
-              </tr>
-            ))}
-          </tbody>
+      <ul className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-3">
+        {INCLUYE.map((f) => (
+          <li key={f} className="flex gap-3 text-sm md:text-base leading-snug" style={{ color: BRAND.text }}>
+            <span aria-hidden="true" style={{ color: BRAND.mint }}>
+              ✓
+            </span>
+            {f}
+          </li>
         ))}
-      </table>
-
-      {/* Móvil */}
-      <div className="md:hidden">
-        <p className="text-sm font-semibold mb-2" style={{ color: BRAND.text }}>
-          Incluido en los 3 paquetes
-        </p>
-        {INCLUYE.map((g) => (
-          <div key={g.grupo} className="mt-5">
-            <p className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: BRAND.mint }}>
-              {g.grupo}
-            </p>
-            <ul className="space-y-2">
-              {g.filas.map((f) => (
-                <li key={f} className="flex gap-3 text-sm leading-snug" style={{ color: BRAND.text }}>
-                  <span aria-hidden="true" style={{ color: BRAND.mint }}>
-                    ✓
-                  </span>
-                  {f}
-                </li>
-              ))}
-            </ul>
-          </div>
-        ))}
-      </div>
+      </ul>
     </div>
   );
 }
@@ -1823,6 +1701,8 @@ function PreciosSection() {
                 })}
               </div>
 
+              <ListaIncluye />
+
               {/* Gráfico: lo que no se usa pasa al mes siguiente */}
               <div className="mt-8 grid grid-cols-1 md:grid-cols-[1fr_auto_1fr] gap-2 md:gap-4 items-stretch">
                 <div className="rounded-2xl p-5" style={nodo}>
@@ -1935,10 +1815,6 @@ function PreciosSection() {
           </Reveal>
 
           <Reveal>
-            <TablaIncluye />
-          </Reveal>
-
-          <Reveal>
             <BloqueGarantia />
           </Reveal>
         </div>
@@ -1946,7 +1822,7 @@ function PreciosSection() {
         {/* CTA */}
         <Reveal className="mt-12 md:mt-16 text-center">
           <p className="text-lg md:text-xl mb-6" style={{ color: BRAND.text }}>
-            ¿No sabes qué paquete te conviene? Lo calculamos con el volumen de chats de tu agencia.
+            Calculamos contigo cuánta venta se te queda en el aire y qué paquete te conviene.
           </p>
           <div className="flex flex-col sm:flex-row gap-3 justify-center">
             <button
@@ -1961,6 +1837,7 @@ function PreciosSection() {
               {TEXTOS_AGENDAR.whatsapp}
             </BotonAsesor>
           </div>
+          {PROPUESTA_PUBLICADA && (
           <div className="mt-8">
             <a
               href={PROPUESTA_PDF}
@@ -1974,6 +1851,7 @@ function PreciosSection() {
               Para compartirla con tu socio o tu equipo.
             </p>
           </div>
+          )}
         </Reveal>
       </div>
     </section>
@@ -2032,7 +1910,7 @@ export default function GlomaLanding() {
         <meta property="og:image" content={OG_IMAGE} />
         <meta property="og:image:width" content="1200" />
         <meta property="og:image:height" content="630" />
-        <meta property="og:image:alt" content="Tu agencia vende viajes por WhatsApp, las 24 horas" />
+        <meta property="og:image:alt" content="Tu negocio de turismo contesta su WhatsApp a cualquier hora" />
         <meta name="twitter:card" content="summary_large_image" />
         <meta name="twitter:title" content={SITE_TITLE} />
         <meta name="twitter:description" content={SITE_DESCRIPTION} />
@@ -2068,8 +1946,103 @@ export default function GlomaLanding() {
       >
         <InteractiveHeader />
 
-        {/* ===== PREVIEW ===== */}
-        <section className="max-w-6xl mx-auto px-6 md:px-10 py-20 md:py-28 space-y-24">
+        {/* ===== ¿TE SUENA? (dolores → solución) ===== */}
+        <section
+          aria-labelledby="te-suena-titulo"
+          className="py-20 md:py-28"
+          style={{ backgroundColor: BRAND.bgAlt }}
+        >
+          <div className="max-w-6xl mx-auto px-6 md:px-10">
+            <Reveal className="text-center max-w-2xl mx-auto mb-12 md:mb-16">
+              <h2
+                id="te-suena-titulo"
+                className="text-3xl md:text-5xl leading-tight mb-5"
+                style={{
+                  fontFamily: 'Syne, system-ui, sans-serif',
+                  fontWeight: 700,
+                  color: BRAND.text,
+                }}
+              >
+                ¿Te suena?
+              </h2>
+              <p
+                className="text-base md:text-lg"
+                style={{ fontFamily: 'Inter, system-ui, sans-serif', color: BRAND.textMuted }}
+              >
+                Lo que nos cuentan hoteleros y empresarios, y lo que hace Gloma con eso.
+              </p>
+            </Reveal>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-5 md:gap-6">
+              {DOLORES.map((d, i) => (
+                <Reveal key={d.dolor} delay={i * 80}>
+                  <div
+                    className="gloma-card p-6 md:p-8 rounded-2xl transition-all hover:-translate-y-1 h-full"
+                    style={{
+                      backgroundColor: BRAND.cardBg,
+                      border: `1px solid ${BRAND.cardBorder}`,
+                    }}
+                  >
+                    <div className="flex items-start gap-4">
+                      <div
+                        className="w-12 h-12 shrink-0 rounded-full flex items-center justify-center"
+                        style={{
+                          backgroundColor: BRAND.mintSoft,
+                          border: `1px solid ${BRAND.cardBorder}`,
+                        }}
+                      >
+                        <Icono nombre={d.icon} size={22} />
+                      </div>
+                      <h3
+                        className="text-xl md:text-2xl leading-snug pt-1.5"
+                        style={{
+                          fontFamily: 'Syne, system-ui, sans-serif',
+                          fontWeight: 700,
+                          color: BRAND.text,
+                        }}
+                      >
+                        {d.dolor}
+                      </h3>
+                    </div>
+                    <div
+                      className="mt-5 pt-5 flex items-start gap-3"
+                      style={{ borderTop: `1px solid ${BRAND.cardBorder}` }}
+                    >
+                      <span className="shrink-0 mt-0.5">
+                        <Icono nombre="flecha" size={20} />
+                      </span>
+                      <p
+                        className="text-base leading-relaxed"
+                        style={{
+                          fontFamily: 'Inter, system-ui, sans-serif',
+                          color: BRAND.textMuted,
+                        }}
+                      >
+                        {d.solucion}
+                      </p>
+                    </div>
+                  </div>
+                </Reveal>
+              ))}
+            </div>
+
+          </div>
+        </section>
+
+        {/* ===== LO QUE CAMBIA EN TU NEGOCIO ===== */}
+        <section
+          aria-labelledby="cambia-titulo"
+          className="max-w-6xl mx-auto px-6 md:px-10 py-20 md:py-28 space-y-24"
+        >
+          <Reveal className="text-center max-w-2xl mx-auto">
+            <h2
+              id="cambia-titulo"
+              className="text-3xl md:text-5xl leading-tight"
+              style={{ fontFamily: 'Syne, system-ui, sans-serif', fontWeight: 700, color: BRAND.text }}
+            >
+              Lo que cambia en tu negocio
+            </h2>
+          </Reveal>
           {PREVIEW_SECTIONS.map((s, i) => (
             <Reveal key={i}>
               <div
@@ -2078,7 +2051,7 @@ export default function GlomaLanding() {
                 }`}
               >
                 <div className="md:[direction:ltr]">
-                  <h2
+                  <h3
                     className="text-2xl md:text-4xl mb-5 leading-tight"
                     style={{
                       fontFamily: 'Syne, system-ui, sans-serif',
@@ -2087,7 +2060,7 @@ export default function GlomaLanding() {
                     }}
                   >
                     {s.title}
-                  </h2>
+                  </h3>
                   <p
                     className="text-base md:text-lg leading-relaxed"
                     style={{
@@ -2123,138 +2096,8 @@ export default function GlomaLanding() {
           ))}
         </section>
 
-        {/* ===== ¿TE SUENA? (dolores → solución, y lo que además trae) ===== */}
-        <section
-          aria-labelledby="te-suena-titulo"
-          className="py-20 md:py-28"
-          style={{ backgroundColor: BRAND.bgAlt }}
-        >
-          <div className="max-w-6xl mx-auto px-6 md:px-10">
-            <Reveal className="text-center max-w-2xl mx-auto mb-12 md:mb-16">
-              <h2
-                id="te-suena-titulo"
-                className="text-3xl md:text-5xl leading-tight mb-5"
-                style={{
-                  fontFamily: 'Syne, system-ui, sans-serif',
-                  fontWeight: 700,
-                  color: BRAND.text,
-                }}
-              >
-                ¿Te suena?
-              </h2>
-              <p
-                className="text-base md:text-lg"
-                style={{ fontFamily: 'Inter, system-ui, sans-serif', color: BRAND.textMuted }}
-              >
-                Lo que nos cuentan los empresarios, y lo que hace Gloma con eso.
-              </p>
-            </Reveal>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-5 md:gap-6">
-              {DOLORES.map((d, i) => (
-                <Reveal key={d.dolor} delay={i * 80}>
-                  <div
-                    className="gloma-card p-6 md:p-8 rounded-2xl transition-all hover:-translate-y-1 h-full"
-                    style={{
-                      backgroundColor: BRAND.cardBg,
-                      border: `1px solid ${BRAND.cardBorder}`,
-                    }}
-                  >
-                    <div className="flex items-start gap-4">
-                      <div
-                        className="w-12 h-12 shrink-0 rounded-full flex items-center justify-center"
-                        style={{
-                          backgroundColor: BRAND.mintSoft,
-                          border: `1px solid ${BRAND.cardBorder}`,
-                        }}
-                      >
-                        <Icono nombre={d.icon} size={22} />
-                      </div>
-                      <h3
-                        className="text-xl md:text-2xl leading-snug pt-1.5"
-                        style={{
-                          fontFamily: 'Syne, system-ui, sans-serif',
-                          fontWeight: 700,
-                          color: BRAND.text,
-                        }}
-                      >
-                        «{d.dolor}»
-                      </h3>
-                    </div>
-                    <div
-                      className="mt-5 pt-5 flex items-start gap-3"
-                      style={{ borderTop: `1px solid ${BRAND.cardBorder}` }}
-                    >
-                      <span className="shrink-0 mt-0.5">
-                        <Icono nombre="flecha" size={20} />
-                      </span>
-                      <p
-                        className="text-base leading-relaxed"
-                        style={{
-                          fontFamily: 'Inter, system-ui, sans-serif',
-                          color: BRAND.textMuted,
-                        }}
-                      >
-                        {d.solucion}
-                      </p>
-                    </div>
-                  </div>
-                </Reveal>
-              ))}
-            </div>
-
-            <Reveal className="mt-14 md:mt-20 mb-6 md:mb-8">
-              <p
-                className="text-sm font-semibold tracking-wide uppercase text-center"
-                style={{ fontFamily: 'Inter, system-ui, sans-serif', color: BRAND.mint }}
-              >
-                Y además
-              </p>
-            </Reveal>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 md:gap-6">
-              {FEATURES.map((f, i) => (
-                <Reveal key={f.title} delay={i * 80}>
-                  <div
-                    className="gloma-card p-6 rounded-2xl transition-all hover:-translate-y-1 h-full"
-                    style={{
-                      backgroundColor: BRAND.cardBg,
-                      border: `1px solid ${BRAND.cardBorder}`,
-                    }}
-                  >
-                    <div
-                      className="w-12 h-12 rounded-full flex items-center justify-center mb-4"
-                      style={{
-                        backgroundColor: BRAND.mintSoft,
-                        border: `1px solid ${BRAND.cardBorder}`,
-                      }}
-                    >
-                      <Icono nombre={f.icon} size={22} />
-                    </div>
-                    <h3
-                      className="text-lg mb-2 leading-snug"
-                      style={{
-                        fontFamily: 'Syne, system-ui, sans-serif',
-                        fontWeight: 600,
-                        color: BRAND.text,
-                      }}
-                    >
-                      {f.title}
-                    </h3>
-                    <p
-                      className="text-sm leading-relaxed"
-                      style={{
-                        fontFamily: 'Inter, system-ui, sans-serif',
-                        color: BRAND.textMuted,
-                      }}
-                    >
-                      {f.text}
-                    </p>
-                  </div>
-                </Reveal>
-              ))}
-            </div>
-          </div>
-        </section>
+        {/* ===== FUNCIONA CON LO QUE YA USAS ===== */}
+        <YaUsasSection />
 
         {/* ===== CÓMO EMPEZAR ===== */}
         <ComoEmpezarSection />
@@ -2301,7 +2144,7 @@ export default function GlomaLanding() {
                   color: BRAND.textMuted,
                 }}
               >
-                Cuéntanos de tu agencia y te mostramos cómo se vería el agente con tus destinos y tarifas reales.
+                Cuéntanos de tu negocio y te mostramos cómo se vería el agente con tus destinos y tarifas reales.
               </p>
               {/* Un solo paso principal en el cierre (2026-10-20): el formulario
                   de al lado. Sin enlace a Lía (2026-10-21, CEO). */}
@@ -2380,11 +2223,13 @@ export default function GlomaLanding() {
                     Instagram · @gloma_app →
                   </a>
                 </li>
-                <li>
-                  <a href={PROPUESTA_PDF} download className="opacity-80 hover:opacity-100">
-                    Propuesta comercial (PDF) →
-                  </a>
-                </li>
+                {PROPUESTA_PUBLICADA && (
+                  <li>
+                    <a href={PROPUESTA_PDF} download className="opacity-80 hover:opacity-100">
+                      Propuesta comercial (PDF) →
+                    </a>
+                  </li>
+                )}
                 <li>
                   <a href="/privacidad" className="opacity-80 hover:opacity-100">
                     Política de tratamiento de datos
