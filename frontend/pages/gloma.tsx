@@ -186,6 +186,11 @@ const FAQ = [
     a: 'Depende de cuánta información tengamos de tu operación y de la conexión de tu número con Meta, que depende de tus accesos. Lo estimamos en la demo con tu caso. Una vez en marcha, los primeros 10 días son de ajuste.',
   },
   {
+    // Garantía (decisión del CEO 2026-10-22): sin plazo en días ni devoluciones.
+    q: '¿Qué pasa después de la instalación?',
+    a: 'Tu agente empieza a atender y durante los primeros 10 días ajustamos los detalles con las conversaciones que van llegando. Después tienes soporte 24/7, mantenimiento incluido y rondas de mejora con lo que muestra tu tablero. Nuestra garantía es que todo quede funcionando como tú quieres: si algo no responde como esperas, nos escribes por WhatsApp y lo ajustamos.',
+  },
+  {
     q: '¿Qué tasa de cierre voy a tener?',
     a: 'No hay un porcentaje genérico que prometer. El agente arranca con una tasa parecida a la que ya tienes, porque vende con tus mismos mensajes e información; la medimos en el tablero y desde ahí trabajamos para subirla.',
   },
@@ -289,6 +294,10 @@ const FEATURES: { icon: IconoNombre; title: string; text: string }[] = [
   },
 ];
 
+/**
+ * El 70 % es cifra autorizada por el CEO (2026-10-21) y siempre va con su base
+ * (`NOTA_AHORRO`, decisión D1 del 2026-10-22). Las dos cifras de plata van juntas.
+ */
 const STATS = [
   {
     icon: 'mensajes' as IconoNombre,
@@ -298,20 +307,97 @@ const STATS = [
     label: 'mensajes de viajeros gestionados',
   },
   {
-    icon: 'retorno' as IconoNombre,
-    value: 4,
-    prefix: '',
-    suffix: ' meses',
-    label: 'de retorno de inversión promedio',
-  },
-  {
     icon: 'horas' as IconoNombre,
     value: 10000,
     prefix: '+',
     suffix: '',
     label: 'horas de asesores AI operando',
   },
+  {
+    icon: 'medicion' as IconoNombre,
+    value: 70,
+    prefix: 'Hasta ',
+    suffix: ' %',
+    label: 'menos en el costo de atención*',
+  },
+  {
+    icon: 'retorno' as IconoNombre,
+    value: 4,
+    prefix: '',
+    suffix: ' meses',
+    label: 'de retorno de inversión promedio',
+  },
 ];
+
+const NOTA_AHORRO = '* Frente a atender el mismo volumen de chats solo con asesores.';
+
+/**
+ * «Todos los paquetes incluyen» (copy aprobado en
+ * `marketing/propuesta_comercial/COPY_LANDING.md`, 1a). Todas las funciones van
+ * en los tres paquetes: por eso la tabla no tiene columna por paquete en el dato.
+ */
+const INCLUYE: { grupo: string; filas: string[] }[] = [
+  {
+    grupo: 'Vende y atiende',
+    filas: [
+      'Atiende tu WhatsApp de día y de noche',
+      'Busca en tu catálogo de planes o productos',
+      'Cotiza con tus tarifas',
+      'Toma los datos del pedido o la reserva y los deja en tu Google Sheets',
+      'Comparte tus formas de pago o tu link de pago',
+      'Con Shopify, consulta si un pedido ya está pagado',
+      'Consulta qué planes o productos tienes en tu catálogo',
+      'Le vuelve a escribir a quien dejó de contestar',
+      'Le pasa el cliente a tu asesor con todo el historial',
+    ],
+  },
+  {
+    grupo: 'Asistentes',
+    filas: ['Asistente de ventas y servicio al cliente', 'Agenda citas y llamadas con tu equipo'],
+  },
+  {
+    grupo: 'Tu plataforma',
+    filas: [
+      'Bandeja de mensajes para tu equipo',
+      'Campañas por WhatsApp',
+      'Tus contactos entran desde Excel',
+      'Simulador para probar tu agente antes de salir',
+      'Tablero con tus ventas y abandonos',
+    ],
+  },
+  {
+    grupo: 'Acompañamiento',
+    filas: [
+      'Instalación hecha por nuestro equipo',
+      'Ajustes durante los primeros 10 días',
+      'Garantía de que todo queda funcionando como quieres',
+      'Soporte 24/7',
+      'Mantenimiento y actualizaciones incluidos',
+    ],
+  },
+];
+
+/** «No necesitas saber de tecnología» (COPY_LANDING.md, 1b, opción 1). */
+const REPARTO = {
+  tu: [
+    'Una reunión para contarnos cómo vendes',
+    'Nos compartes tus tarifas, itinerarios y políticas',
+    'Nos das acceso a tu WhatsApp de empresa. Te guiamos paso a paso',
+    'Pruebas tu agente en el simulador y nos das el visto bueno',
+  ],
+  nosotros: [
+    'Configuramos el agente con tus destinos, tarifas y el tono de tu marca',
+    'Lo entrenamos con los mensajes y guiones que ya usa tu equipo',
+    'Conectamos tu número de WhatsApp',
+    'Cargamos tus contactos desde tu Excel',
+    'Lo probamos contigo antes de que hable con el primer cliente',
+    'Ajustamos los detalles durante los primeros 10 días',
+    'Lo mantenemos al día, con soporte 24/7',
+  ],
+};
+
+/** La propuesta elegida por el CEO, publicada con `exportar_pdf.sh --publicar`. */
+const PROPUESTA_PDF = '/gloma/propuesta-comercial-gloma.pdf';
 
 /**
  * Precios públicos (definidos por el CEO el 2026-09-27; alza del ~20% el 2026-09-29;
@@ -1060,8 +1146,8 @@ function StatsSection() {
             'radial-gradient(circle at 50% 0%, rgba(77,182,172,0.10), transparent 60%)',
         }}
       />
-      <div className="relative max-w-5xl mx-auto px-6 md:px-10">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-10 md:gap-6 text-center">
+      <div className="relative max-w-6xl mx-auto px-6 md:px-10">
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-10 md:gap-6 text-center">
           {STATS.map((s, i) => (
             <div
               key={s.label}
@@ -1082,7 +1168,7 @@ function StatsSection() {
                 <Icono nombre={s.icon} size={34} />
               </div>
               <div
-                className="text-4xl lg:text-[2.6rem] mb-2 tabular-nums whitespace-nowrap"
+                className="text-4xl sm:text-3xl md:text-4xl xl:text-[1.9rem] mb-2 tabular-nums whitespace-nowrap"
                 style={{
                   fontFamily: 'Syne, system-ui, sans-serif',
                   fontWeight: 800,
@@ -1106,6 +1192,12 @@ function StatsSection() {
             </div>
           ))}
         </div>
+        <p
+          className="mt-10 text-xs text-center"
+          style={{ fontFamily: 'Inter, system-ui, sans-serif', color: BRAND.textDim }}
+        >
+          {NOTA_AHORRO}
+        </p>
       </div>
     </section>
   );
@@ -1198,6 +1290,68 @@ function ComoEmpezarSection() {
             </li>
           ))}
         </ol>
+
+        {/* Quién hace qué: la ruta de arriba dice cuándo; esto, el reparto del trabajo. */}
+        <Reveal className="mt-16 md:mt-24 max-w-5xl mx-auto">
+          <div className="text-center mb-8 md:mb-10">
+            <h3
+              className="text-2xl md:text-4xl leading-tight mb-3"
+              style={{ fontFamily: 'Syne, system-ui, sans-serif', fontWeight: 700, color: BRAND.bgBase }}
+            >
+              No necesitas saber de tecnología
+            </h3>
+            <p className="text-base md:text-lg" style={{ color: TEXTO_CLARO_MUTED }}>
+              Tu parte es contarnos cómo vende tu agencia. La técnica corre por nuestra cuenta.
+            </p>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-[2fr_3fr] gap-4 md:gap-6 items-start">
+            {[
+              { titulo: 'Lo que haces tú', items: REPARTO.tu, oscuro: false },
+              { titulo: 'Lo que hacemos nosotros', items: REPARTO.nosotros, oscuro: true },
+            ].map((col) => (
+              <div
+                key={col.titulo}
+                className="rounded-3xl p-6 md:p-8"
+                style={
+                  col.oscuro
+                    ? { backgroundColor: BRAND.forest, color: '#FFFFFF' }
+                    : { backgroundColor: '#FFFFFF', border: '1px solid rgba(0,77,64,0.15)' }
+                }
+              >
+                <p
+                  className="text-lg md:text-xl mb-5"
+                  style={{
+                    fontFamily: 'Syne, system-ui, sans-serif',
+                    fontWeight: 700,
+                    color: col.oscuro ? '#FFFFFF' : BRAND.forest,
+                  }}
+                >
+                  {col.titulo}
+                </p>
+                <ul className="space-y-3">
+                  {col.items.map((it) => (
+                    <li key={it} className="flex gap-3 text-sm md:text-base leading-snug">
+                      <span aria-hidden="true" style={{ color: col.oscuro ? BRAND.mint : BRAND.forest }}>
+                        ✓
+                      </span>
+                      <span style={{ color: col.oscuro ? 'rgba(255,255,255,0.9)' : BRAND.bgBase }}>{it}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
+          <div className="text-center mt-8">
+            <button
+              type="button"
+              onClick={abrirAgendarLlamada}
+              className="px-6 py-3 rounded-full text-sm font-semibold transition-opacity hover:opacity-90"
+              style={{ backgroundColor: BRAND.forest, color: '#FFFFFF' }}
+            >
+              {TEXTOS_AGENDAR.agendar}
+            </button>
+          </div>
+        </Reveal>
       </div>
     </section>
   );
@@ -1361,6 +1515,139 @@ function Flecha() {
   );
 }
 
+/**
+ * «Todos los paquetes incluyen»: tabla con una columna por paquete en
+ * escritorio; en móvil, una sola lista con ✓ (las tres columnas serían iguales).
+ */
+function TablaIncluye() {
+  const paquetes = PRECIOS.paquetes;
+  return (
+    <div
+      className="rounded-3xl p-6 md:p-10"
+      style={{ backgroundColor: BRAND.cardBg, border: `1px solid ${BRAND.cardBorder}` }}
+    >
+      <h3
+        className="text-2xl md:text-3xl leading-tight mb-2"
+        style={{ fontFamily: 'Syne, system-ui, sans-serif', fontWeight: 700, color: BRAND.text }}
+      >
+        Todos los paquetes incluyen
+      </h3>
+      <p className="text-base mb-6 md:mb-8" style={{ color: BRAND.textMuted }}>
+        Todas las funciones vienen en todos los paquetes. Lo único que cambia es cuántas
+        conversaciones traes.
+      </p>
+
+      {/* Escritorio */}
+      <table className="hidden md:table w-full text-sm">
+        <thead>
+          <tr>
+            <th className="text-left font-normal pb-3" style={{ color: BRAND.textDim }}>
+              <span className="sr-only">Función</span>
+            </th>
+            {paquetes.map((p) => (
+              <th
+                key={p.conversaciones}
+                scope="col"
+                className="pb-3 px-2 w-32 text-center font-semibold"
+                style={{ color: p.recomendado ? BRAND.golden : BRAND.text }}
+              >
+                {formatNumber(p.conversaciones)}
+                <span className="block text-xs font-normal" style={{ color: BRAND.textDim }}>
+                  conversaciones
+                </span>
+              </th>
+            ))}
+          </tr>
+        </thead>
+        {INCLUYE.map((g) => (
+          <tbody key={g.grupo}>
+            <tr>
+              <th
+                colSpan={paquetes.length + 1}
+                scope="colgroup"
+                className="text-left pt-6 pb-2 text-xs font-semibold uppercase tracking-wide"
+                style={{ color: BRAND.mint }}
+              >
+                {g.grupo}
+              </th>
+            </tr>
+            {g.filas.map((f) => (
+              <tr key={f} style={{ borderTop: `1px solid ${BRAND.cardBorder}` }}>
+                <th scope="row" className="text-left font-normal py-3 pr-4" style={{ color: BRAND.text }}>
+                  {f}
+                </th>
+                {paquetes.map((p) => (
+                  <td key={p.conversaciones} className="text-center py-3" style={{ color: BRAND.mint }}>
+                    <span aria-label="Incluido">✓</span>
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        ))}
+      </table>
+
+      {/* Móvil */}
+      <div className="md:hidden">
+        <p className="text-sm font-semibold mb-2" style={{ color: BRAND.text }}>
+          Incluido en los 3 paquetes
+        </p>
+        {INCLUYE.map((g) => (
+          <div key={g.grupo} className="mt-5">
+            <p className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: BRAND.mint }}>
+              {g.grupo}
+            </p>
+            <ul className="space-y-2">
+              {g.filas.map((f) => (
+                <li key={f} className="flex gap-3 text-sm leading-snug" style={{ color: BRAND.text }}>
+                  <span aria-hidden="true" style={{ color: BRAND.mint }}>
+                    ✓
+                  </span>
+                  {f}
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** Garantía, soporte y mantenimiento (COPY_LANDING.md, 1d). Cuadra con `PASOS_INICIO`. */
+function BloqueGarantia() {
+  return (
+    <div
+      className="rounded-3xl p-6 md:p-10"
+      style={{ backgroundColor: BRAND.forest, border: `1px solid ${BRAND.cardBorderHover}` }}
+    >
+      <h3
+        className="text-2xl md:text-3xl leading-tight mb-3"
+        style={{ fontFamily: 'Syne, system-ui, sans-serif', fontWeight: 700, color: '#FFFFFF' }}
+      >
+        Queda funcionando como tú quieres.
+      </h3>
+      <p className="text-base leading-relaxed max-w-3xl" style={{ color: 'rgba(255,255,255,0.85)' }}>
+        Esa es nuestra garantía. Instalamos el agente, lo probamos contigo y durante los primeros
+        10 días lo ajustamos con las conversaciones que van llegando. Después sigues con soporte
+        24/7 y mantenimiento incluido: si algo no responde como esperas, nos escribes por WhatsApp
+        y lo ajustamos.
+      </p>
+      <ul className="flex flex-wrap gap-2 mt-6">
+        {['Garantía de funcionamiento', 'Soporte 24/7', 'Mantenimiento incluido'].map((t) => (
+          <li
+            key={t}
+            className="px-3 py-1 rounded-full text-xs font-semibold"
+            style={{ backgroundColor: 'rgba(16,24,23,0.35)', color: BRAND.mint, border: `1px solid ${BRAND.cardBorderHover}` }}
+          >
+            ✓ {t}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 function PreciosSection() {
   const [moneda, setMoneda] = useState<Moneda>('COP');
   const usd = moneda === 'USD';
@@ -1405,6 +1692,13 @@ function PreciosSection() {
             La instalación es una inversión única. Después, el agente funciona con un paquete
             de conversaciones que recargas cuando se acaba, y las campañas se cobran por mensaje
             enviado.
+          </p>
+          <p className="text-base md:text-lg mt-4" style={{ color: BRAND.text }}>
+            <strong style={{ color: BRAND.mint }}>Hasta un 70 % menos en el costo de atención*</strong>, y tu
+            inversión se recupera en 4 meses, en promedio.
+          </p>
+          <p className="text-xs mt-1" style={{ color: BRAND.textDim }}>
+            {NOTA_AHORRO}
           </p>
 
           <ul className="flex flex-wrap justify-center gap-2 mt-6" aria-label="Lo que incluyen los precios">
@@ -1639,6 +1933,14 @@ function PreciosSection() {
               </div>
             </div>
           </Reveal>
+
+          <Reveal>
+            <TablaIncluye />
+          </Reveal>
+
+          <Reveal>
+            <BloqueGarantia />
+          </Reveal>
         </div>
 
         {/* CTA */}
@@ -1658,6 +1960,19 @@ function PreciosSection() {
             <BotonAsesor className="px-6 py-3 rounded-full text-sm font-semibold border-2 border-white/80 text-white hover:bg-white/10 transition-colors">
               {TEXTOS_AGENDAR.whatsapp}
             </BotonAsesor>
+          </div>
+          <div className="mt-8">
+            <a
+              href={PROPUESTA_PDF}
+              download
+              className="inline-flex items-center gap-2 px-6 py-3 rounded-full text-sm font-semibold transition-colors hover:bg-white/5"
+              style={{ color: BRAND.mint, border: `1px solid ${BRAND.cardBorderHover}` }}
+            >
+              Descargar propuesta comercial (PDF)
+            </a>
+            <p className="text-xs mt-2" style={{ color: BRAND.textDim }}>
+              Para compartirla con tu socio o tu equipo.
+            </p>
           </div>
         </Reveal>
       </div>
@@ -2063,6 +2378,11 @@ export default function GlomaLanding() {
                 <li>
                   <a href={INSTAGRAM_URL} target="_blank" rel="noopener noreferrer" className="opacity-80 hover:opacity-100">
                     Instagram · @gloma_app →
+                  </a>
+                </li>
+                <li>
+                  <a href={PROPUESTA_PDF} download className="opacity-80 hover:opacity-100">
+                    Propuesta comercial (PDF) →
                   </a>
                 </li>
                 <li>

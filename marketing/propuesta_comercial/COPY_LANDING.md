@@ -41,12 +41,11 @@ conversaciones traes.
 | | Toma los datos del pedido o la reserva y los deja en tu Google Sheets | ✓ | ✓ | ✓ |
 | | Comparte tus formas de pago o tu link de pago | ✓ | ✓ | ✓ |
 | | Con Shopify, consulta si un pedido ya está pagado | ✓ | ✓ | ✓ |
-| | Consulta qué hay disponible en tu catálogo | ✓ | ✓ | ✓ |
+| | Consulta qué planes o productos tienes en tu catálogo | ✓ | ✓ | ✓ |
 | | Le vuelve a escribir a quien dejó de contestar | ✓ | ✓ | ✓ |
 | | Le pasa el cliente a tu asesor con todo el historial | ✓ | ✓ | ✓ |
 | **Asistentes** | Asistente de ventas y servicio al cliente | ✓ | ✓ | ✓ |
-| | Agenda citas y llamadas con tu equipo `[CONFIRMAR: P3]` | ✓ | ✓ | ✓ |
-| | Asistente para empresas y grupos `[CONFIRMAR: P3]` | ✓ | ✓ | ✓ |
+| | Agenda citas y llamadas con tu equipo | ✓ | ✓ | ✓ |
 | **Tu plataforma** | Bandeja de mensajes para tu equipo | ✓ | ✓ | ✓ |
 | | Campañas por WhatsApp | ✓ | ✓ | ✓ |
 | | Tus contactos entran desde Excel | ✓ | ✓ | ✓ |
@@ -193,7 +192,7 @@ Notas:
 
 **Texto:** Esa es nuestra garantía. Instalamos el agente, lo probamos contigo y durante los primeros
 10 días lo ajustamos con las conversaciones que van llegando. Después sigues con soporte 24/7 y
-mantenimiento incluido: si algo no responde como esperas, nos escribes y lo ajustamos.
+mantenimiento incluido: si algo no responde como esperas, nos escribes por WhatsApp y lo ajustamos.
 
 **Chips (píldoras):** Garantía de funcionamiento · Soporte 24/7 · Mantenimiento incluido
 
@@ -213,7 +212,7 @@ Va justo después de «¿Cuánto tarda en estar listo?».
 **Respuesta:** Tu agente empieza a atender y durante los primeros 10 días ajustamos los detalles
 con las conversaciones que van llegando. Después tienes soporte 24/7, mantenimiento incluido y
 rondas de mejora con lo que muestra tu tablero. Nuestra garantía es que todo quede funcionando como
-tú quieres: si algo no responde como esperas o cambian tus tarifas, nos escribes y lo ajustamos.
+tú quieres: si algo no responde como esperas, nos escribes por WhatsApp y lo ajustamos.
 
 Recordatorio del plan: el contexto de Lía (`backend/app/bot_contexts/gloma.md`) tiene que decir lo
 mismo antes del merge, o Lía y la página se contradicen.
@@ -255,30 +254,19 @@ escrito, el agente no cobra, no inventa precios ni cupos); sin teléfonos ni cor
 
 ---
 
-## Pendiente de confirmar por el CEO
+## Decisiones del CEO sobre los pendientes (2026-10-26)
 
-1. **P1 · «Una tarde» (opción 3 de 1b).** ¿La parte del dueño (reunión, envío de tarifas y accesos
-   al WhatsApp) cabe de verdad en una tarde? Ojo con la conexión del número con Meta, que puede
-   pedirle pasos en otro día, y con la prueba en el simulador, que es un segundo momento. Si no se
-   puede sostener, la opción 3 no se usa.
-2. **P2 · Cuál de las 3 opciones de 1b.** Recomendación: la opción 1 (razones arriba).
-3. **P3 · Dos filas de «Asistentes» en la tabla 1a.** «Agenda citas y llamadas con tu equipo» y
-   «Asistente para empresas y grupos» vienen del plan, pero no están en las respuestas de producto
-   aprobadas (sección 4 del brief). ¿Se le ofrecen hoy a cualquier cliente, en los 3 paquetes? Si
-   no, se quitan antes de publicar.
-4. **P4 · «Consulta qué hay disponible en tu catálogo».** Confirmar que se lee como «lo que está
-   cargado en el catálogo» y no como cupos en vivo de un sistema de reservas (el agente no inventa
-   cupos y ese sistema es a la medida). Si hace falta, la fila puede decir «Consulta qué planes o
-   productos tienes en tu catálogo».
-5. **P5 · Alcance de «lo ajustamos» después de los 10 días** (garantía y FAQ). Se escribió para
-   cubrir respuestas, tono y tarifas del agente ya instalado. ¿Cambiar las tarifas cuando el
-   cliente las actualiza lo hace el equipo de Gloma, incluido en el mantenimiento? ¿Algún cambio
-   se cobra aparte?
-6. **P6 · «Mantenimiento y actualizaciones incluidos».** Viene del plan; el CEO dijo «full garantía»
-   y «soporte 24/7». Confirmar que también se puede decir «mantenimiento incluido».
-7. **P7 · Canal del soporte 24/7.** El copy dice «nos escribes». Confirmar que es por el WhatsApp
-   de Gloma (+57 315 076 4000) o indicar otro canal, para nombrarlo en el PDF.
-8. **P8 · La cifra grande dice «Hasta 70 %» sin el «un»** por espacio en las 4 columnas; la frase
-   completa de D1 queda en Precios. Confirmar que está bien así.
-9. **P9 · Línea opcional bajo el botón del PDF** («Para compartirla con tu socio o tu equipo.»):
-   ¿va o no?
+| # | Tema | Decisión |
+|---|---|---|
+| P1 | «Una tarde» (opción 3) | No se puede sostener: la conexión con Meta suele pedirle pasos al cliente en otro día. **Opción 3 descartada.** |
+| P2 | Opción de 1b | **Opción 1** (dos columnas). La 2 queda solo en el HTML de prueba para comparar. |
+| P3 | Filas de «Asistentes» | «Agenda citas y llamadas con tu equipo» **se queda**: el motor del agente ya agenda citas en un calendario con franjas (`registrar_demo`, activable por cuenta). «Asistente para empresas y grupos» **se quita**: no hay nada en el producto que lo respalde hoy. |
+| P4 | Fila de inventario | «Consulta qué planes o productos tienes en tu catálogo». |
+| P5 | Alcance de «lo ajustamos» | Se quitó «o cambian tus tarifas» de la FAQ: no se promete actualización de tarifas incluida hasta que el CEO lo defina. Queda «si algo no responde como esperas, lo ajustamos». |
+| P6 | «Mantenimiento incluido» | Se mantiene: está en el plan del CEO («mantenimiento y actualizaciones incluidas»). |
+| P7 | Canal del soporte 24/7 | WhatsApp de Gloma (público). El copy dice «nos escribes por WhatsApp». |
+| P8 | «Hasta 70 %» sin «un» | Aprobado. |
+| P9 | Línea bajo el botón del PDF | Se deja. |
+| — | «tus destinos y tarifas reales» (contacto) | Se deja: el brief permite «real» con contraste comprobable y pone «tus tarifas reales» como ejemplo válido (marca 4). El contraste es con una demo genérica. |
+
+Sigue abierto para el CEO: si actualizar tarifas después de los 10 días va dentro del mantenimiento (P5).
