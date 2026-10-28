@@ -9709,12 +9709,30 @@ Pedido del CEO: conectar un WhatsApp a la cuenta de Gloma (bot Lía) por Twilio.
   estado y el saldo. Regla documentada en `CLAUDE.md` (convenciones de operación #4). Las API
   keys Standard no acceden a `/Accounts`: para probarlas se usa `/Messages` o `/Balance`.
 
+**Mismo día, puesta en marcha** (autorizada por el CEO paso a paso):
+- Remitente registrado por el CEO en la cuenta Gloma: ONLINE, "Gloma App", WABA en el
+  portafolio de Meta **Nota Express**, límite 250 clientes/24 h.
+- Commit `29235c9`: la firma del webhook se valida con el token de la cuenta que manda
+  (`AccountSid`); aislamiento entre tenants en inbound y en callbacks de estado; alarma de
+  CloudWatch `twilio-aislamiento-rechazos` (sin acción SNS todavía). `seguridad`: APTO, 0
+  críticos/altos, M1/M2 y bajos aplicados y re-auditados. Suite 4.058 en verde con TZ=UTC.
+- Deploy: imagen `:twilio-cuentas-29235c9` desde worktree limpio, task-def **rev 115**. Tick en
+  200, sin errores; Arranquemos recibió y respondió normal después del deploy.
+- RDS: `meta_account` **5** para el team **7** (Gloma), token cifrado con la llave de prod
+  (solo viajó el ciphertext); team 7 pasó de `modo='demo'` a `'produccion'` (#318: en demo
+  los envíos se simulan). Webhook del remitente → `https://api.glomabeauty.com/twilio/*`
+  (`TWILIO_WEBHOOK_BASE_URL` es glomabeauty; el cambio a glomacx queda pendiente por decisión
+  del CEO: primero que funcione).
+- **Prueba real**: el inbound entra, valida la firma y Lía (bot 16) responde, pero Twilio
+  rechaza el envío: `401/20003 "Primary compliance profile is not approved"`. Las cuentas
+  nuevas no envían hasta aprobar el perfil de Trust Hub.
+
 **Pendientes**
-- El CEO registra el remitente en la cuenta Gloma (*Create new sender*, número propio, WABA nuevo
-  en el portafolio de Gloma), **sin configurar todavía el webhook**.
-- `twilio_webhook._verify_signature` valida solo con el `TWILIO_AUTH_TOKEN` global → hay que
-  elegir el token por `AccountSid`. Revisión de `seguridad` antes del merge (regla #4). Después:
-  `connect_twilio_waba.py` en RDS para la cuenta de Gloma y apuntar el webhook.
+- **El CEO crea el perfil de cumplimiento (Individual) en Trust Hub** de la cuenta Gloma
+  (cédula + selfie; Twilio dice hasta 48 h). Al aprobarse: POST a `Messages.json` sin `To`
+  debe dar 400 en vez de 401, y luego prueba real con Lía.
+- Cambiar los webhooks de los dos números a `api.glomacx.com` (validar la firma contra los dos
+  dominios primero).
 - Cerrar la subcuenta "Gloma" de la cuenta principal (irreversible, con OK del CEO).
 - Rotar el auth token y la API key de la cuenta principal tras la suspensión.
 - Plan de **Tech Provider de Meta**: es la vía de Twilio para que cada cliente nuevo conecte su
