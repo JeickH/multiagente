@@ -27,6 +27,7 @@ import hashlib
 import hmac
 import logging
 import os
+import re
 from datetime import datetime
 from typing import Dict, Optional
 
@@ -74,9 +75,103 @@ def _public_url(request: Request) -> str:
     return str(request.url)
 
 
-def _verify_signature(url: str, params: Dict[str, str], signature: str) -> bool:
-    """Valida `X-Twilio-Signature`. Fail-closed en producción (regla #5)."""
-    token = os.getenv("TWILIO_AUTH_TOKEN", "")
+_ACCOUNT_SID_RE = re.compile(r"AC[0-9a-fA-F]{32}")
+
+# Texto fijo a propósito: hay un filtro de métricas de CloudWatch que lo busca.
+# Un rechazo por aislamiento responde 200 (Twilio no reintenta), así que si una
+# fila de `meta_accounts` queda con el SID equivocado, esto es lo único que
+# avisa de que se está perdiendo el inbound de un número.
+_LOG_AISLAMIENTO = "webhook.twilio AISLAMIENTO: la cuenta que firma no es la dueña"
+
+
+def _sid_global() -> str:
+    return (os.getenv("TWILIO_ACCOUNT_SID") or "").strip()
+
+
+def _sid_firmante(form: Dict[str, str]) -> str:
+    """Cuenta de Twilio que manda (y firma) el webhook.
+
+    Twilio pone `AccountSid` en cada entrante y en cada callback de estado; si
+    no viniera, el único que pudo firmar es la cuenta global.
+    """
+    return (form.get("AccountSid") or "").strip() or _sid_global()
+
+
+def _sid_de_la_cuenta(account) -> str:
+    """Cuenta de Twilio dueña de un `MetaAccount`: la suya o, si no tiene, la global
+    (la misma regla con la que `twilio_adapter._resolve_creds` envía)."""
+    return (getattr(account, "twilio_account_sid", None) or "").strip() or _sid_global()
+
+
+def _token_del_firmante(db: Session, form: Dict[str, str]) -> Optional[str]:
+    """Auth Token con el que se valida la firma de este webhook.
+
+    Twilio firma con el token de la cuenta dueña del número. La cuenta global
+    (la de Arranquemos) usa el de la env var, como siempre. Una cuenta propia
+    de un tenant (Gloma tiene la suya: ver CLAUDE.md, convención #4) usa el
+    token que guardó `connect_twilio_waba.py`, cifrado en `meta_accounts`.
+
+    Devuelve None si el `AccountSid` no es de nadie: eso se rechaza siempre,
+    también en desarrollo, porque no hay "token ausente" que justifique el
+    fail-open — hay una cuenta que no conocemos. El `AccountSid` viene del
+    form sin verificar, pero solo elige la llave: sin el token de esa cuenta
+    no hay firma que cuadre.
+    """
+    sid = (form.get("AccountSid") or "").strip()
+    if not sid or sid == _sid_global():
+        return os.getenv("TWILIO_AUTH_TOKEN", "")
+
+    # Un POST anónimo no llega a la base ni al log con un SID que ni tiene forma
+    # de SID: el campo viene sin verificar y puede traer cualquier cosa.
+    if not _ACCOUNT_SID_RE.fullmatch(sid):
+        return None
+
+    # Si dos filas comparten cuenta (dos números en la misma cuenta de Twilio),
+    # gana la última actualizada: al rotar el token se actualizan TODAS con
+    # `connect_twilio_waba.py`, y mientras tanto la fresca es la que sirve.
+    cuenta = (
+        db.query(models.MetaAccount)
+        .filter(
+            models.MetaAccount.provider == "twilio",
+            models.MetaAccount.twilio_account_sid == sid,
+            models.MetaAccount.encrypted_twilio_auth_token.isnot(None),
+        )
+        .order_by(models.MetaAccount.updated_at.desc(), models.MetaAccount.id.desc())
+        .first()
+    )
+    if cuenta is None:
+        logger.warning("webhook.twilio rechazado: AccountSid sin cuenta registrada")
+        return None
+    try:
+        from ..services.crypto import decrypt_secret  # plaintext efímero, nunca se loggea
+
+        token = decrypt_secret(cuenta.encrypted_twilio_auth_token)
+    except Exception:
+        logger.exception("webhook.twilio: no se pudo descifrar el token de la cuenta %s", cuenta.id)
+        return None
+    # Vacío no es "sin token configurado": el fail-open de desarrollo es solo
+    # para la cuenta global.
+    return token or None
+
+
+def _firma_valida(db: Session, request: Request, form: Dict[str, str]) -> bool:
+    token = _token_del_firmante(db, form)
+    if token is None:
+        return False
+    return _verify_signature(
+        _public_url(request), form, request.headers.get("X-Twilio-Signature", ""), token=token
+    )
+
+
+def _verify_signature(
+    url: str, params: Dict[str, str], signature: str, token: Optional[str] = None
+) -> bool:
+    """Valida `X-Twilio-Signature`. Fail-closed en producción (regla #5).
+
+    Sin `token` explícito usa el de la cuenta global (env var).
+    """
+    if token is None:
+        token = os.getenv("TWILIO_AUTH_TOKEN", "")
     in_prod = _is_production()
 
     if not token:
@@ -116,6 +211,25 @@ def process_twilio_status(db: Session, form: Dict[str, str]) -> bool:
         .first()
     )
     if recipient is None:
+        return False
+
+    # Aislamiento entre tenants, igual que en el inbound: con la firma de su
+    # propia cuenta, un tenant no puede mover los estados de una campaña ajena.
+    camp = db.get(models.Campaign, recipient.campaign_id)
+    cuenta = None
+    if camp is not None:
+        cuenta = (
+            db.get(models.MetaAccount, camp.meta_account_id)
+            if camp.meta_account_id
+            else db.query(models.MetaAccount)
+            .filter(models.MetaAccount.team_id == camp.team_id)
+            .first()
+        )
+    if _sid_firmante(form) != _sid_de_la_cuenta(cuenta):
+        logger.error(
+            "%s de la campaña (status, campaign_id=%s, recipient_id=%s)",
+            _LOG_AISLAMIENTO, recipient.campaign_id, recipient.id,
+        )
         return False
 
     now = datetime.utcnow()
@@ -229,8 +343,7 @@ def _resolve_account_by_to(db: Session, to_wa_id: str) -> Optional[models.MetaAc
 @router.post("/status")
 async def receive_status(request: Request, db: Session = Depends(get_db)):
     form = dict((await request.form()))
-    signature = request.headers.get("X-Twilio-Signature", "")
-    if not _verify_signature(_public_url(request), form, signature):
+    if not _firma_valida(db, request, form):
         return PlainTextResponse("Firma inválida", status_code=403 if _is_production() else 401)
 
     try:
@@ -246,8 +359,7 @@ async def receive_status(request: Request, db: Session = Depends(get_db)):
 @router.post("/webhook")
 async def receive_inbound(request: Request, db: Session = Depends(get_db)):
     form = dict((await request.form()))
-    signature = request.headers.get("X-Twilio-Signature", "")
-    if not _verify_signature(_public_url(request), form, signature):
+    if not _firma_valida(db, request, form):
         return PlainTextResponse("Firma inválida", status_code=403 if _is_production() else 401)
 
     process_twilio_inbound(db, form)
@@ -272,6 +384,14 @@ def process_twilio_inbound(db: Session, form: Dict[str, str]) -> None:
             # Aún sin cuenta Twilio conectada a este número: no-op (queda listo
             # para el cutover). No se loggea el número en limpio.
             logger.info("webhook.twilio inbound sin cuenta asociada — ignorado")
+            return
+
+        # Aislamiento entre tenants: la firma prueba QUIÉN manda, el `To` dice a
+        # QUÉ cuenta va. Si no son la misma, un tenant con su propia cuenta de
+        # Twilio podría firmar con su token un mensaje dirigido al número de
+        # otro y meterle conversaciones (y turnos del bot) que no son suyos.
+        if _sid_firmante(form) != _sid_de_la_cuenta(account):
+            logger.error("%s del número (inbound, meta_account=%s)", _LOG_AISLAMIENTO, account.id)
             return
 
         # Lo que lee el BOT. Para un adjunto es el marcador (`[imagen]`,

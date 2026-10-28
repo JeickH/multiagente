@@ -4,6 +4,12 @@ Crea o actualiza la fila de `meta_accounts` del team indicado con
 `provider='twilio'` y las credenciales del tenant: Account SID, Auth Token
 cifrado con Fernet, y el emisor (`twilio_from` o `twilio_messaging_service_sid`).
 
+El webhook valida la firma de Twilio con este token cuando `TW_ACCOUNT_SID` no
+es la cuenta global, y exige que el número de destino sea de esa misma cuenta
+(`routers/twilio_webhook.py`). Al ROTAR el Auth Token en Twilio hay que correr
+este script para TODAS las filas con ese Account SID: si una queda con el token
+viejo, el webhook usa el de la fila actualizada más reciente.
+
 Reglas de seguridad aplicadas:
   - #1 el Auth Token nunca se imprime ni se loggea.
   - #3 el secreto de tenant queda en BD cifrado, no en `.env`.
