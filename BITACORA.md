@@ -9812,6 +9812,14 @@ mismas variables que la 116, correo de la promoción encendido) y PR #22 a `main
 Lía responde «14 días gratis, instalación sin costo, COP 1.071.000 / US$329». Logs sin errores,
 tick 200. El CEO prueba la demo y el correo automático en producción.
 
+**Ajuste tras la prueba del CEO (28-oct, noche)**: (1) en la demo, «Agendar una llamada» vuelve a
+abrir el calendario de Cal.com en un modal (el cambio del 28-oct lo había mandado al chat de Lía);
+«Hablar con un asesor» sigue en el chat. (2) El correo de la promoción no salió para un correo ya
+registrado (`motivo=ya_recibio`, regla de 1 por dirección cada 30 días): ahora no hay límite por
+dirección (`DEMO_CORREO_PROMO_DIAS` default 0; > 0 lo vuelve a poner). Siguen los techos de
+200/hora y 2.000/día y el cortacircuitos. Task-def **rev 118** (imagen `:demo-correo-8ff3862`),
+Amplify job 206. Backend 4.063 passed, frontend 161 passed.
+
 **Pendientes**
 - Tiempos de respuesta: el CEO confirmó que se miden y se entregan en el reporte de la prueba;
   hoy el tablero no los muestra (se arma el reporte aparte).
