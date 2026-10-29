@@ -9766,3 +9766,50 @@ octubre. Commit `632c33c`, task-def **rev 116** (imagen `:contacto-632c33c`), Am
   humano (texto, no botón); se cambian cuando el agente quede activo.
 - Ojo: el lunes 2 de noviembre de 2026 es festivo en Colombia (Todos los Santos). La agenda
   de Lía no salta festivos; hoy no importa porque el margen ya empieza el martes 3.
+
+---
+
+## Sprint 35 — Percepción de valor en la landing y precios nuevos (22–28 oct 2026)
+
+Branch `feature/landing-valor`. Pedido del CEO: que la landing transmita más valor, en lenguaje
+del cliente y no de funcionalidades, con los precios nuevos y una propuesta comercial descargable.
+Copy con Belfort y el community-manager a partir de la voz del cliente de la reunión con
+hoteleros del 24-oct (`ventas/content_machine_gloma/voz-del-cliente/verbatims-2026-10-24.md`).
+
+**Precios (CEO, 2026-10-28)**: plan P1 «Permanencia 6» de `ventas/costos/PROPUESTAS_COMERCIALES.html`
+con la hora a $50.000. Prueba gratis de 14 días · instalación **0** · COP 1.071.000/mes (USD 329)
+los meses 1-6 y COP 868.700 (USD 269) desde el mes 7, con 1.000 conversaciones · conversación
+adicional COP 1.190 · salida antes del mes 6: COP 150.000 por mes que falte · recuperación de
+conversaciones abandonadas (más de 24 h sin interacción) y campañas: COP 90 por mensaje.
+Referidos: 20 % de una mensualidad por cada referido que entra a la prueba y 50 % más si compra,
+sin tope por mes. Reemplaza la instalación de 2.400.000 y los paquetes 600/2.000/6.000.
+
+**Landing (`gloma.tsx`)**: «¿Te suena?» con los dolores de hoteles (la noche, la pauta sin
+contestar), «Lo que cambia en tu negocio» en 4 resultados, sección nueva «Funciona con lo que ya
+usas» con logos en blanco y negro de SiteMinder, Cloudbeds, Omnibees, RoomCloud, LobbyPMS, Oracle
+OPERA, Paraty Tech y Zeus (texto) — decisión del CEO; la conexión se anuncia «a la medida» —,
+«¿Cómo empiezas a usar Gloma?» con la prueba gratis primero, cifras con «hasta 70 % menos en el
+costo de atención» (con su nota), Precios nuevos con tabla «Todo lo que incluye» (prueba vs plan),
+garantía, plan de referidos con calculadora, FAQ de 10 y botón «Descargar propuesta comercial
+(PDF)» con la opción A («Ejecutiva»), generada con `marketing/propuesta_comercial/exportar_pdf.sh`.
+
+**Demo**: botón «Ver reporte de ejemplo» (datos ficticios: en qué paso se va la gente, tiempos de
+respuesta del agente y de los asesores por franja, horarios, calificación, venta en el aire,
+recuperados) y premio nuevo: 50 % el mes 1 y 35 % los meses 2 y 3 del plan (hasta COP 1.285.200 /
+USD 394,80) en la pantalla de premio, el correo automático y el WhatsApp de /demos. Las
+plantillas del correo en `backend/app/templates/correo_promo_demo/` pasan a ser la fuente;
+`ventas/correo_promo_demo/build_correo.py` quedó bloqueado (genera la promoción vieja).
+
+**Lía (`gloma.md`)**: precios, prueba gratis, referidos y recuperación de abandonadas.
+Se lee del archivo en cada turno: sale con la imagen del backend.
+
+**Pruebas**: backend 4.063 passed; frontend 161 passed; `tsc` limpio. Revisión visual con
+capturas a 1280 y 390 px.
+
+**Pendientes**
+- Desplegar: merge a `main` (Amplify) e imagen nueva del backend (Lía + correo) el mismo día.
+- Tiempos de respuesta: el CEO confirmó que se miden y se entregan en el reporte de la prueba;
+  hoy el tablero no los muestra (se arma el reporte aparte).
+- Agregar el 70 % a las cifras autorizadas de `.claude/agents/belfort.md` (otra sesión tiene
+  ese archivo modificado sin commitear).
+- El logo de Zeus no es público: va como texto.
