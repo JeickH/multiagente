@@ -9826,3 +9826,38 @@ Amplify job 206. Backend 4.063 passed, frontend 161 passed.
 - Agregar el 70 % a las cifras autorizadas de `.claude/agents/belfort.md` (otra sesión tiene
   ese archivo modificado sin commitear).
 - El logo de Zeus no es público: va como texto.
+
+---
+
+## WhatsApp de Gloma en producción y promoción en porcentajes — 29 de octubre de 2026
+
+Twilio aprobó el **perfil personal** de Trust Hub de la cuenta Gloma (el de negocio fue
+rechazado). Prueba previa en local: el `twilio_adapter` del backend envió un WhatsApp real desde
+el número de Gloma y Twilio lo reportó `delivered`. Commits `53d82fd` y `06544be`, task-def
+**rev 119** (imagen `:whatsapp-gloma-06544be`), Amplify job 208.
+
+- **Botones**: `WHATSAPP_DEL_AGENTE_ACTIVO = true` en `frontend/lib/contactoGloma.ts`.
+  «Hablar con un asesor» (landing, demo, 404, chat) y el footer van al WhatsApp del agente con
+  texto prellenado; «Agendar una llamada» sigue en el chat de la página (en la demo, Cal.com).
+- **Todo lo que dice Lía queda en la app**: el chat de la landing ahora se guarda en la bandeja
+  del team dueño del bot (team 7 en RDS). Cada visitante es una conversación `web-<12 hex>`
+  que viaja cifrada en la sesión (el visitante no la elige); `messaging` se niega a mandarle un
+  WhatsApp a un `web-…` y `/mensajes` la muestra como «Chat de la página», sin compositor. Sin
+  migración: el canal va en el prefijo del contacto. Lo de WhatsApp ya quedaba por el webhook.
+- **El WhatsApp viejo (315) salió de todos lados**: textos de Lía (`gloma.md`, `landing.py`),
+  error del chat, footer, correo de la promoción, propuesta comercial (PDF regenerado con
+  `exportar_pdf.sh --publicar`) y el ejemplo de la bandeja. Instagram lo cambia el CEO.
+- **Promoción en porcentajes** (pedido del CEO): el correo (asunto, titular y cuerpo, co e intl),
+  la pantalla de premio y el WhatsApp del panel /demos dicen «50 % y 35 %», sin montos en COP
+  ni USD; se quitó la tabla de precios del correo. Las plantillas vigentes siguen siendo las del
+  repo (copiadas a `ventas/correo_promo_demo/`); el generador sigue desactualizado.
+- **Pruebas en producción**: todos los wa.me de la landing y la 404 van al 323; «Agendar» →
+  Lía ofrece martes 3 de noviembre; el chat quedó como conversación 1300 del team 7; el PDF
+  trae el 323. El primer intento dio el 500 de arranque en frío de Amplify (ver memoria).
+  Backend 4.071 y frontend 162 tests en verde; logs sin errores, tick 200.
+
+**Pendientes**
+- Cambiar los webhooks de los dos números a `api.glomacx.com` (validar la firma con los dos dominios).
+- Cerrar la subcuenta "Gloma" de la cuenta principal (irreversible, con OK del CEO).
+- Rotar el auth token y la API key de la cuenta principal tras la suspensión del 28-oct.
+- `/conversaciones` (supervisión) todavía muestra el contacto `web-…` como si fuera un número.
