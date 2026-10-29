@@ -73,7 +73,7 @@ export default function DemoPremio({
       role="dialog"
       aria-modal="true"
       aria-labelledby="premio-titulo"
-      aria-describedby="premio-monto"
+      aria-describedby="premio-monto premio-detalle"
       onKeyDown={atrapar}
       className="fixed inset-0 z-50 overflow-y-auto overflow-x-hidden text-gloma-ink-text"
       style={{ background: 'radial-gradient(ellipse at 50% 18%, #00594B 0%, #003A30 38%, #101817 78%)' }}
@@ -177,6 +177,13 @@ export default function DemoPremio({
             </span>
             <span className="block mt-1 text-base md:text-lg text-white/90">{T.sufijoMonto}</span>
           </p>
+
+          <div id="premio-detalle" className="mt-4 mx-auto max-w-md space-y-2">
+            <p className="text-[15px] md:text-base font-semibold text-white">{T.detalle}</p>
+            <p className="inline-block rounded-2xl bg-gloma-mint/15 border border-gloma-mint/40 px-4 py-2 text-sm text-gloma-ink-text">
+              {T.seSuma}
+            </p>
+          </div>
 
           <div className="mt-7 mx-auto max-w-md rounded-3xl bg-white/[0.06] border border-gloma-mint/25 p-5 text-left">
             <p className="text-sm text-gloma-ink-text">{T.envio}</p>

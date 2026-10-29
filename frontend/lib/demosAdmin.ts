@@ -366,7 +366,8 @@ export function mensajePromoWhatsapp(nombre: string | null | undefined, empresa:
   const demo = `la demo que armaste para ${empresaSegura(empresa)}`;
   return (
     `${saludo} Te escribo de Gloma por ${demo}: te ganaste ${monto} en servicios ` +
-    '(50 % de descuento en la instalación y 35 % en tus primeros 3 paquetes de conversaciones). ' +
+    '(50 % de descuento en tu primer mes y 35 % en el segundo y el tercero del plan mensual, ' +
+    'además de tus 14 días de prueba gratis y la instalación sin costo). ' +
     '¿Agendamos una llamada para aplicarla?'
   );
 }

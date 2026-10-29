@@ -160,17 +160,17 @@ describe('enlaceWhatsappProspecto', () => {
     const url = enlaceWhatsappProspecto('+57 300 000 0001', 'Laura Gómez', 'Posada El Colibrí');
     expect(url?.startsWith('https://wa.me/573000000001?text=')).toBe(true);
     expect(texto(url)).toBe(
-      'Hola, Laura. Te escribo de Gloma por la demo que armaste para Posada El Colibrí: te ganaste hasta $8.700.000 COP en servicios (50 % de descuento en la instalación y 35 % en tus primeros 3 paquetes de conversaciones). ¿Agendamos una llamada para aplicarla?',
+      'Hola, Laura. Te escribo de Gloma por la demo que armaste para Posada El Colibrí: te ganaste hasta $1.285.200 COP en servicios (50 % de descuento en tu primer mes y 35 % en el segundo y el tercero del plan mensual, además de tus 14 días de prueba gratis y la instalación sin costo). ¿Agendamos una llamada para aplicarla?',
     );
     // Celular colombiano guardado sin indicativo: también es Colombia.
-    expect(texto(enlaceWhatsappProspecto('300 000 0001', 'Laura', 'X'))).toMatch(/hasta \$8\.700\.000 COP/);
+    expect(texto(enlaceWhatsappProspecto('300 000 0001', 'Laura', 'X'))).toMatch(/hasta \$1\.285\.200 COP/);
   });
 
   it('otro país: la misma promoción en dólares', () => {
     const url = enlaceWhatsappProspecto('+52 55 1234 5678', 'Ana Ruiz', 'Viajes Sol');
     expect(url).toMatch(/^https:\/\/wa\.me\/525512345678\?/);
     expect(texto(url)).toBe(
-      'Hola, Ana. Te escribo de Gloma por la demo que armaste para Viajes Sol: te ganaste hasta USD 2.700 en servicios (50 % de descuento en la instalación y 35 % en tus primeros 3 paquetes de conversaciones). ¿Agendamos una llamada para aplicarla?',
+      'Hola, Ana. Te escribo de Gloma por la demo que armaste para Viajes Sol: te ganaste hasta USD 402 en servicios (50 % de descuento en tu primer mes y 35 % en el segundo y el tercero del plan mensual, además de tus 14 días de prueba gratis y la instalación sin costo). ¿Agendamos una llamada para aplicarla?',
     );
   });
 

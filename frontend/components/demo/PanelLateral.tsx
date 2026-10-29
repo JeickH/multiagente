@@ -1,8 +1,10 @@
 import Image from 'next/image';
 
-import { DEMO_UI } from '../../lib/demo_copy';
+import { DEMO_UI, rellenarCopy } from '../../lib/demo_copy';
 import type { ProductoDemo } from '../../lib/demoApi';
+import { REPORTE_TEXTOS } from '../../lib/demoReporte';
 import CtaAgendar, { type AccionesAgendar } from './CtaAgendar';
+import { IconoReporte } from './iconos';
 
 const U = DEMO_UI;
 
@@ -33,7 +35,10 @@ export function ListaIdeas({
   );
 }
 
-/** Panel lateral de la etapa 3 (solo `md:`): productos, ideas y el CTA de Gloma. */
+/**
+ * Panel lateral de la etapa 3 (solo `md:`): productos, ideas, el reporte de
+ * ejemplo y el CTA de Gloma.
+ */
 export default function PanelLateral({
   empresa,
   productos,
@@ -41,6 +46,7 @@ export default function PanelLateral({
   onIdea,
   ideasDeshabilitadas,
   acciones,
+  onReporte,
 }: {
   empresa: string;
   productos: ProductoDemo[];
@@ -48,6 +54,8 @@ export default function PanelLateral({
   onIdea: (idea: string) => void;
   ideasDeshabilitadas: boolean;
   acciones: AccionesAgendar;
+  /** Abre el reporte de ejemplo (`DemoReporte`). */
+  onReporte: () => void;
 }) {
   return (
     <aside className="hidden md:flex flex-col gap-4 min-h-0 overflow-y-auto" aria-label="Sobre esta demo">
@@ -76,6 +84,21 @@ export default function PanelLateral({
       <div className="rounded-2xl bg-white/[0.04] border border-gloma-mint/15 p-4">
         <p className="text-sm font-semibold text-white mb-2">{U.chat.panelIdeas}</p>
         <ListaIdeas ideas={ideas} onIdea={onIdea} deshabilitado={ideasDeshabilitadas} />
+      </div>
+      <div className="rounded-2xl bg-white/[0.04] border border-gloma-mint/15 p-4">
+        <p className="text-sm font-semibold text-white">{REPORTE_TEXTOS.panelTitulo}</p>
+        <p className="text-[13px] text-gloma-ink-muted mt-1 leading-snug break-words">
+          {rellenarCopy(REPORTE_TEXTOS.panelTexto, { empresa })}
+        </p>
+        <button
+          type="button"
+          onClick={onReporte}
+          aria-haspopup="dialog"
+          className="mt-3 w-full inline-flex items-center justify-center gap-2 min-h-[44px] px-4 rounded-full border border-gloma-mint/60 text-gloma-mint text-sm font-semibold hover:bg-gloma-mint/10"
+        >
+          <IconoReporte />
+          {REPORTE_TEXTOS.boton}
+        </button>
       </div>
       <div className="mt-auto rounded-2xl bg-gloma-forest p-4">
         <p className="font-heading font-bold text-white leading-snug">{U.cta.panelTitulo}</p>

@@ -322,9 +322,13 @@ export const DEMO_UI = {
     eyebrow: '¡Felicitaciones, {nombre}!',
     titulo: 'Ganaste una promoción especial',
     prefijoMonto: 'hasta',
-    montoColombia: '$8.700.000 COP',
-    montoExterior: 'USD 2.700',
+    montoColombia: '$1.285.200 COP',
+    montoExterior: 'USD 402',
     sufijoMonto: 'en servicios de Gloma',
+    /** Qué es la promoción (2026-10-28). Lo repiten el correo y el WhatsApp del panel /demos. */
+    detalle: '50\u00a0% de descuento en tu primer mes y 35\u00a0% en el segundo y el tercero del plan mensual.',
+    /** Que se note que se suma a lo que ya trae el plan. */
+    seSuma: 'Y se suma a tus 14 días de prueba gratis y a la instalación, que no te cuesta nada.',
     envio: 'Te la enviamos a tu correo y a tu WhatsApp:',
     correo: 'Correo',
     whatsapp: 'WhatsApp',

@@ -1,17 +1,24 @@
-{{nombre}}, ganaste hasta USD 2.700 en servicios de Gloma.
+{{nombre}}, ganaste hasta USD 402 en servicios de Gloma.
 
 Gracias por hacer la demo de Gloma con {{empresa}}. Esta es la promoción que te ganaste:
 
-50 % de descuento en la instalación.
-Pagas USD 375 en lugar de USD 750.
+50 % de descuento en tu primer mes.
+Pagas USD 167,50 en lugar de USD 335.
 
-35 % de descuento en tus primeros 3 paquetes de conversaciones.
-Así queda cada paquete con tu 35 %:
-- 600 conversaciones: USD 245 -> USD 159,25
-- 2.000 conversaciones (el recomendado): USD 795 -> USD 516,75
-- 6.000 conversaciones: USD 2.295 -> USD 1.491,75
+35 % de descuento en el segundo y el tercer mes.
+Pagas USD 217,75 cada mes en lugar de USD 335.
 
-Valores en dólares (USD), con lo que cobra Meta por WhatsApp incluido, como están publicados en glomacx.com. Las conversaciones que no uses no se vencen: pasan al mes siguiente.
+Y se suma a lo que ya tienes: 14 días de prueba gratis y la instalación, que no te cuesta nada.
+
+Así arrancas con tu promoción:
+- Prueba gratis de 14 días: USD 0
+- Instalación: USD 0
+- Mes 1: USD 335 -> USD 167,50
+- Mes 2: USD 335 -> USD 217,75
+- Mes 3: USD 335 -> USD 217,75
+Te ahorras USD 402.
+
+Valores en dólares (USD), con la tarifa de Meta por WhatsApp incluida, como están publicados en glomacx.com. Cada mes del plan incluye 1.000 conversaciones.
 
 
 Para tener un agente que responda cuando tú no estás
@@ -23,7 +30,7 @@ Para tener un agente que responda cuando tú no estás
 
 Para aplicarla, habla con nosotros
 
-En la llamada miramos cuántos chats recibe {{empresa}} al mes, cuántos terminan en venta y cuánto vale en promedio un plan. Con esos tres números hacemos juntos la cuenta de lo que te ahorras y del paquete que te sirve.
+En la llamada miramos cuántos chats recibe {{empresa}} al mes, cuántos terminan en venta y cuánto vale en promedio un plan. Con esos tres números hacemos juntos la cuenta de lo que te ahorras y arrancamos tu prueba gratis.
 
 Agendar una llamada:
 https://app.cal.com/gloma/hablemos-de-gloma

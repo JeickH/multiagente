@@ -19,6 +19,11 @@
  * Avisos de #608: la cabecera lleva fijo «Demostración generada con IA ·
  * productos y precios ficticios», y el hilo arranca con el aviso de que la
  * conversación se guarda y de no compartir datos personales reales.
+ *
+ * Reporte de ejemplo (2026-10-28): «Ver reporte de ejemplo» abre `DemoReporte`
+ * (datos ficticios). En escritorio está en el panel lateral; en el celular, el
+ * botón de barras de la cabecera y el desplegable «Ideas». Al terminar la
+ * demo, también en la tarjeta de cierre.
  */
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 
@@ -33,13 +38,15 @@ import {
   type ProductoDemo,
 } from '../../lib/demoApi';
 import { inicialesEmpresa } from '../../lib/demoFormulario';
+import { REPORTE_TEXTOS } from '../../lib/demoReporte';
 import { horaCorta } from '../../lib/fechas';
 import { formatearWhatsapp } from '../../lib/formatoWhatsapp';
 import CtaAgendar, { type AccionesAgendar } from './CtaAgendar';
 import DemoNoDisponible from './DemoNoDisponible';
+import DemoReporte from './DemoReporte';
 import MenuContacto from './MenuContacto';
 import PanelLateral, { ListaIdeas } from './PanelLateral';
-import { Check, IconoAsesor, IconoError, IconoEnviar, IconoFlecha, IconoInfo } from './iconos';
+import { Check, IconoAsesor, IconoError, IconoEnviar, IconoFlecha, IconoInfo, IconoReporte } from './iconos';
 
 const U = DEMO_UI;
 
@@ -138,6 +145,7 @@ export default function DemoChat({
   const [escribiendo, setEscribiendo] = useState(false);
   const [anuncio, setAnuncio] = useState('');
   const [ideasAbiertas, setIdeasAbiertas] = useState(false);
+  const [reporteAbierto, setReporteAbierto] = useState(false);
 
   const idRef = useRef(mensajes.reduce((max, m) => Math.max(max, m.id), 0));
   const vivo = useRef(true);
@@ -305,6 +313,7 @@ export default function DemoChat({
         onIdea={alElegirIdea}
         ideasDeshabilitadas={bloqueado}
         acciones={acciones}
+        onReporte={() => setReporteAbierto(true)}
       />
 
       <div className="relative h-full flex flex-col min-h-0 md:rounded-3xl overflow-hidden md:border md:border-gloma-mint/20 md:shadow-2xl bg-gloma-ink-alt">
@@ -328,6 +337,17 @@ export default function DemoChat({
                 {escribiendo ? U.chat.escribiendo : U.chat.enLinea}
               </p>
             </div>
+            {/* Reporte de ejemplo: en el celular, solo el ícono (en escritorio está en el panel). */}
+            <button
+              type="button"
+              onClick={() => setReporteAbierto(true)}
+              aria-haspopup="dialog"
+              aria-label={REPORTE_TEXTOS.boton}
+              title={REPORTE_TEXTOS.boton}
+              className="md:hidden shrink-0 w-9 h-9 rounded-full border border-white/50 text-white flex items-center justify-center hover:bg-white/10"
+            >
+              <IconoReporte />
+            </button>
             {/* #634: menú con las dos salidas (llamada y asesor). */}
             <MenuContacto acciones={acciones} />
           </div>
@@ -366,6 +386,15 @@ export default function DemoChat({
                 </ul>
               </>
             )}
+            <button
+              type="button"
+              onClick={() => setReporteAbierto(true)}
+              aria-haspopup="dialog"
+              className="mt-3 inline-flex items-center gap-2 min-h-[36px] px-3 rounded-full border border-gloma-mint/60 text-gloma-mint text-xs font-semibold"
+            >
+              <IconoReporte size={14} />
+              {REPORTE_TEXTOS.boton}
+            </button>
           </div>
         </div>
 
@@ -424,6 +453,15 @@ export default function DemoChat({
                 <p className="font-heading font-bold text-white text-lg leading-snug">{U.cta.finTitulo}</p>
                 <p className="text-[13px] text-white/80 mt-1">{U.cta.finTexto}</p>
                 <CtaAgendar acciones={acciones} variante="bloque" className="mt-3" />
+                <button
+                  type="button"
+                  onClick={() => setReporteAbierto(true)}
+                  aria-haspopup="dialog"
+                  className="mt-2 w-full inline-flex items-center justify-center gap-2 min-h-[44px] px-4 text-sm font-semibold text-gloma-rose underline underline-offset-4 hover:text-white"
+                >
+                  <IconoReporte />
+                  {REPORTE_TEXTOS.boton}
+                </button>
               </div>
             </div>
           )}
@@ -495,6 +533,17 @@ export default function DemoChat({
 
         {noDisponible && <DemoNoDisponible cubrir onNuevaDemo={onNuevaDemo} acciones={acciones} />}
       </div>
+
+      {reporteAbierto && (
+        <DemoReporte
+          empresa={empresa}
+          onCerrar={() => setReporteAbierto(false)}
+          onAgendar={() => {
+            setReporteAbierto(false);
+            acciones.abrirLlamada();
+          }}
+        />
+      )}
     </div>
   );
 }
