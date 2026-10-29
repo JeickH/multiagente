@@ -128,11 +128,31 @@ def test_inyeccion_no_llega_al_correo(malo, version):
 
 def test_sin_nombre_el_correo_saluda_generico():
     asunto, cuerpo_html, cuerpo_txt = correo_promo.renderizar("co", "https://x.y", "Hotel X")
-    assert asunto == "Tu promoción de Gloma: hasta $8.700.000 COP"
-    assert cuerpo_txt.startswith("Hola, ganaste hasta $8.700.000 COP")
+    assert asunto == "Tu promoción de Gloma: hasta $1.285.200 COP"
+    assert cuerpo_txt.startswith("Hola, ganaste hasta $1.285.200 COP")
     assert "<title>Tu promoción de Gloma" in cuerpo_html and "Hola, ganaste hasta</h1>" in cuerpo_html
     asunto = correo_promo.renderizar("intl", None, None)[0]
-    assert asunto == "Tu promoción de Gloma: hasta USD 2.700"
+    assert asunto == "Tu promoción de Gloma: hasta USD 394,80"
+
+
+@pytest.mark.parametrize("version,montos", [
+    ("co", ["$1.285.200 COP", "535.500 COP", "696.150 COP", "1.071.000 COP"]),
+    ("intl", ["USD 394,80", "USD 164,50", "USD 213,85", "USD 329"]),
+])
+def test_promocion_del_plan_mensual(version, montos):
+    """Promoción del 2026-10-28: 50 % en el mes 1 y 35 % en los meses 2 y 3,
+    sumada a la prueba gratis de 14 días y a la instalación en 0. Nada de la
+    promoción vieja (instalación pagada y paquetes que no se vencen)."""
+    asunto, cuerpo_html, cuerpo_txt = correo_promo.renderizar(version, "Ana", "Hotel X")
+    assert montos[0] in asunto
+    for cuerpo in (cuerpo_html, cuerpo_txt):
+        for monto in montos:
+            assert monto in cuerpo
+        assert "14 días de prueba gratis" in cuerpo
+        assert "la instalación, que no te cuesta nada" in cuerpo
+        for viejo in ("8.700.000", "2.700", "paquete", "no se vencen", "2.400.000", "USD 750"):
+            assert viejo not in cuerpo
+    assert "paquete" not in correo_promo._asuntos()[version]["preheader"]
 
 
 def test_plantillas_sin_google_fonts():

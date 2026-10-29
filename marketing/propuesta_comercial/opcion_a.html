@@ -1,0 +1,469 @@
+<!doctype html>
+<!--
+  Propuesta comercial de Gloma · Opción A Ejecutiva.
+  Estructura de 11 páginas (ajustes del CEO del 26-oct + plan de referidos del 28-oct), igual en A, B y C;
+  cambia el diseño. Precios y planes del 2026-10-28: prueba gratis de 14 días y plan mensual con permanencia de 6 meses.
+  EDICIÓN: por defecto es la general (agencias de viajes y hoteles). Para la edición hotel, cambia
+  data-edicion="general" por data-edicion="hotel" en <html>, o abre el archivo con ?edicion=hotel.
+  La edición hotel cambia la portada y las páginas 2 y 5. NO se publica.
+-->
+<html lang="es" data-edicion="general">
+<head>
+<meta charset="utf-8">
+<title>Gloma · Propuesta comercial · Opción A Ejecutiva</title>
+<script>try{var e=new URLSearchParams(location.search).get('edicion');if(e==='hotel'){document.documentElement.setAttribute('data-edicion','hotel');}}catch(_){}</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&family=Syne:wght@700;800&display=swap" rel="stylesheet">
+<style>
+  /* Opción A · Ejecutiva: fondo Technical Black, mucho aire, una idea por página, cifras en mint. */
+  :root {
+    --forest: #004D40; --black: #101817; --mint-soft: #E0F2F1; --mint: #4DB6AC; --golden: #F5C24B;
+    --text: #E6EFEE; --muted: rgba(230,239,238,0.74); --dim: rgba(230,239,238,0.52);
+    --line: rgba(77,182,172,0.22); --card: rgba(255,255,255,0.035);
+  }
+  [data-edicion="general"] .ed-hotel, [data-edicion="hotel"] .ed-general { display: none !important; }
+  @page { size: A4; margin: 0; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { background: var(--black); }
+  body { font-family: Inter, system-ui, sans-serif; color: var(--text); -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  section.page {
+    width: 210mm; height: 297mm; overflow: hidden; position: relative;
+    page-break-after: always; break-after: page;
+    background: var(--black); padding: 22mm 22mm 20mm; display: flex; flex-direction: column;
+  }
+  section.page:last-of-type { page-break-after: auto; break-after: auto; }
+  h1, h2, h3, .num { font-family: Syne, system-ui, sans-serif; }
+  .top { display: flex; justify-content: space-between; align-items: center; font-size: 8pt; letter-spacing: .14em; text-transform: uppercase; color: var(--dim); }
+  .top img { height: 14mm; }
+  .foot { margin-top: auto; display: flex; justify-content: space-between; font-size: 8pt; color: var(--dim); border-top: 1px solid var(--line); padding-top: 4mm; }
+  .kicker { font-size: 9pt; font-weight: 600; letter-spacing: .16em; text-transform: uppercase; color: var(--mint); margin: 20mm 0 5mm; }
+  h2 { font-weight: 800; font-size: 27pt; line-height: 1.08; color: #fff; max-width: 155mm; }
+  .lead { font-size: 12pt; font-weight: 300; line-height: 1.55; color: var(--muted); max-width: 140mm; margin-top: 6mm; }
+  .small { font-size: 8pt; color: var(--dim); line-height: 1.5; }
+  .mint { color: var(--mint); }
+
+  /* 1 Portada */
+  .cover { background: radial-gradient(120% 80% at 100% 100%, rgba(0,77,64,0.55) 0%, rgba(16,24,23,0) 60%), var(--black); }
+  .cover .logo { width: 34mm; }
+  .cover h1 { font-weight: 800; font-size: 42pt; line-height: 1.06; color: #fff; margin-top: 50mm; max-width: 160mm; }
+  .cover .para { margin-top: 7mm; font-family: Syne, system-ui, sans-serif; font-weight: 700; font-size: 15pt; color: var(--mint); }
+  .cover .lead { font-size: 13pt; }
+  .cover .tag { margin-top: 14mm; display: inline-block; font-size: 9pt; font-weight: 600; letter-spacing: .16em; text-transform: uppercase; color: var(--mint); border: 1px solid var(--line); border-radius: 999px; padding: 2.4mm 6mm; }
+  .window { position: absolute; right: -38mm; top: 34mm; width: 120mm; height: 170mm; border-radius: 60mm; border: 1px solid rgba(77,182,172,0.20); }
+  .window.in { right: -26mm; top: 46mm; width: 96mm; height: 146mm; border-radius: 48mm; border-color: rgba(77,182,172,0.12); }
+  .dot { position: absolute; width: 4mm; height: 4mm; border-radius: 50%; background: var(--golden); right: 44mm; top: 72mm; }
+
+  /* 2 ¿Te suena? */
+  .dolores { margin-top: 12mm; display: grid; gap: 8mm; }
+  .dolor { display: grid; grid-template-columns: 74mm 1fr; gap: 8mm; align-items: baseline; border-top: 1px solid var(--line); padding-top: 6mm; }
+  .dolor h3 { font-weight: 700; font-size: 15pt; line-height: 1.18; color: #fff; }
+  .dolor p { font-size: 10.5pt; line-height: 1.55; color: var(--muted); }
+
+  /* 3 Un cliente a las 8 de la noche */
+  .linea { margin-top: 14mm; position: relative; display: grid; gap: 0; }
+  .linea::before { content: ""; position: absolute; left: 4mm; top: 4mm; bottom: 4mm; border-left: 1.5px dashed var(--line); }
+  .hito { display: grid; grid-template-columns: 9mm 46mm 1fr; gap: 4mm; align-items: start; padding: 4.5mm 0; }
+  .hito .p { width: 8.4mm; height: 8.4mm; border-radius: 50%; border: 1.5px solid var(--mint); background: var(--black); position: relative; z-index: 1; }
+  .hito.fin .p { background: var(--mint); }
+  .hito .h { font-family: Syne, system-ui, sans-serif; font-weight: 800; font-size: 11pt; white-space: nowrap; color: var(--mint); padding-top: 1.2mm; }
+  .hito h3 { font-weight: 700; font-size: 14pt; color: #fff; padding-top: 1mm; }
+  .hito p { font-size: 10pt; line-height: 1.5; color: var(--muted); margin-top: 1.2mm; }
+
+  /* 4 Lo que cambia + tabla */
+  .cambios { margin-top: 7mm; display: grid; gap: 2.6mm; }
+  .cambios div { font-family: Syne, system-ui, sans-serif; font-weight: 700; font-size: 12.5pt; line-height: 1.2; color: #fff; display: grid; grid-template-columns: 9mm 1fr; }
+  .cambios div span { color: var(--mint); }
+  .inc-tit { margin-top: 11mm; padding-top: 5mm; border-top: 1px solid var(--line); display: flex; justify-content: space-between; align-items: baseline; gap: 6mm; }
+  .inc-tit h3 { font-weight: 700; font-size: 11pt; color: #fff; white-space: nowrap; }
+  .inc-tit p { font-size: 8pt; color: var(--dim); text-align: right; }
+  table.inc { width: 100%; border-collapse: collapse; margin-top: 3mm; font-size: 7.9pt; }
+  table.inc th { font-weight: 600; font-size: 6pt; letter-spacing: .06em; text-transform: uppercase; color: var(--dim); text-align: center; padding: 0 0 2mm; width: 23mm; vertical-align: bottom; }
+  table.inc th:first-child { text-align: left; width: auto; }
+  .thn { display: block; font-family: Syne, system-ui, sans-serif; font-weight: 800; font-size: 9.5pt; letter-spacing: 0; color: #fff; }
+  th.rec, th.rec .thn { color: var(--golden); }
+  table.inc td { padding: 1.35mm 0; border-bottom: 1px solid rgba(230,239,238,0.07); color: var(--text); }
+  table.inc td.c { text-align: center; color: var(--mint); font-weight: 600; }
+  table.inc td.c.rec { color: var(--golden); }
+  table.inc tr.g td { padding-top: 3.2mm; border-bottom: 1px solid var(--line); font-family: Syne, system-ui, sans-serif; font-weight: 700; font-size: 8.8pt; color: var(--mint); }
+  table.inc th { width: 34mm; }
+  table.inc th .thn { text-transform: none; white-space: nowrap; }
+  table.inc th:first-child { width: auto; }
+  table.inc td.c.t { font-weight: 400; font-size: 6.9pt; line-height: 1.25; color: var(--muted); padding-left: 1mm; padding-right: 1mm; }
+  table.inc td.c.no { color: var(--dim); font-weight: 400; }
+  table.inc td.c small { display: block; font-weight: 400; font-size: 6.4pt; color: var(--dim); }
+
+  /* 5 Funciona con lo que ya usas */
+  .tres { margin-top: 12mm; display: grid; grid-template-columns: 1fr; gap: 5mm; }
+  .tres > div { border-radius: 6mm; padding: 7mm 8mm; border: 1px solid var(--line); display: grid; grid-template-columns: 52mm 1fr; gap: 2mm 8mm; }
+  .tres > div .lbl { grid-column: 1 / -1; }
+  .tres > div.mid { background: var(--forest); border-color: var(--forest); }
+  .tres .lbl { font-size: 7.5pt; font-weight: 600; letter-spacing: .14em; text-transform: uppercase; color: var(--mint); }
+  .tres .mid .lbl { color: var(--mint-soft); }
+  .tres h3 { font-weight: 700; font-size: 13pt; color: #fff; line-height: 1.2; }
+  .tres p { font-size: 10pt; line-height: 1.55; color: var(--muted); }
+  .tres .mid p { color: rgba(255,255,255,0.86); }
+
+  /* 6 Cuatro pasos */
+  .pasos4 { margin-top: 10mm; display: grid; gap: 0; }
+  .p4 { display: grid; grid-template-columns: 14mm 1fr; gap: 3mm; padding: 5mm 0; border-top: 1px solid var(--line); }
+  .p4 .num { font-weight: 800; font-size: 20pt; color: var(--mint); line-height: 1; }
+  .p4 h3 { font-weight: 700; font-size: 13pt; color: #fff; }
+  .p4 .tn { display: grid; grid-template-columns: 1fr 1fr; gap: 6mm; margin-top: 2.5mm; }
+  .p4 .tn p { font-size: 9.2pt; line-height: 1.5; color: var(--muted); }
+  .p4 .tn b { display: block; font-size: 7pt; font-weight: 600; letter-spacing: .14em; text-transform: uppercase; color: var(--mint); margin-bottom: .8mm; }
+
+  /* 7 Inversión */
+  .chips { display: flex; gap: 2.5mm; margin-top: 4mm; flex-wrap: wrap; }
+  .chip { font-size: 8pt; font-weight: 600; color: var(--mint); border: 1px solid var(--line); border-radius: 999px; padding: 1.4mm 4mm; }
+  .cobros { margin-top: 5mm; display: grid; gap: 4mm; }
+  .cobro { border-top: 1px solid var(--line); padding-top: 4mm; display: grid; grid-template-columns: 1fr auto; gap: 6mm; align-items: end; }
+  .cobro .n { font-size: 7.5pt; font-weight: 600; letter-spacing: .14em; text-transform: uppercase; color: var(--mint); }
+  .cobro h3 { font-weight: 700; font-size: 12pt; color: #fff; margin: 1mm 0 1.5mm; }
+  .cobro p { font-size: 8.8pt; line-height: 1.5; color: var(--muted); max-width: 100mm; }
+  .precio { text-align: right; }
+  .precio .num { font-weight: 800; font-size: 18pt; color: var(--mint); line-height: 1; white-space: nowrap; }
+  .precio .usd { font-size: 8.5pt; color: var(--dim); margin-top: 1.5mm; white-space: nowrap; }
+  .paq { border: 1px solid var(--line); border-radius: 5mm; padding: 4mm 5mm 3.5mm; position: relative; }
+  .paq.rec { border: 1.5px solid var(--golden); background: rgba(245,194,75,0.06); }
+  .paq .badge { position: absolute; top: -2.6mm; left: 5mm; background: var(--golden); color: var(--black); font-size: 6.5pt; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; padding: .8mm 3mm; border-radius: 999px; }
+  .paq .conv { font-family: Syne, system-ui, sans-serif; font-weight: 800; font-size: 14pt; color: #fff; }
+  .paq .conv small { font-family: Inter, system-ui, sans-serif; font-weight: 400; font-size: 8pt; color: var(--dim); display: block; }
+  .paq .cop { font-family: Syne, system-ui, sans-serif; font-weight: 700; font-size: 12pt; color: var(--mint); margin-top: 3mm; white-space: nowrap; }
+  .paq.rec .cop { color: var(--golden); }
+  .paq .usd { font-size: 8pt; color: var(--dim); }
+  .ejemplo { grid-column: 1 / -1; display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 4mm; margin-top: 1mm; }
+  .ej { background: var(--card); border-radius: 4mm; padding: 3mm 4mm; font-size: 8pt; line-height: 1.45; color: var(--muted); }
+  .ej b { display: block; font-family: Syne, system-ui, sans-serif; font-weight: 700; font-size: 10pt; color: #fff; margin-bottom: .8mm; }
+  .ej.si b { color: var(--mint); }
+
+  .lista { grid-column: 1 / -1; display: grid; grid-template-columns: 1fr 1fr; gap: 1.6mm 6mm; margin-top: .5mm; }
+  .lista div { font-size: 8.2pt; line-height: 1.4; color: var(--text); padding-left: 4.5mm; position: relative; }
+  .lista div::before { content: "✓"; position: absolute; left: 0; color: var(--mint); font-weight: 600; }
+  .plan { grid-column: 1 / -1; display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 4mm; margin-top: 1mm; }
+  .plan .paq .cop { font-size: 13pt; }
+  .plan .paq .que { font-size: 7.5pt; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--dim); }
+  .plan .paq.cero { border: 1.5px solid var(--golden); background: rgba(245,194,75,0.08); }
+  .plan .paq.cero .cop { color: var(--golden); font-size: 20pt; }
+  .plan .paq.cero .que { color: var(--golden); }
+
+  /* 9 Referidos */
+  .refs { margin-top: 10mm; display: grid; grid-template-columns: 1fr 1fr; gap: 6mm; }
+  .ref { border-top: 1px solid var(--line); padding-top: 5mm; }
+  .ref .num { font-weight: 800; font-size: 44pt; line-height: 1; color: var(--mint); }
+  .ref .num small { font-size: 18pt; }
+  .ref p { font-size: 10pt; line-height: 1.45; color: var(--muted); margin-top: 2.5mm; max-width: 70mm; }
+  .regla { margin-top: 7mm; font-size: 10pt; line-height: 1.5; color: var(--text); }
+  .caso { margin-top: 9mm; border-radius: 6mm; border: 1px solid var(--line); padding: 6mm 7mm 6.5mm; }
+  .caso h3 { font-weight: 700; font-size: 12pt; color: #fff; }
+  .caso .suma { display: grid; grid-template-columns: 1fr auto 1fr auto 1fr; gap: 3mm; align-items: center; margin-top: 5mm; }
+  .caso .suma > div:not(.op) { background: var(--card); border-radius: 4mm; padding: 3mm 4mm; }
+  .caso .suma b { display: block; font-family: Syne, system-ui, sans-serif; font-weight: 800; font-size: 14pt; color: #fff; }
+  .caso .suma span { font-size: 7.8pt; color: var(--dim); }
+  .caso .suma .tot b { color: var(--mint); }
+  .meses { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 3mm; margin-top: 6mm; }
+  .mes { border-radius: 3mm; border: 1px solid var(--line); padding: 2.6mm 3.5mm; font-size: 7.8pt; color: var(--dim); position: relative; overflow: hidden; }
+  .mes i { position: absolute; left: 0; top: 0; bottom: 0; background: rgba(77,182,172,0.22); }
+  .mes b, .mes span { position: relative; }
+  .mes b { display: block; font-family: Syne, system-ui, sans-serif; font-weight: 700; font-size: 10pt; color: #fff; }
+  .caso .total { margin-top: 6mm; display: flex; justify-content: space-between; align-items: baseline; gap: 6mm; border-top: 1px solid var(--line); padding-top: 4mm; }
+  .caso .total .num { font-weight: 800; font-size: 24pt; color: var(--mint); white-space: nowrap; }
+  .caso .total p { font-size: 9.5pt; color: var(--muted); }
+
+  /* 8 Haz la cuenta */
+  .cifras { margin-top: 10mm; display: grid; grid-template-columns: 1fr 1fr; gap: 8mm; }
+  .cifra .num { font-weight: 800; font-size: 48pt; line-height: 1; color: var(--mint); white-space: nowrap; }
+  .cifra .num small { font-size: 20pt; }
+  .cifra p { font-size: 10pt; color: var(--muted); margin-top: 2.5mm; line-height: 1.4; }
+  .cifras2 { display: flex; gap: 12mm; margin-top: 6mm; }
+  .cifras2 .num { font-weight: 800; font-size: 14pt; color: #fff; }
+  .cifras2 p { font-size: 8pt; color: var(--dim); }
+  .ejercicio { margin-top: 8mm; border-radius: 6mm; border: 1px solid var(--line); padding: 6mm 7mm 7mm; position: relative; }
+  .ejercicio h3 { font-weight: 700; font-size: 11.5pt; color: #fff; }
+  .ejercicio + .ejercicio { margin-top: 5mm; }
+  .formula { display: grid; grid-template-columns: 1fr auto 1fr auto 1fr auto 1.1fr; gap: 3mm; align-items: center; margin-top: 4mm; }
+  .formula.dos { grid-template-columns: 1.3fr auto 1fr auto 1fr; }
+  .caja { border-bottom: 1.5px solid var(--mint); height: 11mm; position: relative; }
+  .caja.fija { border-bottom-color: rgba(230,239,238,0.3); font-family: Syne, system-ui, sans-serif; font-weight: 800; font-size: 11pt; white-space: nowrap; color: #fff; display: flex; align-items: flex-end; padding-bottom: 1.5mm; }
+  .caja span { position: absolute; bottom: -5.5mm; left: 0; font-family: Inter, system-ui, sans-serif; font-weight: 400; font-size: 7.2pt; color: var(--dim); white-space: nowrap; }
+  .op { font-family: Syne, system-ui, sans-serif; font-weight: 800; font-size: 15pt; color: var(--mint); }
+  .ejercicio p.nota { font-size: 8.6pt; line-height: 1.5; color: var(--muted); margin-top: 9mm; }
+
+  /* 9 Garantía y datos */
+  .big-quote { font-family: Syne, system-ui, sans-serif; font-weight: 800; font-size: 38pt; line-height: 1.06; color: #fff; margin-top: 24mm; max-width: 160mm; }
+  .big-quote span { color: var(--mint); }
+  .datos { margin-top: 14mm; display: grid; }
+  .dato { display: grid; grid-template-columns: 14mm 1fr; gap: 4mm; padding: 5.5mm 0; border-top: 1px solid var(--line); }
+  .dato .i { font-family: Syne, system-ui, sans-serif; font-weight: 800; font-size: 13pt; color: var(--mint); }
+  .dato h3 { font-weight: 700; font-size: 12.5pt; color: #fff; }
+  .dato p { font-size: 9.8pt; line-height: 1.5; color: var(--muted); margin-top: 1mm; }
+
+  /* 10 Próximo paso */
+  .end { background: radial-gradient(110% 70% at 0% 100%, rgba(0,77,64,0.65) 0%, rgba(16,24,23,0) 60%), var(--black); }
+  .cta { display: inline-block; margin-top: 12mm; background: var(--mint); color: var(--black); font-weight: 600; font-size: 12pt; padding: 4mm 10mm; border-radius: 999px; text-decoration: none; }
+  .contacto { margin-top: 14mm; display: grid; grid-template-columns: auto auto; gap: 14mm; justify-content: start; }
+  .contacto div { font-size: 8pt; letter-spacing: .12em; text-transform: uppercase; color: var(--dim); }
+  .contacto a { display: block; margin-top: 1.5mm; font-family: Syne, system-ui, sans-serif; font-weight: 700; font-size: 15pt; letter-spacing: 0; text-transform: none; color: #fff; text-decoration: none; }
+  .cierre { margin-top: 22mm; font-family: Syne, system-ui, sans-serif; font-weight: 800; font-size: 22pt; line-height: 1.12; color: #fff; max-width: 150mm; }
+  .cierre span { color: var(--mint); }
+</style>
+</head>
+<body>
+
+<!-- 1 · Portada (cambia en la edición hotel) -->
+<section class="page cover">
+  <div class="window"></div><div class="window in"></div><div class="dot"></div>
+  <img class="logo" src="../../frontend/public/gloma/logo_blancotrans.png" alt="Gloma">
+  <h1 class="ed-general">Que ningún interesado se quede sin respuesta.</h1>
+  <h1 class="ed-hotel">Que ningún huésped se quede sin respuesta.</h1>
+  <p class="para ed-general">Para agencias de viajes y hoteles</p>
+  <p class="para ed-hotel">Para hoteles</p>
+  <p class="lead ed-general">Un agente de IA contesta tu WhatsApp con tus tarifas y le pasa a tu equipo, o a tu recepción, al cliente listo para reservar.</p>
+  <p class="lead ed-hotel">Un agente de IA contesta el WhatsApp de tu hotel con tus tarifas y le pasa a tu recepción al huésped listo para reservar.</p>
+  <div><span class="tag">Propuesta comercial</span></div>
+  <div class="foot"><span>glomacx.com</span><span>Precios vigentes a octubre de 2026</span></div>
+</section>
+
+<!-- 2 · ¿Te suena? (cambia en la edición hotel) -->
+<section class="page">
+  <div class="top"><span>Gloma · Propuesta comercial</span><span>02 / 11</span></div>
+  <p class="kicker">¿Te suena?</p>
+  <h2 class="ed-general" style="font-size:23pt">Lo que nos cuentan hoteleros y empresarios, y lo que hace Gloma con eso.</h2>
+  <h2 class="ed-hotel" style="font-size:23pt">Lo que nos cuentan los hoteleros, y lo que hace Gloma con eso.</h2>
+  <div class="dolores ed-general">
+    <div class="dolor"><h3>De noche no hay quien conteste el WhatsApp</h3><p>El agente les contesta a la hora en que tus clientes planean el viaje, y lo que necesita una persona queda en la bandeja de tu equipo con todo el historial.</p></div>
+    <div class="dolor"><h3>Saco una promoción y los mensajes se quedan sin contestar</h3><p>El agente les contesta a todos los que llegan por tu pauta, al mismo tiempo, y a tu equipo le pasa los que quieren reservar.</p></div>
+    <div class="dolor"><h3>Los interesados que abandonaron</h3><p>El agente los recupera: les vuelve a escribir y, si no contestan, quedan en la lista de tu asesor para llamarlos.</p></div>
+    <div class="dolor"><h3>No tengo cómo ver cuántos clientes se me van</h3><p>Ves cuántas conversaciones terminan en reserva y en qué paso se va la gente.</p></div>
+  </div>
+  <div class="dolores ed-hotel">
+    <div class="dolor"><h3>De noche no hay quien conteste el WhatsApp</h3><p>El agente les contesta a la hora en que tus huéspedes planean el viaje, y lo que necesita una persona queda en la bandeja de tu recepción con todo el historial.</p></div>
+    <div class="dolor"><h3>Saco una promoción y los mensajes se quedan sin contestar</h3><p>El agente les contesta a todos los que llegan por tu pauta, al mismo tiempo, y a tu recepción le pasa los que quieren reservar.</p></div>
+    <div class="dolor"><h3>Los interesados que abandonaron</h3><p>El agente los recupera: les vuelve a escribir y, si no contestan, quedan en la lista de tu equipo para llamarlos.</p></div>
+    <div class="dolor"><h3>No tengo cómo ver cuántos huéspedes se me van</h3><p>Ves cuántas conversaciones terminan en reserva y en qué paso se va la gente.</p></div>
+  </div>
+  <div class="foot"><span>glomacx.com</span><span>Lo que nos cuentan</span></div>
+</section>
+
+<!-- 3 · Un cliente que escribe a las 8 de la noche -->
+<section class="page">
+  <div class="top"><span>Gloma · Propuesta comercial</span><span>03 / 11</span></div>
+  <p class="kicker">Una noche cualquiera</p>
+  <h2>Un cliente te escribe a las 8 de la noche.</h2>
+  <div class="linea">
+    <div class="hito"><span class="p"></span><span class="h">8:00 p. m.</span><div><h3>Escribe</h3><p>Quiere saber cuánto vale el plan para sus fechas.</p></div></div>
+    <div class="hito"><span class="p"></span><span class="h">En minutos</span><div><h3>Recibe el precio con tu tarifario</h3><p>El agente le pregunta fechas y cuántos viajan antes de cotizar.</p></div></div>
+    <div class="hito"><span class="p"></span><span class="h">Enseguida</span><div><h3>Deja sus datos</h3><p>Nombre, fechas y lo que busca quedan guardados.</p></div></div>
+    <div class="hito"><span class="p"></span><span class="h">Al confirmar</span><div><h3>Queda en la bandeja de tu equipo</h3><p>Con toda la conversación, para que nadie se la pierda.</p></div></div>
+    <div class="hito fin"><span class="p"></span><span class="h">A primera hora</span><div><h3>Tu equipo o tu recepción lo cierra</h3><p>Sin volver a preguntarle lo que ya contó.</p></div></div>
+  </div>
+  <p class="small" style="margin-top:8mm">Ejemplo ilustrativo. Gloma contesta tu WhatsApp por escrito; las llamadas siguen llegando a tu equipo.</p>
+  <div class="foot"><span>glomacx.com</span><span>Cómo se ve en tu negocio</span></div>
+</section>
+
+<!-- 4 · Lo que cambia en tu negocio + todo lo que incluye -->
+<section class="page">
+  <div class="top"><span>Gloma · Propuesta comercial</span><span>04 / 11</span></div>
+  <p class="kicker" style="margin-top:12mm">Lo que cambia en tu negocio</p>
+  <div class="cambios">
+    <div><span>01</span>Quien pregunta cuánto vale recibe el precio en minutos, a cualquier hora</div>
+    <div><span>02</span>Tu equipo entra a cerrar, no a saludar</div>
+    <div><span>03</span>Recupera a los interesados que dejaron de contestar</div>
+    <div><span>04</span>Ves cuánta venta se te queda en el aire, y en qué paso</div>
+  </div>
+  <div class="inc-tit"><h3>Todo lo que incluye</h3><p>La prueba gratis dura 14 días en uno de tus números. El plan mensual trae todo.</p></div>
+  <table class="inc">
+    <thead><tr><th></th><th><b class="thn">Prueba gratis</b>14 días</th><th class="rec"><b class="thn">Plan mensual</b>1.000 conversaciones al mes</th></tr></thead>
+    <tbody>
+      <tr class="g"><td colspan="3">Contesta cuando tu equipo no puede</td></tr>
+      <tr><td>Contesta tu WhatsApp a cualquier hora, también de noche</td><td class="c t">En 1 número</td><td class="c rec">✓</td></tr>
+      <tr><td>Da el precio con tus tarifas y tus planes, sin inventar precios ni cupos</td><td class="c t">Hasta 5 productos o servicios</td><td class="c rec">✓</td></tr>
+      <tr class="g"><td colspan="3">Lleva al cliente hasta la reserva</td></tr>
+      <tr><td>Recupera a los clientes que dejaron de contestar</td><td class="c">✓</td><td class="c rec">✓</td></tr>
+      <tr><td>Tu asesor recibe al cliente listo para reservar, con todo el historial</td><td class="c">✓</td><td class="c rec">✓</td></tr>
+      <tr><td>El cliente recibe tus formas de pago y la reserva queda en tu Google Sheets</td><td class="c no">—</td><td class="c rec">✓</td></tr>
+      <tr><td>Agenda la llamada con tu asesor cuando el cliente la pide</td><td class="c no">—</td><td class="c rec">✓</td></tr>
+      <tr><td>Les llevas tus promociones por WhatsApp a tus contactos</td><td class="c no">—</td><td class="c rec">✓<small>por mensaje enviado</small></td></tr>
+      <tr class="g"><td colspan="3">Ves dónde se te va la plata</td></tr>
+      <tr><td>Cuánta venta se te queda en el aire, en pesos, cada semana</td><td class="c">✓</td><td class="c rec">✓</td></tr>
+      <tr><td>Tiempos de respuesta del agente y de tus asesores</td><td class="c">✓</td><td class="c rec">✓</td></tr>
+      <tr><td>A qué horas te escriben y cuántos mensajes llegan fuera de horario</td><td class="c">✓</td><td class="c rec">✓</td></tr>
+      <tr><td>Cuáles interesados están listos para comprar</td><td class="c">✓</td><td class="c rec">✓</td></tr>
+      <tr><td>Tu equipo contesta desde una sola bandeja, con el historial de cada cliente</td><td class="c">✓</td><td class="c rec">✓</td></tr>
+      <tr class="g"><td colspan="3">Lo dejamos funcionando contigo</td></tr>
+      <tr><td>Instalación hecha por nuestro equipo, sin costo</td><td class="c">✓</td><td class="c rec">✓</td></tr>
+      <tr><td>Ajustes durante los primeros 10 días</td><td class="c no">—</td><td class="c rec">✓</td></tr>
+      <tr><td>Soporte 24/7 y mantenimiento incluidos</td><td class="c">✓</td><td class="c rec">✓</td></tr>
+    </tbody>
+  </table>
+  <div class="foot"><span>glomacx.com</span><span>Recuperar conversaciones abandonadas se paga por mensaje (página 7)</span></div>
+</section>
+
+<!-- 5 · Funciona con lo que ya usas (cambia en la edición hotel) -->
+<section class="page">
+  <div class="top"><span>Gloma · Propuesta comercial</span><span>05 / 11</span></div>
+  <p class="kicker">Tus sistemas</p>
+  <h2>Funciona con lo que ya usas.</h2>
+  <p class="lead">Tu agente trabaja con tus tarifas desde el primer día, y lo conectamos con el sistema donde ya llevas tus reservas.</p>
+  <div class="tres ed-general">
+    <div><span class="lbl">Listo hoy</span><h3>Lo que ya tienes en Excel y Google Sheets</h3><p>Tus contactos entran desde Excel. Los datos de cada reserva llegan a tu Google Sheets. Si vendes por Shopify, consulta tus pedidos.</p></div>
+    <div class="mid"><span class="lbl">Lo conectamos para ti</span><h3>El sistema donde llevas tus reservas</h3><p>Tu channel manager (el sistema que reparte tus tarifas y tu disponibilidad a las agencias en línea y a tu web), tu software de recepción (PMS), tu motor de reservas o tu CRM. Es un desarrollo a la medida: en la demo revisamos cuál usas y qué se puede conectar.</p></div>
+    <div><span class="lbl">Desde el primer día</span><h3>Mientras tanto, contesta con tu tarifario</h3><p>Cuando el cliente quiere confirmar el cupo, el agente se lo pasa a tu equipo o a tu recepción con toda la conversación.</p></div>
+  </div>
+  <div class="tres ed-hotel">
+    <div class="mid"><span class="lbl">Lo conectamos para ti</span><h3>El sistema donde llevas tus reservas</h3><p>Tu channel manager (el sistema que reparte tus tarifas y tu disponibilidad a las agencias en línea y a tu web), tu software de recepción (PMS) o tu motor de reservas. Es un desarrollo a la medida: en la demo revisamos cuál usas y qué se puede conectar.</p></div>
+    <div><span class="lbl">Desde el primer día</span><h3>Mientras tanto, contesta con tu tarifario</h3><p>Cuando el huésped quiere confirmar el cupo, el agente se lo pasa a tu recepción con toda la conversación.</p></div>
+    <div><span class="lbl">Listo hoy</span><h3>Lo que ya tienes en Excel y Google Sheets</h3><p>Tus contactos entran desde Excel. Los datos de cada reserva llegan a tu Google Sheets.</p></div>
+  </div>
+  <div class="foot"><span>glomacx.com</span><span>Lo que ya usas</span></div>
+</section>
+
+<!-- 6 · No necesitas saber de tecnología -->
+<section class="page">
+  <div class="top"><span>Gloma · Propuesta comercial</span><span>06 / 11</span></div>
+  <p class="kicker">Arrancar es rápido</p>
+  <h2>No necesitas saber de tecnología</h2>
+  <p class="lead">Arrancar es rápido: tu parte cabe en una semana. Del resto nos encargamos nosotros.</p>
+  <div class="pasos4">
+    <div class="p4"><span class="num">1</span><div><h3>Nos cuentas cómo vendes</h3><div class="tn"><p><b>Tú</b>Una reunión para contarnos cómo vende tu negocio y nos compartes tus tarifas, planes y políticas.</p><p><b>Nosotros</b>Entrenamos al agente con tus mensajes y guiones, con las reglas y el tono de tu marca.</p></div></div></div>
+    <div class="p4"><span class="num">2</span><div><h3>Conectamos tu WhatsApp</h3><div class="tn"><p><b>Tú</b>Nos das acceso a tu WhatsApp de empresa; te guiamos paso a paso.</p><p><b>Nosotros</b>Activamos tu cuenta, conectamos tu número y cargamos tus contactos desde tu Excel.</p></div></div></div>
+    <div class="p4"><span class="num">3</span><div><h3>Lo pruebas 14 días gratis</h3><div class="tn"><p><b>Tú</b>Lo pruebas en el simulador, nos das el visto bueno y empieza a contestarles a tus clientes en uno de tus números.</p><p><b>Nosotros</b>Lo encendemos y te mostramos cuánta venta se te queda en el aire cada semana, en pesos.</p></div></div></div>
+    <div class="p4"><span class="num">4</span><div><h3>Sigues con el plan mensual</h3><div class="tn"><p><b>Tú</b>Si te sirve, sigues. Nos escribes por WhatsApp cuando algo cambie.</p><p><b>Nosotros</b>Lo ajustamos contigo los primeros 10 días. Soporte 24/7, mantenimiento y rondas de mejora con lo que muestra tu tablero.</p></div></div></div>
+  </div>
+  <div class="foot"><span>glomacx.com</span><span>El arranque</span></div>
+</section>
+
+<!-- 7 · Tu inversión -->
+<section class="page">
+  <div class="top"><span>Gloma · Propuesta comercial</span><span>07 / 11</span></div>
+  <p class="kicker" style="margin-top:6mm">Tu inversión</p>
+  <h2 style="font-size:20pt;max-width:none">Lo pruebas 14 días gratis. Si te sirve, sigues por mes.</h2>
+  <div class="chips"><span class="chip">✓ IVA incluido</span><span class="chip">✓ Tarifa de Meta incluida</span><span class="chip">✓ Instalación en 0 COP</span></div>
+  <div class="cobros">
+    <div class="cobro">
+      <div><span class="n">01 · Para empezar</span><h3>Prueba gratis de 14 días</h3><p>Tu agente contesta con tu tarifario en uno de tus números, con hasta 5 productos o servicios. Con lo que pase en esos 14 días te mostramos:</p></div>
+      <div class="precio"><div class="num">0 COP</div><div class="usd">0 USD · 14 días</div></div>
+      <div class="lista">
+        <div>Cuánta venta se te queda en el aire, con una cifra en pesos por semana</div>
+        <div>Los tiempos de respuesta del agente y de tus asesores</div>
+        <div>A qué horas te escriben y cuántos mensajes llegan fuera de horario</div>
+        <div>Cuáles interesados están listos para comprar y cuáles no</div>
+      </div>
+    </div>
+    <div class="cobro">
+      <div><span class="n">02 · Plan mensual · permanencia de 6 meses</span><h3>Agente de servicio al cliente y ventas</h3><p>Incluye 1.000 conversaciones al mes. Una conversación es un chat con un cliente dentro de una ventana de 24 horas.</p></div>
+      <div></div>
+      <div class="plan">
+        <div class="paq cero"><div class="que">Instalación</div><div class="cop">0 COP</div><div class="usd">La instalación no te cuesta nada</div></div>
+        <div class="paq"><div class="que">Meses 1 a 6</div><div class="cop">1.071.000 COP</div><div class="usd">329 USD al mes</div></div>
+        <div class="paq"><div class="que">Desde el mes 7</div><div class="cop">868.700 COP</div><div class="usd">269 USD al mes</div></div>
+      </div>
+      <div class="ejemplo" style="grid-template-columns:1fr 1fr">
+        <div class="ej"><b>Conversación adicional</b>1.190 COP (0,37 USD), pasadas las 1.000 del mes.</div>
+        <div class="ej"><b>Si terminas antes del mes 6</b>150.000 COP (47 USD) por cada mes que falte.</div>
+      </div>
+    </div>
+    <div class="cobro">
+      <div><span class="n">03 · Cuando le vuelves a escribir a quien dejó de contestar</span><h3>Recuperación de conversaciones abandonadas</h3><p>Si pasan más de 24 horas sin que el cliente escriba, WhatsApp solo deja volver a escribirle con un mensaje aprobado, que se cobra. Si contesta, cuenta como una de las 1.000 conversaciones de tu mes. A 1.000 clientes: 90.000 COP (30 USD).</p></div>
+      <div class="precio"><div class="num">90 COP</div><div class="usd">0,03 USD · por mensaje enviado</div></div>
+    </div>
+  </div>
+  <div class="foot"><span>glomacx.com</span><span>Precios vigentes a octubre de 2026</span></div>
+</section>
+
+<!-- 8 · Haz la cuenta con tus números -->
+<section class="page">
+  <div class="top"><span>Gloma · Propuesta comercial</span><span>08 / 11</span></div>
+  <p class="kicker" style="margin-top:14mm">Haz la cuenta con tus números</p>
+  <h2>Lo que vuelve a tu negocio.</h2>
+  <div class="cifras">
+    <div class="cifra"><div class="num">4&nbsp;<small>meses</small></div><p>para recuperar la inversión, en promedio</p></div>
+    <div class="cifra"><div class="num">70&nbsp;<small>%</small></div><p>Hasta un 70 % menos en el costo de atención*</p></div>
+  </div>
+  <div class="cifras2">
+    <div><div class="num">+150.000</div><p>mensajes de viajeros gestionados</p></div>
+    <div><div class="num">+10.000</div><p>horas de asesores IA en operación</p></div>
+  </div>
+  <div class="ejercicio">
+    <h3>Lo que vende tu WhatsApp en un mes</h3>
+    <div class="formula">
+      <div class="caja"><span>Chats al mes</span></div><div class="op">×</div>
+      <div class="caja"><span>Tu tasa de cierre de hoy</span></div><div class="op">×</div>
+      <div class="caja"><span>Valor promedio de la reserva</span></div><div class="op">=</div>
+      <div class="caja"><span>Ventas por WhatsApp al mes</span></div>
+    </div>
+    <p class="nota">El agente arranca con una tasa de cierre parecida a la de tu equipo, porque vende con tus mismos mensajes, y desde ahí trabajamos para subirla.</p>
+  </div>
+  <div class="ejercicio">
+    <h3>¿Cuántas reservas pagan tu mensualidad?</h3>
+    <div class="formula dos">
+      <div class="caja fija">1.071.000 COP<span>Mensualidad, meses 1 a 6</span></div><div class="op">÷</div>
+      <div class="caja"><span>Valor promedio de tu reserva</span></div><div class="op">=</div>
+      <div class="caja"><span>Reservas</span></div>
+    </div>
+    <p class="nota">Desde el mes 7 la mensualidad es de 868.700 COP.</p>
+  </div>
+  <p class="small" style="margin-top:5mm">* Frente a atender el mismo volumen de chats solo con asesores.</p>
+  <div class="foot"><span>glomacx.com</span><span>El retorno</span></div>
+</section>
+
+<!-- 9 · Plan de referidos -->
+<section class="page">
+  <div class="top"><span>Gloma · Propuesta comercial</span><span>09 / 11</span></div>
+  <p class="kicker">Plan de referidos</p>
+  <h2 style="font-size:24pt">Recomiéndanos y tu mensualidad baja.</h2>
+  <p class="lead">Si conoces otro negocio al que le escriben más clientes de los que alcanza a contestar, preséntanoslo.</p>
+  <div class="refs">
+    <div class="ref"><div class="num">20&nbsp;<small>%</small></div><p>de descuento en una mensualidad por cada negocio que refieras y entre a la prueba gratis, sin tope por mes.</p></div>
+    <div class="ref"><div class="num">50&nbsp;<small>%</small></div><p>de descuento en una mensualidad por cada negocio que refieras y compre el plan.</p></div>
+  </div>
+  <p class="regla">Los descuentos se suman. Lo que pase de 100 % se corre a la mensualidad siguiente.</p>
+  <div class="caso">
+    <h3>Refieres a 5 negocios. Los 5 entran a la prueba y 3 compran.</h3>
+    <div class="suma">
+      <div><b>5 × 20 %</b><span>hicieron la prueba</span></div><div class="op">+</div>
+      <div><b>3 × 50 %</b><span>compraron el plan</span></div><div class="op">=</div>
+      <div class="tot"><b>250 %</b><span>2,5 mensualidades</span></div>
+    </div>
+    <div class="meses">
+      <div class="mes"><i style="width:100%"></i><b>Mensualidad 1</b><span>gratis</span></div>
+      <div class="mes"><i style="width:100%"></i><b>Mensualidad 2</b><span>gratis</span></div>
+      <div class="mes"><i style="width:50%"></i><b>Mensualidad 3</b><span>a mitad de precio</span></div>
+    </div>
+    <div class="total"><p>Lo que dejas de pagar</p><div class="num">2.677.500 COP</div></div>
+    <p class="small" style="margin-top:1.5mm;text-align:right">822,50 USD · con la mensualidad de los meses 1 a 6</p>
+  </div>
+  <p class="small" style="margin-top:5mm">Ejemplo ilustrativo.</p>
+  <div class="foot"><span>glomacx.com</span><span>Plan de referidos</span></div>
+</section>
+
+<!-- 10 · Garantía, soporte y tus datos -->
+<section class="page">
+  <div class="top"><span>Gloma · Propuesta comercial</span><span>10 / 11</span></div>
+  <p class="big-quote">Queda funcionando <span>como tú quieres.</span></p>
+  <p class="lead" style="font-size:12.5pt">Esa es nuestra garantía. Lo probamos contigo antes de que le conteste a un cliente y lo ajustamos hasta que quede como lo quieres. Si después algo no contesta como esperas, nos escribes por WhatsApp y lo ajustamos.</p>
+  <div class="datos">
+    <div class="dato"><span class="i">01</span><div><h3>Puedes empezar con otro número</h3><p>No tienes que entregarnos tu número principal: puedes arrancar con otro número de tu negocio, por ejemplo el de recepción.</p></div></div>
+    <div class="dato"><span class="i">02</span><div><h3>Tus datos viven en tu propia cuenta</h3><p>Aislada de las demás.</p></div></div>
+    <div class="dato"><span class="i">03</span><div><h3>Tus conversaciones son tuyas</h3><p>No se usan para entrenar modelos de IA.</p></div></div>
+  </div>
+  <div class="foot"><span>glomacx.com</span><span>Garantía, soporte y tus datos</span></div>
+</section>
+
+<!-- 11 · Próximo paso -->
+<section class="page end">
+  <div class="top"><img src="../../frontend/public/gloma/logo_blancotrans.png" alt="Gloma"><span>11 / 11</span></div>
+  <p class="kicker">Próximo paso</p>
+  <h2>Empieza tu prueba gratis de 14 días.</h2>
+  <p class="lead">Agenda una llamada: nos cuentas cómo vendes y dejamos tu agente contestando en uno de tus números. A los 14 días ves, en pesos, cuánta venta se te estaba quedando en el aire.</p>
+  <div><a class="cta" href="https://glomacx.com">Agendar la llamada</a></div>
+  <div class="contacto">
+    <div>WhatsApp<a href="https://wa.me/573150764000">+57 315 076 4000</a></div>
+    <div>Web<a href="https://glomacx.com">glomacx.com</a></div>
+  </div>
+  <p class="cierre">Tus clientes ya escriben de noche. <span>Que alguien les conteste.</span></p>
+  <div class="foot"><span>Precios vigentes a octubre de 2026. IVA y tarifa de Meta incluidos.</span><span>Gloma</span></div>
+</section>
+
+</body>
+</html>

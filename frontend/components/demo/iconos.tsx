@@ -142,3 +142,10 @@ export const Check = ({ doble, leido }: { doble: boolean; leido?: boolean }) =>
       <path d="M1.5 5.8l3 3L11 2" />
     </svg>
   );
+
+/** Barras: botón del reporte de ejemplo de la demo. */
+export const IconoReporte = ({ size = 16 }: { size?: number }) => (
+  <Svg size={size}>
+    <path d="M4 20h16M7 16v-4M12 16V8M17 16v-7" />
+  </Svg>
+);

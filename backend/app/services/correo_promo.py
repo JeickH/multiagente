@@ -8,8 +8,9 @@ respuesta de `/demo/iniciar`, y nunca levanta.
 
 Versión: CO si el teléfono del lead es `+57`, si no INTL (igual que la
 pantalla de premio). Plantillas en `app/templates/correo_promo_demo/`
-(copiadas de `ventas/correo_promo_demo/`, que es donde se editan y se
-regeneran con `build_correo.py`; sin Google Fonts).
+(sin Google Fonts). Desde la promoción del 2026-10-28 las plantillas de este
+repo son la fuente: se editan aquí y se copian a `ventas/correo_promo_demo/`;
+el `build_correo.py` de allá quedó desactualizado y no se corre.
 
 Contenido (#647 A1): lo que escribe el visitante solo entra al correo si pasa
 una lista blanca. El nombre, si es una sola palabra de letras (≤ 30); si no,

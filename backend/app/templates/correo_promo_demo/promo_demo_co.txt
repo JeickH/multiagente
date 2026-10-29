@@ -1,17 +1,24 @@
-{{nombre}}, ganaste hasta $8.700.000 COP en servicios de Gloma.
+{{nombre}}, ganaste hasta $1.285.200 COP en servicios de Gloma.
 
 Gracias por hacer la demo de Gloma con {{empresa}}. Esta es la promoción que te ganaste:
 
-50 % de descuento en la instalación.
-Pagas 1.200.000 COP en lugar de 2.400.000 COP.
+50 % de descuento en tu primer mes.
+Pagas 535.500 COP en lugar de 1.071.000 COP.
 
-35 % de descuento en tus primeros 3 paquetes de conversaciones.
-Así queda cada paquete con tu 35 %:
-- 600 conversaciones: 760.000 COP -> 494.000 COP
-- 2.000 conversaciones (el recomendado): 2.490.000 COP -> 1.618.500 COP
-- 6.000 conversaciones: 7.190.000 COP -> 4.673.500 COP
+35 % de descuento en el segundo y el tercer mes.
+Pagas 696.150 COP cada mes en lugar de 1.071.000 COP.
 
-Valores en pesos (COP), con el IVA y lo que cobra Meta por WhatsApp incluidos, como están publicados en glomacx.com. Las conversaciones que no uses no se vencen: pasan al mes siguiente.
+Y se suma a lo que ya tienes: 14 días de prueba gratis y la instalación, que no te cuesta nada.
+
+Así arrancas con tu promoción:
+- Prueba gratis de 14 días: 0 COP
+- Instalación: 0 COP
+- Mes 1: 1.071.000 COP -> 535.500 COP
+- Mes 2: 1.071.000 COP -> 696.150 COP
+- Mes 3: 1.071.000 COP -> 696.150 COP
+Te ahorras 1.285.200 COP.
+
+Valores en pesos (COP), con el IVA y la tarifa de Meta por WhatsApp incluidos, como están publicados en glomacx.com. Cada mes del plan incluye 1.000 conversaciones.
 
 
 Para tener un agente que responda cuando tú no estás
@@ -23,7 +30,7 @@ Para tener un agente que responda cuando tú no estás
 
 Para aplicarla, habla con nosotros
 
-En la llamada miramos cuántos chats recibe {{empresa}} al mes, cuántos terminan en venta y cuánto vale en promedio un plan. Con esos tres números hacemos juntos la cuenta de lo que te ahorras y del paquete que te sirve.
+En la llamada miramos cuántos chats recibe {{empresa}} al mes, cuántos terminan en venta y cuánto vale en promedio un plan. Con esos tres números hacemos juntos la cuenta de lo que te ahorras y arrancamos tu prueba gratis.
 
 Agendar una llamada:
 https://app.cal.com/gloma/hablemos-de-gloma
