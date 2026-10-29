@@ -9806,8 +9806,13 @@ Se lee del archivo en cada turno: sale con la imagen del backend.
 **Pruebas**: backend 4.063 passed; frontend 161 passed; `tsc` limpio. Revisión visual con
 capturas a 1280 y 390 px.
 
+**Despliegue (28-oct-2026)**: backend task-def **rev 117** (imagen `:landing-valor-2511a1e`,
+mismas variables que la 116, correo de la promoción encendido) y PR #22 a `main` → Amplify job
+204 SUCCEED. Verificado en producción: la landing muestra los precios nuevos, el PDF descarga y
+Lía responde «14 días gratis, instalación sin costo, COP 1.071.000 / US$329». Logs sin errores,
+tick 200. El CEO prueba la demo y el correo automático en producción.
+
 **Pendientes**
-- Desplegar: merge a `main` (Amplify) e imagen nueva del backend (Lía + correo) el mismo día.
 - Tiempos de respuesta: el CEO confirmó que se miden y se entregan en el reporte de la prueba;
   hoy el tablero no los muestra (se arma el reporte aparte).
 - Agregar el 70 % a las cifras autorizadas de `.claude/agents/belfort.md` (otra sesión tiene
