@@ -577,6 +577,19 @@ def _agenda_cfg(cfg: Dict[str, Any]) -> Dict[str, int]:
     return data
 
 
+def _no_antes_de(cfg: Dict[str, Any]) -> Optional[date]:
+    """`agenda.no_antes_de` (AAAA-MM-DD): ninguna demo antes de esa fecha, sin
+    importar el margen de días hábiles. Para días en que no se atiende (p. ej.
+    el CEO pidió no agendar del 29 al 31 de octubre de 2026). Una fecha mal
+    escrita se ignora: es mejor ofrecer franjas que dejar al bot sin ninguna."""
+    ag = cfg.get("agenda")
+    valor = ag.get("no_antes_de") if isinstance(ag, dict) else None
+    try:
+        return date.fromisoformat(str(valor).strip()) if valor else None
+    except ValueError:
+        return None
+
+
 def _hora_label(h: int) -> str:
     if h == 12:
         return "12:00 m."
@@ -599,9 +612,11 @@ def _sumar_dias_habiles(desde: date, habiles: int) -> date:
     return d
 
 
-def _primera_franja(ahora: datetime, ag: Dict[str, int]) -> tuple[date, int]:
+def _primera_franja(ahora: datetime, ag: Dict[str, int],
+                    no_antes_de: Optional[date] = None) -> tuple[date, int]:
     """Primer (fecha, hora) ofrecible: +N días hábiles y, ese día, la hora en
-    punto siguiente a la de la solicitud. Ej: jueves 2:30 p.m. → martes 3 p.m."""
+    punto siguiente a la de la solicitud. Ej: jueves 2:30 p.m. → martes 3 p.m.
+    Con `no_antes_de`, nunca antes de esa fecha (desde su primera hora)."""
     dia = _sumar_dias_habiles(ahora.date(), ag["dias_habiles_min"])
     hora = ahora.hour + (1 if ahora.minute > 0 else 0)
     hora = max(hora, ag["hora_inicio"])
@@ -609,6 +624,10 @@ def _primera_franja(ahora: datetime, ag: Dict[str, int]) -> tuple[date, int]:
         # Ya no cabe ninguna cita ese día: arranca el siguiente día hábil.
         dia = _sumar_dias_habiles(dia, 1)
         hora = ag["hora_inicio"]
+    if no_antes_de and dia < no_antes_de:
+        dia, hora = no_antes_de, ag["hora_inicio"]
+        while dia.weekday() >= 5:
+            dia += timedelta(days=1)
     return dia, hora
 
 
@@ -616,7 +635,7 @@ def proximas_franjas(cfg: Dict[str, Any], ahora: Optional[datetime] = None) -> L
     """Las próximas N franjas disponibles según la política de agenda."""
     ag = _agenda_cfg(cfg)
     ahora = ahora or datetime.now(_TZ_CO)
-    dia, hora = _primera_franja(ahora, ag)
+    dia, hora = _primera_franja(ahora, ag, _no_antes_de(cfg))
     franjas: List[Dict[str, Any]] = []
     while len(franjas) < ag["opciones"]:
         if dia.weekday() < 5:
@@ -651,8 +670,8 @@ def franja_valida(fecha_iso: str, hora_str: str, cfg: Dict[str, Any],
             f"el horario de demos es de {_hora_label(ag['hora_inicio'])} a "
             f"{_hora_label(ag['hora_fin'])}"
         )
-    minimo = _sumar_dias_habiles(ahora.date(), ag["dias_habiles_min"])
-    if f < minimo or (f == minimo and h < _primera_franja(ahora, ag)[1]):
+    primera_dia, primera_hora = _primera_franja(ahora, ag, _no_antes_de(cfg))
+    if f < primera_dia or (f == primera_dia and h < primera_hora):
         return False, (
             "esa franja ya no está disponible: ofrécele las opciones que "
             "aparecen en tus instrucciones"

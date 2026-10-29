@@ -245,3 +245,24 @@ esa revisión.** El descarte de repetidos va por `(source, origen_id)`.
    `source backend/.venv/bin/activate` antes de `pip install` o `pytest`.
 3. **Región AWS = `sa-east-1`**. Cualquier comando `aws` debe incluir
    explícitamente `--region sa-east-1`. Nunca us-east-1.
+4. **Dos cuentas de Twilio independientes** (no son matriz y subcuenta):
+
+   | Nombre | Qué tiene | Credenciales locales |
+   |--------|-----------|----------------------|
+   | `multiagente` | WhatsApp de Arranquemos Pues (su único WABA) | `CREDENCIALES_TWILIO.txt` |
+   | `gloma` | WhatsApp propio de Gloma | `CREDENCIALES_TWILIO_GLOMA.txt` |
+
+   - Antes de cualquier llamada a la API de Twilio se carga la cuenta en el
+     **mismo** comando: `source backend/scripts/twilio_cuenta.sh gloma && curl …`.
+     El script imprime nombre, estado y saldo; si no dice `active`, se para ahí.
+   - Toda escritura (crear remitentes, plantillas, cambiar webhooks) se anuncia
+     diciendo en qué cuenta va. Las cuentas no comparten saldo ni WABA.
+   - Por qué no son subcuentas: Twilio solo admite **un WABA por cuenta o
+     subcuenta**, y en las subcuentas solo muestra la vista ISV (Tech Provider),
+     sin el botón de registro directo.
+   - En producción, las credenciales de cada cliente van cifradas en
+     `meta_accounts` con `backend/scripts/connect_twilio_waba.py`, nunca en SSM
+     ni en `.env` (regla de seguridad #3). La de `multiagente` es la que está en
+     SSM como respaldo global.
+   - Una cuenta nueva = un archivo `CREDENCIALES_TWILIO_<NOMBRE>.txt` en la raíz
+     (lo cubre `.gitignore`) y una fila en esta tabla.

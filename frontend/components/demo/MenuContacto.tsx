@@ -1,7 +1,8 @@
 /**
  * Menú de la cabecera del chat de la demo (#634): un botón «Agendar» que
- * despliega las dos salidas, «Agendar una llamada» (modal de Cal.com) y
- * «Hablar con un asesor» (wa.me de Gloma).
+ * despliega las dos salidas, «Agendar una llamada» y «Hablar con un asesor».
+ * Desde 2026-10-28 las dos abren el chat de Gloma en la página (o el wa.me del
+ * agente cuando esté activo: `acciones.enlaceWhatsapp`).
  *
  * Patrón de menú de botón (WAI-ARIA): `aria-haspopup="menu"` y
  * `aria-expanded` en el botón; al abrir, foco al primer ítem; ↑ ↓ Inicio Fin
@@ -129,35 +130,63 @@ export default function MenuContacto({ acciones }: { acciones: AccionesAgendar }
             </span>
             <span>
               <span className="block font-semibold">{T.agendar}</span>
-              <span className="block text-xs text-gloma-ink-muted">Elige día y hora · 30 min</span>
+              <span className="block text-xs text-gloma-ink-muted">
+                {acciones.enlaceWhatsapp ? 'Por WhatsApp · 30 min' : 'Aquí mismo, por chat · 30 min'}
+              </span>
             </span>
           </button>
-          <a
-            ref={(el) => {
+          {(() => {
+            const contenido = (
+              <>
+              <span className="w-8 h-8 rounded-full border border-white/40 flex items-center justify-center shrink-0" aria-hidden="true">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1.1-4.6A8 8 0 1 1 21 12z" />
+                </svg>
+              </span>
+                <span>
+                  <span className="block font-semibold">{T.whatsapp}</span>
+                  {/* Que abre otra pestaña lo dice el `aria-label`; el texto visible queda corto (#636). */}
+                  <span className="block text-xs text-gloma-ink-muted">
+                    {acciones.enlaceWhatsapp ? 'Por WhatsApp' : 'Aquí mismo, por chat'}
+                  </span>
+                </span>
+              </>
+            );
+            const ref = (el: HTMLElement | null) => {
               items.current[1] = el;
-            }}
-            role="menuitem"
-            href={acciones.enlaceWhatsapp}
-            target="_blank"
-            rel="noopener noreferrer"
-            aria-label={T.whatsappAria}
-            className={item}
-            onClick={() => {
-              acciones.alClicWhatsapp();
-              cerrar(true);
-            }}
-          >
-            <span className="w-8 h-8 rounded-full border border-white/40 flex items-center justify-center shrink-0" aria-hidden="true">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1.1-4.6A8 8 0 1 1 21 12z" />
-              </svg>
-            </span>
-            <span>
-              <span className="block font-semibold">{T.whatsapp}</span>
-              {/* Que abre otra pestaña lo dice el `aria-label`; el texto visible queda corto (#636). */}
-              <span className="block text-xs text-gloma-ink-muted">Por WhatsApp</span>
-            </span>
-          </a>
+            };
+            return acciones.enlaceWhatsapp ? (
+              <a
+                ref={ref}
+                role="menuitem"
+                href={acciones.enlaceWhatsapp}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label={T.whatsappAria}
+                className={item}
+                onClick={() => {
+                  acciones.alClicWhatsapp();
+                  cerrar(true);
+                }}
+              >
+                {contenido}
+              </a>
+            ) : (
+              <button
+                ref={ref}
+                type="button"
+                role="menuitem"
+                className={item}
+                onClick={() => {
+                  acciones.alClicWhatsapp();
+                  cerrar(false);
+                  acciones.abrirAsesor();
+                }}
+              >
+                {contenido}
+              </button>
+            );
+          })()}
         </div>
       )}
     </div>

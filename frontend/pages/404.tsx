@@ -1,6 +1,7 @@
 import Head from 'next/head';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
+import GlomaChatWidget, { BotonAsesor } from '../components/GlomaChatWidget';
 import { TEXTOS_AGENDAR } from '../lib/agendarLlamada';
 
 /**
@@ -11,6 +12,8 @@ import { TEXTOS_AGENDAR } from '../lib/agendarLlamada';
  *    plataforma vive bajo el subdominio `app.`.
  *
  * Diseño alineado con /gloma (Syne + Inter, Deep Forest + Algorithmic Mint).
+ * «Hablar con un asesor» abre el chat de Gloma en esta misma página, o el
+ * WhatsApp del agente cuando esté activo (`lib/contactoGloma.ts`).
  */
 
 const BRAND = {
@@ -83,19 +86,16 @@ export default function NotFound() {
             >
               Volver al inicio
             </Link>
-            <a
-              href="https://wa.me/573150764000?text=Hola%20Gloma"
-              target="_blank"
-              rel="noopener noreferrer"
-              aria-label={TEXTOS_AGENDAR.whatsappAria}
+            <BotonAsesor
               className="px-6 py-3 rounded-full text-sm font-semibold transition-opacity hover:opacity-90"
               style={{ backgroundColor: BRAND.rose, color: BRAND.brown }}
             >
               {TEXTOS_AGENDAR.whatsapp}
-            </a>
+            </BotonAsesor>
           </div>
         </div>
       </div>
+      <GlomaChatWidget />
     </>
   );
 }

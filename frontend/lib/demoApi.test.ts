@@ -15,7 +15,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { inicialesEmpresa, telefonoE164, validarCampo, FORMULARIO_VACIO } from './demoFormulario';
 import { esTelefonoColombia, formatearE164, normalizarTelefono } from './telefonoPais';
 import { DEMO_UI } from './demo_copy';
-import { CLAVE_DEMO, borrarDemo, enlaceWhatsapp, guardarDemo, leerDemoGuardada, type DemoGuardada } from './demoApi';
+import { enlaceWhatsapp } from './contactoGloma';
+import { CLAVE_DEMO, borrarDemo, guardarDemo, leerDemoGuardada, textoContacto, type DemoGuardada } from './demoApi';
 
 function almacenEnMemoria(): Storage {
   const datos = new Map<string, string>();
@@ -41,25 +42,23 @@ const DEMO: DemoGuardada = {
   etapa: 'slides',
 };
 
-describe('enlaceWhatsapp', () => {
-  it('lleva al WhatsApp de Gloma con la empresa en el texto', () => {
-    const url = enlaceWhatsapp('Viajes Alcaraván Azul', DEMO_UI.agendar);
-    expect(url.startsWith('https://wa.me/573150764000?text=')).toBe(true);
-    expect(decodeURIComponent(url.split('text=')[1])).toBe(
+describe('textoContacto', () => {
+  it('lleva la empresa en el texto', () => {
+    expect(textoContacto('Viajes Alcaraván Azul', DEMO_UI.agendar)).toBe(
       'Hola, acabo de probar la demo de Viajes Alcaraván Azul y quiero agendar una llamada',
     );
   });
 
-  it('una empresa con caracteres de URL no cambia el destino', () => {
-    const url = enlaceWhatsapp('A&B?x=1#/https://otro.example', DEMO_UI.agendar);
+  it('una empresa con caracteres de URL no cambia el destino del wa.me', () => {
+    const url = enlaceWhatsapp('573000000000', textoContacto('A&B?x=1#/https://otro.example', DEMO_UI.agendar));
     const u = new URL(url);
     expect(u.host).toBe('wa.me');
-    expect(u.pathname).toBe('/573150764000');
+    expect(u.pathname).toBe('/573000000000');
     expect([...u.searchParams.keys()]).toEqual(['text']);
   });
 
   it('sin empresa usa el texto genérico', () => {
-    expect(decodeURIComponent(enlaceWhatsapp('  ', DEMO_UI.agendar).split('text=')[1])).toBe(DEMO_UI.agendar.sinDemo);
+    expect(textoContacto('  ', DEMO_UI.agendar)).toBe(DEMO_UI.agendar.sinDemo);
   });
 });
 

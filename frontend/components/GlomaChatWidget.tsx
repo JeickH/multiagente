@@ -1,7 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { TEXTOS_AGENDAR } from '../lib/agendarLlamada';
+import {
+  MENSAJE_AGENDAR,
+  WHATSAPP_DEL_AGENTE_ACTIVO,
+  enlaceWhatsappContacto,
+} from '../lib/contactoGloma';
 import { formatearWhatsapp } from '../lib/formatoWhatsapp';
-import { abrirAgendarLlamada } from './AgendarLlamadaModal';
 
 /**
  * Widget de chat de la landing Gloma (Sprint 20 #270).
@@ -32,10 +36,6 @@ const BRAND = {
   whatsapp: '#25D366',
 };
 
-const WHATSAPP_URL =
-  // Mismo mensaje precargado que el enlace del footer de la landing.
-  'https://wa.me/573150764000?text=Hola%20Gloma%2C%20tengo%20una%20agencia%20de%20viajes%20y%20quiero%20ver%20una%20demo';
-
 /**
  * Evento global para abrir el chat desde cualquier parte de la landing
  * (#299: el CTA "Escríbenos por WhatsApp" de la sección de contacto abre esta
@@ -59,13 +59,12 @@ export const OPEN_CHAT_EVENT = 'gloma:open-chat';
 export type OpenChatDetail = { message?: string };
 
 /**
- * A dónde lleva «Hablar con un asesor» en toda la landing (2026-10-21, CEO).
- * Mientras el WhatsApp de Gloma no esté conectado al agente, abre este chat en
- * la misma página. Cuando quede conectado, se pone en `true` y todos los
- * botones vuelven al wa.me. El nombre «Lía» no va en ningún botón: el
- * visitante no sabe quién es.
+ * A dónde llevan los botones de contacto: lo decide `lib/contactoGloma.ts`
+ * (2026-10-28, CEO). Mientras el WhatsApp del agente no esté activo, abren
+ * este chat en la misma página; con `WHATSAPP_DEL_AGENTE_ACTIVO = true`, el
+ * wa.me del agente. El nombre «Lía» no va en ningún botón: el visitante no
+ * sabe quién es.
  */
-export const ASESOR_POR_WHATSAPP = false;
 
 /** Abre el chat de la página, como si el visitante tocara el botón flotante. */
 export function abrirChatGloma(mensaje?: string) {
@@ -77,26 +76,29 @@ export function abrirChatGloma(mensaje?: string) {
   );
 }
 
-/**
- * Botón o enlace «Hablar con un asesor». Con `ASESOR_POR_WHATSAPP` apagado es
- * un botón que abre el chat; encendido, un enlace al wa.me en otra pestaña.
- */
-export function BotonAsesor({
-  className,
-  style,
-  children,
-}: {
+type PropsBotonContacto = {
   className?: string;
   style?: React.CSSProperties;
   children: React.ReactNode;
-}) {
-  if (ASESOR_POR_WHATSAPP) {
+  /** Además de abrir el chat o el enlace (p. ej. contar el clic). */
+  onClick?: () => void;
+};
+
+/**
+ * Botón de contacto: con el WhatsApp del agente apagado abre el chat de la
+ * página (con `mensaje`, si viene, como lo primero que dice el visitante);
+ * encendido, un enlace al wa.me del agente en otra pestaña.
+ */
+function BotonContacto({ mensaje, className, style, children, onClick }: PropsBotonContacto & { mensaje?: string }) {
+  const enlace = enlaceWhatsappContacto(mensaje);
+  if (enlace) {
     return (
       <a
-        href={WHATSAPP_URL}
+        href={enlace}
         target="_blank"
         rel="noopener noreferrer"
         aria-label={TEXTOS_AGENDAR.whatsappAria}
+        onClick={onClick}
         className={className}
         style={style}
       >
@@ -105,10 +107,28 @@ export function BotonAsesor({
     );
   }
   return (
-    <button type="button" onClick={() => abrirChatGloma()} className={className} style={style}>
+    <button
+      type="button"
+      onClick={() => {
+        onClick?.();
+        abrirChatGloma(mensaje);
+      }}
+      className={className}
+      style={style}
+    >
       {children}
     </button>
   );
+}
+
+/** «Hablar con un asesor»: abre la conversación con el saludo. */
+export function BotonAsesor(props: PropsBotonContacto) {
+  return <BotonContacto {...props} />;
+}
+
+/** «Agendar una llamada»: abre la conversación pidiendo la llamada, y el agente responde con las franjas. */
+export function BotonAgendar(props: PropsBotonContacto) {
+  return <BotonContacto {...props} mensaje={MENSAJE_AGENDAR} />;
 }
 
 const SUGERENCIAS = [
@@ -168,7 +188,12 @@ function TypingDots() {
   );
 }
 
-export default function GlomaChatWidget() {
+/**
+ * `sinLanzador`: no pinta el botón flotante; el chat solo se abre con los
+ * botones de la página (`abrirChatGloma`). Lo usa `/demo`, donde la esquina
+ * inferior ya es del chat de la demo.
+ */
+export default function GlomaChatWidget({ sinLanzador = false }: { sinLanzador?: boolean } = {}) {
   const [open, setOpen] = useState(false);
   const [msgs, setMsgs] = useState<Msg[]>([]);
   const [input, setInput] = useState('');
@@ -475,13 +500,15 @@ export default function GlomaChatWidget() {
             )}
 
             {/* #625: al traspaso (o si el chat falla) el visitante elige cómo
-                seguir: agendar en el calendario (modal de Cal.com, sin salir
-                de la página) o escribir por WhatsApp. */}
+                seguir. Desde 2026-10-28 agendar es pedírselo al agente en este
+                mismo chat; con el WhatsApp del agente activo, también puede
+                seguir por WhatsApp. */}
             {showWhatsappCta && (
               <div className="flex flex-col gap-2">
                 <button
                   type="button"
-                  onClick={abrirAgendarLlamada}
+                  onClick={() => sendSuggestion(MENSAJE_AGENDAR)}
+                  disabled={sending || finished}
                   className="flex items-center justify-center w-full py-2.5 rounded-full text-[13px] font-semibold transition-transform hover:-translate-y-0.5"
                   style={{ backgroundColor: BRAND.mint, color: BRAND.bgBase }}
                 >
@@ -490,9 +517,9 @@ export default function GlomaChatWidget() {
                 {/* Dentro del chat, «Hablar con un asesor» solo tiene sentido
                     cuando lleva al WhatsApp: mientras tanto el asesor es este
                     mismo chat. */}
-                {ASESOR_POR_WHATSAPP && (
+                {WHATSAPP_DEL_AGENTE_ACTIVO && (
                   <a
-                    href={WHATSAPP_URL}
+                    href={enlaceWhatsappContacto() ?? undefined}
                     target="_blank"
                     rel="noopener noreferrer"
                     aria-label={TEXTOS_AGENDAR.whatsappAria}
@@ -544,6 +571,7 @@ export default function GlomaChatWidget() {
       )}
 
       {/* ===== Botón flotante ===== */}
+      {!sinLanzador && (
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
@@ -580,6 +608,7 @@ export default function GlomaChatWidget() {
           />
         )}
       </button>
+      )}
     </>
   );
 }

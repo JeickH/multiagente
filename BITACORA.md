@@ -9547,6 +9547,73 @@ abrir el tick). Resto cosmético: `TICK_URL` de la Lambda en `api.glomabeauty.co
 
 ---
 
+## Cierre «listo para reservar», reglas de las asesoras y notas de voz — 21 de octubre de 2026
+
+> 🚧 **Trabajo en progreso** de otra sesión: entrada registrada sin cerrar; la sesión dueña la completa.
+
+Pedido del CEO tras el reporte de las 133 conversaciones del 19–21 oct
+(`ventas/reportes/conversaciones_arranquemos_19-21oct.html`) y dos chats reales de asesoras.
+Commit `cc877b5`, task-def **rev 110** (imagen `:cierre-cc877b5`, env
+`TRANSCRIBIR_NOTAS_DE_VOZ=1`), Amplify job 198.
+
+- **Cierre en los 3 bots**: datos de cada viajero (nombre, cédula, nacimiento) + correo del
+  titular → el bot dice cuánto pagar y llama `listo_para_reservar` → el sistema manda
+  `medios_pago`, asigna asesor por rotación, etiqueta «listo para reservar» y deja nota
+  interna «🟢 Listo para reservar» con resumen y datos. El bot 3 ya no acompaña el pago
+  (se quitaron /transferencia y /pago_seguimiento). Si el modelo no escribe, el texto de
+  cierre lo pone el sistema y no sale el aviso de ausencia (pedía los datos otra vez).
+- **Bandeja `/mensajes`**: filtro «🟢 Listo para reservar» (excluye cerradas), esas van de
+  primeras, chip verde; búsqueda por teléfono en cualquier formato (≥7 dígitos).
+  `/conversaciones` (supervisión) quedó sin buscador: mezcla dos registros, pendiente.
+- **Reglas de la agencia** (bloque del sistema, 3 bots): múltiple solo 3+ del mismo grupo
+  (1–2 pagan doble; el guardarraíl de precio ya no acepta n×múltiple con n<3 salvo 2
+  adultos + niños), solo salidas desde Medellín sin pasar a asesor, «PAGO TOTAL» en el
+  resultado de precios para salidas a <5 días (también excepción en el bloque de
+  anticipo del bot 2), precio sin mes, fecha concreta, preguntas frecuentes de las
+  asesoras. **Cupo: siempre hay cupo** (decisión del CEO, se mantiene).
+- **Simulacro**: doble $537.900 (JSON + RDS, carga 3, 2 filas); encuentro en Amor de Dios;
+  primer mensaje cierra con «¿Cuántas personas viajan?»; ya se cobra completo.
+- **Guardarraíl nuevo**: no negar una salida sin consultarla con su fecha (conv. 1173).
+- **Notas de voz**: Amazon Transcribe sa-east-1 (es-US, ~10 s), dentro del turno con tope de
+  25 s; transcripción como nota interna. Política IAM `transcribe-notas-de-voz` en
+  `multiagente-ecs-task-role`. Se apaga quitando la env var.
+- Prompts de los bots 21 y 22 actualizados en `bots.instrucciones` desde los `.md` de la
+  imagen; el 12 usa el `.md` de la imagen.
+- Suite 3.918 en verde; `bot1_golden` regenerado (solo los cambios pedidos, verificado por
+  estructura). QA contra Bedrock por `bot_runner.run_turn` en los 3 bots.
+
+---
+
+## Marcas retroactivas, pausa del bot 2 y horario de silencio de recordatorios — 21 de octubre de 2026
+
+> 🚧 **Trabajo en progreso** de otra sesión: entrada registrada sin cerrar; la sesión dueña la completa.
+
+**Operación en RDS (sin deploy):**
+- Conversaciones **1185** y **1261** marcadas «listo para reservar» con nota interna. La 1261
+  se asignó a la asesora y se le mandó a mano el recordatorio con el texto corregido; la
+  1185 lleva «👉 Pendiente: la asesora confirma el precio».
+- **Bot 2 (id 21) en pausa hasta el sábado 24-oct**: `reparto_pct` NULL (sigue activo, sus
+  recordatorios siguen saliendo); reparto **12 → 50 / 22 → 50**. Para volver: 34/33/33
+  con `crud.guardar_reparto` cuando el CEO lo pida.
+- 8 recordatorios que caían entre 23:00 y 05:00 se corrieron a las 05:00 del 22-oct
+  (convs 1244, 1273, 1275, 1276, 1277, 1280, 1281, 1282). El de la 1274 (23:11) ya había salido.
+
+**Cambio de código** — commit `8829c7d`, task-def **rev 111** (imagen `:silencio-8829c7d`),
+Amplify job 199:
+- `services/silencio.py`: ningún seguimiento sale entre **11 p.m. y 5 a.m. hora Colombia**;
+  se corre al borde más cercano (22:59 o 05:00), al programarlo y otra vez al enviarlo.
+  En tests se apaga con un fixture autouse de `conftest.py`.
+- **Bot 1 ya no cierra en «lo pienso»**: `no_cerrar_aplazadas` + `intencion_compra`
+  (6 h) en `bot_viajes.LLM_CONFIG` y en RDS (bot 12, solo esas dos claves, sin correr el
+  actualizador). Tipo nuevo de intención `lo_pensara` («🤔 Lo va a pensar») en Interesados.
+- **Recordatorios del Simulacro**: si la conversación es de la promo y la salida está a
+  <5 días, el texto que habla de anticipo se cambia por uno con el nombre y la fecha del plan.
+- `bot1_golden` regenerado con aprobación del CEO: cambian solo los casos de «lo consulto
+  con mi esposo» (el cierre queda anulado) y el esquema de herramientas (`registrar_intencion`).
+- Suite 3.940 en verde; frontend tsc + vitest 140 en verde.
+
+---
+
 ## Sprint 34 — Pantalla de premio y correo automático de la promoción (21–22 oct 2026)
 
 **Pedido del CEO**: al iniciar la demo, una pantalla llamativa con la promoción
@@ -9592,3 +9659,110 @@ CEO eligió **correo automático + WhatsApp manual** desde el panel `/demos`.
   detector de dominios nuevo.
 - Las demos creadas mientras el correo estuvo apagado (entre la 112 y la 113) no
   recibieron el correo y no se reenvían.
+
+---
+
+## Simulacro decembrino apagado y reporte semanal de conversaciones — 24 de octubre de 2026
+
+> 🚧 **Trabajo en progreso** de otra sesión: entrada registrada sin cerrar; la sesión dueña la completa.
+> El procedimiento del reporte semanal en `.claude/agents/belfort.md` sigue sin commitear.
+
+Pedido del CEO: desactivar el Simulacro (ya pasó su periodo de venta), dejar solo los planes
+regulares, reporte de la semana y dejar el formato del reporte semanal en el agente que corresponde.
+
+- **Simulacro**: sin deploy ni cambios de código. Se apagó solo el 24-oct a las 00:00 (Colombia):
+  `promociones_vigentes()` descarta la promoción con `inicio < hoy` y las filas 41/42 de
+  `bot_producto_filas` (Simulacro, 23-oct, `fin` NULL) vencen el 23. Verificado en RDS: ningún bot
+  tiene «simulacro» en `instrucciones` ni en `llm_config`, la cuenta no tiene recordatorios
+  propios y no queda ninguna acción pendiente (`bot_pending_actions`). No se borró nada: las filas
+  conservan su precio como registro y `promociones_covenas.json` queda con la entrada vencida.
+  Próxima salida que ofrecen los bots: festivo 30 oct–2 nov.
+- **Reporte** (fuera de git, en `ventas/reportes/`): 158 conversaciones del 19 al 24-oct, 0 ventas
+  registradas. Hallazgos para desarrollo: el bot 3 siguió mostrando la doble del Simulacro a
+  $489.000 después del cambio del 21 (convs 1276 y 1298); los mensajes que llegan a una
+  conversación «abandonada» no le avisan a nadie; tomar desde Interesados no le escribe al cliente.
+- **Reporte semanal**: procedimiento en `.claude/agents/belfort.md` (cada lunes); herramientas en
+  `ventas/reportes/_herramientas/` (volcado por `rds_exec.sh`, armado y generador del HTML).
+- Pendiente del CEO: la pausa del bot 2 (id 21) era «hasta el sábado 24»; no se reactivó.
+
+---
+
+## WhatsApp propio de Gloma: cuenta de Twilio independiente — 28 de octubre de 2026
+
+Pedido del CEO: conectar un WhatsApp a la cuenta de Gloma (bot Lía) por Twilio.
+
+- **Sin coexistencia**: la doc de Twilio exige borrar la cuenta de la app WhatsApp Business
+  para pasar un número a la API. Se eligió un **número nuevo de SIM prepago colombiana**
+  (un número local en Twilio cuesta US$ 17,50/mes). El WhatsApp Business del celular del
+  CEO sigue aparte. Se verificó que el número no estaba registrado en WhatsApp.
+- **La cuenta principal de Twilio amaneció suspendida** (`status 4 is not active`) por un
+  ingreso a la consola con VPN. Twilio la reactivó tras un ticket. Mientras duró, el bot de
+  Arranquemos no recibía ni enviaba (pendiente: medir las conversaciones perdidas).
+- **El remitente de Arranquemos vive en la cuenta principal "Multiagente"**, no en una
+  subcuenta. Sus dos subcuentas están vacías.
+- **Por qué no una subcuenta**: Twilio admite un solo WABA por cuenta o subcuenta, y en las
+  subcuentas la consola solo muestra "WhatsApp Senders (ISV)", sin *Create new sender*. Se
+  creó la subcuenta "Gloma", no sirvió, y el CEO abrió una **cuenta independiente "Gloma"**
+  (upgrade hecho, US$ 20 de saldo, el botón aparece).
+- **Trabajar con las dos cuentas**: `source backend/scripts/twilio_cuenta.sh <multiagente|gloma>`
+  carga las credenciales de `CREDENCIALES_TWILIO[_GLOMA].txt` (git-ignorados) y muestra el
+  estado y el saldo. Regla documentada en `CLAUDE.md` (convenciones de operación #4). Las API
+  keys Standard no acceden a `/Accounts`: para probarlas se usa `/Messages` o `/Balance`.
+
+**Mismo día, puesta en marcha** (autorizada por el CEO paso a paso):
+- Remitente registrado por el CEO en la cuenta Gloma: ONLINE, "Gloma App", WABA en el
+  portafolio de Meta **Nota Express**, límite 250 clientes/24 h.
+- Commit `29235c9`: la firma del webhook se valida con el token de la cuenta que manda
+  (`AccountSid`); aislamiento entre tenants en inbound y en callbacks de estado; alarma de
+  CloudWatch `twilio-aislamiento-rechazos` (sin acción SNS todavía). `seguridad`: APTO, 0
+  críticos/altos, M1/M2 y bajos aplicados y re-auditados. Suite 4.058 en verde con TZ=UTC.
+- Deploy: imagen `:twilio-cuentas-29235c9` desde worktree limpio, task-def **rev 115**. Tick en
+  200, sin errores; Arranquemos recibió y respondió normal después del deploy.
+- RDS: `meta_account` **5** para el team **7** (Gloma), token cifrado con la llave de prod
+  (solo viajó el ciphertext); team 7 pasó de `modo='demo'` a `'produccion'` (#318: en demo
+  los envíos se simulan). Webhook del remitente → `https://api.glomabeauty.com/twilio/*`
+  (`TWILIO_WEBHOOK_BASE_URL` es glomabeauty; el cambio a glomacx queda pendiente por decisión
+  del CEO: primero que funcione).
+- **Prueba real**: el inbound entra, valida la firma y Lía (bot 16) responde, pero Twilio
+  rechaza el envío: `401/20003 "Primary compliance profile is not approved"`. Las cuentas
+  nuevas no envían hasta aprobar el perfil de Trust Hub.
+
+**Pendientes**
+- **El CEO crea el perfil de cumplimiento (Individual) en Trust Hub** de la cuenta Gloma
+  (cédula + selfie; Twilio dice hasta 48 h). Al aprobarse: POST a `Messages.json` sin `To`
+  debe dar 400 en vez de 401, y luego prueba real con Lía.
+- Cambiar los webhooks de los dos números a `api.glomacx.com` (validar la firma contra los dos
+  dominios primero).
+- Cerrar la subcuenta "Gloma" de la cuenta principal (irreversible, con OK del CEO).
+- Rotar el auth token y la API key de la cuenta principal tras la suspensión.
+- Plan de **Tech Provider de Meta**: es la vía de Twilio para que cada cliente nuevo conecte su
+  WhatsApp. Sin eso, cada cliente nuevo choca con la misma vista ISV.
+
+---
+
+## Contacto por el chat de la página mientras Twilio aprueba — 28 de octubre de 2026
+
+Pedido del CEO: mientras se activa la cuenta de Twilio de Gloma, todo botón de contacto de la
+landing y de la demo abre el chat de la misma página, donde Lía agenda; ningún botón lleva a
+WhatsApp salvo el footer de la landing (número de siempre); Lía no agenda el 29, 30 ni 31 de
+octubre. Commit `632c33c`, task-def **rev 116** (imagen `:contacto-632c33c`), Amplify job 202.
+
+- **Interruptor único**: `frontend/lib/contactoGloma.ts` → `WHATSAPP_DEL_AGENTE_ACTIVO`
+  (hoy `false`). Apagado: «Agendar una llamada» abre el chat con «Quiero agendar una llamada»
+  (en la demo, con el texto de la demo) y «Hablar con un asesor» abre el chat con el saludo;
+  el footer va al número de siempre. **Cuando Twilio apruebe: ponerlo en `true` y hacer push**;
+  todos los botones y el footer pasan al WhatsApp del agente. Un test (`contactoGloma.test.ts`)
+  fija que hoy está apagado: hay que actualizarlo en el mismo cambio.
+- Landing (4 botones «Agendar»), demo (`CtaAgendar`, `MenuContacto`) y 404 ya no usan Cal.com
+  ni wa.me; la demo monta el chat sin botón flotante. El código de Cal.com queda sin usar.
+- **Agenda de Lía**: `llm_config.agenda.no_antes_de` (nuevo) = `2026-11-02` en el bot 16 de
+  RDS. Con el margen de 3 días hábiles, hoy ofrece desde el martes 3 de noviembre.
+- **Pruebas en producción** (Chrome sin interfaz): landing con solo los 2 enlaces del footer a
+  wa.me; «Agendar una llamada» → Lía ofrece martes 3 de noviembre; «Hablar con un asesor» → saludo;
+  404 sin wa.me y con chat. Demo probada en local con el simulador (empresa «tope», para no crear
+  una demo real ni mandar el correo de la promoción): sin wa.me y «Agendar» abre a Lía con franjas.
+  Logs: 0 errores, tick 200.
+- Los textos de Lía en `landing.py` y `gloma.md` aún nombran el WhatsApp 315 como contacto
+  humano (texto, no botón); se cambian cuando el agente quede activo.
+- Ojo: el lunes 2 de noviembre de 2026 es festivo en Colombia (Todos los Santos). La agenda
+  de Lía no salta festivos; hoy no importa porque el margen ya empieza el martes 3.
