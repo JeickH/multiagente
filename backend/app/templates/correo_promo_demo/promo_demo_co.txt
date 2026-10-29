@@ -1,32 +1,18 @@
-{{nombre}}, ganaste hasta $1.285.200 COP en servicios de Gloma.
+{{nombre}}, ganaste 50 % y 35 % de descuento en tus primeros tres meses de Gloma.
 
 Gracias por hacer la demo de Gloma con {{empresa}}. Esta es la promoción que te ganaste:
 
 50 % de descuento en tu primer mes.
-Pagas 535.500 COP en lugar de 1.071.000 COP.
 
 35 % de descuento en el segundo y el tercer mes.
-Pagas 696.150 COP cada mes en lugar de 1.071.000 COP.
 
 Y se suma a lo que ya tienes: 14 días de prueba gratis y la instalación, que no te cuesta nada.
-
-Así arrancas con tu promoción:
-- Prueba gratis de 14 días: 0 COP
-- Instalación: 0 COP
-- Mes 1: 1.071.000 COP -> 535.500 COP
-- Mes 2: 1.071.000 COP -> 696.150 COP
-- Mes 3: 1.071.000 COP -> 696.150 COP
-Te ahorras 1.285.200 COP.
-
-Valores en pesos (COP), con el IVA y la tarifa de Meta por WhatsApp incluidos, como están publicados en glomacx.com. Cada mes del plan incluye 1.000 conversaciones.
-
 
 Para tener un agente que responda cuando tú no estás
 
 - Responde lo que te preguntan todos los días con tus tarifas, itinerarios y políticas. No inventa precios ni cupos.
 - Les vuelve a escribir a los interesados que dejaron de contestar.
 - Cuando el viajero pide una persona o está listo para cerrar, le pasa la conversación a tu asesor con todo el historial.
-
 
 Para aplicarla, habla con nosotros
 

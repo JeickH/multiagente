@@ -312,19 +312,20 @@ export const DEMO_UI = {
   },
   cargando: 'Recuperando tu demo…',
   /**
-   * Pantalla de premio entre el formulario y las slides (#643, solo local
-   * hasta que el CEO la apruebe). Los montos se cambian aquí. El monto de
-   * Colombia aplica si el teléfono registrado es +57; si no, el de USD. No
-   * agregar condiciones, vigencias ni letra pequeña que el CEO no haya dado.
+   * Pantalla de premio entre el formulario y las slides (#643). Desde
+   * 2026-10-29 la promoción se dice en porcentajes, sin monto en pesos ni en
+   * dólares (CEO): Colombia y el exterior ven lo mismo. No agregar
+   * condiciones, vigencias ni letra pequeña que el CEO no haya dado.
    */
   premio: {
     /** Usa `{nombre}` (primer nombre). */
     eyebrow: '¡Felicitaciones, {nombre}!',
     titulo: 'Ganaste una promoción especial',
-    prefijoMonto: 'hasta',
-    montoColombia: '$1.285.200 COP',
-    montoExterior: 'USD 394,80',
-    sufijoMonto: 'en servicios de Gloma',
+    /** Va encima del monto; vacío, no se pinta. */
+    prefijoMonto: '',
+    montoColombia: '50\u00a0% y 35\u00a0%',
+    montoExterior: '50\u00a0% y 35\u00a0%',
+    sufijoMonto: 'de descuento en tus primeros tres meses de Gloma',
     /** Qué es la promoción (2026-10-28). Lo repiten el correo y el WhatsApp del panel /demos. */
     detalle: '50\u00a0% de descuento en tu primer mes y 35\u00a0% en el segundo y el tercero del plan mensual.',
     /** Que se note que se suma a lo que ya trae el plan. */

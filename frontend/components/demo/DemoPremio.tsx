@@ -171,7 +171,9 @@ export default function DemoPremio({
           </h2>
 
           <p id="premio-monto" className="mt-5">
-            <span className="block text-base md:text-lg font-semibold text-white/90">{T.prefijoMonto}</span>
+            {T.prefijoMonto && (
+              <span className="block text-base md:text-lg font-semibold text-white/90">{T.prefijoMonto}</span>
+            )}
             <span className="block font-heading font-extrabold leading-tight text-gloma-mint break-words text-[clamp(28px,9vw,60px)]">
               {colombia ? T.montoColombia : T.montoExterior}
             </span>

@@ -12,7 +12,6 @@
  * filtros tocan solo `items`/`total`. Las fechas llegan en UTC sin zona: todo
  * se formatea con `lib/fechas.ts`.
  */
-import { DEMO_UI } from './demo_copy';
 import { ZONA_CO, aInstante, fechaHoraCorta, horaCorta } from './fechas';
 
 // --------------------------------------------------------------------------
@@ -329,9 +328,9 @@ export function primerNombre(nombre: string | null | undefined): string {
 
 /**
  * Mensaje de WhatsApp de la promoción que gana el prospecto al armar la demo
- * (#645; el equipo lo manda a mano desde el detalle). El monto sale de los
- * mismos textos de la pantalla de premio (`DEMO_UI.premio`): COP si el
- * teléfono es de Colombia (+57), USD si es de otro país.
+ * (#645; el equipo lo manda a mano desde el detalle). Desde 2026-10-29 dice
+ * solo los porcentajes, sin monto en pesos ni en dólares (CEO): el mismo
+ * texto para Colombia y para otros países.
  */
 /**
  * Lista blanca del primer nombre (#646 B3), la misma del correo de la
@@ -359,15 +358,14 @@ export function empresaSegura(empresa: string | null | undefined): string {
   return e;
 }
 
-export function mensajePromoWhatsapp(nombre: string | null | undefined, empresa: string | null | undefined, colombia: boolean): string {
+export function mensajePromoWhatsapp(nombre: string | null | undefined, empresa: string | null | undefined): string {
   const pila = nombreSeguro(nombre);
   const saludo = pila ? `Hola, ${pila}.` : 'Hola.';
-  const monto = `${DEMO_UI.premio.prefijoMonto} ${colombia ? DEMO_UI.premio.montoColombia : DEMO_UI.premio.montoExterior}`;
   const demo = `la demo que armaste para ${empresaSegura(empresa)}`;
   return (
-    `${saludo} Te escribo de Gloma por ${demo}: te ganaste ${monto} en servicios ` +
-    '(50 % de descuento en tu primer mes y 35 % en el segundo y el tercero del plan mensual, ' +
-    'además de tus 14 días de prueba gratis y la instalación sin costo). ' +
+    `${saludo} Te escribo de Gloma por ${demo}: te ganaste ` +
+    '50 % de descuento en tu primer mes y 35 % en el segundo y el tercero del plan mensual, ' +
+    'además de tus 14 días de prueba gratis y la instalación sin costo. ' +
     '¿Agendamos una llamada para aplicarla?'
   );
 }
@@ -386,8 +384,7 @@ export function enlaceWhatsappProspecto(
   let digitos = (telefono || '').replace(/\D/g, '');
   if (digitos.length === 10 && digitos.startsWith('3')) digitos = `57${digitos}`;
   if (digitos.length < 7 || digitos.length > 15) return null;
-  const colombia = digitos.length === 12 && digitos.startsWith('57');
-  const texto = mensajePromoWhatsapp(nombre, empresa, colombia);
+  const texto = mensajePromoWhatsapp(nombre, empresa);
   return `https://wa.me/${digitos}?text=${encodeURIComponent(texto)}`;
 }
 

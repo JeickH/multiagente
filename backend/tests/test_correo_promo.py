@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 import uuid
+from unittest.mock import patch
 from datetime import datetime, timedelta
 
 import pytest
@@ -74,8 +75,9 @@ def test_plantillas_sin_placeholders_ni_datos_ajenos():
         assert "{{" not in asunto + cuerpo_html + cuerpo_txt
         assert asunto.startswith("Ana, tu promoción de Gloma")
         assert "Hotel X" in cuerpo_html and "Hotel X" in cuerpo_txt
-    assert "COP" in correo_promo.renderizar("co", "Ana", "X")[0]
-    assert "USD" in correo_promo.renderizar("intl", "Ana", "X")[0]
+    # CEO, 2026-10-29: la promoción se dice en porcentajes, sin montos.
+    for version in ("co", "intl"):
+        assert "50 %" in correo_promo.renderizar(version, "Ana", "X")[0]
 
 
 def test_escape_html_y_asunto_de_una_linea():
@@ -128,26 +130,27 @@ def test_inyeccion_no_llega_al_correo(malo, version):
 
 def test_sin_nombre_el_correo_saluda_generico():
     asunto, cuerpo_html, cuerpo_txt = correo_promo.renderizar("co", "https://x.y", "Hotel X")
-    assert asunto == "Tu promoción de Gloma: hasta $1.285.200 COP"
-    assert cuerpo_txt.startswith("Hola, ganaste hasta $1.285.200 COP")
-    assert "<title>Tu promoción de Gloma" in cuerpo_html and "Hola, ganaste hasta</h1>" in cuerpo_html
+    assert asunto == "Tu promoción de Gloma: 50 % menos en tu primer mes"
+    assert cuerpo_txt.startswith("Hola, ganaste 50 % y 35 % de descuento")
+    assert "<title>Tu promoción de Gloma" in cuerpo_html and "Hola, ganaste</h1>" in cuerpo_html
     asunto = correo_promo.renderizar("intl", None, None)[0]
-    assert asunto == "Tu promoción de Gloma: hasta USD 394,80"
+    assert asunto == "Tu promoción de Gloma: 50 % menos en tu primer mes"
 
 
-@pytest.mark.parametrize("version,montos", [
-    ("co", ["$1.285.200 COP", "535.500 COP", "696.150 COP", "1.071.000 COP"]),
-    ("intl", ["USD 394,80", "USD 164,50", "USD 213,85", "USD 329"]),
-])
-def test_promocion_del_plan_mensual(version, montos):
+@pytest.mark.parametrize("version", ["co", "intl"])
+def test_promocion_del_plan_mensual_en_porcentajes(version):
     """Promoción del 2026-10-28: 50 % en el mes 1 y 35 % en los meses 2 y 3,
-    sumada a la prueba gratis de 14 días y a la instalación en 0. Nada de la
-    promoción vieja (instalación pagada y paquetes que no se vencen)."""
+    sumada a la prueba gratis de 14 días y a la instalación en 0. Desde el
+    2026-10-29 (CEO) se dice solo en porcentajes: ningún monto en pesos ni en
+    dólares, ni en el asunto ni en el cuerpo."""
     asunto, cuerpo_html, cuerpo_txt = correo_promo.renderizar(version, "Ana", "Hotel X")
-    assert montos[0] in asunto
-    for cuerpo in (cuerpo_html, cuerpo_txt):
-        for monto in montos:
-            assert monto in cuerpo
+    assert "50 %" in asunto
+    for cuerpo in (cuerpo_html.replace("&nbsp;", " "), cuerpo_txt):
+        assert "50 %" in cuerpo and "35 %" in cuerpo
+        assert "14 días de prueba gratis" in cuerpo
+    for parte in (asunto, cuerpo_html, cuerpo_txt):
+        for moneda in ("COP", "USD", "$", "1.285.200", "394,80", "1.071.000"):
+            assert moneda not in parte
         assert "14 días de prueba gratis" in cuerpo
         assert "la instalación, que no te cuesta nada" in cuerpo
         for viejo in ("8.700.000", "2.700", "paquete", "no se vencen", "2.400.000", "USD 750"):
@@ -224,7 +227,7 @@ def test_envia_la_version_co_y_registra(client, db, ses):
     demo_id = _nueva(client)
     assert len(ses.enviados) == 1
     e = ses.enviados[0]
-    assert e["destino"] == CORREO and "COP" in e["asunto"]
+    assert e["destino"] == CORREO and "50 %" in e["asunto"]
     assert e["asunto"].startswith(NOMBRE.split()[0] + ",")
     demo = _demo_de(db, demo_id)
     assert demo.correo_promo_estado == "enviado"
@@ -234,8 +237,12 @@ def test_envia_la_version_co_y_registra(client, db, ses):
 
 
 def test_envia_la_version_intl_si_no_es_57(client, db, ses):
-    _nueva(client, telefono="+52 55 1234 5678", correo=_correo())
-    assert "USD" in ses.enviados[0]["asunto"]
+    versiones = []
+    original = correo_promo.renderizar
+    with patch.object(correo_promo, "renderizar",
+                      side_effect=lambda v, *a: versiones.append(v) or original(v, *a)):
+        _nueva(client, telefono="+52 55 1234 5678", correo=_correo())
+    assert versiones == ["intl"] and len(ses.enviados) == 1
 
 
 def test_sin_limite_por_correo_por_defecto(client, db, ses):
