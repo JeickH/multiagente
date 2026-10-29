@@ -238,7 +238,18 @@ def test_envia_la_version_intl_si_no_es_57(client, db, ses):
     assert "USD" in ses.enviados[0]["asunto"]
 
 
-def test_una_vez_por_correo_cada_30_dias(client, db, ses):
+def test_sin_limite_por_correo_por_defecto(client, db, ses):
+    """CEO, 2026-10-28: si el correo ya está registrado, igual se envía la promoción."""
+    primera = _nueva(client)
+    segunda = _nueva(client)
+    assert len(ses.enviados) == 2
+    assert _demo_de(db, primera).correo_promo_estado == "enviado"
+    assert _demo_de(db, segunda).correo_promo_estado == "enviado"
+
+
+def test_ventana_configurable(client, db, ses, monkeypatch):
+    """Con `DEMO_CORREO_PROMO_DIAS` > 0 vuelve el «1 correo por dirección cada N días»."""
+    monkeypatch.setenv("DEMO_CORREO_PROMO_DIAS", "30")
     primera = _nueva(client)
     segunda = _nueva(client)
     assert len(ses.enviados) == 1
@@ -251,17 +262,6 @@ def test_una_vez_por_correo_cada_30_dias(client, db, ses):
     db.commit()
     tercera = _nueva(client)
     assert len(ses.enviados) == 2 and _demo_de(db, tercera).correo_promo_estado == "enviado"
-
-
-def test_ventana_configurable(client, db, ses, monkeypatch):
-    monkeypatch.setenv("DEMO_CORREO_PROMO_DIAS", "1")
-    primera = _nueva(client)
-    db.query(models.Demo).filter(models.Demo.public_id == uuid.UUID(primera)).update(
-        {models.Demo.correo_promo_enviado_at: datetime.utcnow() - timedelta(days=2)},
-        synchronize_session=False)
-    db.commit()
-    _nueva(client)
-    assert len(ses.enviados) == 2
 
 
 def test_techo_diario(client, db, ses, monkeypatch):

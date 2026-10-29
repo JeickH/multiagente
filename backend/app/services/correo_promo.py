@@ -28,7 +28,9 @@ Anti-abuso (los topes por correo de la demo están altos por decisión del CEO):
 - dominios desechables conocidos → omitido (`desechable`);
 - el dominio tiene que tener MX (timeout 2 s). Sin MX → `sin_mx`; si el DNS
   falla o no responde → `dns` (no se envía a ciegas);
-- a lo sumo 1 correo por dirección cada `DEMO_CORREO_PROMO_DIAS` (30);
+- por dirección no hay límite: cada demo manda su correo aunque la persona ya
+  lo haya recibido (CEO, 2026-10-28). `DEMO_CORREO_PROMO_DIAS` > 0 vuelve a
+  poner «1 correo por dirección cada N días» si hiciera falta;
 - techos globales `DEMO_CORREO_PROMO_MAX_HORA` (200) y
   `DEMO_CORREO_PROMO_MAX_DIA` (2000);
 - cortacircuitos: si hubo ≥ `DEMO_CORREO_PROMO_MAX_ERRORES` (20) `error` en
@@ -54,7 +56,7 @@ correo, el nombre ni la respuesta de SES (puede traer la dirección).
 
 Envs:
     DEMO_CORREO_PROMO_ACTIVO      1/true para enviar (default apagado)
-    DEMO_CORREO_PROMO_DIAS        30
+    DEMO_CORREO_PROMO_DIAS        0 (sin límite por dirección)
     DEMO_CORREO_PROMO_MAX_HORA    200
     DEMO_CORREO_PROMO_MAX_DIA     2000
     DEMO_CORREO_PROMO_MAX_ERRORES 20
@@ -141,7 +143,8 @@ def _entero(nombre: str, default: int, minimo: int) -> int:
 
 
 def dias_entre_correos() -> int:
-    return _entero("DEMO_CORREO_PROMO_DIAS", 30, 1)
+    """0 = sin límite por dirección (default desde el 2026-10-28)."""
+    return _entero("DEMO_CORREO_PROMO_DIAS", 0, 0)
 
 
 def maximo_por_hora() -> int:
@@ -378,14 +381,15 @@ def _reservar(db: Session, demo: models.Demo, correo: str, ahora: datetime) -> O
         db.execute(text("SELECT pg_advisory_xact_lock(:k)"), {"k": _LOCK_RESERVA})
     D, L = models.Demo, models.Lead
     motivo: Optional[str] = None
-    if (
+    dias = dias_entre_correos()
+    if dias > 0 and (
         db.query(func.count(D.id))
         .join(L, L.id == D.lead_id)
         .filter(
             L.email == correo,
             D.id != demo.id,
             D.correo_promo_estado == ESTADO_ENVIADO,
-            D.correo_promo_enviado_at >= ahora - timedelta(days=dias_entre_correos()),
+            D.correo_promo_enviado_at >= ahora - timedelta(days=dias),
         )
         .scalar()
     ):

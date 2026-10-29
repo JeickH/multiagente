@@ -30,6 +30,7 @@ import DemoIntro from '../components/demo/DemoIntro';
 import DemoNoDisponible from '../components/demo/DemoNoDisponible';
 import DemoPremio from '../components/demo/DemoPremio';
 import DemoSlides from '../components/demo/DemoSlides';
+import AgendarLlamadaModal from '../components/AgendarLlamadaModal';
 import GlomaChatWidget, { abrirChatGloma } from '../components/GlomaChatWidget';
 import type { AccionesAgendar } from '../components/demo/CtaAgendar';
 import Turnstile, { TURNSTILE_ACTIVO } from '../components/demo/Turnstile';
@@ -126,11 +127,13 @@ export default function DemoPage() {
   const textoSinDemo = useMemo(() => textoContacto(null, DEMO_UI.agendar), []);
 
   // ------------------------------------------------------------------
-  // «Agendar una llamada» y «Hablar con un asesor» (#625, #634). Desde
-  // 2026-10-28 abren el chat de Gloma en esta misma página (el agente agenda
-  // la reunión) o, con el WhatsApp del agente activo, su wa.me
-  // (`lib/contactoGloma.ts`). El calendario de Cal.com ya no se usa aquí.
+  // «Agendar una llamada» y «Hablar con un asesor» (#625, #634).
+  // «Agendar una llamada» abre el calendario de Cal.com en un modal (el CEO lo
+  // pidió de vuelta en la demo el 2026-10-28). «Hablar con un asesor» abre el
+  // chat de Gloma en esta misma página o, con el WhatsApp del agente activo, su
+  // wa.me (`lib/contactoGloma.ts`).
   // ------------------------------------------------------------------
+  const [calAbierto, setCalAbierto] = useState(false);
   // A quién se le suman los clics: solo a una demo con token que siga viva.
   // Tras un 404 el token ya no sirve (el backend respondería 404 igual).
   const demoEventos =
@@ -144,8 +147,7 @@ export default function DemoPage() {
       return {
         abrirLlamada: () => {
           registrarEvento(demoEventosRef.current, 'llamada_abierta');
-          if (enlace) window.open(enlace, '_blank', 'noopener,noreferrer');
-          else abrirChatGloma(texto);
+          setCalAbierto(true);
         },
         enlaceWhatsapp: enlace,
         abrirAsesor: () => abrirChatGloma(),
@@ -156,6 +158,7 @@ export default function DemoPage() {
   );
   const accionesDemo = useMemo(() => acciones(textoDemo), [acciones, textoDemo]);
   const accionesSinDemo = useMemo(() => acciones(textoSinDemo), [acciones, textoSinDemo]);
+  const alAgendarLlamada = useCallback(() => registrarEvento(demoEventosRef.current, 'llamada_agendada'), []);
 
   // ------------------------------------------------------------------
   // POST /demo/iniciar
@@ -709,8 +712,19 @@ export default function DemoPage() {
           </div>
         )}
 
-        {/* Chat de Gloma: lo abren los botones de contacto. Sin botón
-            flotante, porque esa esquina es del chat de la demo. */}
+        {/* Calendario de Cal.com. Nombre y correo para prellenarlo: solo de la
+            memoria de React (lo que se escribió en esta carga de la página),
+            nunca de sessionStorage. */}
+        <AgendarLlamadaModal
+          abierto={calAbierto}
+          onCerrar={() => setCalAbierto(false)}
+          nombre={ultimosDatos.current?.nombre}
+          correo={ultimosDatos.current?.correo}
+          onAgendada={alAgendarLlamada}
+        />
+
+        {/* Chat de Gloma: lo abre «Hablar con un asesor». Sin botón flotante,
+            porque esa esquina es del chat de la demo. */}
         <GlomaChatWidget sinLanzador />
       </div>
     </>
