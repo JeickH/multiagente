@@ -24,7 +24,7 @@ const BRAND = {
   forest: '#004D40',
   mint: '#4DB6AC',
   softMint: '#E0F2F1',
-  // Destello del logo. En la landing solo marca el paquete recomendado.
+  // Destello del logo. En la landing solo marca la instalación sin costo.
   golden: '#F5C24B',
   mintSoft: 'rgba(77,182,172,0.12)',
   cardBg: 'rgba(255,255,255,0.03)',
@@ -157,8 +157,13 @@ const FAQ = [
     a: 'Un chat con un cliente dentro de una ventana de 24 horas. Si ese mismo cliente vuelve a escribir después de las 24 horas, cuenta como una conversación nueva.',
   },
   {
+    // Plan P1 «Permanencia 6» (CEO, 2026-10-28). Cifras en `PRECIOS`.
     q: '¿Tengo que pagar una mensualidad?',
-    a: 'No. Compras un paquete de conversaciones y lo recargas cuando se acaba. Si un mes no las usas todas, las que sobran pasan al mes siguiente.',
+    a: 'Sí, pero después de la prueba: los primeros 14 días no pagas nada. Si quieres seguir, pagas una mensualidad que incluye 1.000 conversaciones al mes, el soporte y el mantenimiento, y la instalación no te cuesta nada. El plan es de mínimo 6 meses: si decides salir antes, pagas 150.000 COP por cada mes que falte.',
+  },
+  {
+    q: '¿Qué pasa cuando termina la prueba gratis?',
+    a: 'Te mostramos el reporte de los 14 días: dónde se te está yendo la plata, cuánto tardan en contestar tu equipo y el agente, y a qué horas te escriben. Con eso decides. Si sigues, arrancamos tu plan; si no, no pagas nada.',
   },
   {
     q: '¿El agente puede inventar precios o disponibilidad?',
@@ -193,34 +198,35 @@ const FAQ = [
 ];
 
 /**
- * Ruta de arranque de un cliente nuevo (definida por el CEO el 2026-09-27),
- * con el reparto «Tú / Nosotros» (ajustes del 2026-10-26). La parte del dueño
- * cabe en una semana (P1); el tiempo total depende de Meta (ver FAQ).
+ * Ruta de arranque de un cliente nuevo, con el reparto «Tú / Nosotros». Desde el
+ * 2026-10-28 (CEO) todo cliente empieza con la prueba gratis de 14 días, donde
+ * se mide dónde se le va la plata; la instalación completa va al comprar y no
+ * tiene costo (plan P1 de `ventas/costos/PROPUESTAS_COMERCIALES.html`).
  */
 const PASOS_INICIO = [
   {
     titulo: 'Nos cuentas cómo vendes',
     tu: 'Una reunión para contarnos cómo vende tu negocio, y nos compartes tus tarifas, planes y políticas.',
-    nosotros: 'Entrenamos al agente con tus mensajes y guiones, con las reglas y el tono de tu marca.',
+    nosotros: 'Preparamos tu agente con tu tarifario, tus mensajes y el tono de tu marca.',
     etiqueta: null,
   },
   {
-    titulo: 'Conectamos tu WhatsApp',
-    tu: 'Nos das acceso a tu WhatsApp de empresa. Te guiamos paso a paso.',
-    nosotros: 'Activamos tu cuenta, conectamos tu número y cargamos tus contactos desde tu Excel.',
+    titulo: '14 días de prueba gratis',
+    tu: 'Nos das acceso a uno de tus números comerciales. Te guiamos paso a paso.',
+    nosotros: 'Lo conectamos y el agente empieza a contestarles a tus clientes.',
+    etiqueta: 'Gratis',
+  },
+  {
+    titulo: 'Te mostramos dónde se te va la plata',
+    tu: 'Revisas el reporte con nosotros y decides si sigues.',
+    nosotros: 'Te mostramos en qué paso se pierden las ventas, los puntos débiles de tu atención y cuánta plata se te queda en el aire cada semana.',
     etiqueta: null,
   },
   {
-    titulo: 'Lo pruebas y arranca',
-    tu: 'Lo pruebas en el simulador y nos das el visto bueno.',
-    nosotros: 'Lo encendemos y lo ajustamos contigo los primeros 10 días.',
-    etiqueta: '10 días de ajuste',
-  },
-  {
-    titulo: 'Sigue mejorando',
+    titulo: 'Arranca tu plan',
     tu: 'Nos escribes por WhatsApp cuando algo cambie.',
-    nosotros: 'Soporte 24/7, mantenimiento y rondas de mejora con lo que muestra tu tablero.',
-    etiqueta: 'Soporte 24/7',
+    nosotros: 'Completamos la instalación sin costo, lo ajustamos contigo los primeros 10 días y seguimos con soporte 24/7 y mantenimiento.',
+    etiqueta: 'Instalación sin costo',
   },
 ];
 
@@ -254,8 +260,8 @@ const DOLORES: { icon: IconoNombre; dolor: string; solucion: string }[] = [
 
 /**
  * «Funciona con lo que ya usas» (ajustes del CEO, 2026-10-26). Hoy no hay
- * ninguna conexión construida con channel managers ni PMS: prohibido nombrarlos,
- * decir «compatible con», «integrado con», «disponibilidad en tiempo real»,
+ * ninguna conexión construida con channel managers ni PMS: todas son a la
+ * medida. Prohibido decir «integrado con», «disponibilidad en tiempo real»,
  * «sin sobreventas» o dar plazos.
  */
 const YA_USAS: { titulo: string; texto: string }[] = [
@@ -272,6 +278,24 @@ const YA_USAS: { titulo: string; texto: string }[] = [
     titulo: 'Desde el primer día',
     texto: 'Mientras tanto, el agente contesta con tu tarifario y, cuando el cliente quiere confirmar el cupo, se lo pasa a tu equipo o a tu recepción con toda la conversación.',
   },
+];
+
+/**
+ * Sistemas que se nombraron en la reunión con hoteleros del 24-oct (voz del
+ * cliente) más los channel managers más usados en LatAm. Desde el 2026-10-28 el
+ * CEO decidió mostrarlos en blanco y negro (Belfort recomendaba no hacerlo: un
+ * logo ajeno se puede leer como alianza). Van siempre con «a la medida».
+ * `logo`: archivo en `public/gloma/integraciones/`; sin él se pinta el nombre.
+ */
+const SISTEMAS: { nombre: string; logo?: string }[] = [
+  { nombre: 'SiteMinder' },
+  { nombre: 'RoomCloud' },
+  { nombre: 'Cloudbeds' },
+  { nombre: 'Omnibees' },
+  { nombre: 'LobbyPMS' },
+  { nombre: 'Zeus PMS' },
+  { nombre: 'Oracle OPERA' },
+  { nombre: 'Paraty Tech' },
 ];
 
 
@@ -313,19 +337,59 @@ const STATS = [
 const NOTA_AHORRO = '* Frente a atender el mismo volumen de chats solo con asesores.';
 
 /**
- * Lo que traen los tres paquetes (ajustes del CEO, 2026-10-26): reemplaza a la
- * tabla de 22 filas. Todas las funciones van en los tres; solo cambia cuántas
- * conversaciones traes.
+ * Todo lo que incluye, prueba gratis contra plan mensual (CEO, 2026-10-28; texto
+ * del community-manager del 2026-10-25). `true` = incluido, `false` = no, y un
+ * texto = incluido con ese límite. El PDF repite esta misma tabla.
  */
-const INCLUYE = [
-  'Contesta tu WhatsApp a cualquier hora, con tus tarifas',
-  'Recupera a los interesados que dejaron de contestar',
-  'Tu equipo recibe al cliente listo para reservar, con toda la conversación',
-  'El cliente recibe tus formas de pago y la reserva queda en tu Google Sheets',
-  'Agenda la llamada con tu asesor cuando el cliente la pide',
-  'Ves cuánta venta se te queda en el aire',
-  'Bandeja para tu equipo y campañas a tus contactos',
-  'Instalación, 10 días de ajuste, soporte 24/7 y mantenimiento',
+type Incluido = boolean | string;
+const INCLUYE: { grupo: string; filas: { texto: string; prueba: Incluido; plan: Incluido }[] }[] = [
+  {
+    grupo: 'Contesta cuando tu equipo no puede',
+    filas: [
+      { texto: 'Contesta tu WhatsApp a cualquier hora, también de noche', prueba: 'En 1 número', plan: true },
+      { texto: 'Da el precio con tus tarifas y tus planes, sin inventar precios ni cupos', prueba: 'Hasta 5 productos o servicios', plan: true },
+    ],
+  },
+  {
+    grupo: 'Lleva al cliente hasta la reserva',
+    filas: [
+      { texto: 'Recupera a los clientes que dejaron de contestar', prueba: true, plan: true },
+      { texto: 'Tu asesor recibe al cliente listo para reservar, con todo el historial', prueba: true, plan: true },
+      { texto: 'El cliente recibe tus formas de pago y la reserva queda en tu Google Sheets', prueba: false, plan: true },
+      { texto: 'Agenda la llamada con tu asesor cuando el cliente la pide', prueba: false, plan: true },
+      { texto: 'Les llevas tus promociones por WhatsApp a tus contactos', prueba: false, plan: 'Por mensaje enviado' },
+    ],
+  },
+  {
+    // [CONFIRMAR con desarrollo] Hoy el tablero no mide tiempos de respuesta ni
+    // califica interesados: en la prueba esos datos se arman a mano.
+    grupo: 'Ves dónde se te va la plata',
+    filas: [
+      { texto: 'Cuánta venta se te queda en el aire, en pesos, cada semana', prueba: true, plan: true },
+      { texto: 'Tiempos de respuesta del agente y de tus asesores', prueba: true, plan: true },
+      { texto: 'A qué horas te escriben y cuántos mensajes llegan fuera de horario', prueba: true, plan: true },
+      { texto: 'Cuáles interesados están listos para comprar', prueba: true, plan: true },
+      { texto: 'Tu equipo contesta desde una sola bandeja, con el historial de cada cliente', prueba: true, plan: true },
+    ],
+  },
+  {
+    grupo: 'Lo dejamos funcionando contigo',
+    filas: [
+      { texto: 'Instalación hecha por nuestro equipo, sin costo', prueba: true, plan: true },
+      { texto: 'Ajustes durante los primeros 10 días', prueba: false, plan: true },
+      { texto: 'Soporte 24/7 y mantenimiento incluidos', prueba: true, plan: true },
+    ],
+  },
+];
+
+/** Lo que te llevas de la prueba gratis (plan P1, «La prueba gratis de 14 días»). */
+const PRUEBA_INCLUYE = [
+  'Tu agente contestando en uno de tus números comerciales, con tu tarifario',
+  'Hasta 5 productos o servicios',
+  'Cuánta plata se te queda en el aire cada semana, en pesos',
+  'Cuánto tardan en contestar tu equipo y el agente',
+  'A qué horas te escriben y cuántos mensajes llegan fuera de horario',
+  'Cuáles interesados están listos para comprar',
 ];
 
 /**
@@ -337,30 +401,42 @@ const PROPUESTA_PDF = '/gloma/propuesta-comercial-gloma.pdf';
 const PROPUESTA_PUBLICADA = false;
 
 /**
- * Precios públicos (definidos por el CEO el 2026-09-27; alza del ~20% el 2026-09-29;
- * paquetes ajustados el 2026-10-20). Son tres cobros:
- * instalación única, paquetes de conversaciones prepagados que se acumulan
- * mes a mes, y campañas masivas por mensaje enviado. El contexto del bot
- * (`backend/app/bot_contexts/gloma.md`) repite estas cifras: si cambian aquí,
- * cambian allá.
+ * Precios públicos: plan P1 «Permanencia 6» de
+ * `ventas/costos/PROPUESTAS_COMERCIALES.html`, con la hora a $50.000, elegido por
+ * el CEO el 2026-10-28, con la salida anticipada a COP 150.000 por mes que falte.
+ * Reemplaza a la instalación de 2.400.000 y los paquetes de 600/2.000/6.000.
+ * Todo con IVA y la tarifa de Meta incluidos. Los USD salen de ~3.200 COP por
+ * dólar [CONFIRMAR CEO]. El contexto de Lía (`backend/app/bot_contexts/gloma.md`)
+ * y la propuesta PDF repiten estas cifras: si cambian aquí, cambian allá.
  */
 type Moneda = 'COP' | 'USD';
 
 const PRECIOS = {
-  instalacion: { COP: 2_400_000, USD: 750 },
-  paquetes: [
-    { conversaciones: 600, COP: 760_000, USD: 245, recomendado: false },
-    // El recomendado, por decisión del CEO (2026-10-20): el paquete del medio.
-    // Antes (2026-09-28) era el de 6.000, por el menor costo por conversación.
-    { conversaciones: 2_000, COP: 2_490_000, USD: 795, recomendado: true },
-    { conversaciones: 6_000, COP: 7_190_000, USD: 2_295, recomendado: false },
-  ],
+  diasPrueba: 14,
+  instalacion: { COP: 0, USD: 0 },
+  mensualidad: { COP: 1_071_000, USD: 335 },
+  /** Desde el mes 7. No se dice en la página que baja porque «la instalación ya quedó paga». */
+  mensualidadDesdeMes7: { COP: 868_700, USD: 272 },
+  conversacionesIncluidas: 1_000,
+  conversacionAdicional: { COP: 1_190, USD: 0.37 },
+  permanenciaMeses: 6,
+  salidaPorMesQueFalta: { COP: 150_000, USD: 47 },
   mensajeCampana: { COP: 90, USD: 0.03 },
 };
 
+/**
+ * Plan de referidos (P5 de las propuestas comerciales, CEO 2026-10-28): cada
+ * descuento vale sobre una mensualidad, se suman, y lo que pase de 100 % se corre
+ * a la siguiente. [CONFIRMAR CEO] si el 20 % cuenta al entrar a la prueba o al
+ * terminarla, y si hay tope por mes.
+ */
+const REFERIDOS = { porPrueba: 0.2, porCompra: 0.5 };
+const EJEMPLO_REFERIDOS = { prueba: 5, compran: 3 };
+
 /** Ejemplos de los gráficos. Son ilustrativos y así se rotulan en la página. */
 const EJEMPLO_CAMPANA = { enviados: 1_000, responden: 120 };
-const EJEMPLO_ACUMULADO = { paquete: 600, usadas: 450 };
+/** Salida anticipada de ejemplo: al terminar el mes 4 faltan 2 meses. */
+const EJEMPLO_SALIDA_MES = 4;
 
 /** Footer: el único enlace a WhatsApp de la página (ver `lib/contactoGloma.ts`). */
 const WHATSAPP_URL = enlaceWhatsappFooter();
@@ -634,10 +710,7 @@ function InteractiveHeader() {
           }}
         >
           {/* Opción 01 de la segunda ronda de titulares, elegida por el CEO (2026-09-27).
-              [CONFIRMAR CEO] Candidatos del 2026-10-26, sin aplicar todavía:
-              «¿Quién contesta tu WhatsApp después de las 7 de la noche?» ·
-              «Tus clientes escriben de noche. Tu WhatsApp les contesta.» ·
-              «Que ningún interesado se quede sin respuesta.» */}
+              El 2026-10-28 el CEO decidió dejarlo así frente a los candidatos de Belfort. */}
           Un asesor más en tu equipo.{' '}
           <span className="block" style={{ color: BRAND.mint }}>Uno que no duerme.</span>
         </h1>
@@ -830,7 +903,7 @@ function ContactForm({
             }}
           />
           {/* Calificación: con la agencia y el volumen de chats se llega a la
-              demo con el paquete ya calculado. */}
+              llamada sabiendo cuánto le cabe en el plan. */}
           <label className="block text-sm font-medium mb-2" style={{ color: BRAND.textMuted }}>
             Agencia u hotel
           </label>
@@ -1149,8 +1222,9 @@ function StatsSection() {
 const TEXTO_CLARO_MUTED = 'rgba(16,24,23,0.72)';
 
 /**
- * «No necesitas saber de tecnología»: fusión de «Cómo empezar» con el reparto
- * tú / nosotros (ajustes del CEO, 2026-10-26). Ruta de 4 pasos: horizontal en
+ * «Cómo empezar», con el reparto tú / nosotros (ajustes del CEO, 2026-10-26). El
+ * 2026-10-28 el CEO pidió conservar el título «¿Cómo empiezas a usar Gloma?» y
+ * contar que todo arranca con la prueba gratis. Ruta de 4 pasos: horizontal en
  * escritorio (una línea une los nodos) y vertical en móvil.
  */
 function ComoEmpezarSection() {
@@ -1174,10 +1248,12 @@ function ComoEmpezarSection() {
             className="text-3xl md:text-5xl leading-tight mb-5"
             style={{ fontFamily: 'Syne, system-ui, sans-serif', fontWeight: 700, color: BRAND.bgBase }}
           >
-            No necesitas saber de tecnología
+            ¿Cómo empiezas a usar Gloma?
           </h2>
           <p className="text-base md:text-lg" style={{ color: TEXTO_CLARO_MUTED }}>
-            Arrancar es rápido: tu parte cabe en una semana. Del resto nos encargamos nosotros.
+            Empezamos con una prueba gratis de 14 días. Ahí encontramos dónde se te está yendo
+            la plata y los puntos débiles de tu atención. No necesitas saber de tecnología: del
+            resto nos encargamos nosotros.
           </p>
         </Reveal>
 
@@ -1266,6 +1342,7 @@ function ComoEmpezarSection() {
 function YaUsasSection() {
   return (
     <section
+      id="ya-usas"
       aria-labelledby="ya-usas-titulo"
       className="py-20 md:py-28"
       style={{ backgroundColor: BRAND.bgAlt, fontFamily: 'Inter, system-ui, sans-serif' }}
@@ -1304,6 +1381,39 @@ function YaUsasSection() {
             </Reveal>
           ))}
         </div>
+
+        {/* Sistemas que usan los hoteles (CEO, 2026-10-28), en blanco y negro. */}
+        <Reveal className="mt-14 md:mt-16">
+          <p className="text-sm font-semibold tracking-wide uppercase text-center mb-6" style={{ color: BRAND.mint }}>
+            Nos conectamos con el sistema que ya usas
+          </p>
+          <ul className="flex flex-wrap justify-center items-center gap-x-8 gap-y-5 md:gap-x-12" aria-label="Sistemas de reservas con los que nos conectamos">
+            {SISTEMAS.map((sis) => (
+              <li key={sis.nombre} className="flex items-center h-10">
+                {sis.logo ? (
+                  <img
+                    src={sis.logo}
+                    alt={sis.nombre}
+                    className="max-h-8 md:max-h-9 w-auto object-contain"
+                    style={{ filter: 'grayscale(1) brightness(0) invert(1)', opacity: 0.6 }}
+                    loading="lazy"
+                  />
+                ) : (
+                  <span
+                    className="text-lg md:text-xl whitespace-nowrap"
+                    style={{ fontFamily: 'Syne, system-ui, sans-serif', fontWeight: 700, color: 'rgba(230,239,238,0.55)' }}
+                  >
+                    {sis.nombre}
+                  </span>
+                )}
+              </li>
+            ))}
+          </ul>
+          <p className="text-xs text-center mt-6 max-w-2xl mx-auto" style={{ color: BRAND.textDim }}>
+            La conexión con tu channel manager o tu PMS se hace a la medida para tu negocio. Las
+            marcas son de sus dueños.
+          </p>
+        </Reveal>
       </div>
     </section>
   );
@@ -1467,24 +1577,251 @@ function Flecha() {
   );
 }
 
-/** Lo que traen los tres paquetes: una lista, 2 columnas en escritorio. */
-function ListaIncluye() {
+/** Marca de la tabla: ✓, — o el límite escrito. */
+function CeldaIncluido({ valor, destacado = false }: { valor: Incluido; destacado?: boolean }) {
+  if (valor === true) {
+    return (
+      <span style={{ color: destacado ? BRAND.golden : BRAND.mint }} aria-label="Incluido">
+        ✓
+      </span>
+    );
+  }
+  if (valor === false) {
+    return (
+      <span style={{ color: BRAND.textDim }} aria-label="No incluido">
+        —
+      </span>
+    );
+  }
   return (
-    <div className="mt-8 rounded-2xl p-5 md:p-6" style={{ backgroundColor: BRAND.mintSoft, border: `1px solid ${BRAND.cardBorderHover}` }}>
-      <p className="text-base md:text-lg mb-4" style={{ color: BRAND.text }}>
-        <strong>Los tres paquetes traen todo.</strong> Lo único que cambia es cuántas
-        conversaciones traes.
+    <span className="text-xs leading-snug" style={{ color: BRAND.textMuted }}>
+      {valor}
+    </span>
+  );
+}
+
+/**
+ * Todo lo que incluye: prueba gratis contra plan mensual. En escritorio es una
+ * tabla de 3 columnas; en móvil cada fila lleva sus dos marcas debajo.
+ */
+function TablaIncluye() {
+  return (
+    <div className="rounded-3xl p-6 md:p-10" style={{ backgroundColor: BRAND.cardBg, border: `1px solid ${BRAND.cardBorder}` }}>
+      <h3
+        className="text-2xl md:text-3xl leading-tight mb-2"
+        style={{ fontFamily: 'Syne, system-ui, sans-serif', fontWeight: 700, color: BRAND.text }}
+      >
+        Todo lo que incluye
+      </h3>
+      <p className="text-sm md:text-base mb-6" style={{ color: BRAND.textMuted }}>
+        En la prueba gratis ves cómo trabaja tu agente y dónde se te va la plata. Con el plan
+        mensual tienes todo, sin pagar instalación.
       </p>
-      <ul className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-3">
-        {INCLUYE.map((f) => (
-          <li key={f} className="flex gap-3 text-sm md:text-base leading-snug" style={{ color: BRAND.text }}>
-            <span aria-hidden="true" style={{ color: BRAND.mint }}>
-              ✓
-            </span>
-            {f}
-          </li>
+
+      {/* Encabezado de columnas (solo escritorio) */}
+      <div
+        className="hidden md:grid grid-cols-[1fr_9rem_9rem] gap-4 pb-3 text-sm font-semibold"
+        style={{ borderBottom: `1px solid ${BRAND.cardBorder}` }}
+      >
+        <span />
+        <span className="text-center" style={{ color: BRAND.text }}>
+          Prueba gratis
+          <span className="block text-xs font-normal" style={{ color: BRAND.textDim }}>
+            {PRECIOS.diasPrueba} días
+          </span>
+        </span>
+        <span className="text-center" style={{ color: BRAND.golden }}>
+          Plan mensual
+          <span className="block text-xs font-normal" style={{ color: BRAND.textDim }}>
+            Instalación sin costo
+          </span>
+        </span>
+      </div>
+
+      {INCLUYE.map((g) => (
+        <div key={g.grupo} className="mt-6">
+          <p className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: BRAND.mint }}>
+            {g.grupo}
+          </p>
+          <ul>
+            {g.filas.map((f) => (
+              <li
+                key={f.texto}
+                className="py-3 md:grid md:grid-cols-[1fr_9rem_9rem] md:gap-4 md:items-center"
+                style={{ borderBottom: '1px solid rgba(77,182,172,0.08)' }}
+              >
+                <span className="block text-sm md:text-base leading-snug" style={{ color: BRAND.text }}>
+                  {f.texto}
+                </span>
+                <span className="hidden md:block text-center">
+                  <CeldaIncluido valor={f.prueba} />
+                </span>
+                <span className="hidden md:block text-center">
+                  <CeldaIncluido valor={f.plan} destacado />
+                </span>
+                {/* Móvil: las dos marcas debajo del texto */}
+                <span className="md:hidden mt-2 flex flex-wrap gap-x-5 gap-y-1 text-xs">
+                  <span style={{ color: BRAND.textDim }}>
+                    Prueba: <CeldaIncluido valor={f.prueba} />
+                  </span>
+                  <span style={{ color: BRAND.textDim }}>
+                    Plan: <CeldaIncluido valor={f.plan} destacado />
+                  </span>
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** Botón − / + de la calculadora de referidos. */
+function Contador({
+  etiqueta,
+  valor,
+  min,
+  max,
+  onCambio,
+}: {
+  etiqueta: string;
+  valor: number;
+  min: number;
+  max: number;
+  onCambio: (v: number) => void;
+}) {
+  const boton =
+    'w-10 h-10 rounded-full text-lg font-bold flex items-center justify-center transition-opacity disabled:opacity-30';
+  return (
+    <div>
+      <p className="text-sm mb-2" style={{ color: BRAND.textMuted }}>
+        {etiqueta}
+      </p>
+      <div className="flex items-center gap-4">
+        <button
+          type="button"
+          className={boton}
+          style={{ border: `1px solid ${BRAND.cardBorderHover}`, color: BRAND.mint }}
+          onClick={() => onCambio(Math.max(min, valor - 1))}
+          disabled={valor <= min}
+          aria-label={`Restar uno: ${etiqueta}`}
+        >
+          −
+        </button>
+        <span
+          className="text-3xl w-10 text-center tabular-nums"
+          style={{ fontFamily: 'Syne, system-ui, sans-serif', fontWeight: 800, color: BRAND.text }}
+          aria-live="polite"
+        >
+          {valor}
+        </span>
+        <button
+          type="button"
+          className={boton}
+          style={{ border: `1px solid ${BRAND.cardBorderHover}`, color: BRAND.mint }}
+          onClick={() => onCambio(Math.min(max, valor + 1))}
+          disabled={valor >= max}
+          aria-label={`Sumar uno: ${etiqueta}`}
+        >
+          +
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Plan de referidos con su calculadora. Quien compra también hizo la prueba, así
+ * que cada referido que compra suma los dos descuentos (20 % + 50 %).
+ */
+function BloqueReferidos({ moneda }: { moneda: Moneda }) {
+  const [prueba, setPrueba] = useState(EJEMPLO_REFERIDOS.prueba);
+  const [compran, setCompran] = useState(EJEMPLO_REFERIDOS.compran);
+  const mensualidades = prueba * REFERIDOS.porPrueba + compran * REFERIDOS.porCompra;
+  const ahorro = mensualidades * PRECIOS.mensualidad[moneda];
+  const pct = (x: number) => `${Math.round(x * 100)} %`;
+
+  return (
+    <div className="rounded-3xl p-6 md:p-10" style={{ backgroundColor: BRAND.cardBg, border: `1px solid ${BRAND.cardBorder}` }}>
+      <p className="text-sm font-semibold tracking-wide uppercase mb-3" style={{ color: BRAND.mint }}>
+        Plan de referidos
+      </p>
+      <h3
+        className="text-2xl md:text-3xl leading-tight mb-3"
+        style={{ fontFamily: 'Syne, system-ui, sans-serif', fontWeight: 700, color: BRAND.text }}
+      >
+        Recomienda Gloma y paga menos
+      </h3>
+      <p className="text-base leading-relaxed max-w-3xl" style={{ color: BRAND.textMuted }}>
+        Cada negocio que nos refieras te da un descuento en tu mensualidad. Los descuentos se
+        suman y lo que pase de una mensualidad completa se aplica en la siguiente.
+      </p>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-6">
+        {[
+          { valor: pct(REFERIDOS.porPrueba), texto: 'de descuento por cada negocio que refieras y haga la prueba gratis' },
+          { valor: pct(REFERIDOS.porCompra), texto: 'más por cada negocio que refieras y compre el plan' },
+        ].map((r) => (
+          <div
+            key={r.valor}
+            className="rounded-2xl p-5"
+            style={{ backgroundColor: BRAND.mintSoft, border: `1px solid ${BRAND.cardBorderHover}` }}
+          >
+            <p
+              className="text-4xl tabular-nums"
+              style={{ fontFamily: 'Syne, system-ui, sans-serif', fontWeight: 800, color: BRAND.mint }}
+            >
+              {r.valor}
+            </p>
+            <p className="text-sm mt-1" style={{ color: BRAND.text }}>
+              {r.texto}
+            </p>
+          </div>
         ))}
-      </ul>
+      </div>
+
+      {/* Calculadora */}
+      <div className="mt-8 rounded-2xl p-5 md:p-6" style={{ border: `1px solid ${BRAND.cardBorder}` }}>
+        <p className="text-xs font-semibold uppercase tracking-wide mb-5" style={{ color: BRAND.textDim }}>
+          Haz la cuenta
+        </p>
+        <div className="grid grid-cols-1 md:grid-cols-[auto_auto_1fr] gap-6 md:gap-10 md:items-end">
+          <Contador
+            etiqueta="Negocios que refieres y hacen la prueba"
+            valor={prueba}
+            min={0}
+            max={20}
+            onCambio={(v) => {
+              setPrueba(v);
+              if (compran > v) setCompran(v);
+            }}
+          />
+          <Contador
+            etiqueta="De esos, cuántos compran"
+            valor={compran}
+            min={0}
+            max={prueba}
+            onCambio={setCompran}
+          />
+          <div className="md:text-right" aria-live="polite">
+            <p className="text-sm" style={{ color: BRAND.textMuted }}>
+              Te ahorras
+            </p>
+            <Precio valor={ahorro} moneda={moneda} size="text-3xl md:text-4xl" />
+            <p className="text-sm mt-1" style={{ color: BRAND.mint }}>
+              {formatMonto(mensualidades, Number.isInteger(mensualidades) ? 0 : 1)}{' '}
+              {mensualidades === 1 ? 'mensualidad gratis' : 'mensualidades gratis'}
+            </p>
+          </div>
+        </div>
+        <p className="text-xs mt-5" style={{ color: BRAND.textDim }}>
+          Ejemplo: refieres a {EJEMPLO_REFERIDOS.prueba} negocios, los {EJEMPLO_REFERIDOS.prueba} hacen
+          la prueba y {EJEMPLO_REFERIDOS.compran} compran: {EJEMPLO_REFERIDOS.prueba} × 20 % +{' '}
+          {EJEMPLO_REFERIDOS.compran} × 50 % = 250 %, dos mensualidades y media. Calculado sobre la
+          mensualidad de los meses 1 a {PRECIOS.permanenciaMeses}.
+        </p>
+      </div>
     </div>
   );
 }
@@ -1526,11 +1863,12 @@ function BloqueGarantia() {
 function PreciosSection() {
   const [moneda, setMoneda] = useState<Moneda>('COP');
   const usd = moneda === 'USD';
+  const dec = (v: number) => (usd && !Number.isInteger(v) ? 2 : 0);
 
   const { enviados, responden } = EJEMPLO_CAMPANA;
   const costoEnvio = enviados * PRECIOS.mensajeCampana[moneda];
-  const sobran = EJEMPLO_ACUMULADO.paquete - EJEMPLO_ACUMULADO.usadas;
-  const pctUsadas = (EJEMPLO_ACUMULADO.usadas / EJEMPLO_ACUMULADO.paquete) * 100;
+  const mesesQueFaltan = PRECIOS.permanenciaMeses - EJEMPLO_SALIDA_MES;
+  const salidaEjemplo = mesesQueFaltan * PRECIOS.salidaPorMesQueFalta[moneda];
 
   const card: React.CSSProperties = {
     backgroundColor: BRAND.cardBg,
@@ -1564,9 +1902,8 @@ function PreciosSection() {
             Tu inversión en Gloma
           </h2>
           <p className="text-base md:text-lg" style={{ color: BRAND.textMuted }}>
-            La instalación es una inversión única. Después, el agente funciona con un paquete
-            de conversaciones que recargas cuando se acaba, y las campañas se cobran por mensaje
-            enviado.
+            Empiezas con {PRECIOS.diasPrueba} días gratis. Si te sirve, sigues con una mensualidad
+            que lo incluye todo, y la instalación no te cuesta nada.
           </p>
           <p className="text-base md:text-lg mt-4" style={{ color: BRAND.text }}>
             <strong style={{ color: BRAND.mint }}>Hasta un 70 % menos en el costo de atención*</strong>, y tu
@@ -1577,7 +1914,7 @@ function PreciosSection() {
           </p>
 
           <ul className="flex flex-wrap justify-center gap-2 mt-6" aria-label="Lo que incluyen los precios">
-            {['IVA incluido', 'Tarifa de Meta incluida', 'Sin mensualidad'].map((t) => (
+            {[`${PRECIOS.diasPrueba} días gratis`, 'Instalación sin costo', 'IVA incluido', 'Tarifa de Meta incluida'].map((t) => (
               <li
                 key={t}
                 className="px-3 py-1 rounded-full text-xs font-semibold"
@@ -1615,127 +1952,124 @@ function PreciosSection() {
         </Reveal>
 
         <div className="space-y-8">
-          {/* ===== 01 · Instalación ===== */}
+          {/* ===== 01 · Prueba gratis ===== */}
           <Reveal>
-            <div className="rounded-3xl p-6 md:p-10 grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-10 items-center" style={card}>
-              <div>
-                <CobroHeader numero="01" titulo="Instalación" cuando="Inversión única, al empezar" />
-                <p className="text-base leading-relaxed" style={{ color: BRAND.textMuted }}>
-                  Configuramos el agente con tus destinos, tarifas y el tono de tu marca,
-                  conectamos tu número de WhatsApp y lo probamos contigo antes de que hable con
-                  el primer cliente.
-                </p>
+            <div className="rounded-3xl p-6 md:p-10" style={card}>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-10 items-center">
+                <div>
+                  <CobroHeader
+                    numero="01"
+                    titulo={`Prueba gratis de ${PRECIOS.diasPrueba} días`}
+                    cuando="Para empezar, sin pagar nada"
+                  />
+                  <p className="text-base leading-relaxed" style={{ color: BRAND.textMuted }}>
+                    Ponemos tu agente a contestar en uno de tus números comerciales, con tu tarifario.
+                    Al final te mostramos dónde se te está yendo la plata y los puntos débiles de tu
+                    atención, con cifras.
+                  </p>
+                </div>
+                <div className="md:text-right">
+                  <Precio valor={0} moneda={moneda} />
+                  <p className="text-sm mt-2" style={{ color: BRAND.textDim }}>
+                    Durante {PRECIOS.diasPrueba} días
+                  </p>
+                </div>
               </div>
-              <div className="md:text-right">
-                <Precio valor={PRECIOS.instalacion[moneda]} moneda={moneda} />
-                <p className="text-sm mt-2" style={{ color: BRAND.textDim }}>
-                  Una sola vez
-                </p>
-              </div>
+              <ul className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-3 mt-8">
+                {PRUEBA_INCLUYE.map((t) => (
+                  <li key={t} className="flex gap-3 text-sm md:text-base leading-snug" style={{ color: BRAND.text }}>
+                    <span aria-hidden="true" style={{ color: BRAND.mint }}>
+                      ✓
+                    </span>
+                    {t}
+                  </li>
+                ))}
+              </ul>
             </div>
           </Reveal>
 
-          {/* ===== 02 · Paquetes de conversaciones ===== */}
+          {/* ===== 02 · Plan mensual ===== */}
           <Reveal>
-            <div className="rounded-3xl p-6 md:p-10" style={card}>
+            <div
+              className="rounded-3xl p-6 md:p-10"
+              style={{
+                ...card,
+                border: `2px solid ${BRAND.golden}`,
+                boxShadow: '0 0 60px -20px rgba(245,194,75,0.4)',
+              }}
+            >
               <CobroHeader
                 numero="02"
-                titulo="Agente de servicio al cliente y ventas"
-                cuando="Funciona con paquetes de conversaciones que recargas"
+                titulo="Plan mensual"
+                cuando="Si después de la prueba quieres seguir"
               />
-              <p className="text-sm mb-6 -mt-2" style={{ color: BRAND.textMuted }}>
-                <strong style={{ color: BRAND.text }}>Una conversación</strong> es un chat con un
-                cliente dentro de una ventana de 24 horas. Compras un paquete y lo recargas cuando
-                se acaba: no es una mensualidad.
-              </p>
 
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6">
-                {PRECIOS.paquetes.map((p) => {
-                  const porConversacion = p[moneda] / p.conversaciones;
-                  return (
-                    <div
-                      key={p.conversaciones}
-                      className={`gloma-card relative rounded-2xl p-6 transition-all ${
-                        p.recomendado ? 'pt-9 md:pt-7 mt-4 md:mt-0 md:scale-[1.04] z-10' : ''
-                      }`}
-                      style={
-                        p.recomendado
-                          ? {
-                              ...nodo,
-                              backgroundColor: 'rgba(245,194,75,0.07)',
-                              border: `2px solid ${BRAND.golden}`,
-                              boxShadow: '0 0 50px -10px rgba(245,194,75,0.45)',
-                            }
-                          : nodo
-                      }
-                    >
-                      {p.recomendado && (
-                        <span
-                          className="absolute -top-4 left-1/2 -translate-x-1/2 whitespace-nowrap px-4 py-1.5 rounded-full text-sm font-bold uppercase tracking-wide shadow-lg"
-                          style={{ backgroundColor: BRAND.golden, color: BRAND.bgBase }}
-                        >
-                          ★ Recomendado
-                        </span>
-                      )}
-                      <p
-                        className="text-3xl md:text-4xl tabular-nums"
-                        style={{ fontFamily: 'Syne, system-ui, sans-serif', fontWeight: 800, color: BRAND.mint }}
-                      >
-                        {formatNumber(p.conversaciones)}
-                      </p>
-                      <p className="text-sm mb-5" style={{ color: BRAND.textMuted }}>
-                        conversaciones
-                      </p>
-                      <Precio valor={p[moneda]} moneda={moneda} size="text-2xl lg:text-[1.7rem]" apilado />
-                      <p
-                        className={p.recomendado ? 'text-base font-bold mt-3' : 'text-xs mt-3'}
-                        style={{ color: p.recomendado ? BRAND.golden : BRAND.textDim }}
-                      >
-                        {formatMonto(porConversacion, usd ? 3 : 0)} {moneda} por conversación
-                      </p>
-                    </div>
-                  );
-                })}
-              </div>
-
-              <ListaIncluye />
-
-              {/* Gráfico: lo que no se usa pasa al mes siguiente */}
-              <div className="mt-8 grid grid-cols-1 md:grid-cols-[1fr_auto_1fr] gap-2 md:gap-4 items-stretch">
-                <div className="rounded-2xl p-5" style={nodo}>
-                  <p className="text-xs font-semibold uppercase tracking-wide mb-3" style={{ color: BRAND.textDim }}>
-                    Mes 1 · paquete de {formatNumber(EJEMPLO_ACUMULADO.paquete)}
+              {/* Instalación en cero: el dato que más pesa (CEO, 2026-10-28) */}
+              <div
+                className="rounded-2xl p-5 md:p-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3"
+                style={{ backgroundColor: 'rgba(245,194,75,0.08)', border: `1px solid ${BRAND.golden}` }}
+              >
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-wide" style={{ color: BRAND.golden }}>
+                    ★ Instalación
                   </p>
-                  <div
-                    className="h-4 rounded-full overflow-hidden flex"
-                    style={{ backgroundColor: BRAND.mintSoft }}
-                    role="img"
-                    aria-label={`Se usan ${EJEMPLO_ACUMULADO.usadas} de ${EJEMPLO_ACUMULADO.paquete} conversaciones y sobran ${sobran}`}
+                  <p className="text-sm mt-1" style={{ color: BRAND.text }}>
+                    Configuramos tu agente, conectamos tu número y lo ajustamos contigo. No te cuesta nada.
+                  </p>
+                </div>
+                <span className="inline-flex items-baseline gap-2 tabular-nums">
+                  <span
+                    className="text-4xl md:text-5xl"
+                    style={{ fontFamily: 'Syne, system-ui, sans-serif', fontWeight: 800, color: BRAND.golden }}
                   >
-                    <div style={{ width: `${pctUsadas}%`, backgroundColor: 'rgba(230,239,238,0.25)' }} />
-                    <div style={{ width: `${100 - pctUsadas}%`, backgroundColor: BRAND.mint }} />
-                  </div>
-                  <div className="flex justify-between text-xs mt-2" style={{ color: BRAND.textMuted }}>
-                    <span>{formatNumber(EJEMPLO_ACUMULADO.usadas)} usadas</span>
-                    <span style={{ color: BRAND.mint }}>{formatNumber(sobran)} sin usar</span>
-                  </div>
-                </div>
-                <Flecha />
-                <div className="rounded-2xl p-5" style={{ ...nodo, borderColor: BRAND.cardBorderHover }}>
+                    {formatMonto(PRECIOS.instalacion[moneda])}
+                  </span>
+                  <span className="text-sm font-semibold" style={{ color: BRAND.golden }}>
+                    {moneda}
+                  </span>
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 md:gap-6 mt-6">
+                <div className="rounded-2xl p-6" style={nodo}>
                   <p className="text-xs font-semibold uppercase tracking-wide mb-3" style={{ color: BRAND.textDim }}>
-                    Mes 2
+                    Meses 1 a {PRECIOS.permanenciaMeses}
                   </p>
-                  <p className="text-base" style={{ color: BRAND.text }}>
-                    Arrancas con{' '}
-                    <strong style={{ color: BRAND.mint }}>{formatNumber(sobran)} conversaciones</strong>{' '}
-                    sin volver a invertir. Cuando se acaben, recargas.
+                  <Precio valor={PRECIOS.mensualidad[moneda]} moneda={moneda} size="text-3xl md:text-4xl" apilado />
+                  <p className="text-sm mt-2" style={{ color: BRAND.textMuted }}>
+                    al mes
+                  </p>
+                </div>
+                <div className="rounded-2xl p-6" style={{ ...nodo, borderColor: BRAND.cardBorderHover }}>
+                  <p className="text-xs font-semibold uppercase tracking-wide mb-3" style={{ color: BRAND.textDim }}>
+                    Desde el mes {PRECIOS.permanenciaMeses + 1}
+                  </p>
+                  <Precio valor={PRECIOS.mensualidadDesdeMes7[moneda]} moneda={moneda} size="text-3xl md:text-4xl" apilado />
+                  <p className="text-sm mt-2" style={{ color: BRAND.mint }}>
+                    al mes: tu mensualidad baja
                   </p>
                 </div>
               </div>
-              <p className="text-xs mt-3" style={{ color: BRAND.textDim }}>
-                Ejemplo ilustrativo. Las conversaciones que no usas no se pierden: se acumulan
-                para el mes siguiente.
-              </p>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6 mt-6">
+                <p className="text-sm leading-relaxed" style={{ color: BRAND.textMuted }}>
+                  <strong style={{ color: BRAND.text }}>
+                    Cada mes incluye {formatNumber(PRECIOS.conversacionesIncluidas)} conversaciones.
+                  </strong>{' '}
+                  Una conversación es un chat con un cliente dentro de una ventana de 24 horas. Si un
+                  mes pasas de {formatNumber(PRECIOS.conversacionesIncluidas)}, cada conversación
+                  adicional vale {formatMonto(PRECIOS.conversacionAdicional[moneda], dec(PRECIOS.conversacionAdicional[moneda]))}{' '}
+                  {moneda}.
+                </p>
+                <p className="text-sm leading-relaxed" style={{ color: BRAND.textMuted }}>
+                  <strong style={{ color: BRAND.text }}>
+                    El plan es de mínimo {PRECIOS.permanenciaMeses} meses.
+                  </strong>{' '}
+                  Si decides salir antes, pagas {formatMonto(PRECIOS.salidaPorMesQueFalta[moneda])} {moneda} por
+                  cada mes que falte. Por ejemplo, si sales al terminar el mes {EJEMPLO_SALIDA_MES}, faltan{' '}
+                  {mesesQueFaltan}: pagas {formatMonto(salidaEjemplo)} {moneda}.
+                </p>
+              </div>
             </div>
           </Reveal>
 
@@ -1751,8 +2085,8 @@ function PreciosSection() {
                   />
                   <p className="text-base leading-relaxed" style={{ color: BRAND.textMuted }}>
                     El cobro es por el primer mensaje, el del envío masivo. Si el cliente te
-                    responde, desde ahí es una conversación del agente y se descuenta de tu
-                    paquete.
+                    responde, desde ahí es una conversación del agente y cuenta dentro de las{' '}
+                    {formatNumber(PRECIOS.conversacionesIncluidas)} de tu mes.
                   </p>
                 </div>
                 <div className="md:text-right">
@@ -1794,7 +2128,7 @@ function PreciosSection() {
                       <strong style={{ color: BRAND.mint }}>{formatNumber(responden)} responden</strong>
                     </p>
                     <p className="text-sm mt-1" style={{ color: BRAND.textMuted }}>
-                      Son {formatNumber(responden)} conversaciones y se descuentan de tu paquete.
+                      Son {formatNumber(responden)} conversaciones y cuentan dentro de las de tu mes.
                       No se cobran otra vez a {formatMonto(PRECIOS.mensajeCampana[moneda], usd ? 3 : 0)} {moneda}.
                     </p>
                   </div>
@@ -1812,21 +2146,29 @@ function PreciosSection() {
           </Reveal>
 
           <Reveal>
+            <TablaIncluye />
+          </Reveal>
+
+          <Reveal>
             <BloqueGarantia />
+          </Reveal>
+
+          <Reveal>
+            <BloqueReferidos moneda={moneda} />
           </Reveal>
         </div>
 
         {/* CTA */}
         <Reveal className="mt-12 md:mt-16 text-center">
           <p className="text-lg md:text-xl mb-6" style={{ color: BRAND.text }}>
-            Calculamos contigo cuánta venta se te queda en el aire y qué paquete te conviene.
+            Empieza con {PRECIOS.diasPrueba} días gratis y te mostramos cuánta venta se te queda en el aire.
           </p>
           <div className="flex flex-col sm:flex-row gap-3 justify-center">
             <BotonAgendar
               className="px-6 py-3 rounded-full text-sm font-semibold transition-opacity hover:opacity-90"
               style={{ backgroundColor: BRAND.mint, color: BRAND.bgBase }}
             >
-              {TEXTOS_AGENDAR.agendar}
+              Quiero mi prueba gratis
             </BotonAgendar>
             <BotonAsesor className="px-6 py-3 rounded-full text-sm font-semibold border-2 border-white/80 text-white hover:bg-white/10 transition-colors">
               {TEXTOS_AGENDAR.whatsapp}
