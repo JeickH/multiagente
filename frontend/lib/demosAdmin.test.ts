@@ -170,7 +170,7 @@ describe('enlaceWhatsappProspecto', () => {
     const url = enlaceWhatsappProspecto('+52 55 1234 5678', 'Ana Ruiz', 'Viajes Sol');
     expect(url).toMatch(/^https:\/\/wa\.me\/525512345678\?/);
     expect(texto(url)).toBe(
-      'Hola, Ana. Te escribo de Gloma por la demo que armaste para Viajes Sol: te ganaste hasta USD 402 en servicios (50 % de descuento en tu primer mes y 35 % en el segundo y el tercero del plan mensual, además de tus 14 días de prueba gratis y la instalación sin costo). ¿Agendamos una llamada para aplicarla?',
+      'Hola, Ana. Te escribo de Gloma por la demo que armaste para Viajes Sol: te ganaste hasta USD 394,80 en servicios (50 % de descuento en tu primer mes y 35 % en el segundo y el tercero del plan mensual, además de tus 14 días de prueba gratis y la instalación sin costo). ¿Agendamos una llamada para aplicarla?',
     );
   });
 

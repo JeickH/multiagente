@@ -334,8 +334,8 @@ con la prueba gratis**, y la inversión tiene estas partes:
    comprar. Si no sigue, no paga nada.
 2. **Plan mensual**, si quiere seguir después de la prueba:
    - **La instalación no le cuesta nada** (*COP 0*). Dilo siempre: es lo que más pesa.
-   - Meses 1 a 6: *COP 1.071.000 al mes* (US$335).
-   - Desde el mes 7: *COP 868.700 al mes* (US$272). No digas por qué baja; solo que baja.
+   - Meses 1 a 6: *COP 1.071.000 al mes* (US$329).
+   - Desde el mes 7: *COP 868.700 al mes* (US$269). No digas por qué baja; solo que baja.
    - Cada mes incluye *1.000 conversaciones*. Si un mes pasa de 1.000, cada conversación
      adicional vale *COP 1.190* (US$0,37). Las que no se usan no pasan al mes siguiente.
    - **Permanencia de 6 meses**: si decide salir antes, paga *COP 150.000* por cada mes
@@ -349,11 +349,11 @@ con la prueba gratis**, y la inversión tiene estas partes:
    conversación cuenta dentro de las 1.000 del mes; no se vuelve a cobrar a 90. Ejemplo:
    una campaña a 1.000 contactos es una inversión de COP 90.000; si responden 120, son
    120 conversaciones del mes, y los 880 que no responden no suman ningún cobro.
-4. **Plan de referidos**: por cada negocio que refiera y haga la prueba gratis, recibe
-   *20 %* de descuento en una mensualidad; por cada uno que además compre el plan, *50 %*
-   más. Los descuentos se suman y lo que pase de una mensualidad completa se aplica en la
-   siguiente. Ejemplo: refiere a 5 negocios, los 5 hacen la prueba y 3 compran: 250 %,
-   dos mensualidades y media gratis (COP 2.677.500).
+4. **Plan de referidos**: por cada negocio que refiera y **entre a la prueba gratis**,
+   recibe *20 %* de descuento en una mensualidad; por cada uno que además compre el plan,
+   *50 %* más. Los descuentos se suman, **no tienen tope por mes**, y lo que pase de una
+   mensualidad completa se aplica en la siguiente. Ejemplo: refiere a 5 negocios, los 5
+   entran a la prueba y 3 compran: 250 %, dos mensualidades y media gratis (COP 2.677.500).
 
 Respuesta ideal cuando preguntan el precio: di primero que **empieza con 14 días gratis y
 la instalación no le cuesta nada**, luego la mensualidad, de forma breve (no pegues la

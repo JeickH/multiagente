@@ -364,8 +364,8 @@ const INCLUYE: { grupo: string; filas: { texto: string; prueba: Incluido; plan: 
     ],
   },
   {
-    // [CONFIRMAR con desarrollo] Hoy el tablero no mide tiempos de respuesta ni
-    // califica interesados: en la prueba esos datos se arman a mano.
+    // El CEO confirmó (2026-10-28) que los tiempos de respuesta se miden y se
+    // entregan en el reporte de la prueba y del plan.
     grupo: 'Ves dónde se te va la plata',
     filas: [
       { texto: 'Cuánta venta se te queda en el aire, en pesos, cada semana', prueba: true, plan: true },
@@ -417,9 +417,9 @@ type Moneda = 'COP' | 'USD';
 const PRECIOS = {
   diasPrueba: 14,
   instalacion: { COP: 0, USD: 0 },
-  mensualidad: { COP: 1_071_000, USD: 335 },
+  mensualidad: { COP: 1_071_000, USD: 329 },
   /** Desde el mes 7. No se dice en la página que baja porque «la instalación ya quedó paga». */
-  mensualidadDesdeMes7: { COP: 868_700, USD: 272 },
+  mensualidadDesdeMes7: { COP: 868_700, USD: 269 },
   conversacionesIncluidas: 1_000,
   conversacionAdicional: { COP: 1_190, USD: 0.37 },
   permanenciaMeses: 6,
@@ -428,10 +428,10 @@ const PRECIOS = {
 };
 
 /**
- * Plan de referidos (P5 de las propuestas comerciales, CEO 2026-10-28): cada
- * descuento vale sobre una mensualidad, se suman, y lo que pase de 100 % se corre
- * a la siguiente. [CONFIRMAR CEO] si el 20 % cuenta al entrar a la prueba o al
- * terminarla, y si hay tope por mes.
+ * Plan de referidos (P5 de las propuestas comerciales, CEO 2026-10-28): 20 % por
+ * cada referido que entra a la prueba gratis y 50 % más si compra. Cada descuento
+ * vale sobre una mensualidad, se suman, no hay tope por mes y lo que pase de
+ * 100 % se corre a la siguiente.
  */
 const REFERIDOS = { porPrueba: 0.2, porCompra: 0.5 };
 const EJEMPLO_REFERIDOS = { prueba: 5, compran: 3 };
@@ -1774,12 +1774,12 @@ function BloqueReferidos({ moneda }: { moneda: Moneda }) {
       </h3>
       <p className="text-base leading-relaxed max-w-3xl" style={{ color: BRAND.textMuted }}>
         Cada negocio que nos refieras te da un descuento en tu mensualidad. Los descuentos se
-        suman y lo que pase de una mensualidad completa se aplica en la siguiente.
+        suman, no tienen tope y lo que pase de una mensualidad completa se aplica en la siguiente.
       </p>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-6">
         {[
-          { valor: pct(REFERIDOS.porPrueba), texto: 'de descuento por cada negocio que refieras y haga la prueba gratis' },
+          { valor: pct(REFERIDOS.porPrueba), texto: 'de descuento por cada negocio que refieras y entre a la prueba gratis' },
           { valor: pct(REFERIDOS.porCompra), texto: 'más por cada negocio que refieras y compre el plan' },
         ].map((r) => (
           <div
@@ -1807,7 +1807,7 @@ function BloqueReferidos({ moneda }: { moneda: Moneda }) {
         </p>
         <div className="grid grid-cols-1 md:grid-cols-[auto_auto_1fr] gap-6 md:gap-10 md:items-end">
           <Contador
-            etiqueta="Negocios que refieres y hacen la prueba"
+            etiqueta="Negocios que refieres y entran a la prueba"
             valor={prueba}
             min={0}
             max={20}

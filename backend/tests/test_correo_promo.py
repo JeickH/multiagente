@@ -132,12 +132,12 @@ def test_sin_nombre_el_correo_saluda_generico():
     assert cuerpo_txt.startswith("Hola, ganaste hasta $1.285.200 COP")
     assert "<title>Tu promoción de Gloma" in cuerpo_html and "Hola, ganaste hasta</h1>" in cuerpo_html
     asunto = correo_promo.renderizar("intl", None, None)[0]
-    assert asunto == "Tu promoción de Gloma: hasta USD 402"
+    assert asunto == "Tu promoción de Gloma: hasta USD 394,80"
 
 
 @pytest.mark.parametrize("version,montos", [
     ("co", ["$1.285.200 COP", "535.500 COP", "696.150 COP", "1.071.000 COP"]),
-    ("intl", ["USD 402", "USD 167,50", "USD 217,75", "USD 335"]),
+    ("intl", ["USD 394,80", "USD 164,50", "USD 213,85", "USD 329"]),
 ])
 def test_promocion_del_plan_mensual(version, montos):
     """Promoción del 2026-10-28: 50 % en el mes 1 y 35 % en los meses 2 y 3,

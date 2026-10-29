@@ -323,7 +323,7 @@ export const DEMO_UI = {
     titulo: 'Ganaste una promoción especial',
     prefijoMonto: 'hasta',
     montoColombia: '$1.285.200 COP',
-    montoExterior: 'USD 402',
+    montoExterior: 'USD 394,80',
     sufijoMonto: 'en servicios de Gloma',
     /** Qué es la promoción (2026-10-28). Lo repiten el correo y el WhatsApp del panel /demos. */
     detalle: '50\u00a0% de descuento en tu primer mes y 35\u00a0% en el segundo y el tercero del plan mensual.',

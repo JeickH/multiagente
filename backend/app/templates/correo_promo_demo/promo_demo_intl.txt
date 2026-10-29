@@ -1,22 +1,22 @@
-{{nombre}}, ganaste hasta USD 402 en servicios de Gloma.
+{{nombre}}, ganaste hasta USD 394,80 en servicios de Gloma.
 
 Gracias por hacer la demo de Gloma con {{empresa}}. Esta es la promoción que te ganaste:
 
 50 % de descuento en tu primer mes.
-Pagas USD 167,50 en lugar de USD 335.
+Pagas USD 164,50 en lugar de USD 329.
 
 35 % de descuento en el segundo y el tercer mes.
-Pagas USD 217,75 cada mes en lugar de USD 335.
+Pagas USD 213,85 cada mes en lugar de USD 329.
 
 Y se suma a lo que ya tienes: 14 días de prueba gratis y la instalación, que no te cuesta nada.
 
 Así arrancas con tu promoción:
 - Prueba gratis de 14 días: USD 0
 - Instalación: USD 0
-- Mes 1: USD 335 -> USD 167,50
-- Mes 2: USD 335 -> USD 217,75
-- Mes 3: USD 335 -> USD 217,75
-Te ahorras USD 402.
+- Mes 1: USD 329 -> USD 164,50
+- Mes 2: USD 329 -> USD 213,85
+- Mes 3: USD 329 -> USD 213,85
+Te ahorras USD 394,80.
 
 Valores en dólares (USD), con la tarifa de Meta por WhatsApp incluida, como están publicados en glomacx.com. Cada mes del plan incluye 1.000 conversaciones.
 
