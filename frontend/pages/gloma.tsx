@@ -283,19 +283,22 @@ const YA_USAS: { titulo: string; texto: string }[] = [
 /**
  * Sistemas que se nombraron en la reunión con hoteleros del 24-oct (voz del
  * cliente) más los channel managers más usados en LatAm. Desde el 2026-10-28 el
- * CEO decidió mostrarlos en blanco y negro (Belfort recomendaba no hacerlo: un
- * logo ajeno se puede leer como alianza). Van siempre con «a la medida».
- * `logo`: archivo en `public/gloma/integraciones/`; sin él se pinta el nombre.
+ * CEO decidió mostrarlos en blanco y negro, discretos, bajo «compatibles con…»
+ * (Belfort recomendaba no hacerlo: un logo ajeno se puede leer como alianza).
+ * Van siempre con la nota de «a la medida». Los logos salen de la web de cada
+ * marca (SiteMinder de su cabecera, Oracle de Wikimedia Commons) y viven en
+ * `public/gloma/integraciones/`; sin `logo` se pinta el nombre (Zeus no tiene
+ * logo público). `alto` iguala el peso visual entre logos de forma distinta.
  */
-const SISTEMAS: { nombre: string; logo?: string }[] = [
-  { nombre: 'SiteMinder' },
-  { nombre: 'RoomCloud' },
-  { nombre: 'Cloudbeds' },
-  { nombre: 'Omnibees' },
-  { nombre: 'LobbyPMS' },
+const SISTEMAS: { nombre: string; logo?: string; alto?: number }[] = [
+  { nombre: 'SiteMinder', logo: '/gloma/integraciones/siteminder.svg', alto: 22 },
+  { nombre: 'Cloudbeds', logo: '/gloma/integraciones/cloudbeds.svg', alto: 26 },
+  { nombre: 'Omnibees', logo: '/gloma/integraciones/omnibees.svg', alto: 30 },
+  { nombre: 'RoomCloud', logo: '/gloma/integraciones/roomcloud.png', alto: 40 },
+  { nombre: 'LobbyPMS', logo: '/gloma/integraciones/lobbypms.svg', alto: 30 },
+  { nombre: 'Oracle OPERA', logo: '/gloma/integraciones/oracle.svg', alto: 18 },
+  { nombre: 'Paraty Tech', logo: '/gloma/integraciones/paratytech.svg', alto: 22 },
   { nombre: 'Zeus PMS' },
-  { nombre: 'Oracle OPERA' },
-  { nombre: 'Paraty Tech' },
 ];
 
 
@@ -1384,18 +1387,29 @@ function YaUsasSection() {
 
         {/* Sistemas que usan los hoteles (CEO, 2026-10-28), en blanco y negro. */}
         <Reveal className="mt-14 md:mt-16">
-          <p className="text-sm font-semibold tracking-wide uppercase text-center mb-6" style={{ color: BRAND.mint }}>
-            Nos conectamos con el sistema que ya usas
+          <p className="text-sm font-semibold tracking-wide uppercase text-center mb-8" style={{ color: BRAND.mint }}>
+            Compatibles con el sistema que ya usas, y con muchos más
           </p>
-          <ul className="flex flex-wrap justify-center items-center gap-x-8 gap-y-5 md:gap-x-12" aria-label="Sistemas de reservas con los que nos conectamos">
+          <ul
+            className="flex flex-wrap justify-center items-center gap-x-10 gap-y-7 md:gap-x-14"
+            aria-label="Sistemas de reservas con los que somos compatibles"
+          >
             {SISTEMAS.map((sis) => (
-              <li key={sis.nombre} className="flex items-center h-10">
+              <li key={sis.nombre} className="flex items-center h-11">
                 {sis.logo ? (
+                  // Logos ajenos en blanco y gris para que no le quiten protagonismo a la página.
+                  // eslint-disable-next-line @next/next/no-img-element
                   <img
                     src={sis.logo}
                     alt={sis.nombre}
-                    className="max-h-8 md:max-h-9 w-auto object-contain"
-                    style={{ filter: 'grayscale(1) brightness(0) invert(1)', opacity: 0.6 }}
+                    title={sis.nombre}
+                    className="w-auto object-contain"
+                    style={{
+                      height: sis.alto ?? 26,
+                      maxWidth: 170,
+                      filter: 'grayscale(1) brightness(0) invert(1)',
+                      opacity: 0.55,
+                    }}
                     loading="lazy"
                   />
                 ) : (
@@ -1408,6 +1422,11 @@ function YaUsasSection() {
                 )}
               </li>
             ))}
+            <li className="flex items-center h-11">
+              <span className="text-sm whitespace-nowrap" style={{ color: 'rgba(230,239,238,0.55)' }}>
+                y muchos más
+              </span>
+            </li>
           </ul>
           <p className="text-xs text-center mt-6 max-w-2xl mx-auto" style={{ color: BRAND.textDim }}>
             La conexión con tu channel manager o tu PMS se hace a la medida para tu negocio. Las
