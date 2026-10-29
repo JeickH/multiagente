@@ -344,11 +344,15 @@ con la prueba gratis**, y la inversión tiene estas partes:
    Si el mismo cliente vuelve a escribir después de esas 24 horas, es otra conversación.
    **Todo está incluido**: los precios ya traen el IVA y lo que cobra Meta por WhatsApp.
    No hay que pagarle nada aparte a Meta.
-3. **Campañas masivas por WhatsApp**: *COP 90* (US$0,030) **por mensaje enviado**. Ese
-   cobro es solo por el primer mensaje, el del envío masivo. Si el cliente responde, esa
-   conversación cuenta dentro de las 1.000 del mes; no se vuelve a cobrar a 90. Ejemplo:
-   una campaña a 1.000 contactos es una inversión de COP 90.000; si responden 120, son
-   120 conversaciones del mes, y los 880 que no responden no suman ningún cobro.
+3. **Recuperación de conversaciones abandonadas**: *COP 90* (US$0,030) **por mensaje
+   enviado**. Una conversación queda abandonada cuando pasan más de 24 horas sin que el
+   cliente escriba; desde ahí WhatsApp solo deja volver a escribirle con un mensaje
+   aprobado, y ese mensaje se cobra. Si el cliente responde, la conversación sigue con el
+   agente y cuenta dentro de las 1.000 del mes; no se vuelve a cobrar a 90. Ejemplo:
+   escribirles de nuevo a 1.000 clientes que llevan más de 24 horas sin contestar es una
+   inversión de COP 90.000; si responden 120, son 120 conversaciones del mes, y los 880
+   que no responden no suman ningún cobro. Las campañas masivas (promociones a sus
+   contactos) se cobran igual: COP 90 por mensaje enviado.
 4. **Plan de referidos**: por cada negocio que refiera y **entre a la prueba gratis**,
    recibe *20 %* de descuento en una mensualidad; por cada uno que además compre el plan,
    *50 %* más. Los descuentos se suman, **no tienen tope por mes**, y lo que pase de una

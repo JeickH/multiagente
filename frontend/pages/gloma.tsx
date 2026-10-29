@@ -2092,19 +2092,23 @@ function PreciosSection() {
             </div>
           </Reveal>
 
-          {/* ===== 03 · Campañas masivas ===== */}
+          {/* ===== 03 · Recuperación de conversaciones abandonadas (CEO, 2026-10-28) =====
+              Pasadas 24 h sin interacción, WhatsApp solo deja escribir con un
+              mensaje de plantilla aprobado, que se cobra por envío (sale por Campañas). */}
           <Reveal>
             <div className="rounded-3xl p-6 md:p-10" style={card}>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-10 items-center mb-8">
                 <div>
                   <CobroHeader
                     numero="03"
-                    titulo="Campañas masivas por WhatsApp"
-                    cuando="Solo cuando envías una campaña"
+                    titulo="Recuperación de conversaciones abandonadas"
+                    cuando="Solo cuando le vuelves a escribir a quien dejó de contestar"
                   />
                   <p className="text-base leading-relaxed" style={{ color: BRAND.textMuted }}>
-                    El cobro es por el primer mensaje, el del envío masivo. Si el cliente te
-                    responde, desde ahí es una conversación del agente y cuenta dentro de las{' '}
+                    Una conversación queda abandonada cuando pasan más de 24 horas sin que el
+                    cliente escriba. Desde ese momento WhatsApp solo deja volver a escribirle con un
+                    mensaje aprobado, y ese mensaje se cobra. Si el cliente responde, la conversación
+                    sigue con el agente y cuenta dentro de las{' '}
                     {formatNumber(PRECIOS.conversacionesIncluidas)} de tu mes.
                   </p>
                 </div>
@@ -2122,19 +2126,19 @@ function PreciosSection() {
 
               {/* Diagrama: envío → responde / no responde */}
               <p className="text-xs font-semibold uppercase tracking-wide mb-3" style={{ color: BRAND.textDim }}>
-                Ejemplo: una campaña a {formatNumber(enviados)} contactos
+                Ejemplo: le vuelves a escribir a {formatNumber(enviados)} clientes que llevan más de 24 horas sin contestar
               </p>
               <div className="grid grid-cols-1 md:grid-cols-[1fr_auto_1.15fr] gap-2 md:gap-4 items-center">
                 <div className="rounded-2xl p-5 h-full flex flex-col justify-center" style={nodo}>
                   <p className="text-sm mb-2" style={{ color: BRAND.textMuted }}>
-                    Envías {formatNumber(enviados)} mensajes
+                    Les escribes a {formatNumber(enviados)} clientes
                   </p>
                   <p className="text-sm tabular-nums" style={{ color: BRAND.textDim }}>
                     {formatNumber(enviados)} × {formatMonto(PRECIOS.mensajeCampana[moneda], usd ? 3 : 0)} {moneda}
                   </p>
                   <Precio valor={costoEnvio} moneda={moneda} size="text-2xl md:text-3xl" />
                   <p className="text-xs mt-1" style={{ color: BRAND.mint }}>
-                    Inversión de la campaña
+                    Inversión de la recuperación
                   </p>
                 </div>
                 <Flecha />
