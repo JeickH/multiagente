@@ -2,9 +2,9 @@ import Head from 'next/head';
 import Image from 'next/image';
 import { useEffect, useRef, useState } from 'react';
 
-import { AgendarLlamadaGlobal, abrirAgendarLlamada } from '../components/AgendarLlamadaModal';
-import GlomaChatWidget, { BotonAsesor } from '../components/GlomaChatWidget';
+import GlomaChatWidget, { BotonAgendar, BotonAsesor } from '../components/GlomaChatWidget';
 import { TEXTOS_AGENDAR } from '../lib/agendarLlamada';
+import { enlaceWhatsappFooter, telefonoFooter } from '../lib/contactoGloma';
 import { CHATS_MES_OPCIONES } from '../lib/leads';
 
 /**
@@ -339,8 +339,8 @@ const PRECIOS = {
 const EJEMPLO_CAMPANA = { enviados: 1_000, responden: 120 };
 const EJEMPLO_ACUMULADO = { paquete: 600, usadas: 450 };
 
-const WHATSAPP_URL =
-  'https://wa.me/573150764000?text=Hola%20Gloma%2C%20tengo%20una%20agencia%20de%20viajes%20y%20quiero%20ver%20una%20demo';
+/** Footer: el único enlace a WhatsApp de la página (ver `lib/contactoGloma.ts`). */
+const WHATSAPP_URL = enlaceWhatsappFooter();
 
 const INSTAGRAM_URL = 'https://www.instagram.com/gloma_app/';
 
@@ -362,11 +362,13 @@ const APP_URL = 'https://app.glomacx.com';
  */
 /**
  * Llamados a la acción, iguales en toda la página (#625): donde se ofrece
- * agendar, el principal es «Agendar una llamada» (abre el calendario de Cal.com
- * en un modal, sin salir de la página) y el secundario «Hablar con un asesor»
- * (#634), que va por `BotonAsesor`: hoy abre el chat de la página y, cuando el
- * WhatsApp esté conectado, el wa.me (`ASESOR_POR_WHATSAPP` en el widget).
- * Desde 2026-10-21 ningún botón dice «Lía»: el visitante no sabe quién es.
+ * agendar, el principal es «Agendar una llamada» (`BotonAgendar`) y el
+ * secundario «Hablar con un asesor» (#634, `BotonAsesor`). Desde 2026-10-28
+ * los dos abren el chat de la página, donde el agente agenda la reunión;
+ * cuando el WhatsApp del agente esté activo, los dos llevan a su wa.me
+ * (`WHATSAPP_DEL_AGENTE_ACTIVO` en `lib/contactoGloma.ts`). El calendario de
+ * Cal.com ya no se usa en la landing. Desde 2026-10-21 ningún botón dice
+ * «Lía»: el visitante no sabe quién es.
  */
 
 function smoothScrollTo(e: React.MouseEvent<HTMLAnchorElement>, id: string) {
@@ -565,16 +567,14 @@ function InteractiveHeader() {
           >
             Precios
           </a>
-          {/* #625: abre el calendario de Cal.com en un modal. El WhatsApp no
-              cabe en el menú: está en el hero, justo debajo. */}
-          <button
-            type="button"
-            onClick={abrirAgendarLlamada}
+          {/* #625: «Agendar una llamada» abre el chat de la página, donde el
+              agente agenda (2026-10-28). El asesor está en el hero, justo debajo. */}
+          <BotonAgendar
             className="px-5 py-2 rounded-full text-sm font-medium transition-opacity hover:opacity-90"
             style={{ backgroundColor: BRAND.mint, color: BRAND.bgBase }}
           >
             {TEXTOS_AGENDAR.agendar}
-          </button>
+          </BotonAgendar>
           {/* #303: acceso de clientes actuales. La plataforma vive en otro
               subdominio — bajo el apex, `/login` cae en el 404 brandeado del
               middleware — así que el enlace es absoluto. */}
@@ -634,16 +634,15 @@ function InteractiveHeader() {
             transition: 'opacity 900ms ease 300ms, transform 900ms cubic-bezier(.22,.61,.36,1) 300ms',
           }}
         >
-          {/* #625: las dos formas de agendar. Principal: el calendario (modal
-              de Cal.com); secundaria: «Hablar con un asesor» (BotonAsesor). */}
-          <button
-            type="button"
-            onClick={abrirAgendarLlamada}
+          {/* #625: las dos formas de contacto. Principal: «Agendar una
+              llamada» (BotonAgendar); secundaria: «Hablar con un asesor»
+              (BotonAsesor). Las dos abren el chat (2026-10-28). */}
+          <BotonAgendar
             className="inline-block px-6 py-3 rounded-full text-sm font-semibold text-center transition-opacity hover:opacity-90"
             style={{ backgroundColor: BRAND.mint, color: BRAND.bgBase }}
           >
             {TEXTOS_AGENDAR.agendar}
-          </button>
+          </BotonAgendar>
           <BotonAsesor className="inline-block px-6 py-3 rounded-full text-sm font-semibold text-center border-2 border-white/80 text-white hover:bg-white/10 transition-colors">
             {TEXTOS_AGENDAR.whatsapp}
           </BotonAsesor>
@@ -1647,14 +1646,12 @@ function PreciosSection() {
             ¿No sabes qué paquete te conviene? Lo calculamos con el volumen de chats de tu agencia.
           </p>
           <div className="flex flex-col sm:flex-row gap-3 justify-center">
-            <button
-              type="button"
-              onClick={abrirAgendarLlamada}
+            <BotonAgendar
               className="px-6 py-3 rounded-full text-sm font-semibold transition-opacity hover:opacity-90"
               style={{ backgroundColor: BRAND.mint, color: BRAND.bgBase }}
             >
               {TEXTOS_AGENDAR.agendar}
-            </button>
+            </BotonAgendar>
             <BotonAsesor className="px-6 py-3 rounded-full text-sm font-semibold border-2 border-white/80 text-white hover:bg-white/10 transition-colors">
               {TEXTOS_AGENDAR.whatsapp}
             </BotonAsesor>
@@ -2038,7 +2035,7 @@ export default function GlomaLanding() {
                 <li>contacto@glomacx.com</li>
                 <li>
                   <a href={WHATSAPP_URL} target="_blank" rel="noopener noreferrer" className="hover:opacity-100">
-                    +57 315 076 4000
+                    {telefonoFooter()}
                   </a>
                 </li>
                 <li>Calle 36, Vía Jamundí #128-321, Cali, Valle del Cauca</li>
@@ -2096,16 +2093,14 @@ export default function GlomaLanding() {
             backdropFilter: 'blur(8px)',
           }}
         >
-          {/* #625: las dos formas de agendar; el calendario manda. */}
+          {/* #625: las dos formas de contacto; agendar manda. */}
           <div className="grid grid-cols-[1fr_auto] gap-2">
-            <button
-              type="button"
-              onClick={abrirAgendarLlamada}
+            <BotonAgendar
               className="w-full py-3 rounded-full text-sm font-semibold"
               style={{ backgroundColor: BRAND.mint, color: BRAND.bgBase }}
             >
               {TEXTOS_AGENDAR.agendar}
-            </button>
+            </BotonAgendar>
             <BotonAsesor className="px-4 py-3 rounded-full text-sm font-semibold border border-white/70 text-white">
               {TEXTOS_AGENDAR.whatsappCorto}
             </BotonAsesor>
@@ -2113,7 +2108,6 @@ export default function GlomaLanding() {
         </div>
 
         <GlomaChatWidget />
-        <AgendarLlamadaGlobal />
       </div>
     </>
   );

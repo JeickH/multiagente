@@ -41,12 +41,6 @@ export const DEMO_MOCK = process.env.NEXT_PUBLIC_DEMO_MOCK === '1';
  */
 const simulador = () => import('./demoMock').then((m) => m.mock);
 
-/**
- * WhatsApp público de Gloma (el mismo de `_HANDOFF_TEXT` en
- * `backend/app/routers/landing.py` y del widget de la landing).
- */
-const WHATSAPP_GLOMA = '573150764000';
-
 // --------------------------------------------------------------------------
 // Tipos del contrato
 // --------------------------------------------------------------------------
@@ -263,21 +257,22 @@ export function registrarEvento(demo: { id: string; token: string } | null | und
 }
 
 // --------------------------------------------------------------------------
-// «Hablar con un asesor» (wa.me de Gloma)
+// «Agendar una llamada» y «Hablar con un asesor»: el texto que dice el visitante
 // --------------------------------------------------------------------------
 
 /**
- * Enlace wa.me al WhatsApp público de Gloma con el texto prellenado. El
- * nombre de la empresa viaja como texto dentro de `encodeURIComponent`: no
+ * Lo que el visitante le dice a Gloma al tocar un botón de contacto: va como
+ * primer mensaje del chat de la página o, con el WhatsApp del agente activo,
+ * prellenado en el wa.me (`lib/contactoGloma.ts` decide cuál). El nombre de la
+ * empresa es solo texto: en el wa.me viaja dentro de `encodeURIComponent` y no
  * puede romper la URL ni cambiar el destino.
  */
-export function enlaceWhatsapp(empresa: string | null | undefined, plantilla: {
+export function textoContacto(empresa: string | null | undefined, plantilla: {
   despuesDeLaDemo: string;
   sinDemo: string;
 }): string {
   const nombre = (empresa || '').trim().slice(0, 80);
-  const texto = nombre ? plantilla.despuesDeLaDemo.replace('{empresa}', nombre) : plantilla.sinDemo;
-  return `https://wa.me/${WHATSAPP_GLOMA}?text=${encodeURIComponent(texto)}`;
+  return nombre ? plantilla.despuesDeLaDemo.replace('{empresa}', nombre) : plantilla.sinDemo;
 }
 
 // --------------------------------------------------------------------------

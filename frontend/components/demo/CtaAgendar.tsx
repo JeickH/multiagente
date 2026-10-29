@@ -1,14 +1,19 @@
 /**
- * Las dos salidas de la demo (#625): «Agendar una llamada» (principal, abre
- * el modal de Cal.com) y «Hablar con un asesor» (secundaria, wa.me con el
- * texto prellenado). Los clics se cuentan con `registrarEvento` desde
- * `DemoPage`, que arma `AccionesAgendar`.
+ * Las dos salidas de la demo (#625): «Agendar una llamada» (principal) y
+ * «Hablar con un asesor» (secundaria). Desde 2026-10-28 las dos abren el chat
+ * de Gloma en la misma página, donde el agente agenda la reunión; con el
+ * WhatsApp del agente activo (`lib/contactoGloma.ts`), las dos van a su wa.me.
+ * Los clics se cuentan con `registrarEvento` desde `DemoPage`, que arma
+ * `AccionesAgendar`.
  */
 import { TEXTOS_AGENDAR as T } from '../../lib/agendarLlamada';
 
 export interface AccionesAgendar {
   abrirLlamada: () => void;
-  enlaceWhatsapp: string;
+  /** wa.me del agente, o `null` mientras no esté activo: entonces «Hablar con un asesor» abre el chat. */
+  enlaceWhatsapp: string | null;
+  /** Abre el chat de la página (cuando no hay `enlaceWhatsapp`). */
+  abrirAsesor: () => void;
   alClicWhatsapp: () => void;
 }
 
@@ -27,18 +32,30 @@ export default function CtaAgendar({
   variante: 'bloque' | 'barra' | 'enlaces';
   className?: string;
 }) {
-  const whatsapp = (clase: string, texto: string) => (
-    <a
-      href={acciones.enlaceWhatsapp}
-      target="_blank"
-      rel="noopener noreferrer"
-      onClick={acciones.alClicWhatsapp}
-      aria-label={T.whatsappAria}
-      className={clase}
-    >
-      {texto}
-    </a>
-  );
+  const whatsapp = (clase: string, texto: string) =>
+    acciones.enlaceWhatsapp ? (
+      <a
+        href={acciones.enlaceWhatsapp}
+        target="_blank"
+        rel="noopener noreferrer"
+        onClick={acciones.alClicWhatsapp}
+        aria-label={T.whatsappAria}
+        className={clase}
+      >
+        {texto}
+      </a>
+    ) : (
+      <button
+        type="button"
+        onClick={() => {
+          acciones.alClicWhatsapp();
+          acciones.abrirAsesor();
+        }}
+        className={clase}
+      >
+        {texto}
+      </button>
+    );
 
   if (variante === 'enlaces') {
     return (

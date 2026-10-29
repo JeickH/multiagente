@@ -171,6 +171,33 @@ class FranjasAgendaTests(unittest.TestCase):
         ok, _ = llm_engine.franja_valida("11 de agosto", "3pm", self.CFG, ahora)
         self.assertFalse(ok)
 
+    def test_no_antes_de_salta_los_dias_que_no_se_atiende(self):
+        # Pedido del CEO (2026-10-28): nada el 29, 30 ni 31 de octubre. Con un
+        # margen de 0 días hábiles, el miércoles 28 ofrecería el mismo jueves 29.
+        cfg = {"agenda": {**self.CFG["agenda"], "dias_habiles_min": 0,
+                          "no_antes_de": "2026-11-02"}}
+        ahora = datetime(2026, 10, 28, 9, 0, tzinfo=llm_engine._TZ_CO)
+        franjas = llm_engine.proximas_franjas(cfg, ahora)
+        self.assertEqual(franjas[0]["label"], "Lunes 2 de noviembre, 10:00 a.m.")
+        self.assertTrue(all(f["fecha"] >= "2026-11-02" for f in franjas))
+        ok, _ = llm_engine.franja_valida("2026-10-30", "10:00", cfg, ahora)
+        self.assertFalse(ok)
+        ok, _ = llm_engine.franja_valida("2026-11-02", "10:00", cfg, ahora)
+        self.assertTrue(ok)
+
+    def test_no_antes_de_no_adelanta_lo_que_el_margen_ya_corre(self):
+        # Si el margen de 3 días hábiles ya cae después de la fecha, manda el margen.
+        cfg = {"agenda": {**self.CFG["agenda"], "no_antes_de": "2026-11-02"}}
+        ahora = datetime(2026, 10, 28, 17, 0, tzinfo=llm_engine._TZ_CO)
+        self.assertEqual(llm_engine.proximas_franjas(cfg, ahora)[0]["label"],
+                         "Martes 3 de noviembre, 10:00 a.m.")
+
+    def test_no_antes_de_mal_escrita_se_ignora(self):
+        cfg = {"agenda": {**self.CFG["agenda"], "no_antes_de": "el 2 de noviembre"}}
+        ahora = datetime(2026, 8, 6, 14, 30, tzinfo=llm_engine._TZ_CO)
+        self.assertEqual(llm_engine.proximas_franjas(cfg, ahora)[0]["label"],
+                         "Martes 11 de agosto, 3:00 p.m.")
+
     def test_el_prompt_incluye_las_franjas_calculadas(self):
         bot = FakeBot()
         bot.llm_config = json.dumps({"context_key": "gloma", **self.CFG})
