@@ -10,8 +10,8 @@
 # el botón de la landing.
 #
 # Chrome: en el Mac usa el de /Applications; en otro lado, el de $CHROME o el
-# primero que encuentre en el PATH. En la nube no viene instalado (ver
-# docs/landing-valor/PLAN.md, fase 3, para bajarlo).
+# primero que encuentre en el PATH. En la nube no viene instalado
+# (se baja con: npx -y @puppeteer/browsers install chrome@stable).
 #
 # Los HTML deben declarar <meta charset="utf-8">: sin eso Chrome rompe las
 # tildes. El tamaño de página lo pone el @page del HTML (A4), no este script.
