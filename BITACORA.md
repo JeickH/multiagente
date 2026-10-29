@@ -9737,3 +9737,32 @@ Pedido del CEO: conectar un WhatsApp a la cuenta de Gloma (bot Lía) por Twilio.
 - Rotar el auth token y la API key de la cuenta principal tras la suspensión.
 - Plan de **Tech Provider de Meta**: es la vía de Twilio para que cada cliente nuevo conecte su
   WhatsApp. Sin eso, cada cliente nuevo choca con la misma vista ISV.
+
+---
+
+## Contacto por el chat de la página mientras Twilio aprueba — 28 de octubre de 2026
+
+Pedido del CEO: mientras se activa la cuenta de Twilio de Gloma, todo botón de contacto de la
+landing y de la demo abre el chat de la misma página, donde Lía agenda; ningún botón lleva a
+WhatsApp salvo el footer de la landing (número de siempre); Lía no agenda el 29, 30 ni 31 de
+octubre. Commit `632c33c`, task-def **rev 116** (imagen `:contacto-632c33c`), Amplify job 202.
+
+- **Interruptor único**: `frontend/lib/contactoGloma.ts` → `WHATSAPP_DEL_AGENTE_ACTIVO`
+  (hoy `false`). Apagado: «Agendar una llamada» abre el chat con «Quiero agendar una llamada»
+  (en la demo, con el texto de la demo) y «Hablar con un asesor» abre el chat con el saludo;
+  el footer va al número de siempre. **Cuando Twilio apruebe: ponerlo en `true` y hacer push**;
+  todos los botones y el footer pasan al WhatsApp del agente. Un test (`contactoGloma.test.ts`)
+  fija que hoy está apagado: hay que actualizarlo en el mismo cambio.
+- Landing (4 botones «Agendar»), demo (`CtaAgendar`, `MenuContacto`) y 404 ya no usan Cal.com
+  ni wa.me; la demo monta el chat sin botón flotante. El código de Cal.com queda sin usar.
+- **Agenda de Lía**: `llm_config.agenda.no_antes_de` (nuevo) = `2026-11-02` en el bot 16 de
+  RDS. Con el margen de 3 días hábiles, hoy ofrece desde el martes 3 de noviembre.
+- **Pruebas en producción** (Chrome sin interfaz): landing con solo los 2 enlaces del footer a
+  wa.me; «Agendar una llamada» → Lía ofrece martes 3 de noviembre; «Hablar con un asesor» → saludo;
+  404 sin wa.me y con chat. Demo probada en local con el simulador (empresa «tope», para no crear
+  una demo real ni mandar el correo de la promoción): sin wa.me y «Agendar» abre a Lía con franjas.
+  Logs: 0 errores, tick 200.
+- Los textos de Lía en `landing.py` y `gloma.md` aún nombran el WhatsApp 315 como contacto
+  humano (texto, no botón); se cambian cuando el agente quede activo.
+- Ojo: el lunes 2 de noviembre de 2026 es festivo en Colombia (Todos los Santos). La agenda
+  de Lía no salta festivos; hoy no importa porque el margen ya empieza el martes 3.
