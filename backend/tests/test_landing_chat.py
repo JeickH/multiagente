@@ -297,7 +297,7 @@ class LandingSessionTests(unittest.TestCase):
     def test_token_manipulado_no_rompe_y_arranca_sesion_nueva(self):
         for bad in ("gAAAAABtampered", "", None, "no-es-fernet"):
             sess = landing._load_session(bad)
-            self.assertEqual(sess, {"history": [], "turns": 0})
+            self.assertEqual(sess, {"history": [], "turns": 0, "contacto": None})
 
 
 class LandingChatTests(unittest.TestCase):
@@ -328,7 +328,7 @@ class LandingChatTests(unittest.TestCase):
         self.assertTrue(out.handoff)
         self.assertTrue(out.finished)
         self.assertIsNone(out.session)
-        self.assertIn("315 076 4000", out.actions[-1].text)
+        self.assertIn("323 908 7528", out.actions[-1].text)
 
     def test_tope_de_turnos_por_sesion_corta_la_conversacion(self):
         token = landing._dump_session([{"role": "user", "content": "x"}],

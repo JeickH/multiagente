@@ -26,6 +26,15 @@ import {
   mismoDia,
 } from '../lib/fechas';
 import { formatearWhatsapp } from '../lib/formatoWhatsapp';
+
+/**
+ * Conversaciones del chat de la página de Gloma (`backend/app/routers/landing.py`):
+ * el contacto es `web-<hex>`, no un teléfono. Se ven en la bandeja para que todo
+ * lo que dijo el agente quede en la app, pero no se pueden responder: el
+ * visitante no tiene WhatsApp (el backend también lo bloquea).
+ */
+const esChatWeb = (contacto?: string | null) => (contacto || '').startsWith('web-');
+const lineaContacto = (contacto: string) => (esChatWeb(contacto) ? 'Chat de la página' : `+${contacto}`);
 import {
   AVISO_TEXTO,
   contadorTexto,
@@ -903,7 +912,7 @@ export default function Mensajes() {
                           número ya está arriba y repetirlo sobra. */}
                       {c.contact_name && (
                         <div className="text-[11px] text-gray-400 truncate">
-                          +{c.contact_wa_id}
+                          {lineaContacto(c.contact_wa_id)}
                         </div>
                       )}
                       {/* El adelanto va con el mismo formato que la burbuja: si
@@ -996,7 +1005,7 @@ export default function Mensajes() {
                   {/* Sin nombre, el número ya está arriba: mostrarlo dos veces
                       seguidas se veía como un error de la pantalla. */}
                   {detail.contact_name && (
-                    <div className="text-xs text-gray-500">+{detail.contact_wa_id}</div>
+                    <div className="text-xs text-gray-500">{lineaContacto(detail.contact_wa_id)}</div>
                   )}
                 </div>
                 <div className="ml-auto flex items-center gap-2 text-xs">
@@ -1154,7 +1163,15 @@ export default function Mensajes() {
                     {errorMsg}
                   </div>
                 )}
-                {canReply && pausado ? (
+                {canReply && esChatWeb(detail.contact_wa_id) ? (
+                  <div
+                    role="status"
+                    className="text-center text-sm text-gray-600 bg-gray-50 border border-gray-200 rounded-lg px-3 py-3"
+                  >
+                    <strong className="font-semibold">Conversación del chat de la página.</strong>{' '}
+                    El visitante no escribió por WhatsApp, así que no se le puede responder desde aquí.
+                  </div>
+                ) : canReply && pausado ? (
                   <div
                     role="status"
                     className="text-center text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-3"
@@ -1300,7 +1317,7 @@ export default function Mensajes() {
                   type="text"
                   value={newPhone}
                   onChange={(e) => setNewPhone(e.target.value)}
-                  placeholder="573150764000"
+                  placeholder="573001234567"
                   className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-gloma-rose"
                 />
               </div>

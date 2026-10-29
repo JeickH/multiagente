@@ -56,7 +56,26 @@ def is_sandbox(account) -> bool:
     return _adapter(account).is_sandbox(account)
 
 
+#: Contactos del chat de la página (`routers/landing.py`): se guardan en la
+#: bandeja de Gloma para que todo lo que dice el agente quede en la app, pero
+#: no son un WhatsApp. Ningún envío sale hacia ellos.
+PREFIJO_CHAT_WEB = "web-"
+
+
+def es_chat_web(wa_id: Optional[str]) -> bool:
+    return (wa_id or "").startswith(PREFIJO_CHAT_WEB)
+
+
+def _no_es_chat_web(account, to_wa_id: str) -> None:
+    if es_chat_web(to_wa_id):
+        raise MessagingError(
+            "conversación del chat de la página: no tiene WhatsApp",
+            provider=provider_of(account),
+        )
+
+
 def send_text(account, to_wa_id: str, body: str) -> Tuple[str, Dict[str, Any]]:
+    _no_es_chat_web(account, to_wa_id)
     return _adapter(account).send_text(account, to_wa_id, body)
 
 
@@ -69,6 +88,7 @@ def send_media(
 ) -> Tuple[str, Dict[str, Any]]:
     """Envía un archivo por URL pública. Ambos proveedores lo hacen por link,
     sin upload previo (Twilio descarga la URL; Meta acepta `link`)."""
+    _no_es_chat_web(account, to_wa_id)
     return _adapter(account).send_media(
         account, to_wa_id, media_url, caption=caption, media_type=media_type
     )
@@ -97,6 +117,7 @@ def send_template(
     language_code: str = "es_CO",
     variables: Optional[dict] = None,
 ) -> Tuple[str, Dict[str, Any]]:
+    _no_es_chat_web(account, to_wa_id)
     return _adapter(account).send_template(
         account, to_wa_id, template_name, language_code=language_code, variables=variables
     )

@@ -189,8 +189,9 @@ Reglas del agendamiento (las más importantes, aprendidas de pruebas reales):
 
 Antes de escalar, **si es natural, pide el dato de contacto**: "¿a qué número o correo
 te contactamos?" — y confirma que el equipo escribirá pronto. Si la persona no quiere
-dejarlo, no insistas: dile que puede escribir directo al WhatsApp *+57 315 076 4000* o
-a *contacto@glomacx.com*.
+dejarlo, no insistas: dile que el equipo le responde en el WhatsApp de Gloma
+*+57 323 908 7528* (si ya está escribiendo por WhatsApp, en este mismo chat) o en
+*contacto@glomacx.com*.
 
 ---
 
@@ -205,7 +206,7 @@ a *contacto@glomacx.com*.
 - **Canal**: el agente trabaja **solo en WhatsApp**: conversa por escrito y envía fotos
   y videos. **No atiende llamadas.**
 - **Sede**: Cali, Valle del Cauca, Colombia — Calle 36, Vía Jamundí #128-321.
-- **Contacto**: WhatsApp *+57 315 076 4000* · *contacto@glomacx.com* ·
+- **Contacto**: WhatsApp *+57 323 908 7528* · *contacto@glomacx.com* ·
   sitio *glomacx.com* · plataforma *app.glomacx.com*.
 - **Cifras**: +150.000 mensajes gestionados · +10.000 horas de asesores IA operando ·
   4 meses de retorno de inversión promedio en los clientes actuales.

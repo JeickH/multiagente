@@ -16,6 +16,7 @@ import json
 import logging
 import os
 import re
+import secrets
 import time
 from collections import deque
 from datetime import datetime, timedelta
@@ -26,9 +27,10 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
 from sqlalchemy.orm import Session
 
-from .. import models
+from .. import crud, models
 from ..dependencies import get_db
 from ..services import llm_engine
+from ..services.messaging import PREFIJO_CHAT_WEB
 from ..services.crypto import CryptoError, decrypt_secret, encrypt_secret
 
 logger = logging.getLogger(__name__)
@@ -174,21 +176,22 @@ _SESSION_TTL_SECONDS = 3 * 3600
 _RATE_PER_IP_HOUR = 40       # turnos por IP en la última hora
 _RATE_GLOBAL_HOUR = 400      # techo global (protege el gasto de Bedrock)
 
-# Texto que ve el visitante cuando el bot decide pasar a una persona: en la
-# landing todavía no hay número de WhatsApp conectado, así que el "handoff" se
-# resuelve invitando al canal humano real de Gloma (regla #3 del sprint).
+# Texto que ve el visitante cuando el bot decide pasar a una persona: se le
+# invita al WhatsApp de Gloma, que atiende el mismo agente y cuyas
+# conversaciones quedan en la bandeja de la app, donde el equipo las toma
+# (2026-10-29; antes era el WhatsApp personal 315, que no quedaba en la app).
 _HANDOFF_TEXT = (
     "Te dejo con nuestro equipo 🤍 Escríbenos por WhatsApp al "
-    "*+57 315 076 4000* o déjanos tus datos en el formulario de esta página y "
+    "*+57 323 908 7528* o déjanos tus datos en el formulario de esta página y "
     "un especialista te contacta hoy mismo ✨"
 )
 _LIMIT_TEXT = (
     "¡Qué buena conversación! 🤍 Para seguir con calma, sigamos por WhatsApp al "
-    "*+57 315 076 4000* o déjanos tus datos en el formulario de esta página."
+    "*+57 323 908 7528* o déjanos tus datos en el formulario de esta página."
 )
 _BUSY_TEXT = (
     "Estamos atendiendo muchas conversaciones en este momento 🙏 Escríbenos "
-    "por WhatsApp al *+57 315 076 4000* y te atendemos de una vez."
+    "por WhatsApp al *+57 323 908 7528* y te atendemos de una vez."
 )
 
 # Rate-limit en memoria del proceso. El backend corre como una sola task ECS;
@@ -266,25 +269,88 @@ def _load_session(token: Optional[str]) -> Dict[str, Any]:
     El historial NUNCA lo controla el visitante: viaja cifrado con Fernet
     (AEAD), así que no puede inyectar turnos falsos ni inflarlo.
     """
+    nueva = {"history": [], "turns": 0, "contacto": None}
     if not token:
-        return {"history": [], "turns": 0}
+        return nueva
     try:
         data = json.loads(decrypt_secret(token, ttl_seconds=_SESSION_TTL_SECONDS))
     except (CryptoError, ValueError, TypeError):
-        return {"history": [], "turns": 0}
+        return nueva
     if not isinstance(data, dict):
-        return {"history": [], "turns": 0}
+        return nueva
     history = data.get("h")
+    contacto = data.get("c")
     return {
         "history": history if isinstance(history, list) else [],
         "turns": int(data.get("n") or 0),
+        # Sesiones de antes de guardar el chat (sin "c"): reciben uno nuevo.
+        "contacto": contacto if _CONTACTO_WEB_RE.fullmatch(str(contacto or "")) else None,
     }
 
 
-def _dump_session(history: List[Dict[str, str]], turns: int) -> str:
-    return encrypt_secret(
-        json.dumps({"h": history, "n": turns}, ensure_ascii=False)
-    )
+def _dump_session(history: List[Dict[str, str]], turns: int, contacto: Optional[str] = None) -> str:
+    data: Dict[str, Any] = {"h": history, "n": turns}
+    if contacto:
+        data["c"] = contacto
+    return encrypt_secret(json.dumps(data, ensure_ascii=False))
+
+
+# ---------------------------------------------------------------------------
+# El chat de la página queda en la bandeja de Gloma (CEO, 2026-10-29): todo lo
+# que dice el agente tiene que verse en la app, por la web y por WhatsApp.
+# Cada visitante es una conversación con un contacto `web-<hex>` que no es un
+# teléfono: viaja dentro del token cifrado, así que el visitante no puede
+# elegirlo ni escribir en la conversación de otro. `messaging` se niega a
+# mandarle un WhatsApp a un `web-…`.
+# ---------------------------------------------------------------------------
+
+_CONTACTO_WEB_RE = re.compile(re.escape(PREFIJO_CHAT_WEB) + r"[0-9a-f]{12}")
+
+
+def _nuevo_contacto_web() -> str:
+    return f"{PREFIJO_CHAT_WEB}{secrets.token_hex(6)}"
+
+
+def _guardar_turno_web(
+    db: Session,
+    bot: models.Bot,
+    contacto: str,
+    entrada: Optional[str],
+    salidas: List["ChatAction"],
+) -> None:
+    """Guarda el turno en la conversación del visitante. Nunca levanta: si la
+    base falla, el visitante igual recibe su respuesta."""
+    if db is None:
+        return
+    try:
+        # El team del dueño del bot (`Bot.team_id` es de compatibilidad y no se usa).
+        team_id = (
+            db.query(models.Team.id)
+            .filter(models.Team.owner_user_id == bot.user_id)
+            .order_by(models.Team.id)
+            .limit(1)
+            .scalar()
+        )
+        if team_id is None:
+            logger.error("landing_chat: el bot %s no tiene team; el chat no se guarda", bot.id)
+            return
+        conv = crud.get_or_create_conversation(
+            db, team_id=team_id, contact_wa_id=contacto,
+            contact_name=f"Chat web · {contacto[-4:]}",
+        )
+        if entrada:
+            crud.add_message(db, conv, direction="inbound", content=entrada, status="received")
+        for salida in salidas:
+            contenido = "\n".join(p for p in (salida.text, salida.url) if p)
+            if contenido:
+                tipo = "text" if salida.type == "say" else (salida.media_type or "image")
+                crud.add_message(db, conv, direction="outbound", content=contenido, message_type=tipo)
+    except Exception:
+        logger.exception("landing_chat: no se pudo guardar el turno del chat web")
+        try:
+            db.rollback()
+        except Exception:
+            pass
 
 
 def _gloma_bot(db: Session) -> Optional[models.Bot]:
@@ -319,8 +385,9 @@ def landing_chat(payload: ChatIn, request: Request, db: Session = Depends(get_db
 
     Mismo motor (`services/llm_engine`) que usan el simulador de la app y los
     webhooks de WhatsApp: cambiar el contexto a priori actualiza los 3 canales.
-    El visitante es anónimo — no se crea usuario, contacto ni conversación; el
-    estado va cifrado en `session` y solo queda telemetría del turno.
+    El visitante es anónimo: no se crea usuario. Desde 2026-10-29 cada chat
+    queda como conversación en la bandeja de Gloma (contacto `web-<hex>`, ver
+    `_guardar_turno_web`); el historial que lee el bot sigue cifrado en `session`.
     """
     bot = _gloma_bot(db)
     if bot is None:
@@ -334,8 +401,11 @@ def landing_chat(payload: ChatIn, request: Request, db: Session = Depends(get_db
         return _only_text(_BUSY_TEXT)
 
     sess = _load_session(payload.session)
+    contacto = sess["contacto"] or _nuevo_contacto_web()
     if sess["turns"] >= _MAX_TURNS_PER_SESSION:
-        return _only_text(_LIMIT_TEXT)
+        salida = _only_text(_LIMIT_TEXT)
+        _guardar_turno_web(db, bot, contacto, payload.message, salida.actions)
+        return salida
 
     result = llm_engine.advance(
         bot, {"history": sess["history"]} if sess["history"] else None,
@@ -372,10 +442,12 @@ def landing_chat(payload: ChatIn, request: Request, db: Session = Depends(get_db
     history = next_state.get("history") if isinstance(next_state, dict) else None
     session_token = (
         None if finished or not history
-        else _dump_session(history, sess["turns"] + 1)
+        else _dump_session(history, sess["turns"] + 1, contacto)
     )
+    actions = actions or [ChatAction(type="say", text=_HANDOFF_TEXT)]
+    _guardar_turno_web(db, bot, contacto, payload.message, actions)
     return ChatOut(
-        actions=actions or [ChatAction(type="say", text=_HANDOFF_TEXT)],
+        actions=actions,
         session=session_token,
         finished=finished,
         handoff=handoff,
