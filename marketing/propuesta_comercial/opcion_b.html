@@ -1,7 +1,8 @@
 <!doctype html>
 <!--
   Propuesta comercial de Gloma · Opción B El viaje.
-  Estructura de 10 páginas de docs/landing-valor/AJUSTES_CEO.md (igual en A, B y C; cambia el diseño).
+  Estructura de 11 páginas (las 10 de docs/landing-valor/AJUSTES_CEO.md + plan de referidos), igual en A, B y C;
+  cambia el diseño. Precios y planes del 2026-10-28: prueba gratis de 14 días y plan mensual con permanencia de 6 meses.
   EDICIÓN: por defecto es la general (agencias de viajes y hoteles). Para la edición hotel, cambia
   data-edicion="general" por data-edicion="hotel" en <html>, o abre el archivo con ?edicion=hotel.
   La edición hotel cambia la portada y las páginas 2 y 5. NO se publica.
@@ -120,6 +121,12 @@
   table.inc td.c { text-align: center; color: var(--forest); font-weight: 600; }
   table.inc td.c.rec { background: rgba(245,194,75,0.16); }
   table.inc tr.g td { padding-top: 2.8mm; font-family: Syne, system-ui, sans-serif; font-weight: 700; font-size: 9pt; color: var(--forest); border-bottom: 1.3px solid rgba(0,77,64,0.35); }
+  table.inc th { width: 34mm; }
+  table.inc th b { text-transform: none; white-space: nowrap; font-size: 9pt; }
+  table.inc th:first-child { width: auto; }
+  table.inc td.c.t { font-weight: 400; font-size: 7pt; line-height: 1.25; color: var(--ink-muted); padding-left: 1mm; padding-right: 1mm; }
+  table.inc td.c.no { color: var(--ink-dim); font-weight: 400; }
+  table.inc td.c small { display: block; font-weight: 400; font-size: 6.4pt; color: var(--ink-dim); }
 
   /* 5 Funciona con lo que ya usas */
   .conex { margin-top: 9mm; display: grid; gap: 6mm; }
@@ -167,6 +174,40 @@
   .ejc b { display: block; font-family: Syne, system-ui, sans-serif; font-weight: 700; font-size: 9pt; color: var(--ink); }
   .chips { display: flex; gap: 2.5mm; margin-top: 4mm; flex-wrap: wrap; }
   .chip { font-size: 7.6pt; font-weight: 600; color: var(--ink); background: var(--mint); border-radius: 999px; padding: 1.2mm 3.6mm; }
+
+  .lista { display: grid; grid-template-columns: 1fr 1fr; gap: 1.4mm 5mm; margin-top: 2.5mm; }
+  .lista div { font-size: 8pt; line-height: 1.4; color: var(--ink); padding-left: 4.5mm; position: relative; }
+  .lista div::before { content: "✓"; position: absolute; left: 0; color: var(--forest); font-weight: 600; }
+  .paq .q { font-size: 6.5pt; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-dim); }
+  .paq.cero { border: 1.6px solid var(--golden); background: #FFF8E6; }
+  .paq.cero .p { font-size: 16pt; color: var(--ink); }
+
+  /* 9 Referidos */
+  .refs { margin-top: 8mm; display: grid; grid-template-columns: 1fr 1fr; gap: 6mm; }
+  .refs .pase { padding: 7mm 8mm; }
+  .refs .num { font-weight: 800; font-size: 40pt; line-height: 1; color: var(--forest); }
+  .refs .num small { font-size: 16pt; }
+  .refs p { font-size: 9.6pt; line-height: 1.5; color: var(--ink-muted); margin-top: 3mm; }
+  .regla { margin-top: 5mm; font-size: 9.8pt; line-height: 1.5; color: var(--text); }
+  .caso { margin-top: 6mm; padding: 6mm 8mm 6.5mm; }
+  .caso h3 { font-size: 12pt; }
+  .suma { display: grid; grid-template-columns: 1fr auto 1fr auto 1fr; gap: 3mm; align-items: center; margin-top: 4mm; }
+  .suma .s { background: #fff; border-radius: 3.5mm; padding: 3mm 4mm; }
+  .suma b { display: block; font-family: Syne, system-ui, sans-serif; font-weight: 800; font-size: 13pt; color: var(--ink); }
+  .suma span { font-size: 7.4pt; color: var(--ink-dim); }
+  .suma .s.tot { background: var(--forest); }
+  .suma .s.tot b { color: #fff; }
+  .suma .s.tot span { color: rgba(255,255,255,0.72); }
+  .suma .op { font-family: Syne, system-ui, sans-serif; font-weight: 800; font-size: 14pt; color: var(--forest); }
+  .meses { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 3mm; margin-top: 4mm; }
+  .mes { border: 1.2px dashed rgba(0,77,64,0.4); border-radius: 3mm; padding: 2.6mm 3.5mm; position: relative; overflow: hidden; font-size: 7.4pt; color: var(--ink-dim); }
+  .mes i { position: absolute; left: 0; top: 0; bottom: 0; background: rgba(77,182,172,0.40); }
+  .mes b, .mes span { position: relative; }
+  .mes b { display: block; font-family: Syne, system-ui, sans-serif; font-weight: 700; font-size: 10pt; color: var(--forest); }
+  .caso .total { display: flex; justify-content: space-between; align-items: baseline; gap: 6mm; margin-top: 5mm; border-top: 1.3px dashed rgba(0,77,64,0.35); padding-top: 4mm; }
+  .caso .total .num { font-weight: 800; font-size: 22pt; color: var(--forest); white-space: nowrap; }
+  .caso .total p { font-size: 9.5pt; color: var(--ink-muted); }
+  .caso .usdl { font-size: 7.5pt; color: var(--ink-dim); text-align: right; margin-top: 1mm; }
 
   /* 8 Haz la cuenta */
   .llegada { margin-top: 8mm; display: grid; grid-template-columns: 1fr 1fr; gap: 5mm; }
@@ -263,7 +304,7 @@
     <div class="pase tag"><span class="ojal"></span><span class="lbl">Equipaje 03</span><h3>Los interesados que abandonaron</h3><p><b>Con Gloma:</b> el agente los recupera. Les vuelve a escribir y, si no contestan, quedan en la lista de tu equipo para llamarlos.</p></div>
     <div class="pase tag"><span class="ojal"></span><span class="lbl">Equipaje 04</span><h3>No tengo cómo ver cuántos huéspedes se me van</h3><p><b>Con Gloma:</b> ves cuántas conversaciones terminan en reserva y en qué paso se va la gente.</p></div>
   </div>
-  <div class="foot"><img src="../../frontend/public/gloma/logo_blancotrans.png" alt="Gloma"><span>02 / 10</span></div>
+  <div class="foot"><img src="../../frontend/public/gloma/logo_blancotrans.png" alt="Gloma"><span>02 / 11</span></div>
 </section>
 
 <!-- 3 · Ruta · Itinerario de una noche (7 p. m. → 8 a. m.) -->
@@ -286,7 +327,7 @@
     </div>
   </div>
   <p class="small" style="margin-top:6mm">Ejemplo ilustrativo. Gloma contesta tu WhatsApp por escrito; las llamadas siguen llegando a tu equipo.</p>
-  <div class="foot"><img src="../../frontend/public/gloma/logo_blancotrans.png" alt="Gloma"><span>03 / 10</span></div>
+  <div class="foot"><img src="../../frontend/public/gloma/logo_blancotrans.png" alt="Gloma"><span>03 / 11</span></div>
 </section>
 
 <!-- 4 · Ruta · Lo que cambia en tu negocio + todo lo que incluye -->
@@ -300,30 +341,33 @@
     <div><span>04</span>Ves cuánta venta se te queda en el aire, y en qué paso</div>
   </div>
   <div class="pase tabla">
-    <div class="tt"><h3>Todos los paquetes incluyen</h3><p>Los tres paquetes traen todo. Lo único que cambia es cuántas conversaciones traes.</p></div>
+    <div class="tt"><h3>Todo lo que incluye</h3><p>La prueba gratis dura 14 días en uno de tus números. El plan mensual trae todo.</p></div>
     <table class="inc">
-      <thead><tr><th></th><th><b>600</b>conversaciones</th><th class="rec"><b>2.000</b>conversaciones</th><th><b>6.000</b>conversaciones</th></tr></thead>
+      <thead><tr><th></th><th><b>Prueba gratis</b>14 días</th><th class="rec"><b>Plan mensual</b>1.000 conversaciones al mes</th></tr></thead>
       <tbody>
-        <tr class="g"><td colspan="4">Contesta cuando tu equipo no puede</td></tr>
-        <tr><td>Contesta tu WhatsApp a cualquier hora, también de noche</td><td class="c">✓</td><td class="c rec">✓</td><td class="c">✓</td></tr>
-        <tr><td>Da el precio con tus tarifas y tus planes, sin inventar precios ni cupos</td><td class="c">✓</td><td class="c rec">✓</td><td class="c">✓</td></tr>
-        <tr class="g"><td colspan="4">Lleva al cliente hasta la reserva</td></tr>
-        <tr><td>Recupera a los clientes que dejaron de contestar</td><td class="c">✓</td><td class="c rec">✓</td><td class="c">✓</td></tr>
-        <tr><td>Tu asesor recibe al cliente listo para reservar, con todo el historial</td><td class="c">✓</td><td class="c rec">✓</td><td class="c">✓</td></tr>
-        <tr><td>El cliente recibe tus formas de pago y la reserva queda en tu Google Sheets</td><td class="c">✓</td><td class="c rec">✓</td><td class="c">✓</td></tr>
-        <tr><td>Agenda la llamada con tu asesor cuando el cliente la pide</td><td class="c">✓</td><td class="c rec">✓</td><td class="c">✓</td></tr>
-        <tr><td>Les llevas tus promociones por WhatsApp a los contactos que ya tienes en tu Excel</td><td class="c">✓</td><td class="c rec">✓</td><td class="c">✓</td></tr>
-        <tr class="g"><td colspan="4">Ves lo que pasa en tu WhatsApp</td></tr>
-        <tr><td>Ves cuántas conversaciones terminan en reserva y en qué paso se va la gente</td><td class="c">✓</td><td class="c rec">✓</td><td class="c">✓</td></tr>
-        <tr><td>Tu equipo contesta desde una sola bandeja, con el historial de cada cliente</td><td class="c">✓</td><td class="c rec">✓</td><td class="c">✓</td></tr>
-        <tr class="g"><td colspan="4">Lo dejamos funcionando contigo</td></tr>
-        <tr><td>Lo instalamos y lo pruebas en el simulador antes de que le conteste a un cliente</td><td class="c">✓</td><td class="c rec">✓</td><td class="c">✓</td></tr>
-        <tr><td>Lo ajustamos contigo los primeros 10 días, hasta que quede como lo quieres</td><td class="c">✓</td><td class="c rec">✓</td><td class="c">✓</td></tr>
-        <tr><td>Soporte 24/7 y mantenimiento incluidos</td><td class="c">✓</td><td class="c rec">✓</td><td class="c">✓</td></tr>
+        <tr class="g"><td colspan="3">Contesta cuando tu equipo no puede</td></tr>
+        <tr><td>Contesta tu WhatsApp a cualquier hora, también de noche</td><td class="c t">En 1 número</td><td class="c rec">✓</td></tr>
+        <tr><td>Da el precio con tus tarifas y tus planes, sin inventar precios ni cupos</td><td class="c t">Hasta 5 productos o servicios</td><td class="c rec">✓</td></tr>
+        <tr class="g"><td colspan="3">Lleva al cliente hasta la reserva</td></tr>
+        <tr><td>Recupera a los clientes que dejaron de contestar</td><td class="c">✓</td><td class="c rec">✓</td></tr>
+        <tr><td>Tu asesor recibe al cliente listo para reservar, con todo el historial</td><td class="c">✓</td><td class="c rec">✓</td></tr>
+        <tr><td>El cliente recibe tus formas de pago y la reserva queda en tu Google Sheets</td><td class="c no">—</td><td class="c rec">✓</td></tr>
+        <tr><td>Agenda la llamada con tu asesor cuando el cliente la pide</td><td class="c no">—</td><td class="c rec">✓</td></tr>
+        <tr><td>Les llevas tus promociones por WhatsApp a tus contactos</td><td class="c no">—</td><td class="c rec">✓<small>por mensaje enviado</small></td></tr>
+        <tr class="g"><td colspan="3">Ves dónde se te va la plata</td></tr>
+        <tr><td>Cuánta venta se te queda en el aire, en pesos, cada semana</td><td class="c">✓</td><td class="c rec">✓</td></tr>
+        <tr><td>Tiempos de respuesta del agente y de tus asesores</td><td class="c">✓</td><td class="c rec">✓</td></tr>
+        <tr><td>A qué horas te escriben y cuántos mensajes llegan fuera de horario</td><td class="c">✓</td><td class="c rec">✓</td></tr>
+        <tr><td>Cuáles interesados están listos para comprar</td><td class="c">✓</td><td class="c rec">✓</td></tr>
+        <tr><td>Tu equipo contesta desde una sola bandeja, con el historial de cada cliente</td><td class="c">✓</td><td class="c rec">✓</td></tr>
+        <tr class="g"><td colspan="3">Lo dejamos funcionando contigo</td></tr>
+        <tr><td>Instalación hecha por nuestro equipo, sin costo</td><td class="c">✓</td><td class="c rec">✓</td></tr>
+        <tr><td>Ajustes durante los primeros 10 días</td><td class="c no">—</td><td class="c rec">✓</td></tr>
+        <tr><td>Soporte 24/7 y mantenimiento incluidos</td><td class="c">✓</td><td class="c rec">✓</td></tr>
       </tbody>
     </table>
   </div>
-  <div class="foot"><img src="../../frontend/public/gloma/logo_blancotrans.png" alt="Gloma"><span>Las campañas se pagan por mensaje enviado (página 7) · 04 / 10</span></div>
+  <div class="foot"><img src="../../frontend/public/gloma/logo_blancotrans.png" alt="Gloma"><span>Las campañas se pagan por mensaje enviado (página 7) · 04 / 11</span></div>
 </section>
 
 <!-- 5 · Ruta · Funciona con lo que ya usas (cambia en la edición hotel) -->
@@ -342,7 +386,7 @@
     <div class="pase perf"><div><span class="lbl">Desde el primer día</span><h3>Mientras tanto, contesta con tu tarifario</h3></div><div><p>Cuando el huésped quiere confirmar el cupo, el agente se lo pasa a tu recepción con toda la conversación.</p></div></div>
     <div class="pase perf"><div><span class="lbl">Listo hoy</span><h3>Excel y Google Sheets</h3></div><div><p>Tus contactos entran desde Excel. Los datos de cada reserva llegan a tu Google Sheets.</p></div></div>
   </div>
-  <div class="foot"><img src="../../frontend/public/gloma/logo_blancotrans.png" alt="Gloma"><span>05 / 10</span></div>
+  <div class="foot"><img src="../../frontend/public/gloma/logo_blancotrans.png" alt="Gloma"><span>05 / 11</span></div>
 </section>
 
 <!-- 6 · Ruta · No necesitas saber de tecnología -->
@@ -354,45 +398,49 @@
   <div class="escalas">
     <div class="esc"><span class="n">1</span><div class="pase"><h3>Nos cuentas cómo vendes</h3><div class="tn"><p><b>Tú</b>Una reunión para contarnos cómo vende tu negocio y nos compartes tus tarifas, planes y políticas.</p><p><b>Nosotros</b>Entrenamos al agente con tus mensajes y guiones, con las reglas y el tono de tu marca.</p></div></div></div>
     <div class="esc"><span class="n">2</span><div class="pase"><h3>Conectamos tu WhatsApp</h3><div class="tn"><p><b>Tú</b>Nos das acceso a tu WhatsApp de empresa; te guiamos paso a paso.</p><p><b>Nosotros</b>Activamos tu cuenta, conectamos tu número y cargamos tus contactos desde tu Excel.</p></div></div></div>
-    <div class="esc"><span class="n">3</span><div class="pase"><h3>Lo pruebas y arranca</h3><div class="tn"><p><b>Tú</b>Lo pruebas en el simulador y nos das el visto bueno.</p><p><b>Nosotros</b>Lo encendemos y lo ajustamos contigo los primeros 10 días.</p></div></div></div>
-    <div class="esc"><span class="n">4</span><div class="pase"><h3>Sigue mejorando</h3><div class="tn"><p><b>Tú</b>Nos escribes por WhatsApp cuando algo cambie.</p><p><b>Nosotros</b>Soporte 24/7, mantenimiento y rondas de mejora con lo que muestra tu tablero.</p></div></div></div>
+    <div class="esc"><span class="n">3</span><div class="pase"><h3>Lo pruebas 14 días gratis</h3><div class="tn"><p><b>Tú</b>Lo pruebas en el simulador, nos das el visto bueno y empieza a contestarles a tus clientes en uno de tus números.</p><p><b>Nosotros</b>Lo encendemos y te mostramos cuánta venta se te queda en el aire cada semana, en pesos.</p></div></div></div>
+    <div class="esc"><span class="n">4</span><div class="pase"><h3>Sigues con el plan mensual</h3><div class="tn"><p><b>Tú</b>Si te sirve, sigues. Nos escribes por WhatsApp cuando algo cambie.</p><p><b>Nosotros</b>Lo ajustamos contigo los primeros 10 días. Soporte 24/7, mantenimiento y rondas de mejora con lo que muestra tu tablero.</p></div></div></div>
   </div>
-  <div class="foot"><img src="../../frontend/public/gloma/logo_blancotrans.png" alt="Gloma"><span>06 / 10</span></div>
+  <div class="foot"><img src="../../frontend/public/gloma/logo_blancotrans.png" alt="Gloma"><span>06 / 11</span></div>
 </section>
 
 <!-- 7 · Ruta · Tu inversión -->
 <section class="page">
   <div class="ruta"><span class="st ok"><i></i>Embarque</span><span class="tr ok"></span><span class="st on"><i></i>Ruta</span><span class="tr"></span><span class="st"><i></i>Destino</span></div>
   <p class="escala">Ruta · Tu inversión</p>
-  <h2>Tres tiquetes, en pesos y en dólares.</h2>
-  <div class="chips"><span class="chip">✓ IVA incluido</span><span class="chip">✓ Tarifa de Meta incluida</span><span class="chip">✓ Sin mensualidad</span></div>
+  <h2 style="font-size:21pt">Lo pruebas 14 días gratis. Si te sirve, sigues por mes.</h2>
+  <div class="chips"><span class="chip">✓ IVA incluido</span><span class="chip">✓ Tarifa de Meta incluida</span><span class="chip">✓ Instalación en 0 COP</span></div>
   <div class="tickets">
     <div class="pase perf ticket">
-      <div class="body"><span class="lbl">01 · Inversión única, al empezar</span><h3>Instalación</h3><p>Paga que configuremos el agente, lo entrenemos con tus mensajes, conectemos tu número, lo probemos contigo y lo ajustemos los primeros 10 días.</p></div>
-      <div class="side"><div class="num">2.400.000<small> COP</small></div><div class="usd">750 USD · una sola vez</div></div>
+      <div class="body"><span class="lbl">01 · Para empezar</span><h3>Prueba gratis de 14 días</h3><p>Tu agente contesta con tu tarifario en uno de tus números, con hasta 5 productos o servicios. Con lo que pase en esos 14 días te mostramos:</p>
+        <div class="lista">
+          <div>Cuánta venta se te queda en el aire, en pesos por semana</div>
+          <div>Los tiempos de respuesta del agente y de tus asesores</div>
+          <div>A qué horas te escriben y cuántos mensajes llegan fuera de horario</div>
+          <div>Cuáles interesados están listos para comprar y cuáles no</div>
+        </div>
+      </div>
+      <div class="side"><div class="num">0<small> COP</small></div><div class="usd">0 USD · 14 días</div></div>
     </div>
     <div class="pase ticket" style="grid-template-columns:1fr">
-      <div class="body"><span class="lbl">02 · Funciona con paquetes de conversaciones que recargas</span><h3>Agente de servicio al cliente y ventas</h3><p>Una conversación es un chat con un cliente dentro de una ventana de 24 horas. Compras un paquete y lo recargas cuando se acaba: no es una mensualidad. Lo que no usas pasa al mes siguiente.</p>
+      <div class="body"><span class="lbl">02 · Plan mensual · permanencia de 6 meses</span><h3>Agente de servicio al cliente y ventas</h3><p>Incluye 1.000 conversaciones al mes. Una conversación es un chat con un cliente dentro de una ventana de 24 horas.</p>
         <div class="paqs">
-          <div class="paq"><div class="c">600 <small>conversaciones</small></div><div class="p">760.000 COP</div><div class="u">245 USD</div></div>
-          <div class="paq rec"><span class="badge">★ Recomendado</span><div class="c">2.000 <small>conversaciones</small></div><div class="p">2.490.000 COP</div><div class="u">795 USD</div></div>
-          <div class="paq"><div class="c">6.000 <small>conversaciones</small></div><div class="p">7.190.000 COP</div><div class="u">2.295 USD</div></div>
+          <div class="paq cero"><span class="badge">Incluida</span><div class="q">Instalación</div><div class="p">0 COP</div><div class="u">La instalación no te cuesta nada</div></div>
+          <div class="paq"><div class="q">Meses 1 a 6</div><div class="p">1.071.000 COP</div><div class="u">335 USD al mes</div></div>
+          <div class="paq"><div class="q">Desde el mes 7</div><div class="p">868.700 COP</div><div class="u">272 USD al mes</div></div>
+        </div>
+        <div class="ejc" style="grid-template-columns:1fr 1fr">
+          <div><b>Conversación adicional</b>1.190 COP (0,37 USD), pasadas las 1.000 del mes.</div>
+          <div><b>Si terminas antes del mes 6</b>150.000 COP (47 USD) por cada mes que falte.</div>
         </div>
       </div>
     </div>
     <div class="pase perf ticket">
-      <div class="body"><span class="lbl">03 · Solo cuando envías una campaña</span><h3>Campañas masivas por WhatsApp</h3><p>El cobro es por el primer mensaje, el del envío masivo. Si el cliente te contesta, desde ahí es una conversación del agente y se descuenta de tu paquete.</p>
-        <div class="ejc">
-          <div><b>Envías 1.000</b>1.000 × 90 COP = 90.000 COP (30 USD)</div>
-          <div><b>120 contestan</b>Se descuentan de tu paquete. No se cobran otra vez.</div>
-          <div><b>880 no contestan</b>No generan ningún cobro adicional.</div>
-        </div>
-      </div>
+      <div class="body"><span class="lbl">03 · Solo cuando envías una campaña</span><h3>Campañas masivas por WhatsApp</h3><p>Pagas el primer mensaje, el del envío masivo. Si el cliente contesta, desde ahí cuenta como una de las 1.000 conversaciones de tu mes. Una campaña a 1.000 contactos: 90.000 COP (30 USD).</p></div>
       <div class="side"><div class="num">90<small> COP</small></div><div class="usd">0,03 USD · por mensaje enviado</div></div>
     </div>
   </div>
-  <p class="small" style="margin-top:4mm">Ejemplo ilustrativo de una campaña a 1.000 contactos.</p>
-  <div class="foot"><img src="../../frontend/public/gloma/logo_blancotrans.png" alt="Gloma"><span>Precios vigentes a octubre de 2026 · 07 / 10</span></div>
+  <div class="foot"><img src="../../frontend/public/gloma/logo_blancotrans.png" alt="Gloma"><span>Precios vigentes a octubre de 2026 · 07 / 11</span></div>
 </section>
 
 <!-- 8 · Destino · Haz la cuenta con tus números -->
@@ -418,19 +466,49 @@
     <p>El agente arranca con una tasa de cierre parecida a la de tu equipo, porque vende con tus mismos mensajes, y desde ahí trabajamos para subirla.</p>
   </div>
   <div class="pase ejer">
-    <h3>¿Cuántas reservas pagan la instalación?</h3>
+    <h3>¿Cuántas reservas pagan tu mensualidad?</h3>
     <div class="cuenta dos">
-      <div class="b fija">2.400.000 COP<span>Instalación</span></div><div class="op">÷</div>
+      <div class="b fija">1.071.000 COP<span>Mensualidad, meses 1 a 6</span></div><div class="op">÷</div>
       <div class="b"><span>Valor promedio de tu reserva</span></div><div class="op">=</div>
       <div class="b"><span>Reservas</span></div>
     </div>
-    <div style="height:5mm"></div>
+    <p>Desde el mes 7 la mensualidad es de 868.700 COP.</p>
   </div>
   <p class="small" style="margin-top:4mm">* Frente a atender el mismo volumen de chats solo con asesores.</p>
-  <div class="foot"><img src="../../frontend/public/gloma/logo_blancotrans.png" alt="Gloma"><span>08 / 10</span></div>
+  <div class="foot"><img src="../../frontend/public/gloma/logo_blancotrans.png" alt="Gloma"><span>08 / 11</span></div>
 </section>
 
-<!-- 9 · Destino · Garantía, soporte y tus datos -->
+<!-- 9 · Destino · Plan de referidos -->
+<section class="page">
+  <div class="ruta"><span class="st ok"><i></i>Embarque</span><span class="tr ok"></span><span class="st ok"><i></i>Ruta</span><span class="tr ok"></span><span class="st on"><i></i>Destino</span></div>
+  <p class="escala">Destino · Plan de referidos</p>
+  <h2>Recomiéndanos y tu mensualidad baja.</h2>
+  <p class="lead">Si conoces otro negocio al que le escriben más clientes de los que alcanza a contestar, preséntanoslo.</p>
+  <div class="refs">
+    <div class="pase perf"><span class="lbl">Hace la prueba gratis</span><div class="num">20&nbsp;<small>%</small></div><p>de descuento en una mensualidad por cada negocio que refieras y haga la prueba gratis.</p></div>
+    <div class="pase perf"><span class="lbl">Compra el plan</span><div class="num">50&nbsp;<small>%</small></div><p>de descuento en una mensualidad por cada negocio que refieras y compre el plan.</p></div>
+  </div>
+  <p class="regla">Los descuentos se suman. Lo que pase de 100 % se corre a la mensualidad siguiente.</p>
+  <div class="pase caso">
+    <span class="lbl">Ejemplo ilustrativo</span>
+    <h3 style="margin-top:1mm">Refieres a 5 negocios. Los 5 hacen la prueba y 3 compran.</h3>
+    <div class="suma">
+      <div class="s"><b>5 × 20 %</b><span>hicieron la prueba</span></div><div class="op">+</div>
+      <div class="s"><b>3 × 50 %</b><span>compraron el plan</span></div><div class="op">=</div>
+      <div class="s tot"><b>250 %</b><span>2,5 mensualidades</span></div>
+    </div>
+    <div class="meses">
+      <div class="mes"><i style="width:100%"></i><b>Mensualidad 1</b><span>gratis</span></div>
+      <div class="mes"><i style="width:100%"></i><b>Mensualidad 2</b><span>gratis</span></div>
+      <div class="mes"><i style="width:50%"></i><b>Mensualidad 3</b><span>a mitad de precio</span></div>
+    </div>
+    <div class="total"><p>Lo que dejas de pagar</p><div class="num">2.677.500 COP</div></div>
+    <p class="usdl">838 USD · con la mensualidad de los meses 1 a 6</p>
+  </div>
+  <div class="foot"><img src="../../frontend/public/gloma/logo_blancotrans.png" alt="Gloma"><span>09 / 11</span></div>
+</section>
+
+<!-- 10 · Destino · Garantía, soporte y tus datos -->
 <section class="page">
   <div class="ruta"><span class="st ok"><i></i>Embarque</span><span class="tr ok"></span><span class="st ok"><i></i>Ruta</span><span class="tr ok"></span><span class="st on"><i></i>Destino</span></div>
   <p class="escala">Destino · Garantía, soporte y tus datos</p>
@@ -444,19 +522,19 @@
     <div><h3>Tus datos viven en tu propia cuenta</h3><p>Aislada de las demás.</p></div>
     <div><h3>Tus conversaciones son tuyas</h3><p>No se usan para entrenar modelos de IA.</p></div>
   </div>
-  <div class="foot"><img src="../../frontend/public/gloma/logo_blancotrans.png" alt="Gloma"><span>09 / 10</span></div>
+  <div class="foot"><img src="../../frontend/public/gloma/logo_blancotrans.png" alt="Gloma"><span>10 / 11</span></div>
 </section>
 
-<!-- 10 · Destino · Próximo paso -->
+<!-- 11 · Destino · Próximo paso -->
 <section class="page">
   <div class="ruta"><span class="st ok"><i></i>Embarque</span><span class="tr ok"></span><span class="st ok"><i></i>Ruta</span><span class="tr ok"></span><span class="st on"><i></i>Destino</span></div>
   <p class="escala">Destino · Tu próximo vuelo</p>
-  <h2>Agendemos una llamada.</h2>
+  <h2>Empieza tu prueba gratis de 14 días.</h2>
   <div class="pase perf boarding2">
     <div class="main">
-      <span class="lbl">En la llamada</span>
-      <p>Calculamos contigo cuánta venta se te queda en el aire y qué paquete te conviene.</p>
-      <a class="cta" href="https://glomacx.com">Agendar una llamada</a>
+      <span class="lbl">Tu primera escala: una llamada</span>
+      <p>Nos cuentas cómo vendes y dejamos tu agente contestando en uno de tus números. A los 14 días ves, en pesos, cuánta venta se te estaba quedando en el aire.</p>
+      <a class="cta" href="https://glomacx.com">Agendar la llamada</a>
     </div>
     <div class="stub">
       <div><span class="lbl">WhatsApp</span><a href="https://wa.me/573150764000">+57 315 076 4000</a></div>
@@ -465,7 +543,7 @@
     </div>
   </div>
   <p class="cierre">El próximo que escriba a las 8 de la noche, <span>que tu equipo lo encuentre a primera hora listo para reservar.</span></p>
-  <div class="foot"><img src="../../frontend/public/gloma/logo_blancotrans.png" alt="Gloma"><span>IVA y tarifa de Meta incluidos · 10 / 10</span></div>
+  <div class="foot"><img src="../../frontend/public/gloma/logo_blancotrans.png" alt="Gloma"><span>IVA y tarifa de Meta incluidos · 11 / 11</span></div>
 </section>
 
 </body>
