@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 # Convierte una propuesta comercial en HTML a PDF con Chrome headless.
 #
-#   ./marketing/propuesta_comercial/exportar_pdf.sh                      # las 3 opciones
-#   ./marketing/propuesta_comercial/exportar_pdf.sh opcion_b.html        # una sola
-#   ./marketing/propuesta_comercial/exportar_pdf.sh opcion_b.html --publicar
+#   ./marketing/propuesta_comercial/exportar_pdf.sh                        # la propuesta (opcion_a)
+#   ./marketing/propuesta_comercial/exportar_pdf.sh opcion_a.html --publicar
+#
+# El CEO eligió la opción A («Ejecutiva») el 2026-10-28; la B y la C se
+# borraron (están en el historial de git si se necesitan).
 #
 # Con --publicar, el PDF de esa opción queda además en
 # frontend/public/gloma/propuesta-comercial-gloma.pdf, que es el que descarga
@@ -51,10 +53,10 @@ for arg in "$@"; do
 done
 
 if [ ${#archivos[@]} -eq 0 ]; then
-  archivos=(opcion_a.html opcion_b.html opcion_c.html)
+  archivos=(opcion_a.html)
 fi
 if [ $publicar -eq 1 ] && [ ${#archivos[@]} -ne 1 ]; then
-  echo "Con --publicar se pasa una sola opción (la elegida)." >&2
+  echo "Con --publicar se pasa un solo archivo." >&2
   exit 1
 fi
 

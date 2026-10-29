@@ -396,12 +396,11 @@ const PRUEBA_INCLUYE = [
 ];
 
 /**
- * La propuesta elegida por el CEO, publicada con `exportar_pdf.sh --publicar`.
- * Pendiente (CEO, 2026-10-26): los precios van a cambiar. Mientras sea `false`
- * no se muestra el botón de descarga ni el enlace del footer.
+ * La propuesta comercial que eligió el CEO (opción A, «Ejecutiva», 2026-10-28),
+ * publicada con `marketing/propuesta_comercial/exportar_pdf.sh opcion_a.html --publicar`.
  */
 const PROPUESTA_PDF = '/gloma/propuesta-comercial-gloma.pdf';
-const PROPUESTA_PUBLICADA = false;
+const PROPUESTA_PUBLICADA = true;
 
 /**
  * Precios públicos: plan P1 «Permanencia 6» de
