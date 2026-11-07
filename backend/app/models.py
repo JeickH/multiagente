@@ -10,7 +10,9 @@ from sqlalchemy import (
     Date,
     DateTime,
     ForeignKey,
+    ForeignKeyConstraint,
     Numeric,
+    SmallInteger,
     Text,
     UniqueConstraint,
     Index,
@@ -265,6 +267,12 @@ class MetaAccount(Base):
     __str__ = __repr__
 
 
+#: Valores de `conversations.marcador_consumido` (Sprint 36).
+MARCADOR_CONSUMIDO_VOLVIO = "volvio"
+MARCADOR_CONSUMIDO_HUMANO = "humano"
+AVAILABLE_MARCADORES_CONSUMIDOS = (MARCADOR_CONSUMIDO_VOLVIO, MARCADOR_CONSUMIDO_HUMANO)
+
+
 class Conversation(Base):
     __tablename__ = "conversations"
     id = Column(Integer, primary_key=True, index=True)
@@ -310,6 +318,11 @@ class Conversation(Base):
     # Cuándo la cerró `scripts/cerrar_inactivas_arranquemos.py` (la nota que
     # empieza por "🔒 *Cerrada por inactividad*").
     cerrada_por_inactividad_at = Column(DateTime, nullable=True)
+    # Quién consumió el marcador de abandono/inactividad (Sprint 36, diseño
+    # 2.2), solo para métricas: `volvio` = el cliente volvió y el bot lo
+    # reclamó; `humano` = una persona cerró, reabrió o reasignó primero. NULL =
+    # el marcador sigue sin consumir (o nunca hubo).
+    marcador_consumido = Column(String(16), nullable=True)
     last_message_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
@@ -319,6 +332,15 @@ class Conversation(Base):
         # Conteo del reparto: conversaciones por bot desde `reparto_desde`.
         # También cubre el ON DELETE SET NULL de la FK (columna líder).
         Index("ix_conversations_bot_asignado_at", "bot_asignado_id", "bot_asignado_at"),
+        # Redundante como unicidad (`id` ya es PK), pero es lo que deja a
+        # `conversation_sales` apuntar a (id, team_id) con una FK compuesta:
+        # la base rechaza una venta cuyo team no es el de su conversación
+        # (Sprint 36, diseño 0.2). La migración lo crea CONCURRENTLY.
+        UniqueConstraint("id", "team_id", name="uq_conversations_id_team"),
+        CheckConstraint(
+            "marcador_consumido IN ('volvio', 'humano')",
+            name="ck_conversations_marcador_consumido",
+        ),
     )
 
     team = relationship("Team", back_populates="conversations")
@@ -444,6 +466,13 @@ class Bot(Base):
     # porcentajes arranca aquí: cambiar 100/0 a 50/50 no debe mandarle al bot
     # nuevo todo lo que "le debe" del reparto anterior.
     reparto_desde = Column(DateTime, nullable=True)
+    # Bot que atiende a los que vuelven tras un abandono o un cierre por
+    # inactividad (Sprint 36, diseño 2.3). A lo sumo uno por cuenta: lo hace
+    # cumplir `uq_bot_reenganche_por_owner`. Al usarlo, la lógica igual lo
+    # elige SOLO de la lista de bots del owner del team (activo, llm, no demo).
+    es_reenganche = Column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
     triggered_count = Column(Integer, nullable=False, default=0)
     completed_steps_count = Column(Integer, nullable=False, default=0)
     finished_count = Column(Integer, nullable=False, default=0)
@@ -454,6 +483,14 @@ class Bot(Base):
 
     __table_args__ = (
         Index("ix_bots_user_updated", "user_id", "updated_at"),
+        # Un solo bot de reenganche por cuenta (una cuenta = un owner = un team).
+        Index(
+            "uq_bot_reenganche_por_owner",
+            "user_id",
+            unique=True,
+            postgresql_where=text("es_reenganche"),
+            sqlite_where=text("es_reenganche"),
+        ),
     )
 
     user = relationship("User")
@@ -2119,6 +2156,30 @@ AVAILABLE_AGENDAMIENTO_NIVELES = (
 #: Días entre el abandono y la llamada tentativa (pedido del CEO).
 AGENDAMIENTO_DIAS_PARA_LLAMAR = 3
 
+#: De dónde salió la llamada (Sprint 36). `abandono`: la agendó el sistema
+#: cuando el cliente dejó de contestar (lo único que existía antes). `bot_llamada`:
+#: el cliente eligió una franja con la tool `agendar_llamada` del bot D.
+AGENDAMIENTO_ORIGEN_ABANDONO = "abandono"
+AGENDAMIENTO_ORIGEN_BOT_LLAMADA = "bot_llamada"
+AVAILABLE_AGENDAMIENTO_ORIGENES = (
+    AGENDAMIENTO_ORIGEN_ABANDONO,
+    AGENDAMIENTO_ORIGEN_BOT_LLAMADA,
+)
+
+#: Cómo terminó la llamada, lo marca la asesora (Sprint 36, diseño 3.4).
+#: `vendida` NO crea una venta: la venta se registra aparte, en la conversación.
+AGENDAMIENTO_RESULTADO_VENDIDA = "vendida"
+AGENDAMIENTO_RESULTADO_LO_PENSARA = "lo_pensara"
+AGENDAMIENTO_RESULTADO_NO_CONTESTO = "no_contesto"
+AVAILABLE_AGENDAMIENTO_RESULTADOS = (
+    AGENDAMIENTO_RESULTADO_VENDIDA,
+    AGENDAMIENTO_RESULTADO_LO_PENSARA,
+    AGENDAMIENTO_RESULTADO_NO_CONTESTO,
+)
+
+#: Tope de `agendamientos.cotizacion` (caracteres). Mismo número que el CHECK.
+AGENDAMIENTO_COTIZACION_MAX = 1000
+
 
 class Agendamiento(Base):
     """Una llamada por hacer a alguien que dejó la conversación a medias.
@@ -2170,6 +2231,33 @@ class Agendamiento(Base):
         Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
 
+    # ---- Agenda de llamadas del bot D (Sprint 36, diseño 3.3) -------------
+    #: Inicio de la franja acordada, en UTC naive. NULL = llamada sin hora
+    #: (las del abandono: solo `fecha_llamada`).
+    franja_inicio = Column(DateTime, nullable=True)
+    #: Qué cupo de la franja ocupa (1..cupo). Va junto con `franja_inicio`
+    #: (los dos o ninguno) y el índice único parcial
+    #: `uq_agendamientos_franja_puesto` impide dos pendientes en el mismo
+    #: puesto: así se respeta el cupo aunque dos clientes elijan a la vez.
+    puesto = Column(SmallInteger, nullable=True)
+    #: `abandono` | `bot_llamada` (ver AVAILABLE_AGENDAMIENTO_ORIGENES). Sin
+    #: default a propósito: quien crea la fila dice de dónde viene.
+    origen = Column(String(16), nullable=True)
+    #: `vendida` | `lo_pensara` | `no_contesto`, con quién y cuándo lo marcó.
+    resultado = Column(String(16), nullable=True)
+    resultado_por_user_id = Column(
+        Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    resultado_at = Column(DateTime, nullable=True)
+    #: Sellos de idempotencia de los avisos del tick: el aviso sale solo si
+    #: el UPDATE que pone el sello (WHERE ... IS NULL) toca una fila.
+    aviso_inicio_at = Column(DateTime, nullable=True)
+    alerta_fin_at = Column(DateTime, nullable=True)
+    #: Resumen que arma el SERVIDOR (plan, fechas, n.º de personas, total,
+    #: anticipo). Sin cédula, teléfono, nombres ni edades. Nunca en logs ni
+    #: en `__repr__`.
+    cotizacion = Column(Text, nullable=True)
+
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
@@ -2181,6 +2269,38 @@ class Agendamiento(Base):
         # La pantalla siempre pregunta lo mismo: "lo de este team, por fecha
         # de llamada".
         Index("ix_agendamientos_team_fecha", "team_id", "fecha_llamada"),
+        # Cupo por franja: un puesto de una franja lo ocupa a lo sumo UNA
+        # llamada pendiente del team. Cerrada, el puesto se libera.
+        Index(
+            "uq_agendamientos_franja_puesto",
+            "team_id",
+            "franja_inicio",
+            "puesto",
+            unique=True,
+            postgresql_where=text(
+                "franja_inicio IS NOT NULL AND estado = 'pendiente'"
+            ),
+            sqlite_where=text("franja_inicio IS NOT NULL AND estado = 'pendiente'"),
+        ),
+        CheckConstraint("puesto >= 1", name="ck_agendamientos_puesto"),
+        # Franja sin puesto se saltaría el cupo (en un índice único los NULL
+        # no chocan entre sí), y puesto sin franja no significa nada.
+        CheckConstraint(
+            "(franja_inicio IS NULL) = (puesto IS NULL)",
+            name="ck_agendamientos_franja_con_puesto",
+        ),
+        CheckConstraint(
+            "origen IN ('abandono', 'bot_llamada')",
+            name="ck_agendamientos_origen",
+        ),
+        CheckConstraint(
+            "resultado IN ('vendida', 'lo_pensara', 'no_contesto')",
+            name="ck_agendamientos_resultado",
+        ),
+        CheckConstraint(
+            f"length(cotizacion) <= {AGENDAMIENTO_COTIZACION_MAX}",
+            name="ck_agendamientos_cotizacion_largo",
+        ),
         # Un chat no puede tener DOS llamadas pendientes: si la persona vuelve,
         # se calla otra vez y el bot la vuelve a abandonar, el asesor no
         # necesita dos renglones de la misma persona. El índice es parcial
@@ -2196,11 +2316,13 @@ class Agendamiento(Base):
     )
 
     def __repr__(self) -> str:
-        # Sin nombre ni teléfono: son datos de un tercero (regla 8).
+        # Sin nombre ni teléfono: son datos de un tercero (regla 8). Sin
+        # cotización tampoco (diseño Sprint 36, 3.6).
         return (
             f"<Agendamiento id={self.id} team_id={self.team_id} "
             f"conversation_id={self.conversation_id} estado={self.estado!r} "
-            f"fecha_llamada={self.fecha_llamada}>"
+            f"fecha_llamada={self.fecha_llamada} origen={self.origen!r} "
+            f"puesto={self.puesto}>"
         )
 
     __str__ = __repr__
@@ -2233,12 +2355,25 @@ class ConversationSale(Base):
     team_id = Column(
         Integer, ForeignKey("teams.id", ondelete="CASCADE"), nullable=False
     )
+    # Sin FK simple a `conversations.id`: la referencia es la FK compuesta
+    # (conversation_id, team_id) de `__table_args__`, que además obliga a que
+    # el team de la venta sea el de su conversación (diseño 0.2). OJO: el ON
+    # DELETE CASCADE borra las ventas si se borra la conversación; eso solo
+    # pasa al limpiar tenants o demos (diseño 0.8).
     conversation_id = Column(
         Integer,
-        ForeignKey("conversations.id", ondelete="CASCADE"),
         nullable=False,
-        # Cubre el ON DELETE CASCADE desde `conversations` también para las
-        # ventas anuladas, que el índice único parcial no incluye.
+        # Cubre el borrado en cascada también para las ventas anuladas, que el
+        # índice único parcial no incluye.
+        index=True,
+    )
+    #: Qué bot atendía cuando se cerró la venta, para «ventas por bot» aunque
+    #: el reenganche cambie de bot después (diseño 0.7). NULL si no había bot
+    #: o si el bot se borró.
+    bot_id = Column(
+        Integer,
+        ForeignKey("bots.id", ondelete="SET NULL"),
+        nullable=True,
         index=True,
     )
     valor_cop = Column(BigInteger, nullable=False)
@@ -2248,7 +2383,9 @@ class ConversationSale(Base):
     registrada_por_user_id = Column(
         Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(
+        DateTime, default=datetime.utcnow, server_default=func.now(), nullable=False
+    )
 
     anulada_at = Column(DateTime, nullable=True)
     anulada_por_user_id = Column(
@@ -2256,15 +2393,31 @@ class ConversationSale(Base):
     )
     motivo_anulacion = Column(String(280), nullable=True)
 
+    # Se une por las dos columnas de la FK compuesta. Asignar `conversation`
+    # copia también su `team_id` a la venta.
     conversation = relationship("Conversation")
 
     __table_args__ = (
+        ForeignKeyConstraint(
+            ["conversation_id", "team_id"],
+            ["conversations.id", "conversations.team_id"],
+            name="fk_conversation_sales_conv_team",
+            ondelete="CASCADE",
+        ),
         # Declarado aquí y no solo en la migración: si `create_all()` crea la
         # tabla antes que el script (gotcha del 17-sep-2026), el CHECK igual
         # queda puesto.
         CheckConstraint(
             f"valor_cop > 0 AND valor_cop <= {VENTA_VALOR_MAX_COP}",
             name="ck_conversation_sales_valor",
+        ),
+        # Anular es todo o nada: fecha y motivo juntos; sin anular, ni
+        # motivo ni quién (diseño 0.5).
+        CheckConstraint(
+            "(anulada_at IS NULL AND motivo_anulacion IS NULL"
+            " AND anulada_por_user_id IS NULL)"
+            " OR (anulada_at IS NOT NULL AND motivo_anulacion IS NOT NULL)",
+            name="ck_conversation_sales_anulacion",
         ),
         # Una sola venta ACTIVA por conversación. Parcial a propósito: una vez
         # anulada, el mismo chat puede registrar la venta corregida.

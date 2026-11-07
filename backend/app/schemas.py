@@ -1210,3 +1210,104 @@ class InteresadoCambioIn(BaseModel):
         if self.estado != "descartado" and self.motivo:
             raise ValueError("el motivo solo aplica al descartar")
         return self
+
+
+# ===== Sprint 36: venta cerrada y resultado de la llamada ====================
+#
+# Contratos del diseño de seguridad (docs/sprint36/diseno_seguridad.md, 1.4,
+# 1.5 y 3.4). Ninguno lleva `team_id` ni ids de usuario: el team sale SIEMPRE
+# de la membresía del que llama (`conv.team_id`), nunca del body.
+
+import re as _venta_re
+from typing import Annotated
+
+from .models import VENTA_VALOR_MAX_COP
+
+#: Caracteres de control salvo el salto de línea (\n). Un \r, un \t o un
+#: \x00 en una nota no tienen uso legítimo y sí pueden romper la pantalla o un
+#: export.
+_CONTROL_SALVO_SALTO = _venta_re.compile(r"[\x00-\x09\x0b-\x1f\x7f]")
+_CONTROL = _venta_re.compile(r"[\x00-\x1f\x7f]")
+
+
+def _texto_limpio(valor, *, maximo: int, minimo: int = 0, saltos: bool = True,
+                  vacio_a_none: bool = False):
+    if valor is None:
+        return None
+    if not isinstance(valor, str):
+        raise ValueError("debe ser texto")
+    limpio = valor.strip()
+    if not limpio:
+        if vacio_a_none:
+            return None
+        raise ValueError("no puede quedar vacío")
+    if (_CONTROL_SALVO_SALTO if saltos else _CONTROL).search(limpio):
+        raise ValueError("tiene caracteres no permitidos")
+    if len(limpio) < minimo:
+        raise ValueError(f"debe tener al menos {minimo} caracteres")
+    if len(limpio) > maximo:
+        raise ValueError(f"no puede pasar de {maximo} caracteres")
+    return limpio
+
+
+class VentaIn(BaseModel):
+    """`POST /mensajes/conversaciones/{id}/venta`.
+
+    `valor_cop` es entero estricto: ni `"1000"`, ni `1000.5`, ni `true` (en
+    Python `True == 1`). `vendida_por` es el nombre de rotación de la asesora;
+    que sea uno de `crud.asesores_del_team` lo valida el endpoint (422).
+    """
+    model_config = ConfigDict(extra="forbid")
+
+    valor_cop: Annotated[int, Field(strict=True, gt=0, le=VENTA_VALOR_MAX_COP)]
+    vendida_por: str
+    nota: Optional[str] = None
+
+    @field_validator("vendida_por", mode="before")
+    @classmethod
+    def _vendida_por(cls, v):
+        return _texto_limpio(v, maximo=64, minimo=1, saltos=False)
+
+    @field_validator("nota", mode="before")
+    @classmethod
+    def _nota(cls, v):
+        return _texto_limpio(v, maximo=280, vacio_a_none=True)
+
+
+class AnularVentaIn(BaseModel):
+    """`POST /mensajes/conversaciones/{id}/venta/anular`: sobre la venta
+    ACTIVA; su id no viaja. El motivo es obligatorio (auditoría)."""
+    model_config = ConfigDict(extra="forbid")
+
+    motivo: str
+
+    @field_validator("motivo", mode="before")
+    @classmethod
+    def _motivo(cls, v):
+        return _texto_limpio(v, maximo=280, minimo=3)
+
+
+class VentaOut(BaseModel):
+    """La venta en el DETALLE de `/mensajes` (solo para el team dueño).
+
+    Sin `team_id`, sin `conversation_id` y sin ids de usuario: de quién la
+    registró solo va el nombre. La lista de la bandeja y la supervisión NO
+    usan esto: llevan solo `venta_valor_cop` (y `vendida_at` en supervisión).
+    """
+    model_config = ConfigDict(extra="forbid")
+
+    id: int
+    valor_cop: int
+    vendida_por: Optional[str] = None
+    nota: Optional[str] = None
+    registrada_at: datetime
+    registrada_por_nombre: Optional[str] = None
+    anulada_at: Optional[datetime] = None
+    motivo_anulacion: Optional[str] = None
+
+
+class ResultadoLlamadaIn(BaseModel):
+    """`PATCH /agendamientos/{id}/resultado`. `vendida` NO crea una venta."""
+    model_config = ConfigDict(extra="forbid")
+
+    resultado: Literal["vendida", "lo_pensara", "no_contesto"]
