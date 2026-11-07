@@ -161,6 +161,7 @@ def registrar_por_abandono(
         nivel_interes=nivel,
         fecha_llamada=fecha or fecha_tentativa(ahora_utc),
         estado=models.AGENDAMIENTO_PENDIENTE,
+        origen=models.AGENDAMIENTO_ORIGEN_ABANDONO,
         # El nombre del turno al momento del abandono. Si no se pudo repartir,
         # queda vacío y la pantalla lo muestra como "sin asignar" — es
         # preferible a inventar un `asesor_1` que no es nadie.
