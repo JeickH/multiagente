@@ -218,6 +218,24 @@ def _texto_de_promocion(
             "1️⃣ Sí, quiero reservar ✅\n2️⃣ Tengo una pregunta 🤔")
 
 
+#: Margen contra la ventana de 24 h de WhatsApp: el tick corre cada minuto y
+#: el proveedor tarda; un recordatorio a 23 h 55 min ya es apostar (diseño 2.7).
+MARGEN_VENTANA = timedelta(minutes=10)
+
+
+def _limite_de_la_ventana(
+    db: Session, conversation: Optional[models.Conversation]
+) -> Optional[datetime]:
+    """Hasta cuándo se le puede mandar texto libre: último entrante + 24 h −
+    10 min. None si no hay ningún entrante (no hay ventana abierta)."""
+    if conversation is None:
+        return None
+    ultimo = crud.ultimo_entrante_at(db, conversation.id)
+    if ultimo is None:
+        return None
+    return ultimo + agendamientos.VENTANA_WHATSAPP - MARGEN_VENTANA
+
+
 def _programar(
     db: Session,
     session: models.BotSession,
@@ -246,6 +264,12 @@ def _programar(
     if action_type == models.BOT_PENDING_ACTION_SEGUIMIENTO:
         # Ningún recordatorio al cliente entre las 11 p.m. y las 5 a.m.
         cuando = silencio.fuera_del_silencio(cuando)
+        # Sprint 36 (diseño 2.7): si así cae fuera de las 24 h, no va a salir.
+        # Se agenda en el borde de la ventana para que `_procesar_silencio` lo
+        # omita y pase al abandono ahí mismo, en vez de esperar a las 5 a.m.
+        limite = _limite_de_la_ventana(db, getattr(session, "conversation", None))
+        if limite is not None and cuando >= limite:
+            cuando = max(datetime.utcnow() + timedelta(minutes=1), limite)
     pa = models.BotPendingAction(
         session_id=session.id,
         scheduled_at=cuando,
@@ -988,6 +1012,11 @@ def run_turn(
     actions = result["actions"]
     next_state = result["next_state"]
     finished = bool(result["finished"])
+    if is_llm and _sin_deuda_en_el_turno(actions, next_state):
+        logger.info(
+            "bot_runner: disculpa por respuesta pendiente recortada conv=%s bot=%s",
+            conversation.id, getattr(bot, "id", None),
+        )
     # Un bot LLM sin finalizar siempre espera el próximo mensaje del usuario.
     waiting = any(a.get("type") == "ask" for a in actions) or (is_llm and not finished)
 
@@ -1612,6 +1641,56 @@ def _texto_por_etapa(
     return texto if isinstance(texto, str) and texto.strip() else None
 
 
+def _ajustar_recordatorio(
+    db: Session,
+    conversation: models.Conversation,
+    bot: models.Bot,
+    texto: str,
+    etapa: int,
+    total: int,
+) -> str:
+    """`recordatorios_contexto.ajustar_a_la_conversacion`, sin tumbar la cadena:
+    si la lectura falla, al menos sale sin la disculpa (que es pura)."""
+    from . import recordatorios_contexto
+
+    try:
+        nuevo, motivo = recordatorios_contexto.ajustar_a_la_conversacion(
+            db, conversation=conversation, texto=texto, posicion=etapa, total=total
+        )
+    except Exception as exc:
+        logger.error(
+            "bot_runner: no se pudo ajustar el recordatorio conv=%s (%s)",
+            conversation.id, type(exc).__name__,
+        )
+        return recordatorios_contexto.sin_deuda(texto) or texto
+    if motivo:
+        logger.info(
+            "bot_runner: recordatorio %s ajustado (%s) conv=%s bot=%s",
+            etapa + 1, motivo, conversation.id, getattr(bot, "id", None),
+        )
+    return nuevo or texto
+
+
+def _sin_deuda_en_el_turno(actions: list, next_state: Optional[dict]) -> bool:
+    """Guardarraíl de la disculpa («Te quedé debiendo la respuesta») cuando la
+    escribe el modelo: se quita de lo que sale y del historial (si no, el modelo
+    se copiaría a sí mismo). Devuelve si tocó algo."""
+    from . import recordatorios_contexto as rc
+
+    tocado = False
+    for accion in actions:
+        payload = accion.get("payload") or {}
+        texto = payload.get("text")
+        if accion.get("type") in ("say", "end", "handoff") and texto and rc.tiene_deuda(texto):
+            payload["text"] = rc.sin_deuda(texto)
+            tocado = True
+    if tocado and isinstance(next_state, dict):
+        for m in next_state.get("history") or []:
+            if isinstance(m, dict) and m.get("role") == "assistant" and rc.tiene_deuda(m.get("content")):
+                m["content"] = rc.sin_deuda(m["content"]) or "(sin texto)"
+    return tocado
+
+
 def _procesar_silencio(db: Session, pa: models.BotPendingAction) -> None:
     """Atiende un `seguimiento` o un `abandono` vencido. NUNCA llama al modelo.
 
@@ -1651,16 +1730,33 @@ def _procesar_silencio(db: Session, pa: models.BotPendingAction) -> None:
     # asesor que recibe el chat frío.
     etapas = llm_engine.recordatorios_de(seguimiento, db=db, bot=bot)
 
-    if pa.action_type == models.BOT_PENDING_ACTION_SEGUIMIENTO and silencio.en_silencio(silencio.ahora()):
-        # Candado del horario de silencio: lo que venza entre las 11 p.m. y las
-        # 5 a.m. (agendado antes de esta regla, o con el tick atrasado) no sale:
-        # se corre a las 5:00 a.m., con su misma etapa.
-        pa.scheduled_at = silencio.fuera_del_silencio(silencio.ahora())
-        db.commit()
-        logger.info("bot_runner: recordatorio corrido por el horario de silencio conv=%s", conversation.id)
-        return
-
+    fuera_de_la_ventana = False
     if pa.action_type == models.BOT_PENDING_ACTION_SEGUIMIENTO:
+        ahora = silencio.ahora()
+        envio = silencio.fuera_del_silencio(ahora) if silencio.en_silencio(ahora) else ahora
+        limite = _limite_de_la_ventana(db, conversation)
+        # Sin ningún entrante guardado no hay con qué medir la ventana (en
+        # WhatsApp no pasa: toda sesión con seguimiento nace de un entrante).
+        if limite is not None and envio >= limite:
+            # Sprint 36 (diseño 2.7): fuera de las 24 h desde el último mensaje
+            # del cliente WhatsApp no deja texto libre. El recordatorio queda
+            # omitido; los que siguen en la cadena caen todavía más tarde, así
+            # que se va directo al abandono.
+            fuera_de_la_ventana = True
+            logger.info(
+                "bot_runner: recordatorio %s omitido (fuera de 24 h) conv=%s bot=%s",
+                _etapa_de(pa) + 1, conversation.id, bot.id,
+            )
+        elif envio != ahora:
+            # Candado del horario de silencio: lo que venza entre las 11 p.m. y
+            # las 5 a.m. (agendado antes de esta regla, o con el tick atrasado)
+            # no sale: se corre a las 5:00 a.m., con su misma etapa.
+            pa.scheduled_at = envio
+            db.commit()
+            logger.info("bot_runner: recordatorio corrido por el horario de silencio conv=%s", conversation.id)
+            return
+
+    if pa.action_type == models.BOT_PENDING_ACTION_SEGUIMIENTO and not fuera_de_la_ventana:
         # Cadena de reenganches (Sprint 27). Con un solo recordatorio
         # configurado esto se comporta igual que antes; con tres, cada uno
         # agenda el siguiente y sólo el último le abre paso al abandono.
@@ -1683,6 +1779,10 @@ def _procesar_silencio(db: Session, pa: models.BotPendingAction) -> None:
         # Conversación de una promoción que ya se paga completa: el texto que
         # nombra el anticipo sale corregido.
         texto = _texto_de_promocion(db, conversation, texto, ultimo=etapa == len(etapas) - 1)
+        # Sprint 36 (punto 4): el recordatorio lee la conversación — sin la
+        # disculpa por una respuesta pendiente, sin repreguntar lo que ya dijo y
+        # sin reusar los números del menú anterior con otro significado.
+        texto = _ajustar_recordatorio(db, conversation, bot, texto, etapa, len(etapas))
         omitido = _condicion_cumplida(db, conversation, etapas[etapa].get("omitir_si"))
         if omitido:
             # A quien ya cumplió lo que se le estaba pidiendo (comprar, dejar

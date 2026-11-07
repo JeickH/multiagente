@@ -1,7 +1,7 @@
 """Recordatorios con contexto del bot 2 de Arranquemos Pues (estrategia 28).
 
-El 2.º y el 3.º recordatorio de hoy («Te quedé debiendo la respuesta», «Última
-razón por hoy») no dicen nada nuevo y rinden 11,7 % y 7,7 %. El bot sí sabe qué
+El 2.º y el 3.º recordatorio de entonces (uno que se disculpaba por una
+respuesta pendiente y «Última razón por hoy») no decían nada nuevo y rinden 11,7 % y 7,7 %. El bot sí sabe qué
 mes y qué hotel miró la persona, y el tarifario sabe qué salidas de ese mes
 quedan: un recordatorio con fechas y un precio concretos es una razón para
 volver.
@@ -268,3 +268,236 @@ def texto_recordatorio(
         )
         return None
     return texto or None
+
+
+
+# ===========================================================================
+# Sprint 36 (punto 4): el recordatorio lee la conversación
+# ===========================================================================
+#
+# Lo que el CEO vio en los chats de los bots 12, 21 y 22: recordatorios que
+# volvían a preguntar lo que la persona ya había dicho («¿Cuántas personas
+# viajarían?» a quien dijo «somos 2»), que numeraban otras opciones con los
+# mismos números del menú anterior (el «2» que antes era Bohíos pasaba a ser
+# «Prefiero otro mes») y que se disculpaban por una respuesta que nadie había
+# quedado debiendo. `ajustar_a_la_conversacion` corre sobre el texto ya elegido
+# (fijo, por etapa, con contexto o de promoción) justo antes de enviarlo. Es
+# determinista: nunca llama al modelo y solo puede cambiar el texto por uno de
+# los neutros de abajo, que no preguntan nada ni traen números nuevos.
+
+#: «Te quedé debiendo la respuesta», «quedé debiendo», «te debo la respuesta».
+_DEUDA_RE = re.compile(
+    r"[^.!?\n]*\b(?:te\s+)?qued[eé]\s+debiend\w*\b[^.!?\n]*[.!?]*\s*"
+    r"|[^.!?\n]*\bte\s+debo\s+(?:la|una)\s+respuesta\b[^.!?\n]*[.!?]*\s*",
+    re.IGNORECASE,
+)
+
+#: Neutros por posición en la cadena. Sin preguntas por mes, hotel o personas,
+#: sin números, sin cifras y sin la disculpa.
+NEUTRO_PRIMERO = "¿Seguimos con tu plan? 😊 Aquí estoy para ayudarte a dejarlo listo 🌴"
+NEUTRO_MEDIO = (
+    "¡Hola de nuevo! 👋 ¿Seguimos con tu plan? 🌴 Cuando tengas un momento me "
+    "cuentas y lo dejamos listo 🙌"
+)
+NEUTRO_ULTIMO = (
+    "Última razón por hoy 🌴 Si más adelante quieres retomar el plan, aquí estoy "
+    "y con gusto te ayudo. ¡Que estés muy bien! 😊"
+)
+#: Encabezados para repetir el menú anterior tal cual (mismos números, mismo
+#: significado).
+_CON_MENU = {
+    "primero": "¿Seguimos? 😊 Te dejo otra vez las opciones 👇",
+    "medio": "¡Hola de nuevo! 👋 ¿Seguimos con tu plan? 🌴 Respóndeme con el número 👇",
+    "ultimo": "Última razón por hoy 🌴 Si te animas, respóndeme con un número 👇",
+}
+
+#: Lo que un recordatorio pregunta (sobre el texto normalizado, sin tildes).
+_PREGUNTAS = {
+    "personas": re.compile(
+        r"cuant[oa]s\s+(?:personas|adultos|viajeros|pasajeros|viajan|viajarian|van|"
+        r"irian|serian|son)\b|cuantos\s+son\b"
+    ),
+    "mes": re.compile(r"\b(?:que|cual)\s+mes\b|\bpara\s+que\s+mes\b|\bque\s+fecha\b"),
+    "hotel": re.compile(r"\b(?:que|cual)\s+hotel\b"),
+}
+
+_NUM = r"(?:\d{1,2}|un[oa]?|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez)"
+#: Lo que dice la persona cuando cuenta cuántos van.
+_DIJO_PERSONAS_RE = re.compile(
+    rf"\b(?:somos|seriamos|vamos|iriamos|viajamos|viajariamos)\s+{_NUM}\b"
+    rf"|\b{_NUM}\s+(?:personas|adultos|pasajeros|viajeros|cupos)\b"
+    r"|\b(?:mi\s+(?:espos[oa]|pareja|novi[oa]|marido|mujer|mama|papa|herman[oa]|amig[oa])"
+    r"\s+y\s+yo|yo\s+y\s+mi\s+\w+)\b"
+    r"|\b(?:yo\s+sol[oa]|viajo\s+sol[oa]|voy\s+sol[oa])\b"
+)
+_OPCION_RE = re.compile(r"^\s*(?:[*_]*[0-9]️?⃣|[*_]*[1-9][*_]*\s*(?:[.)]|\s-|-\s))")
+
+
+def sin_deuda(texto: Optional[str]) -> str:
+    """Quita la frase de la disculpa por una respuesta pendiente («Te quedé
+    debiendo la respuesta por acá»). Vale para recordatorios y para lo que
+    redacte el modelo. Devuelve el resto (puede quedar vacío)."""
+    if not texto:
+        return texto or ""
+    if not _DEUDA_RE.search(texto):
+        return texto
+    limpio = _DEUDA_RE.sub(" ", texto)
+    limpio = re.sub(r"[ \t]{2,}", " ", limpio)
+    limpio = "\n".join(l.strip() for l in limpio.split("\n"))
+    return limpio.strip()
+
+
+def tiene_deuda(texto: Optional[str]) -> bool:
+    return bool(_DEUDA_RE.search(texto or ""))
+
+
+def preguntas_de(texto: str) -> set:
+    """Qué pregunta el recordatorio: subconjunto de {"personas", "mes", "hotel"}."""
+    from app.services import senales
+
+    normal = senales.normalizar(texto)
+    return {clave for clave, patron in _PREGUNTAS.items() if patron.search(normal)}
+
+
+def lo_que_ya_dijo(db, conversation, *, limite: int = 80) -> set:
+    """Qué ya contó la persona: subconjunto de {"personas", "mes", "hotel"}.
+
+    Tres fuentes, ninguna con texto libre del modelo:
+      * La última consulta de precios del bot (`tools_called`): `mes`/`fecha`,
+        `hotel`/`variante` y `adultos` (el grupo, Sprint 36).
+      * Lo que escribió la persona: un mes con nombre, un hotel, «somos 2».
+      * Una respuesta con el número de una opción del menú anterior del bot
+        («2» a «1️⃣ 1 persona 2️⃣ 2 personas»).
+    """
+    from app.services import recortes_turno, senales
+
+    sabido: set = set()
+    try:
+        consulta = _ultima_consulta(db, conversation, None) or {}
+    except Exception:  # pragma: no cover - defensivo
+        consulta = {}
+    if (consulta.get("mes") or "").strip() or (consulta.get("fecha") or "").strip():
+        sabido.add("mes")
+    if (consulta.get("hotel") or consulta.get("variante") or "").strip():
+        sabido.add("hotel")
+    if (consulta.get("adultos") or "").strip():
+        sabido.add("personas")
+
+    filas = (
+        db.query(models.Message.direction, models.Message.content,
+                 models.Message.sent_by_user_id, models.Message.message_type)
+        .filter(models.Message.conversation_id == conversation.id)
+        .order_by(models.Message.id.desc())
+        .limit(limite)
+        .all()
+    )
+    ultimo_menu: Dict[int, str] = {}
+    for direccion, contenido, autor, tipo in reversed(filas):
+        if tipo == "nota_interna":
+            continue
+        texto = contenido or ""
+        if direccion == "outbound":
+            if autor is None:
+                ultimo_menu = recortes_turno.opciones_numeradas(texto) or ultimo_menu
+            continue
+        normal = senales.normalizar(texto)
+        if senales.mes_mencionado(texto):
+            sabido.add("mes")
+        if tarifario.normalizar_hotel(texto):
+            sabido.add("hotel")
+        if _DIJO_PERSONAS_RE.search(normal):
+            sabido.add("personas")
+        n = senales.numero_elegido(texto)
+        if n is not None and n in ultimo_menu:
+            etiqueta = senales.normalizar(ultimo_menu[n])
+            if "persona" in etiqueta or "ninos" in etiqueta or "niños" in etiqueta:
+                sabido.add("personas")
+            if tarifario.normalizar_hotel(etiqueta):
+                sabido.add("hotel")
+            if senales.mes_mencionado(etiqueta):
+                sabido.add("mes")
+    return sabido
+
+
+def _ultimo_del_bot(db, conversation) -> str:
+    fila = (
+        db.query(models.Message.content)
+        .filter(
+            models.Message.conversation_id == conversation.id,
+            models.Message.direction == "outbound",
+            models.Message.sent_by_user_id.is_(None),
+            models.Message.message_type.notin_(("nota_interna", "template")),
+        )
+        .order_by(models.Message.id.desc())
+        .first()
+    )
+    return (fila[0] or "") if fila else ""
+
+
+def _etiqueta_comparable(texto: str) -> str:
+    from app.services import senales
+
+    return re.sub(r"[^a-z0-9ñ ]", "", senales.normalizar(texto)).strip()
+
+
+def menu_en_conflicto(anterior: str, nuevo: str) -> bool:
+    """¿El recordatorio numera opciones con los números del menú anterior pero
+    con otro significado? Solo cuenta si los dos traen menú."""
+    from app.services import recortes_turno
+
+    viejo = recortes_turno.opciones_numeradas(anterior)
+    nuevas = recortes_turno.opciones_numeradas(nuevo)
+    if not viejo or not nuevas:
+        return False
+    return any(
+        n in viejo and _etiqueta_comparable(viejo[n]) != _etiqueta_comparable(etiqueta)
+        for n, etiqueta in nuevas.items()
+    )
+
+
+def _lineas_de_opciones(texto: str) -> List[str]:
+    return [l.rstrip() for l in (texto or "").split("\n") if _OPCION_RE.match(l)]
+
+
+def _posicion(posicion: int, total: int) -> str:
+    if total > 0 and posicion >= total - 1:
+        return "ultimo"
+    return "primero" if posicion == 0 else "medio"
+
+
+def _neutro(posicion: int, total: int, menu_anterior: str) -> str:
+    """El texto de respaldo. Si el último mensaje del bot traía un menú, lo
+    repite tal cual (mismos números, mismo significado); si no, sin opciones."""
+    lugar = _posicion(posicion, total)
+    opciones = _lineas_de_opciones(menu_anterior)
+    if opciones:
+        return _CON_MENU[lugar] + "\n" + "\n".join(opciones)
+    return {"primero": NEUTRO_PRIMERO, "medio": NEUTRO_MEDIO, "ultimo": NEUTRO_ULTIMO}[lugar]
+
+
+def ajustar_a_la_conversacion(
+    db, *, conversation, texto: str, posicion: int, total: int
+) -> Tuple[str, str]:
+    """`(texto, motivo)`: el recordatorio listo para enviar.
+
+    `motivo` es "" si el texto salió igual, o el porqué del cambio para el log
+    (`deuda`, `repregunta:<campo>`, `menu`). Nunca el contenido.
+
+    1. Sin la disculpa por una respuesta pendiente.
+    2. Si pregunta algo que la persona ya contestó → neutro.
+    3. Si numera opciones con otro significado que el último menú del bot →
+       neutro con ese mismo menú repetido.
+    """
+    motivo = ""
+    anterior = _ultimo_del_bot(db, conversation)
+    if tiene_deuda(texto):
+        limpio = sin_deuda(texto)
+        motivo = "deuda"
+        # Si quitarla deja el mensaje en nada (o solo un saludo), va el neutro.
+        texto = limpio if len(limpio) >= 25 else _neutro(posicion, total, anterior)
+    repetidas = preguntas_de(texto) & lo_que_ya_dijo(db, conversation)
+    if repetidas:
+        return _neutro(posicion, total, anterior), "repregunta:" + ",".join(sorted(repetidas))
+    if menu_en_conflicto(anterior, texto):
+        return _neutro(posicion, total, anterior), "menu"
+    return texto, motivo

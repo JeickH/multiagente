@@ -578,6 +578,19 @@ def sellar_mensaje_humano(db: Session, conversation: models.Conversation) -> Non
     db.commit()
 
 
+def ultimo_entrante_at(db: Session, conversation_id: int) -> Optional[datetime]:
+    """Cuándo escribió el cliente por última vez (abre la ventana de 24 h)."""
+    fila = (
+        db.query(func.max(models.Message.created_at))
+        .filter(
+            models.Message.conversation_id == conversation_id,
+            models.Message.direction == "inbound",
+        )
+        .scalar()
+    )
+    return fila
+
+
 def hay_entrante_despues(
     db: Session, conversation_id: int, desde: Optional[datetime]
 ) -> bool:

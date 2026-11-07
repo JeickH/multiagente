@@ -203,10 +203,14 @@ LLM_CONFIG = {
             },
             {
                 "minutos": 5 * 60,
+                # Sprint 36 (CEO, 7-nov-2026): sin «Te quedé debiendo la
+                # respuesta»: nadie quedó debiendo nada y se lee como un bot
+                # que se equivocó. Tampoco pregunta nada que ya se haya
+                # contestado (`recordatorios_contexto.ajustar_a_la_conversacion`).
                 "texto": (
-                    "¡Hola de nuevo! 👋 Te quedé debiendo la respuesta por acá. "
-                    "Si quieres seguimos con el plan cuando tengas un momento, "
-                    "o dime qué te gustaría saber 🌴"
+                    "¡Hola de nuevo! 👋 ¿Seguimos con tu plan a Coveñas? 🌴 "
+                    "Cuando tengas un momento me cuentas y te ayudo a dejarlo "
+                    "listo, o dime qué te gustaría saber 🙌"
                 ),
             },
             {
