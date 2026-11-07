@@ -22,6 +22,7 @@ import pytest
 import app.services as servicios
 from app.data.bot_viajes import LLM_CONFIG, MEDIA
 from app.services import llm_engine, tarifario
+from app.services.venta_grupo import con_salida_de_medellin
 
 FLYER = "tarifario_amordios_ago_nov"
 DESDE = 459000
@@ -143,10 +144,11 @@ class TestAperturaVitrina:
         salida, _ = jugar(Bot(apertura_vitrina=True), [resp(texto(saludo))])
         assert tipos(salida) == ["say_media"]
         payload = salida["actions"][0]["payload"]
-        assert payload["caption"] == saludo
+        # Sprint 36: la apertura dice además que el plan sale de Medellín.
+        assert payload["caption"] == con_salida_de_medellin(saludo)
         assert payload["url"] == MEDIA[FLYER]["url"]
         historial = salida["next_state"]["history"][-1]["content"]
-        assert saludo in historial and f"[enviaste: {FLYER}]" in historial
+        assert con_salida_de_medellin(saludo) in historial and f"[enviaste: {FLYER}]" in historial
 
     def test_con_dos_textos_el_flyer_va_antes_de_la_pregunta(self):
         salida, _ = jugar(Bot(apertura_vitrina=True), [resp(
@@ -296,7 +298,7 @@ class TestPresentacionUnaVez:
     def test_la_primera_vez_se_presenta(self):
         salida, _ = jugar(Bot(presentacion_una_vez=True), [resp(texto(self.SALUDO))],
                           ya_se_presento=False)
-        assert dichos(salida) == [self.SALUDO]
+        assert dichos(salida) == [con_salida_de_medellin(self.SALUDO)]
 
     def test_sin_flag_el_runtime_no_importa(self):
         salida, _ = jugar(Bot(), [resp(texto(self.SALUDO))], ya_se_presento=True)

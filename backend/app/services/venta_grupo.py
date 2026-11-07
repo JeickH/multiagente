@@ -520,6 +520,16 @@ CORRECCION_OTRA_CIUDAD = (
 )
 
 
+#: La burbuja de apertura: la que presenta a la asesora («Soy *Luisa*»). Solo
+#: ahí va la línea de Medellín — un primer turno que no se presenta (la QA, o
+#: un bot que contesta de una lo que le preguntaron) no se toca.
+_PRESENTACION_RE = re.compile(r"\bsoy\s+\*?luisa\b", re.IGNORECASE)
+
+
+def es_apertura(texto: str) -> bool:
+    return bool(_PRESENTACION_RE.search(texto or ""))
+
+
 def menciona_medellin(textos: Iterable[str]) -> bool:
     return any(_MEDELLIN_RE.search(t or "") for t in textos)
 

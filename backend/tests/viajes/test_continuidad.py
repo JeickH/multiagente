@@ -1125,4 +1125,6 @@ class TestElTurnoRetomadoNoSePresenta:
                  "Arranquemos Pues*. Te cuento del plan 🌴")
         dichos = self._turno(texto, estado=None)
 
-        assert dichos == [texto]
+        # Sprint 36: la apertura dice además que el plan sale de Medellín.
+        from app.services.venta_grupo import con_salida_de_medellin
+        assert dichos == [con_salida_de_medellin(texto)]

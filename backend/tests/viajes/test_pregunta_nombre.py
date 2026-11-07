@@ -40,6 +40,7 @@ import pytest
 
 from app.data.bot_viajes import LLM_CONFIG
 from app.services import llm_engine
+from app.services.venta_grupo import con_salida_de_medellin
 
 
 def _cfg(nombre_al_reservar=False, **runtime):
@@ -307,7 +308,8 @@ class TestElTurnoConElNombreSabido:
         que fallaba 1 de cada 12 corridas."""
         salida = turno(APERTURA, contact_name="Marcela")
 
-        assert dichos(salida) == [APERTURA_SIN_LA_PREGUNTA]
+        # Sprint 36: la apertura dice además que el plan sale de Medellín.
+        assert dichos(salida) == [con_salida_de_medellin(APERTURA_SIN_LA_PREGUNTA)]
 
     def test_y_el_itinerario_sigue_completo(self):
         """Lo que se perdería si el turno se descartara en vez de recortarlo."""
@@ -411,7 +413,7 @@ class TestConElNombreAlReservar:
         miles de turnos anteriores."""
         salida = turno(APERTURA)
 
-        assert dichos(salida) == [APERTURA_SIN_LA_PREGUNTA]
+        assert dichos(salida) == [con_salida_de_medellin(APERTURA_SIN_LA_PREGUNTA)]
 
     def test_tampoco_cuando_el_nombre_del_canal_no_sirve(self):
         """`nombre_saneado` rechaza un teléfono en el campo del nombre. Antes,

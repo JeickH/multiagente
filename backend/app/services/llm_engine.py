@@ -47,6 +47,7 @@ Guardarraíles:
 """
 from __future__ import annotations
 
+import copy
 import json
 import logging
 import os
@@ -61,7 +62,7 @@ from typing import Any, Dict, List, Optional, Sequence
 
 from . import (
     calendario_demo, productos, productos_bot, recortes_turno, senales,
-    shopify_client, tarifario,
+    shopify_client, tarifario, venta_grupo,
 )
 from .crypto import encrypt_secret
 from .messaging.base import MARCADOR_NOTA_DE_VOZ
@@ -2015,7 +2016,8 @@ _TEXTO_CIERRE = (
 _TOOL_LISTO_PARA_RESERVAR: Dict[str, Any] = {
     "name": "listo_para_reservar",
     "description": (
-        "Úsala cuando la persona ya te mandó sus datos para reservar y en ESTE "
+        "Úsala cuando la persona ya te mandó el nombre completo y la cédula de "
+        "quien paga (con eso basta para reservar) y en ESTE "
         "mismo turno ya le escribiste cuánto debe pagar ahora (el anticipo, o el "
         "total si la consulta marcó la salida con «PAGO TOTAL») y que haga la "
         "transferencia y "
@@ -2039,10 +2041,9 @@ _TOOL_LISTO_PARA_RESERVAR: Dict[str, Any] = {
             "datos": {
                 "type": "string",
                 "description": (
-                    "Los datos de reserva tal como los escribió la persona "
-                    "(nombre completo, cédula y fecha de nacimiento de cada "
-                    "viajero, correo del titular). Copia literal; si falta "
-                    "alguno, no lo completes."
+                    "Los datos de quien paga tal como los escribió la persona "
+                    "(nombre completo y cédula; si mandó más, también). Copia "
+                    "literal; si falta alguno, no lo completes."
                 ),
             },
         },
@@ -2087,7 +2088,11 @@ def _listo_para_reservar(
         "text": "",
         "titulo": _TITULO_LISTO_PARA_RESERVAR,
         "etiqueta": ETIQUETA_LISTO_PARA_RESERVAR,
-        "motivo": "datos de reserva recibidos: confirmar la reserva al recibir el comprobante",
+        "motivo": (
+            "datos de quien paga recibidos (nombre completo y cédula): confirmar "
+            "la reserva al recibir el comprobante y pedirle los datos de los "
+            "demás viajeros"
+        ),
         "resumen": resumen + (f"\nDatos: {datos}" if datos else ""),
     }})
     return (
@@ -2164,6 +2169,93 @@ def _viola_salida_negada(
     return any(_SALIDA_NEGADA_RE.search(senales.normalizar(t or "")) for t in textos)
 
 
+def _falta_el_cierre_con_cedula(
+    cfg: Dict[str, Any],
+    history: List[Dict[str, str]],
+    user_input: Optional[str],
+    tools_called: List[Dict[str, Any]],
+    finished: bool,
+    ultima_ronda: bool,
+) -> bool:
+    """Sprint 36: la persona mandó nombre completo y cédula de quien paga, que
+    es todo lo que hace falta para apartar, y el bot no cerró (seguía pidiendo
+    la fecha de nacimiento, el correo o los datos de los demás viajeros).
+
+    Solo cuenta si el bot le había pedido esos datos en su mensaje anterior
+    (una cédula suelta en medio de otra cosa no es una reserva) y en la última
+    ronda del turno: mientras el modelo siga llamando herramientas, todavía
+    puede llamar `listo_para_reservar`.
+    """
+    if not cfg.get("tarifario") or finished or not ultima_ronda:
+        return False
+    if any(t.get("tool") in ("listo_para_reservar", "escalar_a_asesor",
+                             "finalizar_conversacion", "no_responder")
+           for t in tools_called):
+        return False
+    if not venta_grupo.ultimo_mensaje_pidio_datos(history):
+        return False
+    return venta_grupo.trae_datos_de_quien_paga(user_input or "")
+
+
+def _postproceso_venta(
+    cfg: Dict[str, Any],
+    *,
+    bot: Any,
+    history: List[Dict[str, str]],
+    user_input: Optional[str],
+    actions: List[Dict[str, Any]],
+    say_texts: List[str],
+    tools_called: List[Dict[str, Any]],
+    totales_grupo: List["venta_grupo.Total"],
+    finished: bool,
+    escalated_to: Optional[str],
+) -> None:
+    """Sprint 36, en este orden (ver `services/venta_grupo.py`):
+
+    1. «todo incluido» / «incluye todo» → lo que el plan sí trae.
+    2. El primer mensaje dice que el plan sale de Medellín.
+    3. Si se dijo el total del grupo y no se ofreció apartar, se ofrece.
+
+    Va antes de `_postproceso_variante`: el bot 2 corta el turno después de
+    la pregunta, y la del paso 3 tiene que ser esa pregunta.
+    """
+    if _recortar_lo_dicho(actions, say_texts, venta_grupo.sin_todo_incluido):
+        logger.info("llm_engine: «todo incluido» reescrito (bot=%s)", getattr(bot, "id", "?"))
+    if any(t.get("tool") == "no_responder" for t in tools_called):
+        return
+    cerrado = finished or escalated_to is not None or any(
+        t.get("tool") in ("escalar_a_asesor", "listo_para_reservar") for t in tools_called
+    )
+    if (
+        not cerrado
+        and _es_primer_turno(cfg, history)
+        and say_texts
+        and not venta_grupo.menciona_medellin(say_texts)
+    ):
+        for accion in actions:
+            payload = accion.get("payload") or {}
+            texto = payload.get("text") or ""
+            if accion.get("type") != "say" or not venta_grupo.es_apertura(texto):
+                continue
+            nuevo = venta_grupo.con_salida_de_medellin(texto)
+            payload["text"] = nuevo
+            say_texts[:] = [nuevo if t == texto else t for t in say_texts]
+            logger.info("llm_engine: «sale de Medellín» agregado al primer mensaje (bot=%s)",
+                        getattr(bot, "id", "?"))
+            break
+    if (
+        not cerrado
+        and totales_grupo
+        and not senales.es_aplazamiento(user_input or "")
+        and venta_grupo.con_la_venta_pedida(
+            actions, say_texts, totales_grupo,
+            opciones_cerradas=bool(cfg.get("opciones_cerradas")),
+        )
+    ):
+        logger.info("llm_engine: venta pedida tras el total del grupo (bot=%s)",
+                    getattr(bot, "id", "?"))
+
+
 def _bloque_reglas_agencia(cfg: Dict[str, Any]) -> str:
     """Reglas comunes de los tres bots de Arranquemos Pues (CEO, 2026-10-21),
     sacadas de cómo venden las asesoras. Van en el prefijo estable."""
@@ -2177,10 +2269,23 @@ def _bloque_reglas_agencia(cfg: Dict[str, Any]) -> str:
         "personas van en doble, y una persona sola paga la tarifa doble. Antes "
         "de dar un total, sabe cuántas viajan; a 1 o 2 personas nunca les "
         "cotices múltiple.\n"
+        "- **Total del grupo.** En cuanto sepas cuántos viajan (y la edad de "
+        "cada niño), consulta los precios con `adultos` y `ninos`: la "
+        "herramienta te devuelve el total del grupo ya calculado, con la "
+        "acomodación correcta y el valor para apartar. Dale ese total, no solo "
+        "el precio por persona.\n"
+        "- **Pide la venta.** Después del total, en ese mismo mensaje, ofrece "
+        "apartar con el valor que te dio la herramienta: «¿Te aparto los 2 "
+        "cupos? 🙌» (o «¿Te aparto tu cupo?» si viaja sola). Si la salida está "
+        "marcada «PAGO TOTAL», el valor para apartar es el total.\n"
         "- **Desde dónde salimos.** Solo desde Medellín, Estación Universidad – "
-        "Calle Carabobo. No hay salidas ni recogidas en otras ciudades ni en el "
-        "camino. Si preguntan, dilo claro en una línea y sigue con la venta; no "
-        "pases a un asesor por esto.\n"
+        "Calle Carabobo, y tu primer mensaje lo dice. No hay salidas ni "
+        "recogidas en otras ciudades ni en el camino. Si la persona vive en otra "
+        "ciudad (Cali, Bogotá…), díselo en una línea, con honestidad: el plan "
+        "sale de Medellín; y sigue con la venta; no pases a un asesor por "
+        "esto.\n"
+        "- **Qué incluye.** Hotel, transporte y alimentación desde el desayuno "
+        "del sábado, con los tours del itinerario. Dilo así, con esas partes.\n"
         "- **Cupo.** Siempre hay cupo.\n"
         "- **Pago.** Se aparta con el anticipo y el saldo se paga 8 días antes "
         "de la salida. Si la herramienta de precios marca una salida con «PAGO "
@@ -2191,11 +2296,12 @@ def _bloque_reglas_agencia(cfg: Dict[str, Any]) -> str:
         "- **Fecha concreta.** Si la persona nombra una fecha («30 de noviembre "
         "al 3 de diciembre»), consulta con fecha=AAAA-MM-DD antes de decir que "
         "no existe.\n"
-        "- **Cierre.** Cuando quiera reservar, pídele en un solo mensaje el "
-        "nombre completo, la cédula y la fecha de nacimiento de cada viajero, y "
-        "el correo del titular. Cuando los mande, en ese mismo turno: escríbele "
-        "el valor a pagar ahora y que haga la transferencia y mande el "
-        "comprobante por aquí, que un compañero le confirma la reserva; y llama "
+        "- **Cierre.** Cuando quiera reservar, pídele solo dos datos de quien "
+        "paga: el nombre completo y la cédula. Con esos dos ya queda lista para "
+        "reservar; los datos de los demás viajeros los pide el compañero "
+        "después. Cuando los mande, en ese mismo turno: escríbele el valor a "
+        "pagar ahora y que haga la transferencia y mande el comprobante por "
+        "aquí, que un compañero le confirma la reserva; y llama "
         "`listo_para_reservar`. Tú no recibes comprobantes ni confirmas "
         "reservas.\n"
         "- **Preguntas frecuentes.** El día antes de la salida se crea un grupo "
@@ -3550,6 +3656,19 @@ def _postproceso_variante(
 # Tools
 # ---------------------------------------------------------------------------
 
+def _con_props_de_grupo(tool: Dict[str, Any]) -> Dict[str, Any]:
+    """La herramienta de precios con `adultos` y `ninos` (Sprint 36).
+
+    Copia: las declaraciones de `productos_bot` se arman por turno, pero no se
+    le escribe encima a un dict que otro llamador pueda estar reusando.
+    """
+    nueva = copy.deepcopy(tool)
+    props = nueva.setdefault("input_schema", {}).setdefault("properties", {})
+    for clave, valor in venta_grupo.PROPIEDADES_GRUPO.items():
+        props.setdefault(clave, dict(valor))
+    return nueva
+
+
 def _tools_for(
     cfg: Dict[str, Any],
     ctx_productos: Optional[Any] = None,
@@ -3825,6 +3944,13 @@ def _tools_for(
         declaradas = productos_bot.tools(ctx_productos, prefijo=system)
         if cfg.get("demo"):
             declaradas = _tools_productos_demo(declaradas)
+        if cfg.get("tarifario"):
+            # Sprint 36 (los tres bots de Arranquemos): el grupo, para que la
+            # consulta devuelva el total ya calculado (`venta_grupo`).
+            declaradas = [
+                _con_props_de_grupo(t) if t.get("name") == productos_bot.PRECIOS else t
+                for t in declaradas
+            ]
         tools.extend(declaradas)
     elif cfg.get("tarifario"):
         tools.append(
@@ -3882,6 +4008,7 @@ def _tools_for(
                 },
             }
         )
+        tools[-1] = _con_props_de_grupo(tools[-1])
     catalogo_cfg = cfg.get("catalogo")
     if isinstance(catalogo_cfg, dict) and catalogo_cfg.get("catalog_id"):
         tools.append(
@@ -7695,6 +7822,11 @@ def _turno(
     # Resultados completos de la consulta de precios del turno (la vieja o la
     # nueva): las únicas duraciones que el bot puede escribir (`_viola_duracion`).
     duraciones_ok: List[str] = []
+    # Sprint 36: los totales del grupo que calculó el sistema en este turno
+    # (`venta_grupo.bloque_total`), para pedir la venta con la cifra exacta.
+    totales_grupo: List[venta_grupo.Total] = []
+    # Sprint 36: el cierre con nombre y cédula se corrige una sola vez.
+    cierre_corregido = False
     # Consumo del turno, sumando todas las rondas (#366).
     uso = {"tokens_in": 0, "tokens_out": 0, "cache_read": 0, "cache_write": 0}
     # Bot 2 (#18): lo que la sesión ya consultó en turnos anteriores — el bot
@@ -7846,6 +7978,12 @@ def _turno(
                     # Acomodación y pago total (CEO, 2026-10-21): antes de la
                     # línea de extras, que va siempre al final.
                     result_text = f"{result_text}\n{_notas_de_precios(result_text)}"
+                    # Sprint 36: el total del grupo, si el modelo pasó cuántos
+                    # van. Sin `adultos` no agrega nada.
+                    texto_total, totales = venta_grupo.bloque_total(result_text, tool_input)
+                    if texto_total:
+                        result_text = f"{result_text}\n{texto_total}"
+                        totales_grupo.extend(totales)
                 if cfg.get("cargos_ninos") and name in (
                     "consultar_tarifario", productos_bot.PRECIOS
                 ):
@@ -8012,6 +8150,26 @@ def _turno(
                         "consultar_tarifario", productos_bot.PRECIOS
                     ) if ctx_productos is not None else _CORRECCION_SALIDA_NEGADA,
                     "salida negada sin consultar su fecha",
+                )
+            # Sprint 36 (los tres bots de Arranquemos): ninguna salida desde
+            # otra ciudad, y el cierre con solo nombre y cédula de quien paga.
+            # Deshacen el cierre de la ronda, como las del bot 2.
+            elif cfg.get("tarifario") and venta_grupo.afirma_salida_otra_ciudad(
+                say_texts[textos_previos:]
+            ):
+                correccion, motivo = (
+                    venta_grupo.CORRECCION_OTRA_CIUDAD, "salida desde otra ciudad"
+                )
+                finished, escalated_to = finished_previo, escalado_previo
+                _anular_cierres(tools_called, tools_previas)
+            elif not cierre_corregido and _falta_el_cierre_con_cedula(
+                cfg, history, user_input, tools_called, finished,
+                data.get("stop_reason") != "tool_use" or not tool_results,
+            ):
+                cierre_corregido = True
+                correccion, motivo = (
+                    venta_grupo.CORRECCION_CIERRE_CON_CEDULA,
+                    "datos de quien paga sin listo_para_reservar",
                 )
             # Las dos de abajo son del bot 2 y sólo existen con su flag. A
             # diferencia de las de arriba, deshacen también el cierre de la
@@ -8263,6 +8421,21 @@ def _turno(
         logger.info(
             "llm_engine: pregunta del nombre agregada al primer mensaje (bot=%s)",
             getattr(bot, "id", "?"),
+        )
+
+    # Sprint 36: lo que los tres bots de Arranquemos hacen igual al vender.
+    if cfg.get("tarifario"):
+        _postproceso_venta(
+            cfg,
+            bot=bot,
+            history=history,
+            user_input=user_input,
+            actions=actions,
+            say_texts=say_texts,
+            tools_called=tools_called,
+            totales_grupo=totales_grupo,
+            finished=finished,
+            escalated_to=escalated_to,
         )
 
     # Bot 2: los recortes de la variante, en el orden de la spec. Cada paso
