@@ -80,9 +80,9 @@ class TestSinCifrasDeDinero:
 
 class TestApertura:
     def test_es_corta(self):
-        """~210 caracteres con el «desde» puesto; el hueco `$<desde>` mide
-        parecido a una cifra real."""
-        assert len(_apertura()) <= 260
+        """~220 caracteres con el «desde» puesto; el hueco `$<desde>` mide
+        parecido a una cifra real. Sprint 36 sumó «de *Medellín*»."""
+        assert len(_apertura()) <= 280
 
     def test_lleva_el_desde_como_hueco_que_llena_el_sistema(self):
         assert "$<desde>" in _apertura()
@@ -116,11 +116,14 @@ class TestNombre:
         assert not re.search(r"(?i)con qui[eé]n tengo el gusto", GUION)
 
     def test_se_pide_al_reservar_con_los_datos_de_la_reserva(self):
-        """Desde el 2026-10-21 se piden los datos de cada viajero (CEO)."""
+        """Sprint 36 (CEO, 7-nov-2026): solo nombre completo y cédula de quien
+        paga; los datos de los demás viajeros los pide el asesor después."""
         assert "junto con los demás datos" in _seccion("El nombre")
         reserva = GUION.split("### Reserva", 1)[1]
-        assert "de **cada viajero**" in reserva
-        assert "nombre completo" in reserva and "fecha de nacimiento" in reserva
+        assert "**quien paga**" in reserva
+        assert "*nombre completo*" in reserva and "*cédula*" in reserva
+        assert "fecha de nacimiento" not in reserva
+        assert "de **cada viajero**" not in reserva
 
     def test_el_nombre_nunca_bloquea_una_cotizacion(self):
         assert "El nombre nunca bloquea una cotización" in _seccion("El nombre")

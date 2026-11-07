@@ -115,8 +115,8 @@ class TestElPromptPideElMensajeUnificado:
         comidas", que son falsas y generan reclamos en el destino."""
         seccion = _seccion(_prompt(bot), "El primer mensaje")
         assert (
-            "salida el *viernes* y regreso el *lunes*, con hotel, transporte y "
-            "alimentación desde el desayuno del sábado"
+            "salida el *viernes* desde *Medellín* y regreso el *lunes*, con "
+            "hotel, transporte y alimentación desde el desayuno del sábado"
         ) in seccion
         assert "todo incluido" not in seccion.lower()
 
