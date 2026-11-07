@@ -9861,3 +9861,30 @@ el número de Gloma y Twilio lo reportó `delivered`. Commits `53d82fd` y `06544
 - Cerrar la subcuenta "Gloma" de la cuenta principal (irreversible, con OK del CEO).
 - Rotar el auth token y la API key de la cuenta principal tras la suspensión del 28-oct.
 - `/conversaciones` (supervisión) todavía muestra el contacto `web-…` como si fuera un número.
+
+---
+
+## Sprint 36 — Mejoras base para los 3 bots de venta de Arranquemos Pues (7-nov-2026)
+
+Branch `feature/bots-arranquemos-base`. Aprobado por el CEO el 7-nov: «para todos los bots hay
+que mejorarle esos mismos puntos, no solamente a los nuevos, para los viejos también, y que los
+viejos también pidan la venta». Aplica a los bots 12 (bot 1, congelado por golden: el CEO
+autoriza cambiarlo para estos puntos), 21 (variante B, fuera del reparto pero activo) y 22
+(variante C). Fuente: informes internos de `ventas/reportes/` del 7-nov (fuera de git).
+
+**Tareas y asignación (PM)**
+
+| # | Tarea | Agente |
+|---|-------|--------|
+| 1 | Pedir la venta: «¿Te aparto los N cupos?» con anticipo (o pago total a <5 días) tras el total; bot 1 incluido | dev-plataforma (A) |
+| 2 | Total del grupo con la acomodación correcta, no precio por persona | dev-plataforma (A) |
+| 3 | «Sale de Medellín» en el primer mensaje; a quien vive lejos, una línea, sin asesora ni salidas inventadas | dev-plataforma (A) |
+| 4 | Conversación abandonada: si el cliente vuelve, el bot retoma con contexto + nota «Volvió» + sube en la bandeja | seguridad (diseño) → dev-plataforma (B) |
+| 5 | Recordatorios que leen la conversación (sin repreguntar, sin reutilizar números de menú, sin «te quedé debiendo») | dev-plataforma (B) |
+| 6 | Fuera «incluye todo»/«todo incluido» y precio de la doble verificado en los 3 | dev-plataforma (A) |
+| 7 | «Listo para reservar» con nombre completo + cédula de quien paga | dev-plataforma (A) |
+| 8 | Botón «venta cerrada» (con valor) en la conversación, visible en bandeja/supervisión | seguridad (diseño) → experto-bd + dev-plataforma (C) |
+| — | QA contra Bedrock de los 3 bots, leyendo transcripciones | qa |
+| — | Auditoría de código de 4 y 8 antes del merge | seguridad |
+
+Sin deploy ni escrituras en RDS hasta que la sesión principal lo confirme con el CEO.
