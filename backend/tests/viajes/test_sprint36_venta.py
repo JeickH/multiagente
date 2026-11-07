@@ -568,6 +568,72 @@ class TestCierreConCedula:
 
 
 # ---------------------------------------------------------------------------
+# Regla del CEO para los niños (7-nov-2026, release 1)
+# ---------------------------------------------------------------------------
+#
+# Cuentan para la acomodación: 2 adultos + 1 niño = 3 → múltiple. El menor
+# paga su tramo del tarifario (extras de niños), no como adulto; desde 5 años
+# paga el plan. Total = adultos × precio de la acomodación + cada niño según su
+# tramo. 1 adulto + 1 niño son 2 personas → doble.
+#
+# Salida del 20 al 23 de noviembre en Amor de Dios: múltiple $459.000, doble
+# $505.000. Tramos: 0–2 años $55.000, 3–4 años $195.000.
+M, D = 459_000, 505_000
+CASOS_NINOS = [
+    # (adultos, ninos, acomodación esperada, total esperado)
+    ("2", "1", "múltiple", 2 * M + 55_000),        # niño de 0–2
+    ("2", "3", "múltiple", 2 * M + 195_000),       # niño de 3–4
+    ("2", "7", "múltiple", 3 * M),                 # 5 o más: paga el plan
+    ("1", "3", "doble", 1 * D + 195_000),          # 2 personas → doble
+    ("1", "7", "doble", 2 * D),                    # 2 personas, el de 7 paga plan
+]
+IDS_NINOS = ["2+bebe", "2+nino3", "2+nino7", "1+nino3", "1+nino7"]
+
+
+def _principal(totales):
+    """El total de la acomodación que manda (la primera que se ofrece)."""
+    fila = [t for t in totales if t.hotel == "Amor de Dios" and t.etiqueta == SALIDA]
+    return fila[0]
+
+
+class TestReglaDeNinosDelCEO:
+    @pytest.mark.parametrize("adultos,ninos,acom,total", CASOS_NINOS, ids=IDS_NINOS)
+    def test_formula_por_consultar_tarifario(self, adultos, ninos, acom, total):
+        texto, totales = venta_grupo.bloque_total(
+            _consulta(fecha=FECHA), {"adultos": adultos, "ninos": ninos}, hoy=HOY,
+        )
+        t = _principal(totales)
+        assert (t.acomodacion, t.total) == (acom, total)
+        assert t.a_pagar == round(total * 0.30)
+        if acom == "doble":
+            assert "MÚLTIPLE" not in texto
+
+    @pytest.mark.parametrize("adultos,ninos,acom,total", CASOS_NINOS, ids=IDS_NINOS)
+    def test_el_guardarrail_de_precio_acepta_el_total(self, adultos, ninos, acom, total):
+        resultado = _consulta(fecha=FECHA)
+        texto, totales = venta_grupo.bloque_total(
+            resultado, {"adultos": adultos, "ninos": ninos}, hoy=HOY,
+        )
+        t = _principal(totales)
+        pesos = lambda v: f"${v:,}".replace(",", ".")
+        mensaje = (
+            f"Para {adultos} adulto(s) y el niño del *{SALIDA}* en Amor de Dios, "
+            f"en {acom}, son *{pesos(t.total)}* en total 🌴 "
+            + venta_grupo.frase_pedir_venta(t)
+        )
+        assert guardarrail_precio.viola_precio(
+            mensaje, resultados_precios=[resultado + "\n" + texto],
+            extras=tarifario.extras(), desde_validos=set(), cifras_cliente=set(),
+        ) is None
+
+    def test_los_tramos_son_los_de_la_linea_de_ninos(self):
+        """El valor de cada menor es el mismo que la línea de niños que ve el
+        modelo en el resultado (las dos salen de los extras del tarifario)."""
+        linea = tarifario.linea_ninos()
+        assert "$55.000" in linea and "$195.000" in linea
+
+
+# ---------------------------------------------------------------------------
 # La fuente de producción: `consultar_precios` sobre el tarifario importado
 # ---------------------------------------------------------------------------
 
@@ -625,3 +691,24 @@ class TestPorLaFuenteDeProduccion:
         texto = "\n".join(_dichos(salida))
         if not cfg.get("opciones_cerradas"):
             assert "¿Te aparto los 2 cupos? 🙌" in texto
+
+    @pytest.mark.parametrize("adultos,ninos,acom,total", CASOS_NINOS, ids=IDS_NINOS)
+    def test_formula_por_consultar_precios(self, modelo, cuenta, adultos, ninos, acom, total):
+        team_id, bot_id = cuenta
+        guion, vistos = modelo
+        guion.extend([
+            _resp(U("consultar_precios", {"mes": "noviembre", "fecha": FECHA,
+                                          "variante": "Amor de Dios",
+                                          "adultos": adultos, "ninos": ninos})),
+            _resp(T("¡Listo! 🌴")),
+        ])
+        conf = {**json.loads(json.dumps(LLM_CONFIG)), "fuente_datos": "productos"}
+        bot = Bot(conf)
+        bot.id, bot.team_id, bot.instrucciones = bot_id, team_id, None
+        llm_engine.advance(bot, ESTADO, "somos nosotros con el niño")
+        resultado = _resultado_de(vistos)
+        _, totales = venta_grupo.bloque_total(resultado, {"adultos": adultos, "ninos": ninos}, hoy=HOY)
+        t = _principal(totales)
+        assert (t.acomodacion, t.total) == (acom, total)
+        pesos = f"${total:,}".replace(",", ".")
+        assert f"= {pesos} total" in resultado
