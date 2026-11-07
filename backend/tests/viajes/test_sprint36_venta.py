@@ -460,6 +460,8 @@ class TestTodoIncluido:
         ("¡Sí! 🙌 Incluye hotel, transporte y alimentación.", "Incluye hotel, transporte y alimentación."),
         ("Sí, el plan incluye *hotel* y transporte.", "El plan incluye *hotel* y transporte."),
         ("¡Claro que sí! Incluye hotel.", "Incluye hotel."),
+        ("Claro 🙌 Incluye *hotel* y transporte.", "Incluye *hotel* y transporte."),
+        ("Siempre salimos de Medellín.", "Siempre salimos de Medellín."),
         ("El plan incluye hotel.", "El plan incluye hotel."),
     ])
     def test_a_la_pregunta_no_se_le_contesta_si(self, antes, despues):

@@ -612,7 +612,8 @@ def sin_todo_incluido(texto: str) -> str:
 
 #: «¡Sí! 🙌», «Sí,», «¡Claro que sí!», «Así es.» al arranque de la respuesta.
 _SI_INICIAL_RE = re.compile(
-    r"^\s*¡?\s*(?:claro\s+que\s+s[ií]|s[ií]\s+se[ñn]or[a]?|s[ií]|as[ií]\s+es|exacto|correcto)"
+    r"^\s*¡?\s*(?:claro\s+que\s+s[ií]|claro|por\s+supuesto|s[ií]\s+se[ñn]or[a]?|s[ií]"
+    r"|as[ií]\s+es|exacto|correcto)\b"
     r"\s*[!.,:]*\s*(?:[\U0001F000-\U0001FAFF\u2600-\u27BF]\ufe0f?\s*)*",
     re.IGNORECASE,
 )
