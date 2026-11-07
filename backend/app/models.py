@@ -293,6 +293,23 @@ class Conversation(Base):
         nullable=True,
     )
     bot_asignado_at = Column(DateTime, nullable=True)
+    # Marcador de abandono de un solo uso (Sprint 36). Cuándo se marcó la
+    # conversación como abandonada y qué asesor tenía el turno en ese momento
+    # (nombre de rotación, no FK: `assigned_to` puede reasignarse después).
+    # `reclamos_abandono` cuenta cuántas veces se reclamó el marcador; el
+    # "un solo uso" lo hace cumplir la lógica con este contador.
+    abandono_at = Column(DateTime, nullable=True)
+    abandono_asesor = Column(String(64), nullable=True)
+    reclamos_abandono = Column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+    # Último mensaje SALIENTE escrito por una persona (sent_by_user_id no nulo,
+    # no nota interna). Lo mantiene el endpoint de envío; el bot no responde si
+    # una asesora escribió hace poco (Sprint 36).
+    ultimo_mensaje_humano_at = Column(DateTime, nullable=True)
+    # Cuándo la cerró `scripts/cerrar_inactivas_arranquemos.py` (la nota que
+    # empieza por "🔒 *Cerrada por inactividad*").
+    cerrada_por_inactividad_at = Column(DateTime, nullable=True)
     last_message_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
@@ -2184,6 +2201,91 @@ class Agendamiento(Base):
             f"<Agendamiento id={self.id} team_id={self.team_id} "
             f"conversation_id={self.conversation_id} estado={self.estado!r} "
             f"fecha_llamada={self.fecha_llamada}>"
+        )
+
+    __str__ = __repr__
+
+
+# ===== Ventas registradas sobre una conversación (Sprint 36) ================
+#
+# La asesora marca que el chat terminó en venta y con qué valor. Una
+# conversación tiene a lo sumo UNA venta activa; para corregirla se anula
+# (queda el rastro: quién, cuándo y por qué) y se registra otra. Nada se borra.
+
+#: Tope de `valor_cop`: 500 millones de pesos. Un plan turístico no llega ni
+#: cerca; el techo existe para que un error de dedo (ceros de más) no ensucie
+#: los reportes. Mismo número que el CHECK de la migración.
+VENTA_VALOR_MAX_COP = 500_000_000
+
+
+class ConversationSale(Base):
+    """Una venta cerrada en una conversación, con su valor en pesos.
+
+    `vendida_por` es el nombre de rotación de la asesora (como
+    `Agendamiento.asesor`), no un usuario: la cuenta de asesores de Arranquemos
+    Pues es un login compartido. Quién la registró en la plataforma sí es un
+    usuario (`registrada_por_user_id`).
+    """
+
+    __tablename__ = "conversation_sales"
+
+    id = Column(Integer, primary_key=True, index=True)
+    team_id = Column(
+        Integer, ForeignKey("teams.id", ondelete="CASCADE"), nullable=False
+    )
+    conversation_id = Column(
+        Integer,
+        ForeignKey("conversations.id", ondelete="CASCADE"),
+        nullable=False,
+        # Cubre el ON DELETE CASCADE desde `conversations` también para las
+        # ventas anuladas, que el índice único parcial no incluye.
+        index=True,
+    )
+    valor_cop = Column(BigInteger, nullable=False)
+    #: Texto libre de la asesora: puede traer datos del cliente (no se loggea).
+    nota = Column(String(280), nullable=True)
+    vendida_por = Column(String(64), nullable=True)
+    registrada_por_user_id = Column(
+        Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    anulada_at = Column(DateTime, nullable=True)
+    anulada_por_user_id = Column(
+        Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    motivo_anulacion = Column(String(280), nullable=True)
+
+    conversation = relationship("Conversation")
+
+    __table_args__ = (
+        # Declarado aquí y no solo en la migración: si `create_all()` crea la
+        # tabla antes que el script (gotcha del 17-sep-2026), el CHECK igual
+        # queda puesto.
+        CheckConstraint(
+            f"valor_cop > 0 AND valor_cop <= {VENTA_VALOR_MAX_COP}",
+            name="ck_conversation_sales_valor",
+        ),
+        # Una sola venta ACTIVA por conversación. Parcial a propósito: una vez
+        # anulada, el mismo chat puede registrar la venta corregida.
+        Index(
+            "uq_conversation_sales_activa",
+            "conversation_id",
+            unique=True,
+            postgresql_where=text("anulada_at IS NULL"),
+            sqlite_where=text("anulada_at IS NULL"),
+        ),
+        # Lo que pregunta la pantalla: las ventas de este team (y de este chat).
+        Index("ix_conversation_sales_team_conv", "team_id", "conversation_id"),
+    )
+
+    def __repr__(self) -> str:
+        # Sin valor ni nota: el valor es dato comercial del cliente y la nota
+        # es texto libre que puede traer datos de un tercero (regla 8).
+        return (
+            f"<ConversationSale id={self.id} team_id={self.team_id} "
+            f"conversation_id={self.conversation_id} "
+            f"anulada={self.anulada_at is not None}>"
         )
 
     __str__ = __repr__
