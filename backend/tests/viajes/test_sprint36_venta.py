@@ -456,6 +456,26 @@ class TestTodoIncluido:
         assert "hotel, transporte y alimentación" in texto
         assert "todo incluido" not in salida["next_state"]["history"][-1]["content"].lower()
 
+    @pytest.mark.parametrize("antes,despues", [
+        ("¡Sí! 🙌 Incluye hotel, transporte y alimentación.", "Incluye hotel, transporte y alimentación."),
+        ("Sí, el plan incluye *hotel* y transporte.", "El plan incluye *hotel* y transporte."),
+        ("¡Claro que sí! Incluye hotel.", "Incluye hotel."),
+        ("El plan incluye hotel.", "El plan incluye hotel."),
+    ])
+    def test_a_la_pregunta_no_se_le_contesta_si(self, antes, despues):
+        assert venta_grupo.sin_si_a_todo_incluido(antes) == despues
+
+    @pytest.mark.parametrize("cfg,_id", TRES, ids=[i for _, i in TRES])
+    def test_el_motor_quita_el_si_solo_si_preguntaron_por_todo_incluido(self, modelo, cfg, _id):
+        guion, _ = modelo
+        dicho = _con_opciones(cfg, "¡Sí! 🙌 Incluye hotel, transporte y alimentación desde el sábado. ¿Para qué mes?")
+        guion.append(_resp(T(dicho)))
+        salida = _turno(cfg, ESTADO, "¿el plan es todo incluido?")
+        assert _dichos(salida)[0].startswith("Incluye hotel")
+        guion.append(_resp(T(dicho)))
+        salida = _turno(cfg, ESTADO, "¿hay salida en noviembre?")
+        assert _dichos(salida)[0].startswith("¡Sí! 🙌")
+
     @pytest.mark.parametrize("cfg,_id", TRES, ids=[i for _, i in TRES])
     def test_los_guiones_no_lo_mencionan(self, cfg, _id):
         guion = llm_engine._instrucciones_de(Bot(dict(cfg)), dict(cfg)).lower()

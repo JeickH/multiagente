@@ -2221,6 +2221,17 @@ def _postproceso_venta(
     """
     if _recortar_lo_dicho(actions, say_texts, venta_grupo.sin_todo_incluido):
         logger.info("llm_engine: «todo incluido» reescrito (bot=%s)", getattr(bot, "id", "?"))
+    if venta_grupo.pregunta_por_todo_incluido(user_input or ""):
+        primera = next((a for a in actions if a.get("type") == "say"
+                        and ((a.get("payload") or {}).get("text") or "").strip()), None)
+        if primera is not None:
+            antes = primera["payload"]["text"]
+            despues = venta_grupo.sin_si_a_todo_incluido(antes)
+            if despues != antes:
+                primera["payload"]["text"] = despues
+                say_texts[:] = [despues if t == antes else t for t in say_texts]
+                logger.info("llm_engine: «sí» a «todo incluido» quitado (bot=%s)",
+                            getattr(bot, "id", "?"))
     if any(t.get("tool") == "no_responder" for t in tools_called):
         return
     cerrado = finished or escalated_to is not None or any(

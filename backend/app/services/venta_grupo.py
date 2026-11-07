@@ -610,6 +610,30 @@ def sin_todo_incluido(texto: str) -> str:
     return _TODO_INCLUIDO_RE.sub(_reemplazo, texto)
 
 
+#: «¡Sí! 🙌», «Sí,», «¡Claro que sí!», «Así es.» al arranque de la respuesta.
+_SI_INICIAL_RE = re.compile(
+    r"^\s*¡?\s*(?:claro\s+que\s+s[ií]|s[ií]\s+se[ñn]or[a]?|s[ií]|as[ií]\s+es|exacto|correcto)"
+    r"\s*[!.,:]*\s*(?:[\U0001F000-\U0001FAFF\u2600-\u27BF]\ufe0f?\s*)*",
+    re.IGNORECASE,
+)
+
+
+def pregunta_por_todo_incluido(texto: str) -> bool:
+    return bool(_TODO_INCLUIDO_RE.search(texto or ""))
+
+
+def sin_si_a_todo_incluido(texto: str) -> str:
+    """A «¿es todo incluido?» no se le contesta «¡Sí!»: el plan no lo es (la
+    alimentación arranca el sábado y hay opcionales). Se quita la afirmación
+    del arranque y queda lo que sí incluye, que es lo que el bot explica
+    después (QA contra Bedrock, 7-nov: los bots 2 y 3 abrían con «¡Sí! 🙌»)."""
+    m = _SI_INICIAL_RE.match(texto or "")
+    if not m or m.end() >= len(texto):
+        return texto
+    resto = texto[m.end():]
+    return resto[:1].upper() + resto[1:]
+
+
 # ---------------------------------------------------------------------------
 # 5. Listo para reservar con nombre completo y cédula de quien paga
 # ---------------------------------------------------------------------------
