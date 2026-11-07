@@ -947,6 +947,9 @@ def _system_prompt(
         # franja del día (ver `_bloque_hora_local` sobre la caché).
         cola.append(_bloque_regreso(cfg, history))
         cola.append(_bloque_hora_local(cfg))
+    # Sprint 36: el que vuelve tras un abandono o un cierre por inactividad
+    # (todos los bots; solo existe en el primer turno de la sesión de regreso).
+    cola.append(_bloque_vuelve(cfg, ctx_productos))
     cola_aparte = [c for c in cola if c] if cola is not parts else []
 
     partes = [p for p in parts if p]
@@ -2807,6 +2810,8 @@ def _bloque_regreso(cfg: Dict[str, Any], history: Optional[List[Dict[str, str]]]
     """
     if history or not _dato_runtime(cfg, "ya_se_presento"):
         return ""
+    if _dato_runtime(cfg, "regreso"):
+        return ""               # Sprint 36: lo cuenta `_bloque_vuelve`
     lineas = [
         "La persona **ya conversó contigo antes**, en otra conversación. No te "
         "presentes de nuevo ni repitas la bienvenida: salúdala como a alguien "
@@ -2818,6 +2823,87 @@ def _bloque_regreso(cfg: Dict[str, Any], history: Optional[List[Dict[str, str]]]
     if etapa in _ETAPA_LEGIBLE:
         lineas.append(f"Había llegado hasta {_ETAPA_LEGIBLE[etapa]}.")
     return "## Ya hablaron antes\n" + "\n".join(f"- {l}" for l in lineas)
+
+
+def _bloque_vuelve(cfg: Dict[str, Any], ctx_productos: Optional[Any] = None) -> str:
+    """Sprint 36: «## Vuelve tras un silencio», el camino de regreso.
+
+    Lo arma `bot_runner` desde `runtime["regreso"]` (contrato en
+    `services/reenganche.contrato_de_regreso`). Todo se valida contra listas
+    cerradas (fecha ISO, mes 1-12, hotel del tarifario, enteros acotados): ni
+    nombres, ni teléfonos, ni texto libre llegan al prompt. **No lleva la cifra
+    del total viejo**: solo que lo hubo, para que el bot vuelva a consultar
+    precios y nunca lo dé como vigente.
+    """
+    regreso = _dato_runtime(cfg, "regreso")
+    if not isinstance(regreso, dict):
+        return ""
+    via = regreso.get("via")
+    como = (
+        "se había cerrado por inactividad" if via == "inactividad"
+        else "había quedado sin respuesta"
+    )
+    herramienta = (
+        f"`{productos_bot.PRECIOS}`" if ctx_productos is not None
+        else ("`consultar_tarifario`" if cfg.get("tarifario") else "la herramienta de precios")
+    )
+    lineas = [
+        f"La persona **vuelve a escribir** después de un tiempo: la conversación "
+        f"{como}. Ya te conoce: **no te presentes ni repitas la bienvenida**. "
+        "Salúdala en una línea como a alguien que vuelve y responde lo que "
+        "escribió. No tienes el historial de entonces: esto es lo que había.",
+    ]
+    fecha = str(regreso.get("fecha") or "")
+    fecha = fecha if _FECHA_ISO_RE.fullmatch(fecha) else ""
+    mes = regreso.get("mes")
+    mes = mes if isinstance(mes, int) and 1 <= mes <= 12 else None
+    clave_hotel = tarifario.normalizar_hotel(str(regreso.get("hotel") or ""))
+    hotel = getattr(tarifario, "_NOMBRE_HOTEL", {}).get(clave_hotel) if clave_hotel else None
+    adultos = regreso.get("adultos")
+    adultos = adultos if isinstance(adultos, int) and 1 <= adultos <= 30 else None
+    edades = [
+        e for e in (regreso.get("edades_ninos") or [])
+        if isinstance(e, int) and not isinstance(e, bool) and 0 <= e <= 17
+    ][:30] if adultos else []
+    partes = []
+    if fecha:
+        partes.append(f"la salida del {fecha}")
+    elif mes:
+        partes.append(f"*{_MESES_ES[mes - 1]}*")
+    if hotel:
+        partes.append(f"en *{hotel}*")
+    if adultos:
+        grupo = f"{adultos} adulto" + ("s" if adultos != 1 else "")
+        if edades:
+            grupo += " y " + ", ".join("un bebé" if e == 0 else f"un niño de {e}" for e in edades)
+        partes.append(f"para {grupo}")
+    if partes:
+        lineas.append("La última vez estaba mirando " + " ".join(partes) + ".")
+    if regreso.get("habia_total"):
+        lineas.append(
+            "Ya le habías dado un total, pero **los precios pueden haber cambiado**: "
+            f"antes de decir cualquier cifra vuelve a consultar con {herramienta}"
+            + (" (con `adultos` y `ninos`)" if adultos else "")
+            + ". Nunca repitas un total de entonces como precio vigente."
+        )
+    else:
+        lineas.append(f"Antes de decir un precio, consúltalo con {herramienta}.")
+    if fecha and regreso.get("fecha_paso") is True:
+        lineas.append(
+            "Esa salida **ya pasó**: díselo en una línea y ofrécele las próximas "
+            "salidas para el mismo grupo (consulta los precios de esas fechas)."
+        )
+    personas = (adultos or 0) + len(edades)
+    cierre = (
+        f"«¿Te aparto los {personas} cupos? 🙌»" if personas > 1
+        else ("«¿Te aparto tu cupo? 🙌»" if personas == 1 else "«¿Te aparto los cupos? 🙌»")
+    )
+    lineas.append(
+        "Ve directo al cierre: con el total actualizado, en ese mismo mensaje "
+        f"ofrécele apartar: {cierre}. Si te hace una pregunta, respóndela primero."
+        + ("" if adultos else " Si no sabes cuántos viajan, pregúntalo antes del total.")
+    )
+    return "## Vuelve tras un silencio (datos del sistema)\n" + "\n".join(f"- {l}" for l in lineas)
 
 
 def _contexto_regreso(cfg: Dict[str, Any]) -> tuple:
@@ -2862,6 +2948,10 @@ def _texto_regreso(
     if not cfg.get("regreso_sin_modelo") or history or not user_input:
         return None
     if not _dato_runtime(cfg, "ya_se_presento"):
+        return None
+    if _dato_runtime(cfg, "regreso"):
+        # Sprint 36: el que vuelve tras un abandono va al cierre con precios
+        # nuevos (`_bloque_vuelve`), no al menú de bienvenida de regreso.
         return None
     if not senales.es_saludo_sin_contenido(user_input):
         return None

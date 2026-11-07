@@ -540,10 +540,42 @@ def add_message(
         error_detail=error_detail,
     )
     db.add(msg)
-    conversation.last_message_at = datetime.utcnow()
+    ahora = datetime.utcnow()
+    conversation.last_message_at = ahora
+    if es_mensaje_humano(direction, sent_by_user_id, message_type):
+        # Sprint 36 (diseño 0.4): el ÚNICO lugar que mantiene el sello. Lo lee la
+        # regla de las 2 h del reenganche y `bot_runner._cambio_de_dueno`.
+        conversation.ultimo_mensaje_humano_at = ahora
     db.commit()
     db.refresh(msg)
     return msg
+
+
+def es_mensaje_humano(
+    direction: str, sent_by_user_id: Optional[int], message_type: Optional[str]
+) -> bool:
+    """¿Este mensaje lo escribió una persona del equipo hacia el cliente?
+
+    Saliente, con autor (`sent_by_user_id`) y que no sea nota interna: la nota
+    de «tomar» de Interesados lleva autor pero no viaja al cliente, y una
+    asesora que solo deja una nota no está atendiendo el chat (diseño 0.4).
+    """
+    return (
+        direction == "outbound"
+        and sent_by_user_id is not None
+        and (message_type or "text") != "nota_interna"
+    )
+
+
+def sellar_mensaje_humano(db: Session, conversation: models.Conversation) -> None:
+    """Sello previo de 2.4b: se escribe y se hace commit ANTES de llamar al
+    proveedor. Si el bot está en medio de un turno, al releer el sello antes de
+    enviar (`bot_runner._cambio_de_dueno`) ve que una persona ya está
+    escribiendo y descarta lo suyo, aunque el envío de la asesora tarde o falle.
+    """
+    conversation.ultimo_mensaje_humano_at = datetime.utcnow()
+    db.add(conversation)
+    db.commit()
 
 
 def hay_entrante_despues(

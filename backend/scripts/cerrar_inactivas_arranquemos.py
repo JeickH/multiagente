@@ -24,12 +24,11 @@ Qué NO hace, a propósito:
 Idempotente: una conversación que ya tiene la nota de cierre no se vuelve a
 tocar, así que se puede correr todos los días sin duplicar nada.
 
-OJO (limitación conocida del motor, no de este script): una conversación en
-manos de una persona ya no la vuelve a tomar el bot — `bot_runner
-._reabrir_conversacion` corta en seco cuando `assigned_to != 'bot'`. Si uno de
-estos clientes vuelve a escribir, el mensaje entra pero la conversación no
-regresa sola a la bandeja de pendientes. Mientras eso siga así, conviene
-revisar las cerradas con actividad reciente.
+Desde el Sprint 36 el cierre deja un marcador (`cerrada_por_inactividad_at`,
+`reclamos_abandono = 0`): si uno de estos clientes vuelve a escribir, el bot
+retoma la conversación una sola vez y deja la nota «🔥 Volvió» (ver
+`app/services/reenganche.py`). Si una asesora la cierra, reabre o reasigna a
+mano antes, el marcador se consume y el bot no se mete.
 
 Uso:
     # Ver qué haría, sin escribir nada (por defecto)
@@ -127,7 +126,13 @@ for cid, asignado, etiqueta, ultimo in candidatas:
         VALUES (:cid, 'outbound', :nota, 'nota_interna', 'sent', :ahora)
     """), {"cid": cid, "nota": nota, "ahora": ahora})
     # `last_message_at` se deja intacto a propósito: mide la antigüedad del abandono.
-    db.execute(text("UPDATE conversations SET status = 'closed' WHERE id = :cid"), {"cid": cid})
+    # Sprint 36 (diseño 0.3): el marcador de inactividad con reset por episodio,
+    # en el MISMO UPDATE que el cierre. Si el cliente vuelve, el bot lo retoma
+    # (`services/reenganche.py`), una sola vez.
+    db.execute(text(
+        "UPDATE conversations SET status = 'closed', cerrada_por_inactividad_at = :ahora, "
+        "reclamos_abandono = 0, marcador_consumido = NULL WHERE id = :cid"
+    ), {"cid": cid, "ahora": ahora})
 
 if APLICAR:
     db.commit()

@@ -469,35 +469,44 @@ class TestUnTeamSinAsesoresNoRevienta:
 # ---------------------------------------------------------------------------
 
 class TestCuandoLaPersonaVuelveAEscribir:
-    """La decisión de este sprint: una vez que el chat tiene dueño humano, el
-    bot no se lo quita. `bot_router.resolve_bot_for_incoming_message` ya corta
-    cuando `assigned_to != "bot"` (desde el handoff del Sprint 19), así que la
-    conversación abandonada y asignada queda para el asesor — con su etiqueta,
-    que es lo que le explica por qué le llegó así.
+    """Sprint 36 cambia la decisión del Sprint 24: el que vuelve tras un
+    abandono ya no queda en silencio esperando a la asesora. El primer entrante
+    reclama el marcador (una sola vez) y el bot retoma, salvo que una persona
+    del equipo le haya escrito en las últimas 2 h. Lo detallado está en
+    `tests/test_sprint36_reenganche.py`; aquí, que el flujo de siempre lo cumple.
     """
 
-    def test_el_bot_no_vuelve_a_contestar(self, db_session, agencia, modelo):
+    def test_el_bot_retoma_el_chat(self, db_session, agencia, modelo):
         team, _ = agencia
         conv = abandonar(db_session, team, modelo)
         antes = len(enviados_al_cliente(db_session, conv))
+        modelo.guion = [_respuesta(_texto("¡Hola de nuevo! 😊 ¿Te aparto los cupos?"))]
 
         conv, bot = entra_mensaje(db_session, team, "hola, ¿me confirmas precios?")
 
-        assert bot is None, "el bot le quitó el chat al asesor"
-        assert len(enviados_al_cliente(db_session, conv)) == antes
+        assert bot is not None
+        assert conv.assigned_to == "bot"
+        assert conv.status == "open"
+        assert conv.reclamos_abandono == 1
+        assert len(enviados_al_cliente(db_session, conv)) == antes + 1
+        assert any(n.content.startswith("🔥 *Volvió*") for n in notas(db_session, conv))
 
-    def test_el_asesor_conserva_el_chat_con_su_etiqueta(
+    def test_si_una_asesora_le_escribio_hace_poco_se_queda_con_ella(
         self, db_session, agencia, modelo
     ):
         team, _ = agencia
         conv = abandonar(db_session, team, modelo)
         asesor = conv.assigned_to
+        conv.ultimo_mensaje_humano_at = datetime.utcnow() - timedelta(minutes=30)
+        db_session.commit()
+        antes = len(enviados_al_cliente(db_session, conv))
 
-        conv, _ = entra_mensaje(db_session, team, "hola, ¿me confirmas precios?")
+        conv, bot = entra_mensaje(db_session, team, "hola, ¿me confirmas precios?")
 
+        assert bot is None
         assert conv.assigned_to == asesor
         assert conv.status == "pending"
-        assert conv.etiqueta == ETIQUETA
+        assert len(enviados_al_cliente(db_session, conv)) == antes
 
     def test_reabrir_no_le_quita_el_chat_a_una_persona(self, db_session, agencia):
         """La guarda, directo. En el flujo real ni se llega hasta acá porque el

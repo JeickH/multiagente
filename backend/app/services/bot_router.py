@@ -29,7 +29,7 @@ from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from .. import models
-from . import llm_engine
+from . import llm_engine, reenganche
 
 logger = logging.getLogger(__name__)
 
@@ -105,9 +105,35 @@ def resolve_bot_for_incoming_message(
         - (bot, None) → arrancar sesión nueva
         - (None, None) → ningún bot aplica, que lo tome un humano
     """
+    conv = db.query(models.Conversation).get(conversation_id)
+    if conv is not None and conv.team_id != team.id:
+        # Defensivo: la conversación tiene que ser de la cuenta que recibió el
+        # mensaje. Los webhooks ya lo garantizan; aquí no se confía.
+        return None, None
+    asignado = (conv.assigned_to or "bot") if conv is not None else "bot"
+    con_marcador = conv is not None and reenganche.hay_marcador(conv)
+
+    # Sprint 36 (diseño 2.6): tope de turnos del motor LLM por conversación,
+    # antes de reclamar nada (si no, un cliente que escribe en bucle gastaría el
+    # marcador sin turno). Solo cuando el chat iría a un bot.
+    if conv is not None and (asignado == "bot" or con_marcador):
+        tope = reenganche.excede_tope(db, conv)
+        if tope:
+            reenganche.avisar_tope(db, conv, tope)
+            return None, None
+
+    # Sprint 36 (diseño 2.1): el cliente que vuelve tras un abandono o un cierre
+    # por inactividad. ÚNICO llamador de `reenganche.reclamar`.
+    if con_marcador:
+        regreso = _atender_regreso(
+            db, team=team, conv=conv, asignado=asignado, message_text=message_text
+        )
+        if regreso is not None:
+            return regreso
+        db.refresh(conv)
+
     # 0) Sprint 19: si la conversación ya fue entregada a un asesor humano
     #    (handoff), el bot NO vuelve a intervenir — el humano conserva el chat.
-    conv = db.query(models.Conversation).get(conversation_id)
     if conv is not None and (conv.assigned_to or "bot") != "bot":
         return None, None
 
@@ -155,6 +181,15 @@ def resolve_bot_for_incoming_message(
     #    ORDER BY, Postgres devuelve las filas en el orden que le convenga y,
     #    con dos bots que matchean o dos default, el que respondía dependía del
     #    plan de la consulta.
+    bots = _bots_del_owner(db, team)
+    bot = _por_palabra_o_default(db, team=team, conv=conv, bots=bots, message_text=message_text)
+    return (bot, None) if bot is not None else (None, None)
+
+
+def _bots_del_owner(db: Session, team: models.Team) -> list:
+    """Los bots que pueden tomar un entrante de este team: del owner, activos,
+    sin `llm_config.demo`, por id. Es LA lista de la que se elige siempre
+    (también el bot de reenganche, diseño 2.3)."""
     owner_id = team.owner_user_id
     bots = (
         db.query(models.Bot)
@@ -168,24 +203,88 @@ def resolve_bot_for_incoming_message(
     # Sprint 32 (#608 M6): los bots de la demo pública (`llm_config.demo`)
     # solo atienden `/demo/{id}/chat`. Nunca toman un mensaje entrante, ni
     # por palabra clave ni como default, aunque alguien cambie su trigger.
-    bots = [b for b in bots if not llm_engine.config_de(b).get("demo")]
+    return [b for b in bots if not llm_engine.config_de(b).get("demo")]
 
+
+def _por_palabra_o_default(
+    db: Session,
+    *,
+    team: models.Team,
+    conv: Optional[models.Conversation],
+    bots: list,
+    message_text: str,
+) -> Optional[models.Bot]:
+    """Pasos 2 y 3 del router: palabra clave y, si no, el default (o el reparto)."""
     text_low = (message_text or "").lower()
     for bot in bots:
         if bot.trigger_type != models.BOT_TRIGGER_KEYWORD:
             continue
         for kw in _keywords_for(bot):
             if kw and kw in text_low:
-                return bot, None
+                return bot
 
     # 3) Bot default (o el que toque por el reparto entre varios).
     defaults = [b for b in bots if b.trigger_type == models.BOT_TRIGGER_DEFAULT]
     default_bot = _bot_default(db, team=team, conv=conv, defaults=defaults)
     if default_bot:
-        return default_bot, None
+        return default_bot
 
     # 4) Nada matchea.
-    return None, None
+    return None
+
+
+def _atender_regreso(
+    db: Session,
+    *,
+    team: models.Team,
+    conv: models.Conversation,
+    asignado: str,
+    message_text: str,
+) -> Optional[tuple]:
+    """El camino del que vuelve (Sprint 36, diseño 2.1-2.5 y 2.9).
+
+    None = no hubo reclamo (pura cortesía, lo ganó otro proceso, o ya estaba
+    consumido): el router sigue como siempre. Si no, la tupla que devuelve el
+    router:
+      - `(None, None)`: una persona del equipo escribió hace menos de 2 h; solo
+        quedó la nota y el bot no responde.
+      - `(bot, sesion)`: el bot retoma con una sesión nueva que trae la bandera
+        de regreso en su estado (`reenganche.abrir_sesion_de_regreso`).
+      - `(bot, None)`: el reparto normal cayó en un bot `flow`.
+
+    `bot_asignado_id` (atribución del A/B) no se toca: quién atiende ahora
+    queda en la sesión.
+    """
+    if llm_engine.es_cortesia(message_text):
+        # «Gracias», «ok 👍»: no es volver. El marcador queda para cuando escriba
+        # de verdad. Sin el texto en el log (regla #1).
+        logger.info("bot_router: cortesía sobre un marcador, no se reclama conv=%s", conv.id)
+        return None
+    reclamo = reenganche.reclamar(db, team, conv, asignado)
+    if reclamo is None:
+        return None
+    if not reclamo.tomo_el_bot:
+        return None, None
+
+    bots = _bots_del_owner(db, team)
+    bot = reenganche.elegir_bot(db, conv, bots)
+    if bot is None:
+        # Ni bot de reenganche ni el que la tenía pasan el filtro: reparto normal.
+        bot = _por_palabra_o_default(
+            db, team=team, conv=conv, bots=bots, message_text=message_text
+        )
+    reenganche.cerrar_sesiones_vivas(db, conv)
+    reenganche.cerrar_llamada_de_rescate(db, conv)
+    reenganche.nota_volvio(db, conv, reclamo, bot)
+    logger.info(
+        "reenganche.atendido conv=%s team=%s bot=%s via=%s",
+        conv.id, team.id, getattr(bot, "id", None), reclamo.via,
+    )
+    if bot is None:
+        return None, None
+    if getattr(bot, "engine", "flow") != "llm":
+        return bot, None
+    return bot, reenganche.abrir_sesion_de_regreso(db, bot, conv, reclamo)
 
 
 # ---------------------------------------------------------------------------

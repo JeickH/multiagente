@@ -933,12 +933,17 @@ class TestConversacionAbandonada:
         db_session.refresh(conv)
         assert conv.etiqueta == "conversación abandonada"
         assert conv.assigned_to == "asesor_1"
+        # Sprint 36: el que vuelve tras un abandono lo retoma el bot, SALVO que
+        # una persona del equipo le haya escrito en las últimas 2 h (regla de
+        # las 2 h, `services/reenganche.py`). Este test cubre ese caso; el de
+        # la retoma está en `tests/test_sprint36_reenganche.py`.
+        conv.ultimo_mensaje_humano_at = datetime.utcnow() - timedelta(hours=1)
+        db_session.commit()
 
         modelo.guion = [_respuesta(_texto("¡Claro! 🌴"))]
         conv, bot = entra_mensaje(db_session, team, "hola, ¿me confirmas los precios?")
 
-        # El router corta antes de resolver bot cuando el chat ya tiene dueño
-        # humano (bot_router.py:108), así que el bot ni corre.
+        # Solo queda la nota «Volvió»: el bot ni corre.
         assert bot is None, "el bot no debe volver a meterse en un chat asignado"
         assert conv.etiqueta == "conversación abandonada"
         assert conv.status == "pending"

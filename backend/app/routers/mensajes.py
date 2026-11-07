@@ -13,7 +13,7 @@ from ..dependencies import (
     get_current_owner_membership,
     require_permission,
 )
-from ..services import adjuntos, messaging, pausa
+from ..services import adjuntos, messaging, pausa, reenganche
 
 logger = logging.getLogger(__name__)
 
@@ -153,6 +153,9 @@ def close_conversation(
         raise HTTPException(status_code=404, detail="Conversación no encontrada")
 
     conv.status = "closed"
+    # Sprint 36 (diseño 2.2): cerrar a mano consume el marcador de abandono o
+    # inactividad; si el cliente vuelve, la conversación no regresa al bot.
+    reenganche.consumir_por_humano(conv)
     db.add(conv)
     db.commit()
     db.refresh(conv)
@@ -189,6 +192,7 @@ def reopen_conversation(
         raise HTTPException(status_code=404, detail="Conversación no encontrada")
 
     conv.status = "open"
+    reenganche.consumir_por_humano(conv)     # diseño 2.2
     db.add(conv)
     db.commit()
     db.refresh(conv)
@@ -256,6 +260,7 @@ def assign_conversation(
             )
         conv.assigned_to = destino
 
+    reenganche.consumir_por_humano(conv)     # diseño 2.2
     db.add(conv)
     db.commit()
     db.refresh(conv)
@@ -300,6 +305,10 @@ def send_message_in_conversation(
             status_code=400,
             detail=messaging.mensaje_texto_muy_largo(len(payload.content or "")),
         )
+
+    # Sprint 36 (diseño 2.4b): el sello de «una persona escribió» va con commit
+    # ANTES del proveedor, para que un turno del bot en curso lo vea al releer.
+    crud.sellar_mensaje_humano(db, conv)
 
     try:
         # Sprint 19 (#254): envío por el puerto multi-proveedor (Meta o Twilio
@@ -413,6 +422,8 @@ def _validar_guardar_y_enviar(
 
     pie = adjuntos.limpiar_caption(caption, preparado.categoria)
     contenido = f"{pie}\n{guardado.url}" if pie else guardado.url
+
+    crud.sellar_mensaje_humano(db, conv)     # diseño 2.4b
 
     try:
         meta_id, _ = messaging.send_media(
@@ -647,6 +658,8 @@ def start_new_conversation(
         contact_wa_id=payload.contact_wa_id,
         contact_name=payload.contact_name,
     )
+
+    crud.sellar_mensaje_humano(db, conv)     # diseño 2.4b
 
     try:
         # Sprint 19 (#254): plantilla por el puerto multi-proveedor.

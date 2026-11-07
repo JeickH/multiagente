@@ -382,6 +382,14 @@ def _marcar_abandonada(
         return None
 
     conversation.etiqueta = etiqueta
+    # Sprint 36 (diseño 0.3): el marcador de abandono, con reset por episodio,
+    # en el MISMO commit que la etiqueta y el pase. Si el cliente vuelve,
+    # `reenganche.reclamar` lo reclama una sola vez y la conversación vuelve al
+    # bot. Un abandono nuevo (tras un reclamo anterior) arranca otro episodio.
+    conversation.abandono_at = datetime.utcnow()
+    conversation.abandono_asesor = (asesor or "")[:64] or None
+    conversation.reclamos_abandono = 0
+    conversation.marcador_consumido = None
     if not asesor:
         # Sin nadie a quien entregársela, dejarla `pending` sería mentirle a la
         # bandeja: figuraría por atender y seguiría siendo del bot. Se cierra
@@ -511,19 +519,31 @@ def _apuntar_en_el_historial(
 
 
 def _cambio_de_dueno(
-    db: Session, conversation: models.Conversation, asignado_al_inicio: str
+    db: Session,
+    conversation: models.Conversation,
+    asignado_al_inicio: str,
+    humano_al_inicio: Optional[datetime] = None,
 ) -> bool:
     """¿Alguien le cambió el dueño al chat mientras corría el turno?
 
-    Se relee solo `assigned_to` de la base. Compara contra lo que había al
-    empezar el turno, no contra "bot": así un llamador que corre un turno sobre
-    un chat que ya era de una persona no cambia de comportamiento.
+    Se releen `assigned_to` y `ultimo_mensaje_humano_at` de la base. Compara
+    contra lo que había al empezar el turno, no contra "bot": así un llamador
+    que corre un turno sobre un chat que ya era de una persona no cambia de
+    comportamiento.
+
+    Sprint 36 (diseño 2.4d): también cuenta que una persona del equipo le haya
+    ESCRITO al cliente durante el turno (el sello lo pone `crud` antes de llamar
+    al proveedor, 2.4b), aunque no lo haya tomado: «tomada» no es lo único que
+    hace que el bot sobre.
     """
     try:
-        db.refresh(conversation, ["assigned_to"])
+        db.refresh(conversation, ["assigned_to", "ultimo_mensaje_humano_at"])
     except Exception:  # pragma: no cover - objeto fuera de la sesión
         return False
-    return (conversation.assigned_to or "bot") != asignado_al_inicio
+    if (conversation.assigned_to or "bot") != asignado_al_inicio:
+        return True
+    humano = getattr(conversation, "ultimo_mensaje_humano_at", None)
+    return humano is not None and humano != humano_al_inicio
 
 
 def _ya_se_presento(
@@ -717,6 +737,35 @@ def _contexto_de_regreso(
     return salida
 
 
+#: Etiqueta de la bandeja para el que volvió y lo retomó el bot (Sprint 36).
+ETIQUETA_VOLVIO = "volvió"
+
+
+def _sacar_regreso(state: Optional[dict]) -> Optional[dict]:
+    """Saca (y quita) `state["regreso"]`. Solo un dict; cualquier otra cosa se
+    descarta igual, para que no viaje en el estado que se guarda."""
+    if not isinstance(state, dict) or "regreso" not in state:
+        return None
+    regreso = state.pop("regreso")
+    return regreso if isinstance(regreso, dict) else None
+
+
+def _marcado_at(regreso: dict) -> Optional[datetime]:
+    try:
+        crudo = regreso.get("marcado_at")
+        return datetime.fromisoformat(crudo) if crudo else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _marcar_volvio(db: Session, conversation: models.Conversation) -> None:
+    if (conversation.assigned_to or "bot") != "bot":
+        return
+    conversation.etiqueta = ETIQUETA_VOLVIO
+    db.add(conversation)
+    db.commit()
+
+
 def soltar_conversacion(db: Session, conversation: models.Conversation) -> int:
     """El bot suelta el chat porque lo tomó una persona (Interesados).
 
@@ -824,8 +873,17 @@ def run_turn(
     # /mensajes: lo que el bot redactó para un chat que ya no es suyo no se
     # envía (revisión de seguridad S2, ver abajo).
     asignado_al_inicio = conversation.assigned_to or "bot"
+    humano_al_inicio = getattr(conversation, "ultimo_mensaje_humano_at", None)
 
     state = _load_state(session)
+    # Sprint 36: la sesión de regreso (`reenganche.abrir_sesion_de_regreso`)
+    # trae la bandera en su estado. Se saca aquí y viaja SOLO en el runtime de
+    # este turno; el estado que se guarda después ya no la lleva.
+    regreso = _sacar_regreso(state)
+    if regreso is not None:
+        # «Volvió» en la bandeja, después de `_reabrir_conversacion` (que borra
+        # la etiqueta). Diseño 2.9.
+        _marcar_volvio(db, conversation)
     if is_llm:
         runtime = {
             "bot_id": getattr(bot, "id", None),
@@ -849,6 +907,16 @@ def run_turn(
             runtime["ya_se_presento"] = _ya_se_presento(
                 db, bot, conversation, session, state, retomada
             )
+        if regreso is not None:
+            # Sprint 36: el que vuelve tras un abandono o un cierre por
+            # inactividad. No es el primer turno (no se presenta ni repite la
+            # bienvenida) y el motor recibe el resumen como dato del sistema
+            # (`llm_engine._bloque_vuelve`). Solo con la bandera: el runtime de
+            # todos los demás turnos no cambia (golden del bot 1).
+            runtime["retomada"] = True
+            runtime["ya_se_presento"] = True
+            runtime["desde"] = llm_engine.hace_cuanto(_marcado_at(regreso))
+            runtime["regreso"] = regreso
         # Bot 3 (`contexto_de_regreso_y_hora`): quien vuelve en una sesión
         # NUEVA trae de la anterior la etapa y lo último que consultó, para el
         # bloque «## Ya hablaron antes» del motor. Solo datos del plan (mes,
@@ -923,7 +991,7 @@ def run_turn(
     # Un bot LLM sin finalizar siempre espera el próximo mensaje del usuario.
     waiting = any(a.get("type") == "ask" for a in actions) or (is_llm and not finished)
 
-    if is_llm and _cambio_de_dueno(db, conversation, asignado_al_inicio):
+    if _cambio_de_dueno(db, conversation, asignado_al_inicio, humano_al_inicio):
         # Una persona tomó el chat mientras el modelo pensaba. No sale nada
         # hacia el cliente (ni texto, ni media, ni despedida, ni pase); solo se
         # guarda el historial, para que el contexto no se pierda si el chat
