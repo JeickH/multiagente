@@ -10007,3 +10007,7 @@ recordatorios dentro de las 24 h los sigue mandando el bot que lleva la conversa
 - Migración `migrate_sprint36_ventas_abandono.py` corrida dos veces en el Postgres local (0 cambios y
   verificador verde; sobre un esquema temporal anterior al sprint: 40 cambios → 0). RDS pendiente
   (deploy-aws). Tests: `tests/test_sprint36_venta.py` (+2 de Postgres) y `lib/venta.test.ts`.
+- Avance (PM): venta cerrada TERMINADA y mergeada (`569b020`; 48 tests SQLite + 2 Postgres; tsc,
+  vitest 179/179 y build verdes; migración local 2 corridas idempotentes). Auditoría de `seguridad`
+  de 2, 3 y 4 en curso sobre `569b020`. Pendiente menor: `test_variante_crear_bot.py::
+  test_la_salida_no_lleva_correo_ni_valores_de_config` es intermitente («573» en microsegundos).
