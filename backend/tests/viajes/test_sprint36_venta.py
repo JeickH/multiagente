@@ -752,3 +752,66 @@ class TestPorLaFuenteDeProduccion:
         assert (t.acomodacion, t.total) == (acom, total)
         pesos = f"${total:,}".replace(",", ".")
         assert f"= {pesos} total" in resultado
+
+
+# ---------------------------------------------------------------------------
+# Guardarraíl de precio con el TOTAL DEL GRUPO (QA contra Bedrock, 7-nov)
+# ---------------------------------------------------------------------------
+
+class TestGuardarrailTotalDelGrupo:
+    """El total que calcula el sistema vale aunque la frase no diga «niño», y un
+    monto presentado como «total» tiene que ser uno de esos totales."""
+
+    def _resultado(self, entrada):
+        base = _consulta(fecha=FECHA)
+        texto, totales = venta_grupo.bloque_total(base, entrada, hoy=HOY)
+        return f"{base}\n{texto}", totales
+
+    def _viola(self, texto_bot, resultado):
+        return guardarrail_precio.viola_precio(
+            texto_bot, resultados_precios=[resultado], desde_validos=set(),
+            cifras_cliente=set(), extras=tarifario.extras(),
+        )
+
+    def _amor(self, totales, acom):
+        return next(t for t in totales
+                    if t.hotel == "Amor de Dios" and t.etiqueta == SALIDA and t.acomodacion == acom)
+
+    def test_total_con_nino_sin_decir_nino_pasa(self):
+        """Bots 2 y 3, 5 de 5 corridas: el total correcto terminaba en traspaso."""
+        resultado, totales = self._resultado({"adultos": "2", "ninos": "3"})
+        t = self._amor(totales, "múltiple")
+        pesos = f"${t.total:,}".replace(",", ".")
+        texto = f"Para ustedes 3 del 20 al 23 de noviembre en *Amor de Dios*, en *múltiple* son *{pesos} en total* 🌴"
+        assert self._viola(texto, resultado) is None
+
+    def test_anticipo_del_bloque_pasa(self):
+        resultado, totales = self._resultado({"adultos": "2", "ninos": "3"})
+        t = self._amor(totales, "múltiple")
+        pesos = f"${t.a_pagar:,}".replace(",", ".")
+        assert self._viola(f"Con un anticipo de *{pesos}* te los aparto en Amor de Dios.", resultado) is None
+
+    def test_total_que_deja_por_fuera_al_nino_no_pasa(self):
+        """Bot 2: «para los 3 en doble: $1.010.000 en total» era el de 2 adultos."""
+        resultado, totales = self._resultado({"adultos": "2", "ninos": "3"})
+        dos_adultos_doble = next(
+            t for t in venta_grupo.bloque_total(_consulta(fecha=FECHA), {"adultos": "2"}, hoy=HOY)[1]
+            if t.hotel == "Amor de Dios" and t.etiqueta == SALIDA
+        ).total
+        assert dos_adultos_doble not in {t.total for t in totales}
+        pesos = f"${dos_adultos_doble:,}".replace(",", ".")
+        texto = f"Para los 3 del 20 al 23 en Amor de Dios en doble: *{pesos} en total*."
+        explicacion = self._viola(texto, resultado)
+        assert explicacion and "total del grupo" in explicacion
+
+    def test_sin_bloque_no_cambia_nada(self):
+        """Si el modelo no pasó cuántos van, no hay bloque: manda la regla de siempre."""
+        base = _consulta(fecha=FECHA)
+        assert guardarrail_precio._montos_bloque_total([base]) == (set(), set())
+
+    def test_precio_por_persona_sigue_pasando(self):
+        resultado, totales = self._resultado({"adultos": "3"})
+        t = self._amor(totales, "múltiple")
+        por_persona = t.total // 3
+        pesos = f"${por_persona:,}".replace(",", ".")
+        assert self._viola(f"En Amor de Dios del 20 al 23 queda en {pesos} por persona en múltiple.", resultado) is None

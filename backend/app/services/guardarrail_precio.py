@@ -330,6 +330,50 @@ def _directos(resultados: Iterable[str]) -> Set[int]:
 
 
 # ---------------------------------------------------------------------------
+# Total del grupo (Sprint 36)
+# ---------------------------------------------------------------------------
+
+#: Encabezado del bloque que pega `venta_grupo.bloque_total` al resultado de la
+#: consulta de precios. Ese bloque lo escribe el sistema (no repite nada del
+#: modelo), así que sus cifras son tan confiables como las filas del tarifario.
+_BLOQUE_TOTAL = "total del grupo (calculado por el sistema"
+_TOTAL_DE_LINEA_RE = re.compile(r"=[ \t]{0,3}\$(" + _NUM_PUNTOS + r")" + _FIN_NUM + r"[ \t]{0,3}total\b")
+#: «$1.113.000 en total», «total: $1.113.000», «→ $1.113.000 total».
+_TOTAL_DESPUES_RE = re.compile(r"^[\s*_)]{0,4}(?:en[ \t]{1,3})?total\b")
+_TOTAL_ANTES_RE = re.compile(r"\btotal\b[^$\d\n]{0,20}$")
+
+
+def _montos_bloque_total(resultados: Iterable[str]) -> Tuple[Set[int], Set[int]]:
+    """(todas las cifras, solo los totales) del bloque «TOTAL DEL GRUPO».
+
+    Todas: precio por persona, valor de cada niño, total y anticipo, tal como
+    las calculó el sistema para el grupo que pasó el modelo. Sin el bloque
+    (el modelo no dijo cuántos van), los dos conjuntos salen vacíos."""
+    todas: Set[int] = set()
+    totales: Set[int] = set()
+    for r in _resultados_validos(resultados):
+        plano = _plano(r)
+        i = plano.find(_BLOQUE_TOTAL)
+        if i < 0:
+            continue
+        for linea in plano[i:].split("\n")[1:]:
+            if not linea.lstrip().startswith("·"):
+                continue
+            for m in _PESOS_RE.finditer(linea):
+                todas.add(_entero(m.group(1)))
+            for m in _TOTAL_DE_LINEA_RE.finditer(linea):
+                totales.add(_entero(m.group(1)))
+    return todas, totales
+
+
+def _presentado_como_total(plano: str, monto: "_Monto") -> bool:
+    return bool(
+        _TOTAL_DESPUES_RE.search(plano[monto.fin:monto.fin + 14])
+        or _TOTAL_ANTES_RE.search(plano[max(0, monto.inicio - 24):monto.inicio])
+    )
+
+
+# ---------------------------------------------------------------------------
 # Extras
 # ---------------------------------------------------------------------------
 
@@ -878,6 +922,7 @@ def viola_precio(
     filas = filas_de_resultados(resultados)
     directos = _directos(resultados)
     ninos = _sumas_ninos(extras)
+    bloque_todas, bloque_totales = _montos_bloque_total(resultados)
     extras_ok = _valores_extras(extras) | {s for s in ninos if s}
     cliente = {int(x) for x in (cifras_cliente or set())}
     minimo = min((min(f.multiple, f.doble) for f in filas), default=None)
@@ -1018,6 +1063,22 @@ def viola_precio(
             k = bisect.bisect_left(difs, v - _TOLERANCIA)
             if k < len(difs) and difs[k] <= v + _TOLERANCIA:
                 continue
+        # 0c. Sprint 36: el total del grupo que calculó el sistema. Cualquier
+        # cifra del bloque vale aunque la frase no repita «niño» (QA 7-nov: «Para
+        # ustedes 3 en múltiple son $1.113.000 en total» se rechazaba y el turno
+        # terminaba en la asesora). Y un monto presentado como «total» tiene que
+        # ser uno de esos totales: «para los 3 en doble: $1.010.000 en total»
+        # (el de 2 adultos, sin el niño) pasaba por la regla 3.
+        if v in bloque_todas:
+            continue
+        if bloque_totales and _presentado_como_total(plano, monto):
+            return (
+                f"Diste {_pesos(v)} como total, pero el total del grupo que "
+                "calculó el sistema es "
+                + ", ".join(_pesos(t) for t in sorted(bloque_totales))
+                + ". Copia el total del bloque TOTAL DEL GRUPO para la salida, "
+                "el hotel y la acomodación que nombras."
+            )
         # 1. Extras (niños, itinerario).
         if v in extras_ok:
             continue
