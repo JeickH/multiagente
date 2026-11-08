@@ -828,3 +828,21 @@ class TestGuardarrailTotalDelGrupo:
         pesos = f"${otros[0]:,}".replace(",", ".")
         texto_bot = f"Para ustedes del 20 al 23 de noviembre en Amor de Dios son *{pesos} en total*."
         assert self._viola(texto_bot, resultado)
+
+    def test_anticipo_al_lado_de_un_total_no_es_un_total(self):
+        """Bot 2 (QA r5): el texto era correcto y se rechazó dos veces porque el
+        «en total» del renglón alcanzaba al anticipo que va después."""
+        base = tarifario.consultar({"tarifario": "covenas"}, mes="noviembre", fecha=FECHA, hoy=HOY)
+        texto, totales = venta_grupo.bloque_total(base, {"adultos": "2", "ninos": "3"}, hoy=HOY)
+        resultado = f"{base}\n{texto}"
+        mul, dob = self._amor(totales, "múltiple"), self._amor(totales, "doble")
+        p_ = lambda x: f"${x:,}".replace(",", ".")
+        texto_bot = (
+            "Para los 3 en esa salida tengo dos opciones:\n\n*NOVIEMBRE 20 AL 23* (2 noches / 3 días):\n"
+            f"- *Múltiple*: *{p_(mul.total)} en total* (anticipo: *{p_(mul.a_pagar)}*)\n"
+            f"- *Doble*: *{p_(dob.total)} en total* (anticipo: *{p_(dob.a_pagar)}*)\n\n"
+            "¿Te aparto los 3 cupos en múltiple? 🙌"
+        )
+        assert self._viola(texto_bot, resultado) is None
+        assert self._viola(f"Total: *{p_(mul.total - 1000)}* para los 3 en Amor de Dios", resultado)
+

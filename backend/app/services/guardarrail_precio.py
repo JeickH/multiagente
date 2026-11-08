@@ -341,7 +341,10 @@ _BLOQUE_TOTAL = "total del grupo (calculado por el sistema"
 _TOTAL_DE_LINEA_RE = re.compile(r"=[ \t]{0,3}\$(" + _NUM_PUNTOS + r")" + _FIN_NUM + r"[ \t]{0,3}total\b")
 #: «$1.113.000 en total», «total: $1.113.000», «→ $1.113.000 total».
 _TOTAL_DESPUES_RE = re.compile(r"^[\s*_)]{0,4}(?:en[ \t]{1,3})?total\b")
-_TOTAL_ANTES_RE = re.compile(r"\btotal\b[^$\d\n]{0,20}$")
+#: Antes del monto solo cuenta un «total» pegado a él («total: $X», «Total de
+#: *$X*»). Uno más lejano es el de otra cifra: en «*$1.113.000 en total*
+#: (anticipo: *$333.900*)» el anticipo NO es un total (QA r5, bot 2).
+_TOTAL_ANTES_RE = re.compile(r"\btotal\b[ \t*_:=]{0,6}(?:de[ \t]{1,3})?[ \t*_]{0,3}$")
 #: El encabezado nombra a los niños: «para 2 adultos y niño de 3, bebé».
 _NINOS_EN_BLOQUE_RE = re.compile(r"\b(?:nino de \d|bebe)\b")
 
