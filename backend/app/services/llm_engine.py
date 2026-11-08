@@ -1388,7 +1388,9 @@ def _bloque_continuidad(cfg: Dict[str, Any]) -> str:
                 "preguntárselo nunca más."
             )
 
-    if cfg.get("retomar") and runtime.get("retomada"):
+    # Sprint 36: en la sesión de regreso no hay historial («Arriba tienes lo
+    # que ya hablaron» sería falso); el que vuelve lo cuenta `_bloque_vuelve`.
+    if cfg.get("retomar") and runtime.get("retomada") and not runtime.get("regreso"):
         lineas.append(
             "Esta conversación **ya se había cerrado** y la persona vuelve a "
             f"escribir ({runtime.get('desde') or 'hace un rato'}). Arriba tienes "

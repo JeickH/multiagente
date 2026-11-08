@@ -114,6 +114,8 @@ resumen: dict[str, int] = {}
 for cid, asignado, etiqueta, ultimo in candidatas:
     quien = quien_hablo_ultimo(cid)
     resumen[quien] = resumen.get(quien, 0) + 1
+    if isinstance(ultimo, str):      # SQLite (tests) devuelve el texto crudo
+        ultimo = datetime.fromisoformat(ultimo)
     dias = (ahora - ultimo).days
     if not APLICAR:
         continue

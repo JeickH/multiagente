@@ -71,6 +71,20 @@ def hay_marcador(conv: models.Conversation) -> bool:
     )
 
 
+def reclamable(conv: models.Conversation) -> bool:
+    """¿Este entrante puede tomar el camino de regreso? Lo mismo que exige el
+    WHERE de `reclamar`, leído en Python para no gastar un UPDATE (ni el tope,
+    ni la consulta de cortesía) en cada mensaje de una conversación que solo
+    conserva un marcador viejo: la abandonada que se cerró por no haber
+    asesoras (`closed` sin `cerrada_por_inactividad_at`), o la que una asesora
+    cerró, reabrió o reasignó (esas además lo consumen)."""
+    if not hay_marcador(conv):
+        return False
+    return (conv.abandono_at is not None and conv.status == "pending") or (
+        conv.cerrada_por_inactividad_at is not None and conv.status == "closed"
+    )
+
+
 def consumir_por_humano(conv: models.Conversation) -> bool:
     """Cerrar, reabrir o asignar a mano consumen el marcador: después de que una
     persona decidió qué hacer con el chat, el cliente que vuelve no se lo
@@ -138,7 +152,7 @@ def reclamar(
     `asignado_leido` es lo que el router leyó en `assigned_to`: si alguien la
     reasignó entre la lectura y el UPDATE, no se toca.
     """
-    if not hay_marcador(conv):
+    if not reclamable(conv):
         return None
     momento = ahora or datetime.utcnow()
     corte = momento - VENTANA_HUMANO

@@ -111,7 +111,7 @@ def resolve_bot_for_incoming_message(
         # mensaje. Los webhooks ya lo garantizan; aquí no se confía.
         return None, None
     asignado = (conv.assigned_to or "bot") if conv is not None else "bot"
-    con_marcador = conv is not None and reenganche.hay_marcador(conv)
+    con_marcador = conv is not None and reenganche.reclamable(conv)
 
     # Sprint 36 (diseño 2.6): tope de turnos del motor LLM por conversación,
     # antes de reclamar nada (si no, un cliente que escribe en bucle gastaría el
