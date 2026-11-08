@@ -9960,3 +9960,20 @@ dejan fuera.
 | — | Suite completa `TZ=UTC` en worktree limpio + QA contra Bedrock de D y del regreso (≤ US$ 4) | qa |
 | — | Auditoría de código de 2, 3 y 4 (y la agenda de D) | seguridad |
 | — | Imagen, task-def nueva desde la 120, migración RDS + local, rollout, bot D y reparto, verificación | deploy-aws |
+
+**Tarea 2 — «venta cerrada» (dev-plataforma, rama `feature/sprint36-venta`)**
+
+- Backend: `POST /mensajes/conversaciones/{id}/venta` (201) y `/venta/anular` en
+  `routers/mensajes.py` (bloque propio al final), con `can_reply_messages`, conversación cargada con el
+  team de la membresía (ajena = inexistente = 404), team de la venta = `conv.team_id`, doble registro →
+  409 por el índice único parcial y anular en un solo UPDATE con el team en el WHERE. La venta se
+  atribuye al bot que atendía (última `BotSession` del chat, si no el del reparto; nunca un bot de otro
+  owner). Logs solo con ids.
+- Lectura: detalle con `venta` + `ventas_anuladas`; la bandeja trae `venta_valor_cop` en la MISMA
+  consulta de la página (columna calculada diferida `Conversation.venta_valor_cop`, sin migración: el
+  test de N+1 sigue en ≤ 5); supervisión solo `venta_valor_cop` y `vendida_at`.
+- Frontend: botón «💰 Venta cerrada» en `/mensajes` (`components/VentaCerrada.tsx`, `lib/venta.ts`),
+  marca con el valor en la lista y chip de solo lectura en `/conversaciones`.
+- Migración `migrate_sprint36_ventas_abandono.py` corrida dos veces en el Postgres local (0 cambios y
+  verificador verde; sobre un esquema temporal anterior al sprint: 40 cambios → 0). RDS pendiente
+  (deploy-aws). Tests: `tests/test_sprint36_venta.py` (+2 de Postgres) y `lib/venta.test.ts`.
