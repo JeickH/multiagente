@@ -52,7 +52,7 @@ from pydantic import BaseModel
 from sqlalchemy import and_, case, func, or_
 from sqlalchemy.orm import Session
 
-from .. import models
+from .. import crud, models
 from ..dependencies import get_current_user, get_db, require_gloma_account
 from ..services import caminos as svc_caminos
 
@@ -197,6 +197,11 @@ class HiloOut(BaseModel):
     caminos: List[str] = []
     atendido_por: str = "bot"
     preview: Optional[str] = None
+    # Sprint 36 (diseño 1.5): de la venta activa, SOLO el valor y la fecha. Ni
+    # nota, ni quién la registró, ni motivo de anulación: esta ventana mira
+    # otras cuentas y no necesita nada de eso.
+    venta_valor_cop: Optional[int] = None
+    vendida_at: Optional[datetime] = None
 
 
 class HilosOut(BaseModel):
@@ -233,6 +238,9 @@ class HiloDetalleOut(BaseModel):
     # solo un adelanto de lo que respondió el bot. La ventana lo dice en vez de
     # dejar creer que el bot contestó tres líneas.
     completo: bool = True
+    # Sprint 36: igual que en la lista, solo valor y fecha de la venta activa.
+    venta_valor_cop: Optional[int] = None
+    vendida_at: Optional[datetime] = None
 
 
 # ---------------------------------------------------------------------------
@@ -562,6 +570,8 @@ def _hilos_de_conversaciones(db: Session, cuenta: _Cuenta,
     # Un solo golpe a `messages` para el adelanto y el conteo de todas las
     # conversaciones, en vez de una consulta por renglón.
     resumen = _resumen_mensajes(db, [c.id for c in convs])
+    # Y otro para las ventas activas (Sprint 36), con el team en el WHERE.
+    ventas = crud.ventas_activas_de_conversaciones(db, cuenta.team.id, [c.id for c in convs])
 
     hilos = []
     for conv in convs:
@@ -588,6 +598,8 @@ def _hilos_de_conversaciones(db: Session, cuenta: _Cuenta,
             caminos=etiquetas,
             atendido_por=getattr(conv, "assigned_to", "bot") or "bot",
             preview=preview,
+            venta_valor_cop=(ventas.get(conv.id) or (None, None))[0],
+            vendida_at=(ventas.get(conv.id) or (None, None))[1],
         ))
     return hilos
 
@@ -792,6 +804,9 @@ def _detalle_whatsapp(db: Session, cuenta: _Cuenta, hilo_id: str) -> HiloDetalle
             error=msg.error_detail if msg.status == "failed" else None,
         ))
 
+    venta_valor, vendida_at = crud.ventas_activas_de_conversaciones(
+        db, conv.team_id, [conv.id]
+    ).get(conv.id, (None, None))
     return HiloDetalleOut(
         hilo_id=hilo_id,
         cuenta=cuenta.slug,
@@ -800,6 +815,8 @@ def _detalle_whatsapp(db: Session, cuenta: _Cuenta, hilo_id: str) -> HiloDetalle
         canal_label=CANAL_LABEL["whatsapp"],
         turnos=turnos,
         completo=True,
+        venta_valor_cop=venta_valor,
+        vendida_at=vendida_at,
     )
 
 

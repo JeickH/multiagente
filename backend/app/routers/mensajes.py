@@ -3,8 +3,9 @@ import logging
 from fastapi import (
     APIRouter, Depends, File, Form, HTTPException, Query, Response, UploadFile
 )
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 from .. import models, schemas, crud
 from ..dependencies import (
@@ -56,6 +57,7 @@ def list_conversations(
         etiqueta=etiqueta,
         limite=limite,
         offset=(pagina - 1) * limite,
+        con_venta=True,
     )
     # Un solo golpe a `messages` para los adelantos de toda la página, en vez de
     # uno por conversación.
@@ -80,6 +82,8 @@ def list_conversations(
                 etiqueta=getattr(c, "etiqueta", None),
                 last_message_at=c.last_message_at,
                 last_message_preview=previews.get(c.id),
+                # Sprint 36: vino en la misma consulta de la página (`con_venta`).
+                venta_valor_cop=c.venta_valor_cop,
             )
             for c in convs
         ],
@@ -102,6 +106,7 @@ def get_conversation(
     nombre = conv.contact_name or crud.nombres_de_agenda(
         db, member.team_id, [conv.contact_wa_id]
     ).get(conv.contact_wa_id)
+    venta, anuladas = _ventas_del_detalle(db, member.team_id, conv.id)
     return schemas.ConversationWithMessages(
         id=conv.id,
         contact_wa_id=conv.contact_wa_id,
@@ -111,6 +116,8 @@ def get_conversation(
         etiqueta=getattr(conv, "etiqueta", None),
         last_message_at=conv.last_message_at,
         messages=[schemas.MessageOut.model_validate(m) for m in conv.messages],
+        venta=venta,
+        ventas_anuladas=anuladas,
     )
 
 
@@ -695,3 +702,151 @@ def start_new_conversation(
         raise HTTPException(
             status_code=502, detail="Error del proveedor de WhatsApp al enviar la plantilla"
         )
+
+
+# ===================== Sprint 36: venta cerrada =====================
+#
+# La asesora marca que el chat terminó en venta (por WhatsApp, por llamada o en
+# la oficina) y con qué valor. Diseño de seguridad: docs/sprint36/
+# diseno_seguridad.md, sección 1.
+#
+#   * Permiso `can_reply_messages` y la conversación cargada con el team de la
+#     membresía: ajena e inexistente dan el MISMO 404 (1.1). El team de la venta
+#     es `conv.team_id`; el body no trae team ni ids de usuario (0.1).
+#   * La supervisión de Gloma solo lee: sus rutas son todas GET, y la admin de
+#     otra cuenta que llame a estos POST no encuentra la conversación (1.2).
+#   * Una sola venta activa por chat: la base decide con el índice único
+#     parcial y el doble registro es 409 (1.3). Anular es un UPDATE con el team
+#     en el WHERE; 0 filas → 404.
+#   * Logs solo con ids: nunca valor, nota, quién vendió, motivo, nombres ni
+#     teléfono (1.6). La nota es texto libre y puede traer datos del cliente.
+#   * `vendida_por` es la atribución real: la cuenta de asesoras de Arranquemos
+#     Pues es un login compartido, así que `registrada_por_user_id` dice desde
+#     qué sesión se marcó, no quién vendió (1.7).
+
+_NO_ENCONTRADA = "Conversación no encontrada"
+_SIN_VENTA_ACTIVA = "Esta conversación no tiene una venta activa"
+
+
+def _ventas_del_detalle(
+    db: Session, team_id: int, conversation_id: int
+) -> Tuple[Optional[schemas.VentaOut], List[schemas.VentaOut]]:
+    """La venta activa y las anuladas, para el detalle de /mensajes."""
+    activa: Optional[schemas.VentaOut] = None
+    anuladas: List[schemas.VentaOut] = []
+    for venta, nombre in crud.ventas_de_conversacion(db, team_id, conversation_id):
+        out = crud.venta_out(venta, nombre)
+        if venta.anulada_at is None:
+            activa = out
+        else:
+            anuladas.append(out)
+    return activa, anuladas
+
+
+def _es_doble_registro(error: IntegrityError) -> bool:
+    """¿El IntegrityError es el índice de "una venta activa por chat"?
+
+    Postgres lo nombra; SQLite (la suite) solo dice la columna.
+    """
+    orig = getattr(error, "orig", None)
+    diag = getattr(orig, "diag", None)
+    if diag is not None and getattr(diag, "constraint_name", None):
+        return diag.constraint_name == "uq_conversation_sales_activa"
+    texto = str(orig or "")
+    return (
+        "uq_conversation_sales_activa" in texto
+        or "UNIQUE constraint failed: conversation_sales.conversation_id" in texto
+    )
+
+
+@router.post(
+    "/conversaciones/{conversation_id}/venta",
+    response_model=schemas.VentaOut,
+    status_code=201,
+)
+def registrar_venta(
+    conversation_id: int,
+    payload: schemas.VentaIn,
+    db: Session = Depends(get_db),
+    member: models.TeamMember = Depends(require_permission("can_reply_messages")),
+):
+    """Registra la venta cerrada de esta conversación, con su valor en pesos."""
+    conv = crud.get_conversation(db, member.team_id, conversation_id)
+    if not conv:
+        raise HTTPException(status_code=404, detail=_NO_ENCONTRADA)
+
+    # Quién vendió tiene que ser una asesora real del team: texto libre aquí
+    # repetiría #376/#377 (un nombre que no es de nadie en los reportes).
+    if payload.vendida_por not in crud.asesores_del_team(db, member.team):
+        raise HTTPException(status_code=422, detail="Esa asesora no pertenece al equipo")
+
+    bot_id = crud.bot_que_atendia(db, member.team.owner_user_id, conv)
+    try:
+        venta = crud.registrar_venta(
+            db,
+            conv,
+            valor_cop=payload.valor_cop,
+            vendida_por=payload.vendida_por,
+            nota=payload.nota,
+            user_id=member.user_id,
+            bot_id=bot_id,
+        )
+    except IntegrityError as error:
+        db.rollback()
+        if _es_doble_registro(error):
+            logger.info(
+                "venta.duplicada conversation_id=%s team_id=%s user_id=%s",
+                conversation_id, member.team_id, member.user_id,
+            )
+            raise HTTPException(
+                status_code=409,
+                detail="Esta conversación ya tiene una venta registrada. Anúlala para registrar otra.",
+            )
+        # Sin exc_info a propósito: el DETAIL de Postgres de un CHECK trae la
+        # fila completa (valor y nota). Solo el nombre del constraint.
+        diag = getattr(getattr(error, "orig", None), "diag", None)
+        logger.error(
+            "venta.error_integridad conversation_id=%s team_id=%s constraint=%s",
+            conversation_id, member.team_id, getattr(diag, "constraint_name", None),
+        )
+        raise HTTPException(status_code=500, detail="No se pudo registrar la venta")
+
+    logger.info(
+        "venta.registrada id=%s conversation_id=%s team_id=%s user_id=%s",
+        venta.id, conv.id, member.team_id, member.user_id,
+    )
+    return crud.venta_out(venta, getattr(member.user, "nombre", None))
+
+
+@router.post(
+    "/conversaciones/{conversation_id}/venta/anular",
+    response_model=schemas.VentaOut,
+)
+def anular_venta(
+    conversation_id: int,
+    payload: schemas.AnularVentaIn,
+    db: Session = Depends(get_db),
+    member: models.TeamMember = Depends(require_permission("can_reply_messages")),
+):
+    """Anula la venta ACTIVA de la conversación (su id no viaja en la URL).
+
+    Queda el rastro: quién, cuándo y por qué. Para corregir un valor se anula
+    y se registra otra.
+    """
+    conv = crud.get_conversation(db, member.team_id, conversation_id)
+    if not conv:
+        raise HTTPException(status_code=404, detail=_NO_ENCONTRADA)
+
+    tocadas = crud.anular_venta(
+        db, member.team_id, conv.id, motivo=payload.motivo, user_id=member.user_id
+    )
+    if tocadas == 0:
+        raise HTTPException(status_code=404, detail=_SIN_VENTA_ACTIVA)
+
+    _, anuladas = _ventas_del_detalle(db, member.team_id, conv.id)
+    anulada = max(anuladas, key=lambda v: (v.anulada_at, v.id))
+    logger.info(
+        "venta.anulada id=%s conversation_id=%s team_id=%s user_id=%s",
+        anulada.id, conv.id, member.team_id, member.user_id,
+    )
+    return anulada
