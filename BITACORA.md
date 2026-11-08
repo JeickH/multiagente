@@ -9967,3 +9967,5 @@ recordatorios dentro de las 24 h los sigue mandando el bot que lleva la conversa
 
 **Estado (PM):** motor (1, 3, 4) en `feature/bots-base-motor` y venta cerrada (2) en
 `feature/sprint36-venta` en curso; luego merge, bot D, seguridad, QA y deploy.
+- Avance (PM): motor `f03f446` (camino de regreso solo con marcador reclamable); venta `c83dc27`
+  en `feature/sprint36-venta` (registrar/anular venta). Agentes aún trabajando; sin deploy.
