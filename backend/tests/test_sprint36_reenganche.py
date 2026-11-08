@@ -488,6 +488,20 @@ class TestQueBotLoAtiende:
         conv, bot = entra(db, agencia["team"], "hola, ¿siguen?")
         assert bot.id == nuevo.id
 
+    def test_sin_ningun_bot_vuelve_a_la_asesora_con_la_nota(self, db, agencia, modelo):
+        conv = _abandonada(db, agencia["team"], agencia["bot"])
+        agencia["bot"].status = "paused"
+        db.commit()
+        conv, bot = entra(db, agencia["team"], "hola, ¿siguen?")
+        assert bot is None and modelo.recibidos == []
+        assert conv.assigned_to == "Camila" and conv.status == "pending"
+        assert conv.reclamos_abandono == 1
+        notas = notas_volvio(db, conv)
+        assert len(notas) == 1 and "contéstale tú" in notas[0].content
+        # El siguiente entrante no deja otra nota ni lo toma un bot.
+        conv, bot = entra(db, agencia["team"], "¿hola?")
+        assert bot is None and len(notas_volvio(db, conv)) == 1
+
     def test_un_solo_bot_de_reenganche_por_owner(self, db, agencia):
         from sqlalchemy.exc import IntegrityError
 

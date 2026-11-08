@@ -273,15 +273,23 @@ def _atender_regreso(
         bot = _por_palabra_o_default(
             db, team=team, conv=conv, bots=bots, message_text=message_text
         )
+    if bot is None:
+        # Ningún bot puede atenderlo: la conversación vuelve con quien la tenía,
+        # a pendientes, con la nota «Volvió» para que le contesten. Dejarla en
+        # `bot` sin bot sería un chat que nadie ve.
+        reenganche.devolver_a_la_asesora(db, conv, asignado)
+        reenganche.nota_volvio(db, conv, reclamo, None)
+        logger.info(
+            "reenganche.sin_bot conv=%s team=%s via=%s", conv.id, team.id, reclamo.via
+        )
+        return None, None
     reenganche.cerrar_sesiones_vivas(db, conv)
     reenganche.cerrar_llamada_de_rescate(db, conv)
     reenganche.nota_volvio(db, conv, reclamo, bot)
     logger.info(
         "reenganche.atendido conv=%s team=%s bot=%s via=%s",
-        conv.id, team.id, getattr(bot, "id", None), reclamo.via,
+        conv.id, team.id, bot.id, reclamo.via,
     )
-    if bot is None:
-        return None, None
     if getattr(bot, "engine", "flow") != "llm":
         return bot, None
     return bot, reenganche.abrir_sesion_de_regreso(db, bot, conv, reclamo)

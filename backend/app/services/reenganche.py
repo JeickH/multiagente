@@ -221,6 +221,21 @@ def reclamar(
     return None
 
 
+def devolver_a_la_asesora(db: Session, conv: models.Conversation, asignado: str) -> None:
+    """El reclamo ganó pero no hay bot que lo atienda (todos pausados, o solo
+    bots de demo): la conversación vuelve a quien la tenía y a pendientes.
+    El marcador queda consumido (`volvio`): la nota ya avisó."""
+    C = models.Conversation
+    destino = asignado if asignado and asignado != "bot" else (conv.abandono_asesor or "bot")
+    (
+        db.query(C)
+        .filter(C.id == conv.id, C.team_id == conv.team_id, C.assigned_to == "bot")
+        .update({C.assigned_to: destino, C.status: "pending"}, synchronize_session=False)
+    )
+    db.commit()
+    db.refresh(conv)
+
+
 # ---------------------------------------------------------------------------
 # Qué bot lo atiende (2.3)
 # ---------------------------------------------------------------------------
@@ -531,7 +546,7 @@ def nota_volvio(db: Session, conv: models.Conversation, reclamo: Reclamo,
     lineas = [TITULO_VOLVIO, f"El cliente volvió a escribir {origen}."]
     lineas.extend(lineas_de_resumen(reclamo.resumen or {}))
     if reclamo.tomo_el_bot and bot is None:
-        lineas.append("No hay un bot activo para retomarla: contéstale tú.")
+        lineas.append("No hay un bot activo para retomarla: sigue contigo, contéstale tú.")
     elif reclamo.tomo_el_bot:
         nombre = (getattr(bot, "name", "") or "").strip()[:60]
         lineas.append(
