@@ -9969,3 +9969,20 @@ recordatorios dentro de las 24 h los sigue mandando el bot que lleva la conversa
 `feature/sprint36-venta` en curso; luego merge, bot D, seguridad, QA y deploy.
 - Avance (PM): motor `f03f446` (camino de regreso solo con marcador reclamable); venta `c83dc27`
   en `feature/sprint36-venta` (registrar/anular venta). Agentes aún trabajando; sin deploy.
+
+**Frente motor (dev-plataforma, 8-nov)** — rama `feature/bots-base-motor`, sin push ni deploy.
+- Recordatorios: `recordatorios_contexto.ajustar_a_la_conversacion` (sin «te quedé debiendo», sin
+  repreguntar personas/mes/hotel —también por número de menú— y sin reusar los números del menú
+  anterior) corre sobre todo recordatorio de cualquier bot. Ventana 2.7 en
+  `bot_runner._procesar_silencio` y `_programar`: último entrante + 24 h − 10 min; si el silencio
+  lo corre fuera, no sale y va directo al abandono. Pruebas en `tests/viajes/test_sprint36_recordatorios.py`.
+- Camino de regreso: `bot_router.resolve_bot_for_incoming_message` → `_atender_regreso` →
+  `reenganche.reclamar` (único llamador; `reclamable` = mismo WHERE que el UPDATE). Bot elegido de
+  la lista filtrada: `es_reenganche` → el que la tenía → reparto. Sin ningún bot disponible, la
+  conversación vuelve a la asesora (pendiente) con la nota. Concurrencia probada en Postgres
+  (`tests/test_sprint36_reenganche_postgres.py`).
+- **Decisión 2.9:** `bot_asignado_id/at` NO se pisan: el A/B y el reparto siguen contando la
+  conversación para el bot que la recibió; quién atiende el regreso queda en la sesión nueva, y la
+  venta se atribuye por `conversation_sales.bot_id`. Terminado el episodio, si vuelve otra vez sin
+  marcador, la retoma el de la última sesión (dentro de `retomar`) o el pegajoso del reparto.
+- Pendiente (Medio 2.8, follow-up): serializar turnos por conversación con advisory lock.
