@@ -351,13 +351,20 @@ def bloque_total(
 # 2. Pedir la venta
 # ---------------------------------------------------------------------------
 
-#: Ya se ofreció apartar: «¿Te aparto el cupo?», «¿te los separo?», «¿quieres
-#: reservar?», «1️⃣ Sí, quiero apartar». Se compara sin tildes.
-_PIDE_LA_VENTA_RE = re.compile(
-    r"\b(?:te\s+(?:lo|la|los|las)\s+)?(?:apart\w*|separ\w*|reserv\w*)\b"
-    r"|\bte\s+(?:los|las|lo|la)\s+(?:aparto|separo)\b",
+#: Ya se ofreció apartar: «te los aparto», «¿quieres reservar?», «1️⃣ Sí,
+#: quiero apartar». Se compara sin tildes (y `normalizar` quita el U+FE0F de
+#: los keycaps). Lo que NO cuenta es nombrar el verbo en una afirmación: «Se
+#: aparta con un anticipo de $303.000» explica el pago, no pide la venta (QA
+#: contra Bedrock, 7-nov: el bot 1 lo escribía en casi toda cotización y eso
+#: apagaba el «¿Te aparto los N cupos?»).
+_OFRECE_APARTAR_RE = re.compile(
+    r"\bte\s+(?:lo|la|los|las)\s+(?:aparto|separo|reservo)\b"
+    r"|\bte\s+(?:aparto|separo)\b"
+    r"|\d⃣\s*s[ií],?\s+(?:quiero|quieren|deseo)\s+(?:reserv|apart|separ)\w*",
     re.IGNORECASE,
 )
+_PREGUNTA_RE = re.compile(r"¿[^¿?]*\?")
+_VERBO_VENTA_RE = re.compile(r"\b(?:apart\w*|separ\w*|reserv\w*)\b", re.IGNORECASE)
 #: La pregunta del turno es por la acomodación: ahí todavía no se pide la venta
 #: (el bot 3 muestra las dos y deja elegir).
 _PREGUNTA_ACOMODACION_RE = re.compile(
@@ -399,21 +406,44 @@ def frase_pedir_venta(total: Total, *, con_valor: bool = True) -> str:
 
 
 def ya_pide_la_venta(texto: str) -> bool:
-    return bool(_PIDE_LA_VENTA_RE.search(senales.normalizar(texto)))
+    """¿El texto ofrece apartar? Una pregunta con «apartar/separar/reservar»,
+    «te los aparto» o la opción «Sí, quiero reservar». Mencionar el verbo en
+    una afirmación («se aparta con el 30 %») no cuenta."""
+    plano = senales.normalizar(texto)
+    if _OFRECE_APARTAR_RE.search(plano):
+        return True
+    return any(_VERBO_VENTA_RE.search(p) for p in _PREGUNTA_RE.findall(plano))
+
+
+def totales_dichos(textos: Sequence[str], totales: Sequence[Total]) -> List[Total]:
+    """Los totales del grupo que el bot le dijo al cliente en este turno, en
+    el orden en que los dijo y sin repetir."""
+    if not totales:
+        return []
+    por_valor = {t.total: t for t in totales}
+    dichos: List[Total] = []
+    for texto in textos:
+        for monto in guardarrail_precio.extraer_montos(texto or ""):
+            t = por_valor.get(monto)
+            if t is not None and t not in dichos:
+                dichos.append(t)
+    return dichos
 
 
 def total_dicho(textos: Sequence[str], totales: Sequence[Total]) -> Optional[Total]:
     """El total del grupo que el bot le dijo al cliente en este turno, si dijo
     alguno (el último que aparece)."""
-    if not totales:
-        return None
-    por_valor = {t.total: t for t in totales}
-    dicho = None
-    for texto in textos:
-        for monto in guardarrail_precio.extraer_montos(texto or ""):
-            if monto in por_valor:
-                dicho = por_valor[monto]
-    return dicho
+    dichos = totales_dichos(textos, totales)
+    return dichos[-1] if dichos else None
+
+
+def frase_elegir_y_apartar(personas: int) -> str:
+    """Cuando el turno ofreció dos totales (plan estándar y Barú, o múltiple y
+    doble): la venta se pide con un cierre de elección, sin poner un anticipo
+    que sería el de solo una de las opciones (el último que se nombró)."""
+    if personas <= 1:
+        return "¿Cuál te aparto? 🙌"
+    return f"¿Cuál te aparto para los {personas}? 🙌"
 
 
 def _inicio_ultima_pregunta(texto: str) -> Optional[int]:
@@ -445,9 +475,10 @@ def con_la_venta_pedida(
 
     Devuelve si cambió algo.
     """
-    dicho = total_dicho(say_texts, totales)
-    if dicho is None:
+    dichos = totales_dichos(say_texts, totales)
+    if not dichos:
         return False
+    dicho = dichos[-1]
     if any(ya_pide_la_venta(t) for t in say_texts):
         return False
     indice = next(
@@ -463,7 +494,12 @@ def con_la_venta_pedida(
         return False
     if _KEYCAP_RE.search(original):
         return False
-    pide = frase_pedir_venta(dicho)
+    if len(dichos) > 1:
+        # El anticipo de cada opción ya va al lado de su total (lo da
+        # `bloque_total`); poner uno solo aquí vendería la última nombrada.
+        pide = frase_elegir_y_apartar(dicho.personas)
+    else:
+        pide = frase_pedir_venta(dicho)
     if opciones_cerradas:
         pide = f"{pide} {_OPCIONES_RESERVA}"
     abre = _inicio_ultima_pregunta(original)
@@ -510,6 +546,14 @@ _SALIDA_OTRA_CIUDAD_RE = re.compile(
     r"hay\s+salida|tenemos\s+salida|recogemos)\b",
 )
 _NIEGA_RE = re.compile(r"\b(?:no|solo|solamente|unicamente|ni)\b")
+#: Subirse «en el camino» tampoco existe: el bus no para a recoger a nadie.
+#: QA contra Bedrock, 7-nov: el bot 3 le dijo a alguien de Cali que «muchos
+#: clientes de otras ciudades se unen en el camino».
+_EN_EL_CAMINO_RE = re.compile(
+    r"\b(?:se\s+(?:unen|une|suben|sube|montan|monta|embarcan)|unirse|unirte|"
+    r"subirse|subirte|montarse|montarte|recog\w*|abord\w*|pasamos\s+por\s+ti)\b"
+    r"[^.!?\n]{0,30}?\ben\s+(?:el\s+camino|la\s+ruta|la\s+via|el\s+trayecto)\b"
+)
 
 CORRECCION_OTRA_CIUDAD = (
     "ALTO: el plan sale SOLO desde Medellín (Estación Universidad – Calle "
@@ -557,7 +601,9 @@ def afirma_salida_otra_ciudad(textos: Iterable[str]) -> bool:
     cuenta: se mira si la frase niega antes de la mención."""
     for texto in textos:
         plano = senales.normalizar(texto)
-        for m in _SALIDA_OTRA_CIUDAD_RE.finditer(plano):
+        coincidencias = list(_SALIDA_OTRA_CIUDAD_RE.finditer(plano)) + list(
+            _EN_EL_CAMINO_RE.finditer(plano))
+        for m in coincidencias:
             inicio = max(plano.rfind(".", 0, m.start()), plano.rfind("!", 0, m.start()),
                          plano.rfind("?", 0, m.start()), plano.rfind("\n", 0, m.start()))
             if _NIEGA_RE.search(plano[inicio + 1:m.end()]):

@@ -354,6 +354,41 @@ class TestPedirLaVenta:
         salida = _turno(LLM_CONFIG, ESTADO, "lo voy a consultar con mi esposo, ¿cuánto sería para 2?")
         assert _dichos(salida) == [dicho]
 
+    # QA contra Bedrock del 7-nov: el bot 1 escribía «Se aparta con un
+    # anticipo de $303.000» y eso contaba como venta pedida; cerraba con
+    # «¿Cuál de las dos les llama más la atención?» y nadie le ofrecía apartar.
+    def test_explicar_el_anticipo_no_es_pedir_la_venta(self, modelo):
+        guion, _ = modelo
+        _cotiza(guion, "Para los 2 en doble son *$1.010.000 en total* 🙌 Se aparta con un "
+                       "*anticipo de $303.000*.\n\n¿Te sirve esa fecha? 😊")
+        salida = _turno(LLM_CONFIG, ESTADO, "somos 2, la del 20 de noviembre en Amor de Dios")
+        texto = "\n".join(_dichos(salida))
+        assert texto.rstrip().endswith("¿Te aparto los 2 cupos? 🙌")
+        assert "¿Te sirve esa fecha?" not in texto
+
+    def test_dos_totales_cierre_de_eleccion_sin_un_anticipo_suelto(self, modelo):
+        guion, _ = modelo
+        _cotiza(guion, "Tengo dos opciones 🌴\n\n✨ *20 al 23*: *$1.010.000 en total*, anticipo "
+                       "de *$303.000*.\n\n✨ *20 al 24 – Obsequio a Barú*: *$1.210.000 en total*, "
+                       "anticipo de *$363.000*.\n\n¿Cuál de las dos te late más? 🙌")
+        salida = _turno(LLM_CONFIG, ESTADO, "somos 2, la del 20 de noviembre en Amor de Dios")
+        texto = "\n".join(_dichos(salida))
+        assert texto.rstrip().endswith("¿Cuál te aparto para los 2? 🙌")
+        assert "¿Cuál de las dos te late más?" not in texto
+        # Cada anticipo una sola vez: no se repite el de la última opción.
+        assert texto.count("$363.000") == 1 and texto.count("$303.000") == 1
+
+    @pytest.mark.parametrize("frase,pide", [
+        ("Se aparta con un *anticipo de $303.000* y el resto antes del viaje.", False),
+        ("Para reservar se paga el 30 %. ¿Te sirve?", False),
+        ("¿Te los aparto? 🙌", True),
+        ("¿Quieres que te reserve los cupos?", True),
+        ("Si quieres, te los separo hoy mismo.", True),
+        ("👇\n1️⃣ Sí, quiero reservar ✅\n2️⃣ Tengo una pregunta", True),
+    ])
+    def test_que_cuenta_como_pedir_la_venta(self, frase, pide):
+        assert venta_grupo.ya_pide_la_venta(frase) is pide
+
 
 # ---------------------------------------------------------------------------
 # Punto 3 — sale de Medellín
@@ -402,6 +437,9 @@ class TestSaleDeMedellin:
         "Te recogemos en Bogotá sin problema",
         "Desde Pereira sale un bus el viernes",
         "La salida de Cali es a las 6 p.m.",
+        # QA contra Bedrock del 7-nov (bot 3, «vivo en Cali»).
+        "El plan sale de Medellín, pero muchos clientes de otras ciudades se unen en el camino.",
+        "Si quieres te recogemos en la vía, en Caucasia.",
     ])
     def test_inventar_una_salida_desde_otra_ciudad_viola(self, frase):
         assert venta_grupo.afirma_salida_otra_ciudad([frase])
@@ -410,6 +448,8 @@ class TestSaleDeMedellin:
         "El plan sale solo desde Medellín, no tenemos salida desde Cali 🚌",
         "No hay recogidas en Bogotá: sale de Medellín",
         "¡Qué bien que nos escribas desde Cali! El plan sale de Medellín",
+        "No hay recogidas en el camino: el bus sale de Medellín 🚌",
+        "Sale solo de Medellín, ni se sube nadie en el camino.",
     ])
     def test_decir_la_verdad_no_viola(self, frase):
         assert not venta_grupo.afirma_salida_otra_ciudad([frase])
