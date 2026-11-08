@@ -215,6 +215,9 @@ class ConversationOut(BaseModel):
     etiqueta: Optional[str] = None
     last_message_at: datetime
     last_message_preview: Optional[str] = None
+    # Sprint 36: valor de la venta ACTIVA, si la hay. La lista solo lleva el
+    # número (diseño 1.5); el detalle trae `venta` completa.
+    venta_valor_cop: Optional[int] = None
 
     class Config:
         from_attributes = True
@@ -243,6 +246,10 @@ class ConversationWithMessages(BaseModel):
     etiqueta: Optional[str] = None
     last_message_at: datetime
     messages: List[MessageOut] = []
+    # Sprint 36: la venta activa y el rastro de las anuladas (solo el team
+    # dueño ve esto; `VentaOut` está más abajo y se resuelve con model_rebuild).
+    venta: Optional["VentaOut"] = None
+    ventas_anuladas: List["VentaOut"] = []
 
     class Config:
         from_attributes = True
@@ -1304,6 +1311,9 @@ class VentaOut(BaseModel):
     registrada_por_nombre: Optional[str] = None
     anulada_at: Optional[datetime] = None
     motivo_anulacion: Optional[str] = None
+
+
+ConversationWithMessages.model_rebuild()
 
 
 class ResultadoLlamadaIn(BaseModel):

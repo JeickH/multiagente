@@ -6,7 +6,8 @@ import Paginacion, {
   leerPorPagina,
 } from '../components/Paginacion';
 import { authedFetch } from '../lib/api';
-import { fechaHoraCorta } from '../lib/fechas';
+import { fechaHoraCorta, fechaHoraLarga } from '../lib/fechas';
+import { formatearPesos } from '../lib/venta';
 import { formatearWhatsapp } from '../lib/formatoWhatsapp';
 
 /**
@@ -46,6 +47,9 @@ type Hilo = {
   caminos: string[];
   atendido_por: string;
   preview: string | null;
+  /** Venta cerrada activa (Sprint 36): solo valor y fecha; aquí no se registra. */
+  venta_valor_cop?: number | null;
+  vendida_at?: string | null;
 };
 
 type Turno = {
@@ -67,6 +71,8 @@ type Detalle = {
   canal_label: string;
   turnos: Turno[];
   completo: boolean;
+  venta_valor_cop?: number | null;
+  vendida_at?: string | null;
 };
 
 /** Hora de Colombia. La conversión vive en `lib/fechas.ts` (la usa toda la app). */
@@ -383,6 +389,18 @@ export default function Conversaciones() {
                       style={{ backgroundColor: '#FEF3C7', color: '#92400E' }}
                     >
                       🙋 {h.atendido_por}
+                    </span>
+                  )}
+                  {/* Sprint 36: solo lectura. La venta la registra la cuenta
+                      dueña desde su bandeja; esta ventana no tiene botón. */}
+                  {h.venta_valor_cop != null && (
+                    <span
+                      className="text-[11px] px-2 py-0.5 rounded-full font-semibold"
+                      style={{ backgroundColor: '#E0F2F1', color: '#004D40', border: '1px solid #4DB6AC' }}
+                      title={h.vendida_at ? `Venta cerrada el ${fechaHoraLarga(h.vendida_at)}` : 'Venta cerrada'}
+                    >
+                      💰 {formatearPesos(h.venta_valor_cop)}
+                      {h.vendida_at ? ` · ${fechaCorta(h.vendida_at)}` : ''}
                     </span>
                   )}
                 </span>

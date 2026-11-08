@@ -9990,3 +9990,20 @@ recordatorios dentro de las 24 h los sigue mandando el bot que lleva la conversa
   33 de Postgres). Aceptado: `bot_asignado_id` no se pisa (venta por `conversation_sales.bot_id`);
   un mensaje de asesora no consume el marcador (solo la regla de 2 h). Follow-up aceptado por el
   PM: 2.8 (advisory lock por conversación). Bot D en curso en `feature/sprint36-bot-d`.
+
+**Tarea 2 — «venta cerrada» (dev-plataforma, rama `feature/sprint36-venta`)**
+
+- Backend: `POST /mensajes/conversaciones/{id}/venta` (201) y `/venta/anular` en
+  `routers/mensajes.py` (bloque propio al final), con `can_reply_messages`, conversación cargada con el
+  team de la membresía (ajena = inexistente = 404), team de la venta = `conv.team_id`, doble registro →
+  409 por el índice único parcial y anular en un solo UPDATE con el team en el WHERE. La venta se
+  atribuye al bot que atendía (última `BotSession` del chat, si no el del reparto; nunca un bot de otro
+  owner). Logs solo con ids.
+- Lectura: detalle con `venta` + `ventas_anuladas`; la bandeja trae `venta_valor_cop` en la MISMA
+  consulta de la página (columna calculada diferida `Conversation.venta_valor_cop`, sin migración: el
+  test de N+1 sigue en ≤ 5); supervisión solo `venta_valor_cop` y `vendida_at`.
+- Frontend: botón «💰 Venta cerrada» en `/mensajes` (`components/VentaCerrada.tsx`, `lib/venta.ts`),
+  marca con el valor en la lista y chip de solo lectura en `/conversaciones`.
+- Migración `migrate_sprint36_ventas_abandono.py` corrida dos veces en el Postgres local (0 cambios y
+  verificador verde; sobre un esquema temporal anterior al sprint: 40 cambios → 0). RDS pendiente
+  (deploy-aws). Tests: `tests/test_sprint36_venta.py` (+2 de Postgres) y `lib/venta.test.ts`.

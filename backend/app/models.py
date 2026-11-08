@@ -2444,6 +2444,29 @@ class ConversationSale(Base):
     __str__ = __repr__
 
 
+# Valor de la venta ACTIVA de la conversación, como columna calculada y
+# DIFERIDA (no se lee salvo que la consulta la pida con `undefer`). Es lo que
+# deja a la bandeja traer el valor en la MISMA consulta de la página, sin sumar
+# una consulta más (hay un test que las cuenta). No es columna de la tabla: no
+# hay nada que migrar. El team va en la condición aunque la FK compuesta ya lo
+# garantice. Se declara aquí porque necesita las dos clases ya definidas.
+from sqlalchemy import select as _select  # noqa: E402
+from sqlalchemy.orm import column_property as _column_property  # noqa: E402
+
+Conversation.venta_valor_cop = _column_property(
+    _select(ConversationSale.valor_cop)
+    .where(
+        ConversationSale.conversation_id == Conversation.id,
+        ConversationSale.team_id == Conversation.team_id,
+        ConversationSale.anulada_at.is_(None),
+    )
+    .correlate_except(ConversationSale)
+    .limit(1)
+    .scalar_subquery(),
+    deferred=True,
+)
+
+
 # ===== Interesados: intención de compra detectada mientras el bot atiende ====
 #
 # Estrategia #22 del bot 2 de Arranquemos Pues (decisión del CEO, 7-oct-2026).
