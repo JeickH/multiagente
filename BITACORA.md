@@ -9960,3 +9960,10 @@ dejan fuera.
 | — | Suite completa `TZ=UTC` en worktree limpio + QA contra Bedrock de D y del regreso (≤ US$ 4) | qa |
 | — | Auditoría de código de 2, 3 y 4 (y la agenda de D) | seguridad |
 | — | Imagen, task-def nueva desde la 120, migración RDS + local, rollout, bot D y reparto, verificación | deploy-aws |
+
+**Decisión (8-nov, vía coordinador):** van al bot de reenganche (D) las conversaciones que entran
+por el camino de regreso (el cliente vuelve a una abandonada o cerrada por inactividad). Los tres
+recordatorios dentro de las 24 h los sigue mandando el bot que lleva la conversación.
+
+**Estado (PM):** motor (1, 3, 4) en `feature/bots-base-motor` y venta cerrada (2) en
+`feature/sprint36-venta` en curso; luego merge, bot D, seguridad, QA y deploy.
