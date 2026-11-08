@@ -9864,6 +9864,25 @@ el número de Gloma y Twilio lo reportó `delivered`. Commits `53d82fd` y `06544
 
 ---
 
+## Arranquemos Pues: la fecha de corte de la suscripción pasa al 15 — 2 de noviembre de 2026
+
+Pedido del CEO: que la mensualidad de Arranquemos Pues (team 5) se cobre los días 15 y no los 2.
+El cobro de noviembre estaba programado para hoy a las 11:26 a.m. (Colombia); el cambio se aplicó
+a las 11:20, antes de que el tick lo lanzara.
+
+- **Sin código ni migración**: en `subscriptions` (team 5) `billing_day` 2 → **15** y
+  `next_charge_at` → **2026-11-15 16:26:47 UTC** (11:26 a.m. Colombia). El ciclo siguiente lo
+  calcula `proxima_fecha_cobro` con el `billing_day`, así que de ahí en adelante cae el 15.
+  Se corrió con `rds_exec.sh` y un candado: si ya había un cobro de noviembre, iba al 15-dic.
+- **Verificación**: a las 11:28 a.m. seguían en cero los cobros de noviembre y la suscripción
+  quedó `active` con el próximo cobro el 15-nov.
+- **Los días 2 al 14 de noviembre quedan de cortesía** (no se cobran aparte). El último pago
+  (2-oct) cubrió hasta el 1-nov. Desde el 15-nov cada mensualidad cubre del 15 al 14.
+
+**Pendientes**
+- Avisarle al cliente la nueva fecha de cobro.
+- La factura del cobro del 15-nov la emite el CEO a mano, periodo 15-nov → 14-dic.
+
 ## Sprint 36 — Mejoras base para los 3 bots de venta de Arranquemos Pues (7-nov-2026)
 
 Branch `feature/bots-arranquemos-base`. Aprobado por el CEO el 7-nov: «para todos los bots hay
@@ -9888,3 +9907,56 @@ autoriza cambiarlo para estos puntos), 21 (variante B, fuera del reparto pero ac
 | — | Auditoría de código de 4 y 8 antes del merge | seguridad |
 
 Sin deploy ni escrituras en RDS hasta que la sesión principal lo confirme con el CEO.
+
+## Sprint 36 · Release 1 en producción — bots 1, 2 y 3 de Arranquemos Pues (8 de noviembre de 2026)
+
+Pedido del CEO (7-nov): los bots viejos también piden la venta y dan el total del grupo. Rama
+`release/sprint36-r1` (fast-forward a `main`, `ddbbc0b`), imagen `:sprint36-r1-ddbbc0b`,
+task-def **rev 120** (antes 119). Sin migración ni cambios de frontend.
+
+- **Módulo `services/venta_grupo.py`** (solo bots con `tarifario`): la consulta de precios recibe
+  `adultos`/`ninos` y devuelve el TOTAL DEL GRUPO (1–2 en doble, múltiple 3+, niños por su tramo;
+  2 adultos + niño menor de 5 cuentan como 3 → múltiple, regla del CEO); tras el total se agrega
+  «¿Te aparto los N cupos?» con el anticipo o el pago total (<5 días), o «¿Cuál te aparto…?» si hay
+  dos totales; «sale de Medellín» en el primer mensaje y bloqueo de salidas inventadas desde otras
+  ciudades; fuera «todo incluido»; `listo_para_reservar` con nombre completo + cédula de quien paga.
+- **Guardarraíl de precio**: acepta el total con niños aunque la frase no diga «niño», lo mide
+  contra la fila nombrada, y un monto presentado como «total» tiene que ser uno de los del bloque.
+- Guiones de los 3 bots actualizados; golden del bot 1 regenerado (autorizado por el CEO).
+  Bots 21 y 22: `instrucciones` v2 en RDS con `crear_bot_viajes_variante.py` (run-task, `FORZAR=1`
+  tras verificar por md5 que la base tenía el guion de `main` sin ediciones). Reparto sin cambios
+  (12 → 50, 22 → 50, 21 fuera).
+- **Pruebas**: suite 4.192 en verde con `TZ=UTC` en worktree limpio; QA contra Bedrock
+  (`tests/viajes/costo/test_guiones_sprint36.py`, ~US$ 1,6 en total): el bloqueante de la familia
+  con niño (bots 2 y 3 pasaban a asesora 5 de 5 veces) quedó resuelto.
+- **Verificado en prod**: rollout COMPLETED, tick 200, sin errores en logs, md5 de instrucciones =
+  archivos.
+
+**Pendientes**
+- El **bot 1 no tiene `guardarrail_precio`** (nunca lo tuvo): en QA dio a veces el total de otra
+  salida. Encenderlo = flag en `bot_viajes.LLM_CONFIG` + RDS + golden + QA.
+- Menores de QA: el bot 3 repite «¿Te aparto?» tras el sí; nota interna del bot 3 con un total
+  errado; texto fijo de cierre sin el valor a pagar.
+- Release 2 (en curso): recordatorios con ventana de 24 h, «venta cerrada», camino de regreso y
+  reasignación al bot de reenganche, bot D y reparto 25/25/50.
+
+## Sprint 36 · Release 2 — recordatorios, «venta cerrada», camino de regreso y bot D (8 de noviembre de 2026)
+
+Aprobado por el CEO (8-nov, «despliega rápido»). Worktree `.claude/worktrees/bots-base-motor`,
+rama `feature/bots-base-motor` sobre `main` (`ddbbc0b`). Diseño de seguridad en
+`docs/sprint36/diseno_seguridad.md`: los 13 Altos son bloqueantes, y 2.6 (tope) y 2.7 (24 h) no se
+dejan fuera.
+
+**Tareas y asignación (PM)**
+
+| # | Tarea | Agente |
+|---|-------|--------|
+| 1 | Recordatorios que leen la conversación, solo dentro de 24 h desde el último entrante; si el silencio los corre fuera, no salen | dev-plataforma (motor) |
+| 2 | Botón «venta cerrada» con valor: endpoints por team, bandeja y supervisión (solo lectura), migración idempotente | experto-bd + dev-plataforma (venta) |
+| 3 | Camino de regreso (abandonada / cerrada por inactividad), nota «🔥 Volvió», sube en bandeja, no responde si una asesora escribió en 2 h | dev-plataforma (motor) |
+| 4 | Toda conversación de regreso pasa al bot de reenganche del team (D); sin bot configurado, la atiende el asignado con el mismo camino | dev-plataforma (motor) |
+| 5 | Bot D (variante como B y C): guion humano sin menús, «¿Te los aparto?», `venta_grupo` + `guardarrail_precio`; puerta 2 completa tras bandera APAGADA | dev-plataforma (bot D) |
+| 6 | Reparto 12 → 25, 22 → 25, D → 50, 21 fuera; bot de reenganche del team 5 = D | dev-plataforma (script) → deploy-aws |
+| — | Suite completa `TZ=UTC` en worktree limpio + QA contra Bedrock de D y del regreso (≤ US$ 4) | qa |
+| — | Auditoría de código de 2, 3 y 4 (y la agenda de D) | seguridad |
+| — | Imagen, task-def nueva desde la 120, migración RDS + local, rollout, bot D y reparto, verificación | deploy-aws |
