@@ -317,7 +317,7 @@ _PREGUNTAS = {
         r"cuant[oa]s\s+(?:personas|adultos|viajeros|pasajeros|viajan|viajarian|van|"
         r"irian|serian|son)\b|cuantos\s+son\b"
     ),
-    "mes": re.compile(r"\b(?:que|cual)\s+mes\b|\bpara\s+que\s+mes\b|\bque\s+fecha\b"),
+    "mes": re.compile(r"\b(?:que|cual)\s+mes\b|\bpara\s+que\s+mes\b"),
     "hotel": re.compile(r"\b(?:que|cual)\s+hotel\b"),
 }
 
