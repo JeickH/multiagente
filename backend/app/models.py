@@ -2235,6 +2235,10 @@ class Agendamiento(Base):
     #: Inicio de la franja acordada, en UTC naive. NULL = llamada sin hora
     #: (las del abandono: solo `fecha_llamada`).
     franja_inicio = Column(DateTime, nullable=True)
+    #: Fin de la franja (UTC naive), para la alerta del tick «se acabó sin
+    #: resultado». Va con `franja_inicio`: los dos o ninguno. Lo calcula el
+    #: servidor del horario de la agencia (2 h, o 1 h el sábado de 12 a 1).
+    franja_fin = Column(DateTime, nullable=True)
     #: Qué cupo de la franja ocupa (1..cupo). Va junto con `franja_inicio`
     #: (los dos o ninguno) y el índice único parcial
     #: `uq_agendamientos_franja_puesto` impide dos pendientes en el mismo
@@ -2288,6 +2292,10 @@ class Agendamiento(Base):
         CheckConstraint(
             "(franja_inicio IS NULL) = (puesto IS NULL)",
             name="ck_agendamientos_franja_con_puesto",
+        ),
+        CheckConstraint(
+            "(franja_fin IS NULL) = (franja_inicio IS NULL)",
+            name="ck_agendamientos_franja_fin",
         ),
         CheckConstraint(
             "origen IN ('abandono', 'bot_llamada')",

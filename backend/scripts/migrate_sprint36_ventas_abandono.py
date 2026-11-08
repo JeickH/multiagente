@@ -28,12 +28,14 @@ bots
   + UNIQUE parcial uq_bot_reenganche_por_owner (user_id) WHERE es_reenganche
 
 agendamientos
-  + franja_inicio TIMESTAMP, puesto SMALLINT, origen VARCHAR(16),
+  + franja_inicio TIMESTAMP, franja_fin TIMESTAMP, puesto SMALLINT, origen VARCHAR(16),
     resultado VARCHAR(16), resultado_por_user_id INTEGER (FK users SET NULL),
     resultado_at, aviso_inicio_at, alerta_fin_at TIMESTAMP, cotizacion TEXT
   + CHECK ck_agendamientos_puesto (puesto >= 1)
   + CHECK ck_agendamientos_franja_con_puesto (franja y puesto, los dos o ninguno:
     sin esto una franja sin puesto se saltaría el cupo)
+  + CHECK ck_agendamientos_franja_fin (fin y inicio, los dos o ninguno; bot D,
+    para la alerta de «se acabó la franja sin resultado»)
   + CHECK ck_agendamientos_origen (abandono | bot_llamada)
   + CHECK ck_agendamientos_resultado (vendida | lo_pensara | no_contesto)
   + CHECK ck_agendamientos_cotizacion_largo (length ≤ 1000)
@@ -137,6 +139,7 @@ COLUMNAS: dict[str, list[tuple[str, str]]] = {
     ],
     "agendamientos": [
         ("franja_inicio", "TIMESTAMP WITHOUT TIME ZONE NULL"),
+        ("franja_fin", "TIMESTAMP WITHOUT TIME ZONE NULL"),
         ("puesto", "SMALLINT NULL"),
         ("origen", "VARCHAR(16) NULL"),
         ("resultado", "VARCHAR(16) NULL"),
@@ -211,6 +214,8 @@ CONSTRAINTS: list[tuple[str, str, str]] = [
     ("agendamientos", "ck_agendamientos_puesto", "CHECK (puesto >= 1)"),
     ("agendamientos", "ck_agendamientos_franja_con_puesto",
      "CHECK ((franja_inicio IS NULL) = (puesto IS NULL))"),
+    ("agendamientos", "ck_agendamientos_franja_fin",
+     "CHECK ((franja_fin IS NULL) = (franja_inicio IS NULL))"),
     ("agendamientos", "ck_agendamientos_origen",
      "CHECK (origen IN ('abandono', 'bot_llamada'))"),
     ("agendamientos", "ck_agendamientos_resultado",
@@ -276,6 +281,7 @@ ESPERADAS: dict[str, dict[str, tuple]] = {
     },
     "agendamientos": {
         "franja_inicio": (_TS, "YES", None, None),
+        "franja_fin": (_TS, "YES", None, None),
         "puesto": ("smallint", "YES", None, None),
         "origen": (_VC, "YES", None, 16),
         "resultado": (_VC, "YES", None, 16),
@@ -343,6 +349,7 @@ CONSTRAINTS_ESPERADAS: dict[str, dict[str, str]] = {
         ),
         "ck_agendamientos_puesto": "CHECK ((puesto >= 1))",
         "ck_agendamientos_franja_con_puesto": "CHECK (((franja_inicio IS NULL) = (puesto IS NULL)))",
+        "ck_agendamientos_franja_fin": "CHECK (((franja_fin IS NULL) = (franja_inicio IS NULL)))",
         "ck_agendamientos_origen": (
             "CHECK (((origen)::text = ANY ((ARRAY['abandono'::character varying, "
             "'bot_llamada'::character varying])::text[])))"
