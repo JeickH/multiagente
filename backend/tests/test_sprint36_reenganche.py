@@ -69,6 +69,17 @@ class ModeloFalso:
         return self.guion.pop(0)
 
 
+@pytest.fixture(autouse=True)
+def hoy_fijo(monkeypatch):
+    """El «hoy» de Colombia fijo: la salida del 2026-12-04 que usan estas
+    pruebas no puede volverse «ya pasó» el 5 de diciembre."""
+    from datetime import date
+
+    from app.services import tarifario
+
+    monkeypatch.setattr(tarifario, "hoy_colombia", lambda: date(2026, 11, 8))
+
+
 @pytest.fixture
 def modelo(monkeypatch) -> ModeloFalso:
     falso = ModeloFalso()
@@ -528,6 +539,32 @@ class TestCaminoDeRegreso:
         assert "1.377.000" not in system, "el total viejo no puede llegar al modelo"
         # El texto del cliente sí llega (no el saludo de primer turno).
         assert modelo.recibidos[0]["messages"][-1]["content"] == "hola, ¿todavía está?"
+
+    @pytest.mark.parametrize("variante", ["bot1", "bot2", "bot3"])
+    def test_funciona_con_los_tres_bots_de_arranquemos(self, db, agencia, modelo, variante):
+        """Camino de regreso con la config real de cada bot (12, 21, 22): va
+        al cierre sin bienvenida, sin el flyer de apertura ni el menú de
+        regreso del bot 3, y con el texto del cliente."""
+        from app.data.bot_viajes_b import LLM_CONFIG_B
+        from app.data.bot_viajes_c import LLM_CONFIG_C
+
+        cfg = {"bot1": LLM_CONFIG, "bot2": LLM_CONFIG_B, "bot3": LLM_CONFIG_C}[variante]
+        bot = agencia["bot"]
+        bot.llm_config = json.dumps(cfg, ensure_ascii=False)
+        db.commit()
+        conv = _abandonada(db, agencia["team"], bot)
+        conv, atendio = entra(db, agencia["team"], "hola")
+        assert atendio is not None and atendio.id == bot.id
+        assert len(modelo.recibidos) == 1, "el saludo solo no se contesta con un texto fijo"
+        system = modelo.recibidos[0]["system"]
+        assert "## Vuelve tras un silencio" in system
+        assert "## Ya hablaron antes" not in system
+        assert "Arriba tienes lo que ya hablaron" not in system
+        assert "1.377.000" not in system
+        assert modelo.recibidos[0]["messages"][-1]["content"] == "hola"
+        salieron = enviados(db, conv)
+        assert salieron[-1].message_type != "image", "sin el flyer de apertura"
+        assert len(notas_volvio(db, conv)) == 1
 
     def test_si_la_fecha_ya_paso_lo_dice(self, db, agencia, modelo):
         _abandonada(db, agencia["team"], agencia["bot"], fecha="2026-01-10")
