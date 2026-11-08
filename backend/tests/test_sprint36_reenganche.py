@@ -18,7 +18,7 @@ Cubre los «Tests exigidos» de la sección 2:
   * `caplog` sin texto ni teléfono.
 
 Más el camino de regreso (el bloque que recibe el motor, sin la cifra vieja) y
-el sello previo de 2.4b. Las dos sesiones concurrentes en Postgres están en
+el sello previo de 2.4b. Las sesiones concurrentes en Postgres están en
 `test_sprint36_reenganche_postgres.py`. Teléfonos y cédulas inventados
 (regla #8).
 """
@@ -570,9 +570,31 @@ def test_el_tick_y_las_acciones_nunca_llaman_reclamar(db, agencia, modelo, monke
         db.add(pa)
         db.commit()
         bot_runner.process_pending_action(db, pa)
+    # El endpoint del tick (EventBridge → Lambda → /internal/bot-scheduler/tick)
+    # con acciones vencidas de verdad.
+    from fastapi import BackgroundTasks
+
+    from app.routers import internal
+
+    otra = models.BotSession(bot_id=agencia["bot"].id, conversation_id=conv.id,
+                             status=models.BOT_SESSION_WAITING, state=None)
+    db.add(otra)
+    db.commit()
+    for tipo in (models.BOT_PENDING_ACTION_SEGUIMIENTO, models.BOT_PENDING_ACTION_ABANDONO):
+        db.add(models.BotPendingAction(
+            session_id=otra.id, scheduled_at=datetime.utcnow() - timedelta(minutes=1),
+            action_type=tipo, status=models.BOT_PENDING_STATUS_PENDING,
+            payload=json.dumps({"etapa": 0}),
+        ))
+    db.commit()
+    respuesta = internal.bot_scheduler_tick(BackgroundTasks(), db=db, _=None, limit=50)
+    assert respuesta["processed"] >= 1
     bot_runner.run_turn(db, bot=agencia["bot"], conversation=conv, session=None,
                         user_input="hola", meta_account=None)
     assert llamadas == []
+    # Y el marcador sigue intacto para el próximo entrante real.
+    db.refresh(conv)
+    assert conv.reclamos_abandono == 0
 
 
 # ---------------------------------------------------------------------------
