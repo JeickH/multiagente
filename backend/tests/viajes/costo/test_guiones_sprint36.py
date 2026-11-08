@@ -221,7 +221,10 @@ def total_y_venta(h: Hoja, ts, total: int, a_pagar: int, cupos: int, *, duro_tot
     # aparto los N cupos?» con el valor; con varios, «¿Cuál te aparto…?»; y
     # no toca un menú numerado del bot 3 (ahí la pregunta es del modelo).
     menu = bool(re.search(r"[1-9]\ufe0f?\u20e3", s.split("?")[-1] if "?" in s else ""))
-    varios = len({m for m in montos(s) if m >= 300000 and m % 1000 == 0}) > 2
+    # Dos totales (estándar y Barú) ya son «varios»: el cierre es «¿Cuál te
+    # aparto…?» y no lleva un anticipo único.
+    varios = (len({m for m in montos(s) if m >= 300000 and m % 1000 == 0}) >= 2
+              or bool(re.search(r"cu[aá]l te aparto", s, re.I)))
     h.anotar(1, "«¿te aparto…?» en el turno del total", bool(_APARTO_RE.search(s)), s[-160:], i,
              duro=not menu)
     h.anotar(1, f"valor para apartar {pesos(a_pagar)}", a_pagar in montos(s), str(montos(s)), i,

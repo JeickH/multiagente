@@ -51,6 +51,7 @@ plan cuesta eso y ahí viven las propinas del itinerario.
 from __future__ import annotations
 
 import bisect
+import dataclasses
 import re
 import unicodedata
 from dataclasses import dataclass
@@ -341,21 +342,23 @@ _TOTAL_DE_LINEA_RE = re.compile(r"=[ \t]{0,3}\$(" + _NUM_PUNTOS + r")" + _FIN_NU
 #: «$1.113.000 en total», «total: $1.113.000», «→ $1.113.000 total».
 _TOTAL_DESPUES_RE = re.compile(r"^[\s*_)]{0,4}(?:en[ \t]{1,3})?total\b")
 _TOTAL_ANTES_RE = re.compile(r"\btotal\b[^$\d\n]{0,20}$")
+#: El encabezado nombra a los niños: «para 2 adultos y niño de 3, bebé».
+_NINOS_EN_BLOQUE_RE = re.compile(r"\b(?:nino de \d|bebe)\b")
 
 
-def _montos_bloque_total(resultados: Iterable[str]) -> Tuple[Set[int], Set[int]]:
-    """(todas las cifras, solo los totales) del bloque «TOTAL DEL GRUPO».
-
-    Todas: precio por persona, valor de cada niño, total y anticipo, tal como
-    las calculó el sistema para el grupo que pasó el modelo. Sin el bloque
-    (el modelo no dijo cuántos van), los dos conjuntos salen vacíos."""
+def _montos_bloque_total(resultados: Iterable[str]) -> Tuple[Set[int], Set[int], bool]:
+    """(todas las cifras, solo los totales, ¿van niños?) del bloque «TOTAL DEL
+    GRUPO», tal como lo calculó el sistema para el grupo que pasó el modelo.
+    Sin el bloque (el modelo no dijo cuántos van): vacíos y False."""
     todas: Set[int] = set()
     totales: Set[int] = set()
+    con_ninos = False
     for r in _resultados_validos(resultados):
         plano = _plano(r)
         i = plano.find(_BLOQUE_TOTAL)
         if i < 0:
             continue
+        con_ninos = con_ninos or bool(_NINOS_EN_BLOQUE_RE.search(plano[i:i + 200]))
         for linea in plano[i:].split("\n")[1:]:
             if not linea.lstrip().startswith("·"):
                 continue
@@ -363,7 +366,7 @@ def _montos_bloque_total(resultados: Iterable[str]) -> Tuple[Set[int], Set[int]]
                 todas.add(_entero(m.group(1)))
             for m in _TOTAL_DE_LINEA_RE.finditer(linea):
                 totales.add(_entero(m.group(1)))
-    return todas, totales
+    return todas, totales, con_ninos
 
 
 def _presentado_como_total(plano: str, monto: "_Monto") -> bool:
@@ -922,7 +925,7 @@ def viola_precio(
     filas = filas_de_resultados(resultados)
     directos = _directos(resultados)
     ninos = _sumas_ninos(extras)
-    bloque_todas, bloque_totales = _montos_bloque_total(resultados)
+    _, bloque_totales, bloque_con_ninos = _montos_bloque_total(resultados)
     extras_ok = _valores_extras(extras) | {s for s in ninos if s}
     cliente = {int(x) for x in (cifras_cliente or set())}
     minimo = min((min(f.multiple, f.doble) for f in filas), default=None)
@@ -1063,15 +1066,18 @@ def viola_precio(
             k = bisect.bisect_left(difs, v - _TOLERANCIA)
             if k < len(difs) and difs[k] <= v + _TOLERANCIA:
                 continue
-        # 0c. Sprint 36: el total del grupo que calculó el sistema. Cualquier
-        # cifra del bloque vale aunque la frase no repita «niño» (QA 7-nov: «Para
-        # ustedes 3 en múltiple son $1.113.000 en total» se rechazaba y el turno
-        # terminaba en la asesora). Y un monto presentado como «total» tiene que
-        # ser uno de esos totales: «para los 3 en doble: $1.010.000 en total»
-        # (el de 2 adultos, sin el niño) pasaba por la regla 3.
-        if v in bloque_todas:
-            continue
-        if bloque_totales and _presentado_como_total(plano, monto):
+        # 0c. Sprint 36, con el TOTAL DEL GRUPO del sistema a la vista:
+        #  - si el grupo lleva niños, la frase cuenta como que los nombra aunque
+        #    no diga «niño» (QA 7-nov: «Para ustedes 3 en múltiple son
+        #    $1.113.000 en total» se rechazaba y el turno terminaba en la
+        #    asesora). Igual se mide contra la fila que nombra (regla 3): el
+        #    total de OTRA salida no pasa.
+        #  - un monto presentado como «total» tiene que ser uno de esos
+        #    totales: «para los 3 en doble: $1.010.000 en total» (el de 2
+        #    adultos, sin el niño) pasaba por la regla 3.
+        if bloque_con_ninos and not ctx.ninos:
+            ctx = dataclasses.replace(ctx, ninos=True)
+        if bloque_totales and v not in bloque_totales and _presentado_como_total(plano, monto):
             return (
                 f"Diste {_pesos(v)} como total, pero el total del grupo que "
                 "calculó el sistema es "

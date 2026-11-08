@@ -807,7 +807,7 @@ class TestGuardarrailTotalDelGrupo:
     def test_sin_bloque_no_cambia_nada(self):
         """Si el modelo no pasó cuántos van, no hay bloque: manda la regla de siempre."""
         base = _consulta(fecha=FECHA)
-        assert guardarrail_precio._montos_bloque_total([base]) == (set(), set())
+        assert guardarrail_precio._montos_bloque_total([base]) == (set(), set(), False)
 
     def test_precio_por_persona_sigue_pasando(self):
         resultado, totales = self._resultado({"adultos": "3"})
@@ -815,3 +815,16 @@ class TestGuardarrailTotalDelGrupo:
         por_persona = t.total // 3
         pesos = f"${por_persona:,}".replace(",", ".")
         assert self._viola(f"En Amor de Dios del 20 al 23 queda en {pesos} por persona en múltiple.", resultado) is None
+
+    def test_total_de_otra_salida_no_pasa_aunque_este_en_el_bloque(self):
+        """Bot 1 (QA r4): consultó todo diciembre y a «la del 18 al 21 en Amor
+        de Dios» le dio el total de otra fila."""
+        base = tarifario.consultar({"tarifario": "covenas"}, mes="noviembre", hoy=HOY)
+        texto, totales = venta_grupo.bloque_total(base, {"adultos": "2", "ninos": "3"}, hoy=HOY)
+        resultado = f"{base}\n{texto}"
+        propio = self._amor(totales, "múltiple").total
+        otros = sorted({t.total for t in totales if t.total != propio and t.acomodacion == "múltiple"})
+        assert otros
+        pesos = f"${otros[0]:,}".replace(",", ".")
+        texto_bot = f"Para ustedes del 20 al 23 de noviembre en Amor de Dios son *{pesos} en total*."
+        assert self._viola(texto_bot, resultado)
