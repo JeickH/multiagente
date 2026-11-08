@@ -9986,3 +9986,7 @@ recordatorios dentro de las 24 h los sigue mandando el bot que lleva la conversa
   venta se atribuye por `conversation_sales.bot_id`. Terminado el episodio, si vuelve otra vez sin
   marcador, la retoma el de la última sesión (dentro de `retomar`) o el pegajoso del reparto.
 - Pendiente (Medio 2.8, follow-up): serializar turnos por conversación con advisory lock.
+- Avance (PM): frente motor TERMINADO (`f03f446`…`db1ad5f`, suite 4.313 verdes con `TZ=UTC`,
+  33 de Postgres). Aceptado: `bot_asignado_id` no se pisa (venta por `conversation_sales.bot_id`);
+  un mensaje de asesora no consume el marcador (solo la regla de 2 h). Follow-up aceptado por el
+  PM: 2.8 (advisory lock por conversación). Bot D en curso en `feature/sprint36-bot-d`.
