@@ -9986,3 +9986,28 @@ recordatorios dentro de las 24 h los sigue mandando el bot que lleva la conversa
   venta se atribuye por `conversation_sales.bot_id`. Terminado el episodio, si vuelve otra vez sin
   marcador, la retoma el de la última sesión (dentro de `retomar`) o el pegajoso del reparto.
 - Pendiente (Medio 2.8, follow-up): serializar turnos por conversación con advisory lock.
+- Avance (PM): frente motor TERMINADO (`f03f446`…`db1ad5f`, suite 4.313 verdes con `TZ=UTC`,
+  33 de Postgres). Aceptado: `bot_asignado_id` no se pisa (venta por `conversation_sales.bot_id`);
+  un mensaje de asesora no consume el marcador (solo la regla de 2 h). Follow-up aceptado por el
+  PM: 2.8 (advisory lock por conversación). Bot D en curso en `feature/sprint36-bot-d`.
+
+**Tarea 2 — «venta cerrada» (dev-plataforma, rama `feature/sprint36-venta`)**
+
+- Backend: `POST /mensajes/conversaciones/{id}/venta` (201) y `/venta/anular` en
+  `routers/mensajes.py` (bloque propio al final), con `can_reply_messages`, conversación cargada con el
+  team de la membresía (ajena = inexistente = 404), team de la venta = `conv.team_id`, doble registro →
+  409 por el índice único parcial y anular en un solo UPDATE con el team en el WHERE. La venta se
+  atribuye al bot que atendía (última `BotSession` del chat, si no el del reparto; nunca un bot de otro
+  owner). Logs solo con ids.
+- Lectura: detalle con `venta` + `ventas_anuladas`; la bandeja trae `venta_valor_cop` en la MISMA
+  consulta de la página (columna calculada diferida `Conversation.venta_valor_cop`, sin migración: el
+  test de N+1 sigue en ≤ 5); supervisión solo `venta_valor_cop` y `vendida_at`.
+- Frontend: botón «💰 Venta cerrada» en `/mensajes` (`components/VentaCerrada.tsx`, `lib/venta.ts`),
+  marca con el valor en la lista y chip de solo lectura en `/conversaciones`.
+- Migración `migrate_sprint36_ventas_abandono.py` corrida dos veces en el Postgres local (0 cambios y
+  verificador verde; sobre un esquema temporal anterior al sprint: 40 cambios → 0). RDS pendiente
+  (deploy-aws). Tests: `tests/test_sprint36_venta.py` (+2 de Postgres) y `lib/venta.test.ts`.
+- Avance (PM): venta cerrada TERMINADA y mergeada (`569b020`; 48 tests SQLite + 2 Postgres; tsc,
+  vitest 179/179 y build verdes; migración local 2 corridas idempotentes). Auditoría de `seguridad`
+  de 2, 3 y 4 en curso sobre `569b020`. Pendiente menor: `test_variante_crear_bot.py::
+  test_la_salida_no_lleva_correo_ni_valores_de_config` es intermitente («573» en microsegundos).

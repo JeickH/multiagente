@@ -2,7 +2,7 @@ import os
 import re
 from datetime import datetime
 from typing import Optional, Dict, List, Tuple
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, undefer
 from sqlalchemy import and_, case, desc, func, or_
 from passlib.context import CryptContext
 
@@ -441,6 +441,7 @@ def list_conversations(
     etiqueta: Optional[str] = None,
     limite: int = MAX_CONVERSACIONES_POR_PAGINA,
     offset: int = 0,
+    con_venta: bool = False,
 ) -> Tuple[List[models.Conversation], int]:
     """Una página de conversaciones del team, y cuántas hay en total.
 
@@ -498,6 +499,10 @@ def list_conversations(
         ), 0),
         else_=1,
     )
+    if con_venta:
+        # Sprint 36: el valor de la venta activa viaja en esta misma consulta
+        # (`Conversation.venta_valor_cop`, diferida por defecto).
+        consulta = consulta.options(undefer(models.Conversation.venta_valor_cop))
     convs = (
         consulta.order_by(listas, desc(models.Conversation.last_message_at))
         .limit(limite)
@@ -2353,3 +2358,160 @@ def build_campaign_detail_out(
 ) -> schemas.CampaignDetailOut:
     """Wrapper público sobre `_build_campaign_detail_out` (para el router)."""
     return _build_campaign_detail_out(db, campaign)
+
+
+# ===================== Sprint 36: venta cerrada sobre una conversación =====================
+#
+# Diseño de seguridad: docs/sprint36/diseno_seguridad.md, secciones 0 y 1.
+# Todas las funciones reciben el `team_id` YA resuelto en el servidor (la
+# conversación se cargó con `get_conversation(db, member.team_id, id)`) y lo
+# ponen en el WHERE: ninguna confía en un id suelto. La venta no se edita ni se
+# borra; corregir = anular (con motivo) + registrar otra.
+
+
+def bot_que_atendia(db: Session, owner_user_id: int,
+                    conv: models.Conversation) -> Optional[int]:
+    """El bot que atendía la conversación, para atribuir la venta (diseño 0.7).
+
+    Primero la última `BotSession` de ESTA conversación; si no hay, el bot del
+    reparto A/B (`bot_asignado_id`). En los dos casos el bot tiene que ser del
+    owner del team: un id que apunte a otro tenant no se atribuye nunca.
+    """
+    fila = (
+        db.query(models.BotSession.bot_id)
+        .join(models.Bot, models.Bot.id == models.BotSession.bot_id)
+        .filter(
+            models.BotSession.conversation_id == conv.id,
+            models.Bot.user_id == owner_user_id,
+        )
+        .order_by(models.BotSession.started_at.desc(), models.BotSession.id.desc())
+        .first()
+    )
+    if fila is not None:
+        return fila[0]
+    asignado = getattr(conv, "bot_asignado_id", None)
+    if asignado is None:
+        return None
+    propio = (
+        db.query(models.Bot.id)
+        .filter(models.Bot.id == asignado, models.Bot.user_id == owner_user_id)
+        .first()
+    )
+    return propio[0] if propio else None
+
+
+def registrar_venta(
+    db: Session,
+    conv: models.Conversation,
+    *,
+    valor_cop: int,
+    vendida_por: str,
+    nota: Optional[str],
+    user_id: int,
+    bot_id: Optional[int],
+) -> models.ConversationSale:
+    """Inserta la venta ACTIVA de la conversación y hace commit.
+
+    El `team_id` sale de `conv.team_id`, nunca del cliente (diseño 0.1). Si ya
+    hay una activa, el índice único parcial `uq_conversation_sales_activa`
+    revienta con `IntegrityError`: lo traduce el router a 409 (diseño 1.3). No
+    se pregunta antes "¿ya hay una?": con dos clics a la vez las dos preguntas
+    dirían que no; la base es la única que decide sin carrera.
+    """
+    venta = models.ConversationSale(
+        team_id=conv.team_id,
+        conversation_id=conv.id,
+        bot_id=bot_id,
+        valor_cop=valor_cop,
+        vendida_por=vendida_por,
+        nota=nota,
+        registrada_por_user_id=user_id,
+    )
+    db.add(venta)
+    db.commit()
+    db.refresh(venta)
+    return venta
+
+
+def anular_venta(
+    db: Session, team_id: int, conversation_id: int, *, motivo: str, user_id: int
+) -> int:
+    """Anula la venta activa en UN solo UPDATE con el team en el WHERE.
+
+    Devuelve cuántas filas tocó (0 o 1). 0 = no había venta activa de esa
+    conversación en ese team (o la anuló otro un instante antes): 404 en el
+    router, igual que una conversación ajena.
+    """
+    tocadas = (
+        db.query(models.ConversationSale)
+        .filter(
+            models.ConversationSale.conversation_id == conversation_id,
+            models.ConversationSale.team_id == team_id,
+            models.ConversationSale.anulada_at.is_(None),
+        )
+        .update(
+            {
+                models.ConversationSale.anulada_at: datetime.utcnow(),
+                models.ConversationSale.motivo_anulacion: motivo,
+                models.ConversationSale.anulada_por_user_id: user_id,
+            },
+            synchronize_session=False,
+        )
+    )
+    db.commit()
+    return tocadas
+
+
+def ventas_de_conversacion(
+    db: Session, team_id: int, conversation_id: int
+) -> List[Tuple[models.ConversationSale, Optional[str]]]:
+    """Todas las ventas (activa y anuladas) con el nombre de quien la
+    registró, de la más nueva a la más vieja. Una sola consulta."""
+    return (
+        db.query(models.ConversationSale, models.User.nombre)
+        .outerjoin(models.User, models.User.id == models.ConversationSale.registrada_por_user_id)
+        .filter(
+            models.ConversationSale.team_id == team_id,
+            models.ConversationSale.conversation_id == conversation_id,
+        )
+        .order_by(models.ConversationSale.created_at.desc(), models.ConversationSale.id.desc())
+        .all()
+    )
+
+
+def venta_out(venta: models.ConversationSale, registrada_por_nombre: Optional[str]) -> schemas.VentaOut:
+    """`VentaOut` del detalle de /mensajes (diseño 1.5): sin team ni ids de usuario."""
+    return schemas.VentaOut(
+        id=venta.id,
+        valor_cop=int(venta.valor_cop),
+        vendida_por=venta.vendida_por,
+        nota=venta.nota,
+        registrada_at=venta.created_at,
+        registrada_por_nombre=registrada_por_nombre,
+        anulada_at=venta.anulada_at,
+        motivo_anulacion=venta.motivo_anulacion,
+    )
+
+
+def ventas_activas_de_conversaciones(
+    db: Session, team_id: int, conv_ids: List[int]
+) -> Dict[int, Tuple[int, datetime]]:
+    """`{conversation_id: (valor_cop, vendida_at)}` de las ventas ACTIVAS de una
+    página de conversaciones, en UNA consulta (la bandeja y la supervisión no
+    pueden volverse un N+1: hay un test que cuenta consultas)."""
+    if not conv_ids:
+        return {}
+    filas = (
+        db.query(
+            models.ConversationSale.conversation_id,
+            models.ConversationSale.valor_cop,
+            models.ConversationSale.created_at,
+        )
+        .filter(
+            models.ConversationSale.team_id == team_id,
+            models.ConversationSale.conversation_id.in_(conv_ids),
+            models.ConversationSale.anulada_at.is_(None),
+        )
+        .all()
+    )
+    return {conv_id: (int(valor), cuando) for conv_id, valor, cuando in filas}

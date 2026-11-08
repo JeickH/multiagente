@@ -9,6 +9,7 @@ import Paginacion, {
   leerPorPagina,
 } from '../components/Paginacion';
 import TutorialOverlay from '../components/TutorialOverlay';
+import VentaCerrada from '../components/VentaCerrada';
 import {
   ACCEPT_ADJUNTO,
   ClaseAdjunto,
@@ -43,6 +44,7 @@ import {
 } from '../lib/mensajeTexto';
 import { useServicioPausado } from '../lib/avisoPago';
 import { getToken } from '../lib/session';
+import { Venta, formatearPesos } from '../lib/venta';
 
 const MENSAJES_TUTORIAL = [
   {
@@ -81,6 +83,8 @@ type Conversation = {
    * volvió a escribir). `null` = sin etiqueta, y entonces no se pinta nada.
    */
   etiqueta?: string | null;
+  /** Valor de la venta activa (Sprint 36). `null` = sin venta registrada. */
+  venta_valor_cop?: number | null;
 };
 
 type Message = {
@@ -108,6 +112,9 @@ type ConversationDetail = {
   last_message_at: string;
   etiqueta?: string | null;
   messages: Message[];
+  /** Venta activa y rastro de las anuladas (Sprint 36). */
+  venta?: Venta | null;
+  ventas_anuladas?: Venta[];
 };
 
 /** Un archivo elegido o grabado, todavía sin enviar. */
@@ -381,6 +388,8 @@ export default function Mensajes() {
       igual y tiene que poder recibir uno. */
   const [asesores, setAsesores] = useState<string[]>([]);
   const [gestionando, setGestionando] = useState(false);
+  /** Formulario de «venta cerrada» desplegado en el chat abierto. */
+  const [ventaAbierta, setVentaAbierta] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
@@ -455,10 +464,10 @@ export default function Mensajes() {
     };
   }, [me, filter, searchAplicado, pagina, porPagina]);
 
-  // Los destinos del selector de reasignación. Solo los pide el admin, que es
-  // el único que puede reasignar; para un asesor la petición daría 403.
+  // Los asesores del team. Los usa el selector de reasignación (solo el admin)
+  // y el «¿quién vendió?» de la venta cerrada (cualquiera que pueda responder).
   useEffect(() => {
-    if (me?.member.role !== 'owner') return;
+    if (me?.member.role !== 'owner' && me?.member.permissions?.can_reply_messages !== true) return;
     let active = true;
     fetch('/api/mensajes/asesores', { headers: authHeaders() })
       .then((res) => (res.ok ? res.json() : null))
@@ -529,6 +538,7 @@ export default function Mensajes() {
   useEffect(() => {
     ponerAdjunto(null);
     setErrorMsg(null);
+    setVentaAbierta(false);
   }, [selectedId, ponerAdjunto]);
 
   useEffect(() => {
@@ -700,6 +710,18 @@ export default function Mensajes() {
         ? { ...prev, status: c.status, assigned_to: c.assigned_to, etiqueta: c.etiqueta }
         : prev,
     );
+  };
+
+  /**
+   * Tras registrar o anular una venta: la marca de la lista se actualiza ya
+   * (sin esperar los 45 s del poll) y el detalle se vuelve a pedir para traer
+   * la venta tal como quedó guardada.
+   */
+  const alCambiarVenta = (conversationId: number, valorActivo: number | null) => {
+    setConversations((prev) =>
+      prev.map((x) => (x.id === conversationId ? { ...x, venta_valor_cop: valorActivo } : x)),
+    );
+    void recargarDetalle(conversationId);
   };
 
   /**
@@ -966,6 +988,15 @@ export default function Mensajes() {
                           🏷️ {c.etiqueta}
                         </span>
                       ) : null}
+                      {/* Sprint 36: la venta cerrada, con su valor. */}
+                      {c.venta_valor_cop != null && (
+                        <span
+                          title="Venta cerrada registrada en esta conversación"
+                          className="inline-block mt-1 ml-1 px-2 py-0.5 text-[10px] font-semibold rounded-full bg-gloma-soft-mint text-gloma-forest border border-gloma-mint/50"
+                        >
+                          💰 {formatearPesos(c.venta_valor_cop)}
+                        </span>
+                      )}
                     </div>
                   </button>
                 );
@@ -1054,6 +1085,19 @@ export default function Mensajes() {
                     </span>
                   )}
 
+                  {/* Sprint 36: registrar la venta (por WhatsApp, llamada u
+                      oficina). Con una venta activa el botón no aparece: la
+                      franja de abajo la muestra, con «Anular». */}
+                  {canReply && !detail.venta && !ventaAbierta && (
+                    <button
+                      onClick={() => setVentaAbierta(true)}
+                      className="px-2.5 py-1 rounded-full border border-gloma-mint bg-gloma-soft-mint text-gloma-forest font-medium hover:bg-gloma-mint/20"
+                      title="Registrar que esta conversación terminó en venta, con su valor"
+                    >
+                      💰 Venta cerrada
+                    </button>
+                  )}
+
                   {detail.status === 'closed' ? (
                     <>
                       <span className="px-2.5 py-1 rounded-full bg-gray-100 text-gray-500 font-medium">
@@ -1086,6 +1130,19 @@ export default function Mensajes() {
                   )}
                 </div>
               </div>
+
+              <VentaCerrada
+                key={detail.id}
+                conversationId={detail.id}
+                venta={detail.venta ?? null}
+                anuladas={detail.ventas_anuladas ?? []}
+                asesores={asesores}
+                puedeRegistrar={canReply}
+                abierto={ventaAbierta}
+                onCerrar={() => setVentaAbierta(false)}
+                authHeaders={authHeaders}
+                onCambio={(valor) => alCambiarVenta(detail.id, valor)}
+              />
 
               <div className="flex-1 overflow-y-auto p-6 space-y-3">
                 {detail.messages.length === 0 ? (
