@@ -65,6 +65,9 @@ Variables:
     APLICAR=1           escribe (sin ella, solo simula).
     FORZAR=1            pisa instrucciones editadas en la app o un reparto ajeno.
     BOT_NOMBRE          nombre del bot nuevo al crearlo (default: A + " · <letra>").
+    REENGANCHE=1        la variante queda como bot de reenganche de la cuenta (atiende a
+                        los que vuelven tras un abandono o un cierre por inactividad;
+                        uno solo por cuenta, se apaga en los demás).
 """
 from __future__ import annotations
 
@@ -83,7 +86,7 @@ for _ruta in _CANDIDATOS:
         break
 
 from app import crud, models  # type: ignore  # noqa: E402
-from app.data import bot_viajes_b, bot_viajes_c  # type: ignore  # noqa: E402
+from app.data import bot_viajes_b, bot_viajes_c, bot_viajes_d  # type: ignore  # noqa: E402
 
 
 CONTEXT_KEY_A = "demo_viajes"
@@ -92,9 +95,11 @@ CONTEXT_KEY_A = "demo_viajes"
 VARIANTES: Dict[str, Tuple[Dict[str, Any], Callable[[], str]]] = {
     "B": (bot_viajes_b.LLM_CONFIG_B, bot_viajes_b.instrucciones_b),
     "C": (bot_viajes_c.LLM_CONFIG_C, bot_viajes_c.instrucciones_c),
+    "D": (bot_viajes_d.LLM_CONFIG_D, bot_viajes_d.instrucciones_d),
 }
 
-REPARTO_DEFAULT = {"B": "A=50,B=50", "C": "A=34,B=33,C=33"}
+#: D (Sprint 36, decisión del CEO del 7-nov): 25 / 25 / 50 con el bot 2 fuera.
+REPARTO_DEFAULT = {"B": "A=50,B=50", "C": "A=34,B=33,C=33", "D": "A=25,B=0,C=25,D=50"}
 
 #: Las ÚNICAS llaves de la config de A que pasan a la variante (revisión de
 #: seguridad S7 del bot 2). Dicen cómo opera el bot en esa base: de dónde
@@ -244,6 +249,7 @@ def ejecutar(
     aplicar: bool,
     forzar: bool = False,
     nombre: Optional[str] = None,
+    reenganche: bool = False,
     out: Callable[[str], None] = print,
 ) -> int:
     """Todo el trabajo, con la sesión inyectada (los tests usan SQLite).
@@ -417,6 +423,14 @@ def ejecutar(
             + ", ".join(f"{k} {p} %" for k, p in pedido.items())
         )
 
+    if reenganche:
+        actual_r = [b.id for b in bots if getattr(b, "es_reenganche", False)]
+        objetivo_r = v.id if v is not None else f"{letra} (nuevo)"
+        if v is not None and actual_r == [v.id]:
+            out(f"· bot de reenganche: ya es {letra} ({v.id})")
+        else:
+            out(f"· bot de reenganche: {actual_r or '(ninguno)'} → {objetivo_r}")
+
     if bloqueos:
         for motivo in bloqueos:
             out(f"BLOQUEO: {motivo}")
@@ -481,6 +495,26 @@ def ejecutar(
             out(f"✓ backfill tardío: {tarde} conversación(es) más asignadas a A")
         out("✓ reparto guardado")
 
+    if reenganche:
+        # Uno solo por cuenta (`uq_bot_reenganche_por_owner`): primero se apaga
+        # en los demás bots del dueño y después se prende en la variante.
+        otros = [
+            b for b in db.query(models.Bot).filter(models.Bot.user_id == owner.id).all()
+            if b.id != v.id and getattr(b, "es_reenganche", False)
+        ]
+        for b in otros:
+            b.es_reenganche = False
+            db.add(b)
+        if otros:
+            db.flush()
+        if not getattr(v, "es_reenganche", False):
+            v.es_reenganche = True
+            db.add(v)
+            db.commit()
+            out(f"✓ bot de reenganche: {letra} ({v.id})")
+        else:
+            db.commit()
+
     out("\nResumen:")
     for etiqueta, bot in [("A", a)] + sorted({**por_letra, letra: v}.items()):
         db.refresh(bot)
@@ -512,6 +546,7 @@ def main() -> int:
             aplicar=os.environ.get("APLICAR") == "1",
             forzar=os.environ.get("FORZAR") == "1",
             nombre=os.environ.get("BOT_NOMBRE") or None,
+            reenganche=os.environ.get("REENGANCHE") == "1",
         )
     finally:
         db.close()

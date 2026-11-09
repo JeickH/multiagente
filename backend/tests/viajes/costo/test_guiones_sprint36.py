@@ -66,6 +66,17 @@ from tests.viajes.costo.test_guiones_variante_b import (  # noqa: F401  (fixture
     texto,
 )
 from tests.viajes.costo.test_guiones_variante_c import BotViajesC
+from app.data.bot_viajes_d import LLM_CONFIG_D
+
+
+class BotViajesD:
+    """Bot D (estrategia D, Sprint 36): conversación sin menús y «¿Te los aparto?»."""
+    id = 44
+    engine = "llm"
+    status = "active"
+
+    def __init__(self) -> None:
+        self.llm_config = json.dumps(LLM_CONFIG_D, ensure_ascii=False)
 
 REPETICIONES = max(1, int(os.getenv("REPETICIONES_S36", "1") or 1))
 TOPE_USD = float(os.getenv("TOPE_USD_S36", "3") or 3)
@@ -84,6 +95,7 @@ BOTS: Dict[str, Callable[[], Any]] = {
     "bot1": BotViajes,
     "bot2": BotViajesB,
     "bot3": BotViajesC,
+    "botD": BotViajesD,
 }
 
 
@@ -128,15 +140,17 @@ def presupuesto_s36(medidor):
 # Conversación
 # ---------------------------------------------------------------------------
 
-def conversar(bot, mensajes: List[str], g) -> List[Dict[str, Any]]:
+def conversar(bot, mensajes: List[str], g, runtime_inicial: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
     estado = None
     turnos: List[Dict[str, Any]] = []
-    for mensaje in mensajes:
+    for k, mensaje in enumerate(mensajes):
         runtime = {
             "bot_id": bot.id, "source": "whatsapp", "conversation_id": None,
             "contact_name": None, "retomada": False, "desde": None,
             "ya_se_presento": bool(isinstance(estado, dict) and estado.get("history")),
         }
+        if k == 0 and runtime_inicial:
+            runtime.update(runtime_inicial)
         r0, d0, l0 = len(g["rondas"]), len(g["disparos"]), len(g["logs"].registros)
         t0 = time.monotonic()
         salida = llm_engine.advance(bot, estado, mensaje, runtime=runtime)
@@ -363,7 +377,22 @@ def gh(h, ts):
     listo_con_cedula(h, ts, 3)
 
 
+def gr(h, ts):
+    """Vuelve a una conversación abandonada: no se presenta, re-consulta y pide la venta."""
+    primero = texto(ts[0])
+    h.anotar(4, "no se vuelve a presentar", "soy *luisa*" not in primero.lower(), primero[:160], 0, duro=True)
+    consulto = any(x["tool"] in ("consultar_tarifario", "consultar_precios") for x in ts[0]["tools"])
+    h.anotar(4, "re-consulta precios antes de dar cifras", consulto or not montos(primero),
+             str(herramientas(ts[0])), 0, duro=True)
+    h.anotar(1, "pide la venta en el regreso", bool(re.search(r"aparto", todo(ts), re.I)), todo(ts)[-160:], 0)
+
+
 GUIONES: Dict[str, Dict[str, Any]] = {
+    "R_vuelve_tras_abandono": {
+        "mensajes": ["Hola", "la del 18 al 21 en Amor de Dios"],
+        "runtime": {"regreso": {"via": "abandono", "mes": 12, "adultos": 2, "habia_total": True}},
+        "chequeo": gr,
+    },
     "A_somos_2_aparta_y_datos": {
         # «sí, apártame la del 18 al 21»: con dos opciones sobre la mesa
         # (estándar y Barú) el bot pregunta cuál; un «sí» a secas lo deja
@@ -489,7 +518,7 @@ def test_guion_sprint36(bot, guion, rep, grabadora, presupuesto_s36, monkeypatch
     g = GUIONES[guion]
     reloj = g.get("reloj", SABADO)
     _reloj_fijo(monkeypatch, reloj)
-    turnos = conversar(BOTS[bot](), g["mensajes"], grabadora)
+    turnos = conversar(BOTS[bot](), g["mensajes"], grabadora, g.get("runtime"))
     hoja = Hoja()
     for i, t in enumerate(turnos):
         chequear_turno(hoja, i, t)
