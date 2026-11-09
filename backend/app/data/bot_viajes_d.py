@@ -50,6 +50,9 @@ FLAGS_VARIANTE_D: Dict[str, Any] = {
     "variante": "D",
     # Puerta 2 (llamada en franja): apagada hasta el acuerdo con la agencia.
     "llamada_en_franja": False,
+    # El que vuelve tras un abandono y solo saluda recibe un saludo fijo con lo
+    # que estaba mirando (el modelo le repetía la bienvenida en la QA del 8-nov).
+    "saludo_de_regreso": True,
 }
 
 LLM_CONFIG_D: Dict[str, Any] = {

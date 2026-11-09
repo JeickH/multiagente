@@ -125,3 +125,44 @@ class TestCrearD:
         db.expire_all()
         (d,) = _de(db, "D")
         assert d.es_reenganche is False
+
+
+class TestSaludoDeRegreso:
+    """El que vuelve tras un abandono y solo saluda: saludo fijo, sin modelo."""
+
+    def _turno(self, monkeypatch, regreso, mensaje="Hola"):
+        from app.services import llm_engine
+
+        llamadas = []
+        monkeypatch.setattr(llm_engine, "_invoke_model",
+                            lambda *a, **k: llamadas.append(1) or {"content": [{"type": "text", "text": "x"}],
+                                                                   "stop_reason": "end_turn"})
+
+        class B:
+            id = 44
+            engine = "llm"
+            status = "active"
+            llm_config = json.dumps(LLM_CONFIG_D)
+
+        rt = {"bot_id": 44, "source": "whatsapp", "conversation_id": None, "contact_name": None,
+              "retomada": True, "ya_se_presento": True, "desde": "hace 9 días", "regreso": regreso}
+        salida = llm_engine.advance(B(), None, mensaje, runtime=rt)
+        textos = [(a.get("payload") or {}).get("text") or "" for a in salida["actions"] if a.get("type") == "say"]
+        return " ".join(textos), llamadas
+
+    def test_recuerda_lo_que_miraba_sin_llamar_al_modelo(self, monkeypatch):
+        texto, llamadas = self._turno(monkeypatch, {"via": "abandono", "mes": 12, "adultos": 2,
+                                                    "hotel": "amordios", "habia_total": True})
+        assert llamadas == []
+        assert texto.startswith("¡Hola de nuevo!")
+        assert "*diciembre*" in texto and "2 adultos" in texto
+        assert "Soy" not in texto and "cuántas personas" not in texto.lower()
+
+    def test_sin_grupo_pregunta_cuantos(self, monkeypatch):
+        texto, _ = self._turno(monkeypatch, {"via": "inactividad", "mes": 1, "habia_total": False})
+        assert "*enero*" in texto and "¿Para cuántas personas sería?" in texto
+
+    def test_con_contenido_contesta_el_modelo(self, monkeypatch):
+        _, llamadas = self._turno(monkeypatch, {"via": "abandono", "mes": 12, "adultos": 2},
+                                  mensaje="¿todavía hay para el 18 de diciembre?")
+        assert llamadas

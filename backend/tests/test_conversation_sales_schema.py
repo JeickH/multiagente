@@ -227,6 +227,7 @@ def test_un_solo_bot_de_reenganche_por_owner(db, conv):
 # ---------------------------------------------------------------------------
 
 FRANJA = datetime(2026, 11, 10, 15, 0)
+FRANJA_FIN = datetime(2026, 11, 10, 17, 0)
 
 
 def _agenda(conv, **campos) -> models.Agendamiento:
@@ -240,6 +241,8 @@ def _agenda(conv, **campos) -> models.Agendamiento:
     {"franja_inicio": FRANJA},                       # franja sin puesto: se saltaría el cupo
     {"puesto": 1},                                   # puesto sin franja
     {"franja_inicio": FRANJA, "puesto": 0},
+    {"franja_inicio": FRANJA, "puesto": 1},          # franja sin fin: la alerta no sabría cuándo
+    {"franja_fin": FRANJA_FIN},                      # fin sin inicio
     {"origen": "manual"},
     {"resultado": "vendio"},
     {"cotizacion": "x" * (models.AGENDAMIENTO_COTIZACION_MAX + 1)},
@@ -253,7 +256,7 @@ def test_checks_de_agenda_rechazan(db, conv, campos):
 
 def test_agenda_valida_pasa(db, conv):
     db.add(_agenda(
-        conv, franja_inicio=FRANJA, puesto=1,
+        conv, franja_inicio=FRANJA, franja_fin=FRANJA_FIN, puesto=1,
         origen=models.AGENDAMIENTO_ORIGEN_BOT_LLAMADA,
         resultado=models.AGENDAMIENTO_RESULTADO_LO_PENSARA,
         cotizacion="x" * models.AGENDAMIENTO_COTIZACION_MAX,
@@ -265,15 +268,15 @@ def test_un_puesto_por_franja_entre_pendientes(db, conv):
     otra = models.Conversation(team_id=conv.team_id, contact_wa_id="573000036102")
     db.add(otra)
     db.commit()
-    db.add(_agenda(conv, franja_inicio=FRANJA, puesto=1))
+    db.add(_agenda(conv, franja_inicio=FRANJA, franja_fin=FRANJA_FIN, puesto=1))
     db.commit()
 
-    db.add(_agenda(otra, franja_inicio=FRANJA, puesto=1))
+    db.add(_agenda(otra, franja_inicio=FRANJA, franja_fin=FRANJA_FIN, puesto=1))
     with pytest.raises(IntegrityError):
         db.commit()
     db.rollback()
 
-    db.add(_agenda(otra, franja_inicio=FRANJA, puesto=2))       # otro puesto: cabe
+    db.add(_agenda(otra, franja_inicio=FRANJA, franja_fin=FRANJA_FIN, puesto=2))       # otro puesto: cabe
     db.commit()
 
 

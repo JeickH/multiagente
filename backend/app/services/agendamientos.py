@@ -783,6 +783,13 @@ def tomar_interesado(
     fila.gestionado_por_user_id = user.id
     fila.gestionado_at = momento
     db.add(fila)
+    # Sprint 36 (auditoría B2): tomar a mano también consume el marcador de
+    # abandono, como cerrar, reabrir o asignar: si el cliente vuelve, el chat
+    # sigue con la persona que lo tomó y no se lo devuelve al bot.
+    from . import reenganche
+    db.refresh(conv)
+    if reenganche.consumir_por_humano(conv):
+        db.add(conv)
     db.commit()
 
     try:

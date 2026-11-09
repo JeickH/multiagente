@@ -2941,12 +2941,61 @@ _BIENVENIDA_REGRESO_DEFAULT = {
 }
 
 
+def _saludo_de_regreso(cfg: Dict[str, Any]) -> str:
+    """Bot D (`saludo_de_regreso`): el saludo fijo para quien vuelve tras un
+    abandono o un cierre por inactividad y solo escribe «hola». Con la QA contra
+    Bedrock (8-nov) el modelo le repetía la bienvenida y le volvía a preguntar
+    cuántos eran 3 de 3 veces, aunque tenía el bloque «Vuelve tras un silencio».
+    Solo datos validados del contrato de regreso (mes, fecha, hotel, cuántos):
+    nada personal ni texto libre."""
+    regreso = _dato_runtime(cfg, "regreso") or {}
+    fecha = str(regreso.get("fecha") or "")
+    fecha = fecha if _FECHA_ISO_RE.fullmatch(fecha) else ""
+    mes = regreso.get("mes")
+    mes = mes if isinstance(mes, int) and not isinstance(mes, bool) and 1 <= mes <= 12 else None
+    if fecha and not mes:
+        mes = int(fecha[5:7])
+    clave_hotel = tarifario.normalizar_hotel(str(regreso.get("hotel") or ""))
+    hotel = getattr(tarifario, "_NOMBRE_HOTEL", {}).get(clave_hotel) if clave_hotel else None
+    adultos = regreso.get("adultos")
+    adultos = adultos if isinstance(adultos, int) and not isinstance(adultos, bool) and 1 <= adultos <= 30 else None
+    edades = [
+        e for e in (regreso.get("edades_ninos") or [])
+        if isinstance(e, int) and not isinstance(e, bool) and 0 <= e <= 17
+    ][:30] if adultos else []
+    partes = []
+    if mes:
+        partes.append(f"*{_MESES_ES[mes - 1]}*")
+    if hotel:
+        partes.append(f"en *{hotel}*")
+    if adultos:
+        grupo = f"{adultos} adulto" + ("s" if adultos != 1 else "")
+        if edades:
+            grupo += " y " + ", ".join("un bebé" if e == 0 else f"un niño de {e}" for e in edades)
+        partes.append(f"para {grupo}")
+    saludo = "¡Hola de nuevo! 😊 Qué bueno saber de ti."
+    if not partes:
+        return f"{saludo} ¿Para cuántas personas sería el viaje?"
+    recuerdo = "La otra vez miramos " + " ".join(partes) + "."
+    if not adultos:
+        return f"{saludo} {recuerdo} ¿Para cuántas personas sería?"
+    if fecha and regreso.get("fecha_paso") is True:
+        return f"{saludo} {recuerdo} Esa salida ya pasó, pero hay otras. ¿Te muestro las próximas con el total para ustedes?"
+    return f"{saludo} {recuerdo} ¿Te muestro las salidas con el total actualizado?"
+
+
 def _texto_regreso(
     cfg: Dict[str, Any], history: Optional[List[Dict[str, str]]], user_input: Optional[str]
 ) -> Optional[str]:
     """M0 (`regreso_sin_modelo`): quien vuelve en una sesión nueva y sólo
     saluda (o manda el texto del anuncio) recibe `/bienvenida_regreso` sin
     pasar por el modelo — 4 de 6 veces el modelo le repetía la bienvenida."""
+    if (
+        cfg.get("saludo_de_regreso") and not history and user_input
+        and isinstance(_dato_runtime(cfg, "regreso"), dict)
+        and senales.es_saludo_sin_contenido(user_input)
+    ):
+        return _saludo_de_regreso(cfg)
     if not cfg.get("regreso_sin_modelo") or history or not user_input:
         return None
     if not _dato_runtime(cfg, "ya_se_presento"):

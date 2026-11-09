@@ -390,7 +390,9 @@ def gr(h, ts):
 GUIONES: Dict[str, Dict[str, Any]] = {
     "R_vuelve_tras_abandono": {
         "mensajes": ["Hola", "la del 18 al 21 en Amor de Dios"],
-        "runtime": {"regreso": {"via": "abandono", "mes": 12, "adultos": 2, "habia_total": True}},
+        # Como lo arma `bot_runner` para el que vuelve: retomada y ya presentada.
+        "runtime": {"retomada": True, "ya_se_presento": True, "desde": "hace 9 días",
+                    "regreso": {"via": "abandono", "mes": 12, "adultos": 2, "habia_total": True}},
         "chequeo": gr,
     },
     "A_somos_2_aparta_y_datos": {
@@ -439,7 +441,7 @@ GUIONES: Dict[str, Dict[str, Any]] = {
 # Chequeos de todo turno
 # ---------------------------------------------------------------------------
 
-def chequear_turno(h: Hoja, i: int, t: Dict[str, Any]) -> None:
+def chequear_turno(h: Hoja, i: int, t: Dict[str, Any], *, regreso: bool = False) -> None:
     s = texto(t)
     h.anotar(0, "sin failsafe", not t["failsafe"], "", i, duro=True)
     malos = afirma_todo_incluido(s)
@@ -456,7 +458,7 @@ def chequear_turno(h: Hoja, i: int, t: Dict[str, Any]) -> None:
                        and re.search(r"guardarra|no logr", str(a.get("motivo") or ""))]
     h.anotar(0, "sin traspaso por guardarraíl", not por_guardarrail,
              str([a.get("motivo") for a in por_guardarrail]), i, duro=True)
-    if i == 0:
+    if i == 0 and not regreso:   # quien vuelve ya sabe de dónde sale
         h.anotar(3, "primer mensaje: sale de Medellín", "medell" in s.lower(), s[:200], i, duro=True)
     mi = marcas_ia(s)
     h.anotar(99, "tono sin marcas de IA", not mi, ",".join(mi), i)
@@ -521,7 +523,7 @@ def test_guion_sprint36(bot, guion, rep, grabadora, presupuesto_s36, monkeypatch
     turnos = conversar(BOTS[bot](), g["mensajes"], grabadora, g.get("runtime"))
     hoja = Hoja()
     for i, t in enumerate(turnos):
-        chequear_turno(hoja, i, t)
+        chequear_turno(hoja, i, t, regreso=bool((g.get("runtime") or {}).get("regreso")))
     g["chequeo"](hoja, turnos)
     _una_pregunta(hoja, turnos)
     _guardar(f"{bot}__{guion}__r{rep:02d}", turnos, hoja, reloj)
