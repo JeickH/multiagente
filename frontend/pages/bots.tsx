@@ -4,6 +4,7 @@ import Layout from '../components/Layout';
 import TutorialOverlay from '../components/TutorialOverlay';
 import { ApiError, authedFetch } from '../lib/api';
 import { aInstante } from '../lib/fechas';
+import { MOSTRAR_EDICION_DE_BOTS } from '../lib/funcionesOcultas';
 import { getToken } from '../lib/session';
 
 const BOTS_TUTORIAL = [
@@ -529,6 +530,7 @@ export default function BotsPage() {
               Listado de los bots configurados para tu cuenta.
             </p>
           </div>
+          {MOSTRAR_EDICION_DE_BOTS && (
           <button
             type="button"
             onClick={handleDownload}
@@ -539,6 +541,7 @@ export default function BotsPage() {
             <span>⤓</span>
             {downloading ? 'Descargando…' : 'Descargar JSON'}
           </button>
+          )}
         </div>
 
         {bots !== null && bots.some((b) => b.trigger_type === 'default') && (
@@ -548,7 +551,7 @@ export default function BotsPage() {
               puedeEditar={puedeEditar}
               onGuardado={setBots}
             />
-          ) : puedeEditar && (
+          ) : puedeEditar && MOSTRAR_EDICION_DE_BOTS && (
             <div className="mb-6 bg-gloma-cream border border-gloma-rose-soft rounded-lg px-4 py-3 text-sm text-gray-600">
               <span className="font-semibold text-gloma-forest">¿Quieres probar otro guion?</span>{' '}
               Duplica tu bot por defecto con <span className="font-medium">«Duplicar como variante»</span>, ajusta
@@ -720,7 +723,7 @@ function BotFila({
         <td className="py-4 px-4 text-right whitespace-nowrap">
           {/* Solo los bots por defecto se duplican (el backend da 400 con los demás):
               la variante existe para repartirle conversaciones nuevas. */}
-          {puedeEditar && bot.trigger_type === 'default' && (
+          {MOSTRAR_EDICION_DE_BOTS && puedeEditar && bot.trigger_type === 'default' && (
             <button
               type="button"
               onClick={duplicando ? onCancelar : onDuplicar}
@@ -732,7 +735,7 @@ function BotFila({
           )}
         </td>
       </tr>
-      {duplicando && <DuplicarFila bot={bot} onCreado={onCreado} onCancelar={onCancelar} />}
+      {MOSTRAR_EDICION_DE_BOTS && duplicando && <DuplicarFila bot={bot} onCreado={onCreado} onCancelar={onCancelar} />}
     </>
   );
 }

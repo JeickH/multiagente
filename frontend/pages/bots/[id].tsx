@@ -3,6 +3,7 @@ import { useRouter } from 'next/router';
 import Head from 'next/head';
 import { ApiError, authedFetch } from '../../lib/api';
 import { cerrarSesion, getToken } from '../../lib/session';
+import { MOSTRAR_EDICION_DE_BOTS } from '../../lib/funcionesOcultas';
 
 type BotStep = {
   id: number;
@@ -1228,7 +1229,7 @@ export default function BotDetailPage() {
             </div>
           )}
 
-          {bot && bot.engine === 'llm' && (
+          {MOSTRAR_EDICION_DE_BOTS && bot && bot.engine === 'llm' && (
             <GuionPanel
               bot={bot}
               puedeEditar={esDueno !== false}
